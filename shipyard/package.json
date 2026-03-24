@@ -6,24 +6,30 @@
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=20.19.0",
     "pnpm": ">=10.0.0"
   },
   "bin": {
     "shipyard": "./dist/bin/shipyard.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "build:ui": "vite build",
     "dev": "node --env-file=.env --import tsx ./src/bin/shipyard.ts",
     "start": "node --env-file=.env --import tsx ./src/bin/shipyard.ts",
     "shipyard": "node --env-file=.env --import tsx ./src/bin/shipyard.ts",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.ui.json"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^6.0.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
+    "vite": "^8.0.2",
     "vitest": "^4.1.1"
   },
   "dependencies": {
@@ -38,6 +44,9 @@
     "langsmith": "^0.5.13",
     "nanoid": "^5.1.7",
     "ora": "^9.3.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "ws": "^8.20.0",
     "zod": "^4.3.6"
   }
 }
