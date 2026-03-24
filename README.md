@@ -1,12 +1,14 @@
 # Shipyard Workspace
 
-This repository is split into two checked-in surfaces that work together but
-have different responsibilities:
+This repository is split into two primary checked-in surfaces that work
+together but have different responsibilities:
 
 - `.ai/` is the helper harness for workflows, memory, templates, and execution
   rules used while working in this workspace.
 - `shipyard/` is the runnable TypeScript coding-agent application: CLI entry,
   shared runtime, browser mode backend, React UI shell, tests, and product docs.
+- `test-targets/` holds checked-in manual target scaffolds for exercising
+  Shipyard against greenfield projects without self-targeting the app repo.
 
 ## Documentation Map
 
@@ -21,6 +23,7 @@ have different responsibilities:
 ## Working From The Repo Root
 
 ```bash
+pnpm --dir shipyard test-target:init
 pnpm --dir shipyard install
 pnpm --dir shipyard build
 pnpm --dir shipyard test
@@ -30,13 +33,13 @@ pnpm --dir shipyard typecheck
 To run the built CLI from the root:
 
 ```bash
-node shipyard/dist/bin/shipyard.js --target ../ship
+node shipyard/dist/bin/shipyard.js --target ./test-targets/tic-tac-toe
 ```
 
 To start the browser-first runtime after building:
 
 ```bash
-pnpm --dir shipyard start -- --target ../ship --ui
+pnpm --dir shipyard test-target:ui
 ```
 
 ## Layout
@@ -49,6 +52,8 @@ pnpm --dir shipyard start -- --target ../ship --ui
 │   ├── skills/
 │   ├── templates/
 │   └── workflows/
+├── test-targets/
+│   └── tic-tac-toe/
 └── shipyard/
     ├── docs/
     ├── src/

@@ -31,25 +31,27 @@ The current runtime now has two operator modes:
 From the repo root:
 
 ```bash
+pnpm --dir shipyard test-target:init
 pnpm --dir shipyard install
 pnpm --dir shipyard build
 pnpm --dir shipyard test
 pnpm --dir shipyard typecheck
-node shipyard/dist/bin/shipyard.js --target ../ship
+node shipyard/dist/bin/shipyard.js --target ./test-targets/tic-tac-toe
 ```
 
 To start the browser runtime after a build:
 
 ```bash
-pnpm --dir shipyard start -- --target ../ship --ui
+pnpm --dir shipyard test-target:ui
 ```
 
 From inside `shipyard/`:
 
 ```bash
+pnpm test-target:init
 pnpm install
 pnpm build
-node dist/bin/shipyard.js --target ../../ship
+node dist/bin/shipyard.js --target ../test-targets/tic-tac-toe
 ```
 
 Once you want a bare `shipyard` command outside the repo, link the package with your preferred global package-manager workflow.
@@ -62,7 +64,8 @@ shipyard/
   src/           CLI, runtime, tools, tracing, and UI backend
   tests/         Vitest suites and manual smoke scripts
   ui/            React + Vite browser workbench
-  .shipyard/     runtime state for the current target when Shipyard points at itself
+../test-targets/
+  tic-tac-toe/   checked-in greenfield test target scaffold for local Shipyard runs
 ```
 
 ## Request Lifecycle
@@ -75,6 +78,10 @@ shipyard/
    verification, and final response generation.
 6. `src/tools/*` interacts with the target repository.
 7. `src/tracing/*` and `.shipyard/` capture runtime artifacts.
+
+For day-to-day local verification, the recommended target is
+`../test-targets/tic-tac-toe` rather than pointing Shipyard at its own source
+tree.
 
 ## UI Runtime
 

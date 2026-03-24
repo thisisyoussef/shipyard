@@ -9,3 +9,9 @@ shipyard/dist
 shipyard/coverage
 shipyard/.shipyard
 .shipyard
+test-targets/tic-tac-toe/.git
+test-targets/tic-tac-toe/.shipyard
+test-targets/tic-tac-toe/*
+!test-targets/tic-tac-toe/.gitignore
+!test-targets/tic-tac-toe/AGENTS.md
+!test-targets/tic-tac-toe/README.md
