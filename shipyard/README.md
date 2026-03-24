@@ -95,3 +95,8 @@ The pre-2 developer UI uses:
 
 The backend half of this mode lives in `src/ui/`. The frontend shell lives in
 `ui/`. Both are documented in the local README files for those directories.
+
+Shipyard now prints both the active workspace path and target path when `--ui`
+starts. If the requested UI port is already occupied by another local Shipyard
+runtime, it will move to the next open port and say which existing session was
+already holding the original port.

@@ -113,6 +113,11 @@ function formatTimestamp(isoTimestamp: string | null): string {
   return Number.isNaN(date.getTime()) ? isoTimestamp : date.toLocaleString();
 }
 
+function formatWorkspaceLabel(workspaceDirectory: string): string {
+  const segments = workspaceDirectory.split("/").filter(Boolean);
+  return segments.at(-1) ?? workspaceDirectory;
+}
+
 function handleTextareaChange(
   event: ChangeEvent<HTMLTextAreaElement>,
   onChange: (value: string) => void,
@@ -236,6 +241,16 @@ function buildSessionBannerModel(options: {
       monospace: true,
     },
     {
+      label: "Workspace",
+      value: sessionState.workspaceDirectory,
+      monospace: true,
+    },
+    {
+      label: "Target",
+      value: sessionState.targetDirectory,
+      monospace: true,
+    },
+    {
       label: "Turns",
       value: String(turnCount),
     },
@@ -249,7 +264,7 @@ function buildSessionBannerModel(options: {
     return {
       tone: "success",
       statusLabel: "restored",
-      title: `Session ${sessionState.sessionId} restored after reload`,
+      title: `Session ${sessionState.sessionId} restored in ${formatWorkspaceLabel(sessionState.workspaceDirectory)}`,
       detail: `Recovered ${String(turnCount)} turn${turnCount === 1 ? "" : "s"}, ${String(fileEventCount)} file event${fileEventCount === 1 ? "" : "s"}, and ${String(contextReceiptCount)} context receipt${contextReceiptCount === 1 ? "" : "s"} from the saved browser state.`,
       hint: "Review the latest turn below or keep working without losing local context.",
       meta: sessionMeta,
@@ -260,7 +275,7 @@ function buildSessionBannerModel(options: {
     return {
       tone: "warning",
       statusLabel: "reconnecting",
-      title: `Reconnecting to session ${sessionState.sessionId}`,
+      title: `Reconnecting to ${formatWorkspaceLabel(sessionState.workspaceDirectory)}`,
       detail: `Last known activity from ${formatTimestamp(sessionState.lastActiveAt)} is still visible while the socket retries.`,
       hint: "You can keep reading the current session state. Shipyard will resume live updates as soon as the connection returns.",
       meta: sessionMeta,
@@ -271,7 +286,7 @@ function buildSessionBannerModel(options: {
     return {
       tone: "danger",
       statusLabel: "attention",
-      title: `Session ${sessionState.sessionId} needs attention`,
+      title: `${formatWorkspaceLabel(sessionState.workspaceDirectory)} needs attention`,
       detail:
         latestTurn?.summary ??
         agentStatus ??
@@ -285,7 +300,7 @@ function buildSessionBannerModel(options: {
     return {
       tone: "accent",
       statusLabel: "live",
-      title: `Session ${sessionState.sessionId} is streaming`,
+      title: `${formatWorkspaceLabel(sessionState.workspaceDirectory)} is streaming`,
       detail: `Shipyard is actively working through turn ${String(sessionState.turnCount)} and publishing tool activity below.`,
       hint: "Use the latest-run filter to stay focused on the current turn while it updates.",
       meta: sessionMeta,
@@ -295,7 +310,7 @@ function buildSessionBannerModel(options: {
   return {
     tone: "success",
     statusLabel: "stable",
-    title: `Connected to session ${sessionState.sessionId}`,
+    title: `Connected to ${formatWorkspaceLabel(sessionState.workspaceDirectory)}`,
     detail: `Last active ${formatTimestamp(sessionState.lastActiveAt)}. The current browser state matches the latest saved session snapshot.`,
     hint: "Paste context only when a spec, schema, or local rule should ride with the next turn.",
     meta: sessionMeta,
@@ -406,6 +421,11 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
 
         <div className="top-bar-actions">
           <div className="top-info-block">
+            <span className="micro-label">Workspace</span>
+            <code>{props.sessionState?.workspaceDirectory ?? "Waiting for workspace..."}</code>
+          </div>
+
+          <div className="top-info-block">
             <span className="micro-label">Target</span>
             <code>{props.sessionState?.targetDirectory ?? "Waiting for target..."}</code>
           </div>
@@ -487,6 +507,10 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                     <dd>{props.sessionState.sessionId}</dd>
                   </div>
                   <div>
+                    <dt>Workspace</dt>
+                    <dd>{formatWorkspaceLabel(props.sessionState.workspaceDirectory)}</dd>
+                  </div>
+                  <div>
                     <dt>Target</dt>
                     <dd>{props.sessionState.targetLabel}</dd>
                   </div>
@@ -499,6 +523,18 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                     <dd>{formatTimestamp(props.sessionState.lastActiveAt)}</dd>
                   </div>
                 </dl>
+
+                <div className="session-meta-block">
+                  <span className="micro-label">Paths</span>
+                  <ul className="signal-list">
+                    <li>
+                      <code>{props.sessionState.workspaceDirectory}</code>
+                    </li>
+                    <li>
+                      <code>{props.sessionState.targetDirectory}</code>
+                    </li>
+                  </ul>
+                </div>
 
                 <div className="session-meta-block">
                   <span className="micro-label">Project signals</span>

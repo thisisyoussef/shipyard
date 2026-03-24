@@ -18,6 +18,7 @@ import {
   loadSessionState,
   saveSessionState,
 } from "../engine/state.js";
+import type { ExistingUiRuntimeInfo } from "../ui/server.js";
 import { startUiRuntimeServer } from "../ui/server.js";
 
 export interface CliOptions {
@@ -31,9 +32,28 @@ export function formatUiStartupLines(options: {
   socketUrl: string;
   sessionId: string;
   connectionState: "ready" | "agent-busy" | "connecting" | "disconnected" | "error";
+  workspaceDirectory: string;
+  targetDirectory: string;
+  requestedPort: number;
+  actualPort: number;
+  existingRuntime: ExistingUiRuntimeInfo | null;
 }): string[] {
+  const portNotice =
+    options.requestedPort === 0 || options.requestedPort === options.actualPort
+      ? null
+      : options.existingRuntime
+        ? chalk.yellow(
+            `Requested port ${String(options.requestedPort)} was already serving Shipyard session ${options.existingRuntime.sessionId} for ${options.existingRuntime.targetDirectory ?? options.existingRuntime.targetLabel}. This runtime moved to ${String(options.actualPort)}.`,
+          )
+        : chalk.yellow(
+            `Requested port ${String(options.requestedPort)} was busy. This runtime moved to ${String(options.actualPort)}.`,
+          );
+
   return [
     chalk.green(`UI mode ready for session ${options.sessionId}`),
+    `Workspace: ${options.workspaceDirectory}`,
+    `Target: ${options.targetDirectory}`,
+    ...(portNotice ? [portNotice] : []),
     `Browser: ${options.url}`,
     `WebSocket: ${options.socketUrl}`,
     `Initial browser state: ${options.connectionState}`,
@@ -155,6 +175,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       socketUrl: uiRuntime.socketUrl,
       sessionId: sessionState.sessionId,
       connectionState: "ready",
+      workspaceDirectory: uiRuntime.workspaceDirectory,
+      targetDirectory: uiRuntime.targetDirectory,
+      requestedPort: uiRuntime.requestedPort,
+      actualPort: uiRuntime.port,
+      existingRuntime: uiRuntime.portResolution.existingRuntime,
     })) {
       console.log(line);
     }

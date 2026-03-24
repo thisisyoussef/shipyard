@@ -20,6 +20,7 @@ import { startUiRuntimeServer } from "../src/ui/server.js";
 const createdDirectories: string[] = [];
 const socketMessageBuffers = new WeakMap<WebSocket, BackendToFrontendMessage[]>();
 const trackedSockets = new WeakSet<WebSocket>();
+const workspaceDirectory = path.resolve(process.cwd(), "..");
 
 interface MockAnthropicClient {
   messages: {
@@ -195,18 +196,91 @@ describe("ui runtime contract", () => {
     });
   });
 
-  it("UI startup surfaces the browser URL and current connection state", () => {
+  it("UI startup surfaces workspace identity, URLs, and collision recovery context", () => {
     const lines = formatUiStartupLines({
-      url: "http://127.0.0.1:3210",
-      socketUrl: "ws://127.0.0.1:3210/ws",
+      url: "http://127.0.0.1:3211",
+      socketUrl: "ws://127.0.0.1:3211/ws",
       sessionId: "ui-session",
       connectionState: "ready",
+      workspaceDirectory: "/tmp/shipyard-workspace",
+      targetDirectory: "/tmp/shipyard-workspace/test-targets/tic-tac-toe",
+      requestedPort: 3210,
+      actualPort: 3211,
+      existingRuntime: {
+        url: "http://127.0.0.1:3210",
+        sessionId: "other-session",
+        targetLabel: "tic-tac-toe",
+        targetDirectory: "/tmp/other-worktree/test-targets/tic-tac-toe",
+        workspaceDirectory: "/tmp/other-worktree",
+      },
     });
 
-    expect(lines.join("\n")).toContain("http://127.0.0.1:3210");
-    expect(lines.join("\n")).toContain("ws://127.0.0.1:3210/ws");
+    expect(lines.join("\n")).toContain("/tmp/shipyard-workspace");
+    expect(lines.join("\n")).toContain("/tmp/shipyard-workspace/test-targets/tic-tac-toe");
+    expect(lines.join("\n")).toContain("Requested port 3210 was already serving Shipyard session other-session");
+    expect(lines.join("\n")).toContain("/tmp/other-worktree/test-targets/tic-tac-toe");
+    expect(lines.join("\n")).toContain("http://127.0.0.1:3211");
+    expect(lines.join("\n")).toContain("ws://127.0.0.1:3211/ws");
     expect(lines.join("\n")).toContain("ui-session");
     expect(lines.join("\n")).toContain("ready");
+  });
+
+  it("moves to the next open port when another Shipyard UI runtime already owns the requested port", async () => {
+    const firstTargetDirectory = await createTempDirectory("shipyard-ui-port-primary-");
+    const secondTargetDirectory = await createTempDirectory("shipyard-ui-port-secondary-");
+    const firstDiscovery = await discoverTarget(firstTargetDirectory);
+    const secondDiscovery = await discoverTarget(secondTargetDirectory);
+    const firstRuntime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-primary-session",
+        targetDirectory: firstTargetDirectory,
+        discovery: firstDiscovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    let secondRuntime: Awaited<ReturnType<typeof startUiRuntimeServer>> | null = null;
+
+    try {
+      secondRuntime = await startUiRuntimeServer({
+        sessionState: createSessionState({
+          sessionId: "ui-secondary-session",
+          targetDirectory: secondTargetDirectory,
+          discovery: secondDiscovery,
+        }),
+        host: "127.0.0.1",
+        port: firstRuntime.port,
+        projectRules: "",
+        projectRulesLoaded: false,
+      });
+
+      expect(secondRuntime.port).not.toBe(firstRuntime.port);
+      expect(secondRuntime.portResolution).toMatchObject({
+        requestedPort: firstRuntime.port,
+        usedFallbackPort: true,
+        existingRuntime: {
+          sessionId: "ui-primary-session",
+          targetDirectory: firstTargetDirectory,
+          workspaceDirectory,
+        },
+      });
+
+      const healthResponse = await fetch(`${secondRuntime.url}/api/health`);
+      expect(healthResponse.ok).toBe(true);
+      await expect(healthResponse.json()).resolves.toMatchObject({
+        workspaceDirectory,
+        targetDirectory: secondTargetDirectory,
+      });
+    } finally {
+      if (secondRuntime) {
+        await secondRuntime.close();
+      }
+
+      await firstRuntime.close();
+    }
   });
 
   it("streams ordered tool activity and reconnects with the current session snapshot", async () => {
@@ -295,6 +369,8 @@ describe("ui runtime contract", () => {
         ok: true,
         runtimeMode: "ui",
         sessionId: "ui-session",
+        workspaceDirectory,
+        targetDirectory,
       });
 
       const socket = new WebSocket(runtime.socketUrl);
@@ -312,6 +388,7 @@ describe("ui runtime contract", () => {
           runtimeMode: "ui",
           sessionId: "ui-session",
           targetDirectory,
+          workspaceDirectory,
           projectRulesLoaded: true,
         });
 
@@ -375,6 +452,24 @@ describe("ui runtime contract", () => {
         expect(updatedTrace).toContain('"event":"instruction.plan"');
         expect(updatedTrace).toContain('"status":"success"');
         expect(updatedTrace).toContain('"instruction":"inspect package.json"');
+
+        const persistedSession = JSON.parse(
+          await readFile(
+            path.join(targetDirectory, ".shipyard", "sessions", "ui-session.json"),
+            "utf8",
+          ),
+        ) as {
+          turnCount: number;
+          workbenchState: {
+            turns: Array<{
+              instruction: string;
+            }>;
+          };
+        };
+        expect(persistedSession.turnCount).toBe(1);
+        expect(persistedSession.workbenchState.turns[0]?.instruction).toBe(
+          "inspect package.json",
+        );
 
         const refreshedStatusPromise = waitForSocketMessage(
           socket,
