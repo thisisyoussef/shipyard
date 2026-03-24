@@ -367,6 +367,7 @@ describe("ui runtime contract", () => {
           "agent:thinking",
           "agent:tool_call",
           "agent:tool_result",
+          "agent:text",
           "agent:error",
           "agent:done",
           "session:state",
@@ -381,10 +382,14 @@ describe("ui runtime contract", () => {
           success: false,
         });
         expect(errorSequence[4]).toMatchObject({
+          type: "agent:text",
+          text: "Turn 1 stopped: File not found: missing.ts",
+        });
+        expect(errorSequence[5]).toMatchObject({
           type: "agent:error",
           message: "File not found: missing.ts",
         });
-        expect(errorSequence[5]).toMatchObject({
+        expect(errorSequence[6]).toMatchObject({
           type: "agent:done",
           status: "error",
           summary: "File not found: missing.ts",

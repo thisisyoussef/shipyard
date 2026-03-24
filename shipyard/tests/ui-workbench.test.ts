@@ -131,6 +131,10 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain('class="status-bar"');
     expect(markup).toContain("Developer Workbench");
     expect(markup).toContain("Recent injections");
+    expect(markup).toContain('class="section-header"');
+    expect(markup).toContain('class="ui-badge"');
+    expect(markup).toContain('class="status-dot"');
+    expect((markup.match(/class="section-header"/g) ?? []).length).toBeGreaterThan(2);
   });
 
   it("connection and error states remain visible and keyboard accessible", () => {
