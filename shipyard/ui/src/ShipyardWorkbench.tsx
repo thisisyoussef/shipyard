@@ -1,5 +1,12 @@
 import type { ChangeEvent, FormEvent } from "react";
 
+import {
+  Badge,
+  SectionHeader,
+  StatusDot,
+  SurfaceCard,
+  type BadgeTone,
+} from "./primitives.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
@@ -72,73 +79,124 @@ function handleTextareaChange(
   onChange((event.currentTarget as HTMLTextAreaElement).value);
 }
 
+function getConnectionTone(
+  state: WorkbenchConnectionState | "reconnecting",
+): BadgeTone {
+  if (state === "ready") {
+    return "success";
+  }
+
+  if (state === "agent-busy") {
+    return "accent";
+  }
+
+  if (state === "error" || state === "disconnected") {
+    return "danger";
+  }
+
+  return "warning";
+}
+
+function getTurnTone(status: TurnViewModel["status"]): BadgeTone {
+  if (status === "success") {
+    return "success";
+  }
+
+  if (status === "error") {
+    return "danger";
+  }
+
+  if (status === "working") {
+    return "accent";
+  }
+
+  return "neutral";
+}
+
+function getFileEventTone(status: FileEventViewModel["status"]): BadgeTone {
+  if (status === "success") {
+    return "success";
+  }
+
+  if (status === "error") {
+    return "danger";
+  }
+
+  if (status === "diff" || status === "running") {
+    return "accent";
+  }
+
+  return "neutral";
+}
+
 export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
-  const surfaceState = formatSurfaceState(
-    props.connectionState,
-    props.sessionState !== null,
-  );
-  const connectionLabel = formatConnectionLabel(
-    props.connectionState,
-    props.sessionState !== null,
-  );
+  const hasSession = props.sessionState !== null;
+  const surfaceState = formatSurfaceState(props.connectionState, hasSession);
+  const connectionLabel = formatConnectionLabel(props.connectionState, hasSession);
+  const connectionTone = getConnectionTone(surfaceState);
 
   return (
     <div className="workbench-shell" data-state={surfaceState}>
       <header className="top-bar" role="banner">
         <div className="brand-lockup">
           <div className="brand-mark" aria-hidden="true" />
-          <div>
+          <div className="brand-copy">
             <p className="brand-kicker">Shipyard</p>
             <h1>Developer Workbench</h1>
+            <p className="brand-summary">
+              A local-first coding console built for traceable sessions,
+              surgical edits, and diff-forward review.
+            </p>
           </div>
         </div>
 
         <div className="top-bar-actions">
-          <div className="target-block">
+          <div className="top-info-block">
             <span className="micro-label">Target</span>
             <code>{props.sessionState?.targetDirectory ?? "Waiting for target..."}</code>
           </div>
-          <button
-            type="button"
-            className="top-action"
-            onClick={props.onCopyTracePath}
-            disabled={props.sessionState === null}
-          >
-            {props.traceButtonLabel}
-          </button>
-          <button
-            type="button"
-            className="top-action"
-            onClick={props.onRefreshStatus}
-          >
-            Refresh session
-          </button>
-          <div
+
+          <div className="top-action-group">
+            <button
+              type="button"
+              className="top-action"
+              onClick={props.onCopyTracePath}
+              disabled={!hasSession}
+            >
+              {props.traceButtonLabel}
+            </button>
+            <button
+              type="button"
+              className="top-action"
+              onClick={props.onRefreshStatus}
+            >
+              Refresh session
+            </button>
+          </div>
+
+          <Badge
             className="connection-pill"
-            data-state={surfaceState}
+            tone={connectionTone}
             aria-label={`Connection status: ${connectionLabel}`}
           >
-            <span className="status-signal" aria-hidden="true" />
+            <StatusDot tone={connectionTone} />
             {connectionLabel}
-          </div>
+          </Badge>
         </div>
       </header>
 
       <div className="workbench-grid">
-        <aside
-          className="left-sidebar"
-          aria-label="Session and context"
-        >
-          <section className="panel panel-session">
-            <div className="panel-title-row">
-              <div>
-                <p className="section-kicker">Session</p>
-                <h2>Runtime snapshot</h2>
-              </div>
-              <span className="metric-pill">
-                {props.sessionState?.turnCount ?? 0} turns
-              </span>
-            </div>
+        <aside className="left-sidebar" aria-label="Session and context">
+          <SurfaceCard className="panel panel-session">
+            <SectionHeader
+              kicker="Session"
+              title="Runtime snapshot"
+              meta={(
+                <Badge tone="neutral">
+                  {props.sessionState?.turnCount ?? 0} turns
+                </Badge>
+              )}
+            />
 
             {props.sessionState ? (
               <>
@@ -196,22 +254,22 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                 Waiting for Shipyard to publish the session bridge.
               </p>
             )}
-          </section>
+          </SurfaceCard>
 
-          <section className="panel panel-context">
-            <div className="panel-title-row">
-              <div>
-                <p className="section-kicker">Context</p>
-                <h2>Inject guidance</h2>
-              </div>
-              <button
-                type="button"
-                className="ghost-action"
-                onClick={props.onClearContext}
-              >
-                Clear
-              </button>
-            </div>
+          <SurfaceCard className="panel panel-context">
+            <SectionHeader
+              kicker="Context"
+              title="Inject guidance"
+              meta={(
+                <button
+                  type="button"
+                  className="ghost-action"
+                  onClick={props.onClearContext}
+                >
+                  Clear
+                </button>
+              )}
+            />
 
             <label className="field-label" htmlFor="context-draft">
               Notes that will ride with the next instruction
@@ -248,22 +306,22 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                 </ol>
               </div>
             ) : null}
-          </section>
+          </SurfaceCard>
         </aside>
 
         <main className="main-column" role="main" aria-label="Agent activity">
-          <section className="panel panel-composer">
-            <div className="panel-title-row">
-              <div>
-                <p className="section-kicker">Control surface</p>
-                <h2>Send an instruction</h2>
-              </div>
-              <span className="composer-hint">
-                {props.contextDraft.trim()
-                  ? "Context will be included on submit"
-                  : "No extra context queued"}
-              </span>
-            </div>
+          <SurfaceCard className="panel panel-composer">
+            <SectionHeader
+              kicker="Control surface"
+              title="Send an instruction"
+              meta={(
+                <Badge tone={props.contextDraft.trim() ? "accent" : "neutral"}>
+                  {props.contextDraft.trim()
+                    ? "Context queued"
+                    : "No extra context"}
+                </Badge>
+              )}
+            />
 
             <form className="instruction-form" onSubmit={props.onSubmitInstruction}>
               <label className="field-label" htmlFor="instruction">
@@ -288,18 +346,18 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                 </p>
               </div>
             </form>
-          </section>
+          </SurfaceCard>
 
-          <section className="panel panel-activity">
-            <div className="panel-title-row">
-              <div>
-                <p className="section-kicker">Activity</p>
-                <h2>Chat and execution log</h2>
-              </div>
-              <span className="metric-pill">
-                {props.turns.length} turn{props.turns.length === 1 ? "" : "s"}
-              </span>
-            </div>
+          <SurfaceCard className="panel panel-activity">
+            <SectionHeader
+              kicker="Activity"
+              title="Chat and execution log"
+              meta={(
+                <Badge tone="neutral">
+                  {props.turns.length} turn{props.turns.length === 1 ? "" : "s"}
+                </Badge>
+              )}
+            />
 
             {props.turns.length === 0 ? (
               <div className="empty-state">
@@ -312,91 +370,108 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               </div>
             ) : (
               <ol className="turn-list">
-                {props.turns.map((turn, index) => (
-                  <li key={turn.id}>
-                    <article className="turn-card" data-status={turn.status}>
-                      <div className="turn-header">
-                        <div>
-                          <span className="turn-label">Turn {props.turns.length - index}</span>
-                          <h3>{turn.instruction}</h3>
-                        </div>
-                        <span className="turn-status-pill" data-status={turn.status}>
-                          {turn.status}
-                        </span>
-                      </div>
+                {props.turns.map((turn, index) => {
+                  const turnTone = getTurnTone(turn.status);
 
-                      {turn.contextPreview.length > 0 ? (
-                        <div className="turn-context-strip">
-                          <span className="micro-label">Injected context</span>
-                          {turn.contextPreview.map((entry) => (
-                            <p key={entry}>{entry}</p>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {turn.agentMessages.length > 0 ? (
-                        <div className="agent-copy">
-                          {turn.agentMessages.map((message) => (
-                            <p key={message}>{message}</p>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="empty-copy">
-                          Shipyard has not emitted a full agent response yet.
-                        </p>
-                      )}
-
-                      <details
-                        className="activity-log"
-                        open={index === 0 || turn.status === "working"}
+                  return (
+                    <li key={turn.id}>
+                      <SurfaceCard
+                        as="article"
+                        className="turn-card"
                       >
-                        <summary>
-                          <span>Activity log</span>
-                          <span>{turn.activity.length} events</span>
-                        </summary>
-                        <ol className="activity-list">
-                          {turn.activity.map((activity) => (
-                            <li
-                              key={activity.id}
-                              className="activity-row"
-                              data-tone={activity.tone}
-                            >
-                              <div className="activity-marker" aria-hidden="true" />
-                              <div>
-                                <div className="activity-headline">
-                                  <strong>{activity.title}</strong>
-                                  {activity.toolName ? (
-                                    <code>{activity.toolName}</code>
-                                  ) : null}
+                        <div className="turn-header">
+                          <div className="turn-heading">
+                            <span className="turn-label">
+                              Turn {props.turns.length - index}
+                            </span>
+                            <h3>{turn.instruction}</h3>
+                          </div>
+                          <Badge
+                            className="turn-status-pill"
+                            tone={turnTone}
+                          >
+                            {turn.status}
+                          </Badge>
+                        </div>
+
+                        {turn.contextPreview.length > 0 ? (
+                          <div className="turn-context-strip">
+                            <span className="micro-label">Injected context</span>
+                            {turn.contextPreview.map((entry) => (
+                              <p key={entry}>{entry}</p>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {turn.agentMessages.length > 0 ? (
+                          <div className="agent-copy">
+                            {turn.agentMessages.map((message) => (
+                              <p key={message}>{message}</p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="empty-copy">
+                            Shipyard has not emitted a full agent response yet.
+                          </p>
+                        )}
+
+                        <details
+                          className="activity-log"
+                          open={index === 0 || turn.status === "working"}
+                        >
+                          <summary>
+                            <span>Activity log</span>
+                            <Badge tone="neutral">{turn.activity.length} events</Badge>
+                          </summary>
+                          <ol className="activity-list">
+                            {turn.activity.map((activity) => (
+                              <li
+                                key={activity.id}
+                                className="activity-row"
+                                data-tone={activity.tone}
+                              >
+                                <StatusDot
+                                  tone={
+                                    activity.tone === "danger"
+                                      ? "danger"
+                                      : activity.tone === "success"
+                                      ? "success"
+                                      : "accent"
+                                  }
+                                />
+                                <div>
+                                  <div className="activity-headline">
+                                    <strong>{activity.title}</strong>
+                                    {activity.toolName ? (
+                                      <code>{activity.toolName}</code>
+                                    ) : null}
+                                  </div>
+                                  <p>{activity.detail}</p>
                                 </div>
-                                <p>{activity.detail}</p>
-                              </div>
-                            </li>
-                          ))}
-                        </ol>
-                      </details>
-                    </article>
-                  </li>
-                ))}
+                              </li>
+                            ))}
+                          </ol>
+                        </details>
+                      </SurfaceCard>
+                    </li>
+                  );
+                })}
               </ol>
             )}
-          </section>
+          </SurfaceCard>
         </main>
 
-        <aside
-          className="right-sidebar"
-          aria-label="File activity"
-        >
-          <section className="panel panel-files">
-            <div className="panel-title-row">
-              <div>
-                <p className="section-kicker">File activity</p>
-                <h2>Diff-first sidebar</h2>
-              </div>
-              <span className="metric-pill">
-                {props.fileEvents.length} items
-              </span>
-            </div>
+        <aside className="right-sidebar" aria-label="File activity">
+          <SurfaceCard className="panel panel-files">
+            <SectionHeader
+              kicker="File activity"
+              title="Diff-first sidebar"
+              meta={(
+                <Badge tone="neutral">
+                  {props.fileEvents.length} items
+                </Badge>
+              )}
+            />
 
             {props.fileEvents.length === 0 ? (
               <div className="empty-state compact-empty-state">
@@ -410,15 +485,21 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               <ol className="file-event-list">
                 {props.fileEvents.map((fileEvent) => (
                   <li key={fileEvent.id}>
-                    <article className="file-event-card" data-status={fileEvent.status}>
+                    <SurfaceCard
+                      as="article"
+                      className="file-event-card"
+                    >
                       <div className="file-event-header">
                         <div>
                           <span className="file-event-title">{fileEvent.title}</span>
                           <h3>{fileEvent.path}</h3>
                         </div>
-                        <span className="file-event-status" data-status={fileEvent.status}>
+                        <Badge
+                          className="file-event-status"
+                          tone={getFileEventTone(fileEvent.status)}
+                        >
                           {fileEvent.status}
-                        </span>
+                        </Badge>
                       </div>
                       <p className="file-event-summary">{fileEvent.summary}</p>
 
@@ -435,18 +516,18 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                           ))}
                         </pre>
                       ) : null}
-                    </article>
+                    </SurfaceCard>
                   </li>
                 ))}
               </ol>
             )}
-          </section>
+          </SurfaceCard>
         </aside>
       </div>
 
       <footer className="status-bar" role="contentinfo">
         <div className="status-current" data-state={surfaceState}>
-          <span className="status-signal" aria-hidden="true" />
+          <StatusDot tone={connectionTone} />
           <div>
             <span className="micro-label">Current status</span>
             <strong aria-live="polite">{props.agentStatus}</strong>
