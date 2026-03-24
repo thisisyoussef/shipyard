@@ -14,11 +14,13 @@ interface CreateSessionStateMessageOptions {
   connectionState: TurnStateEvent["connectionState"];
   sessionState: TurnStateEvent["sessionState"];
   projectRulesLoaded: boolean;
+  workspaceDirectory: string;
 }
 
 export interface CreateUiInstructionReporterOptions {
   send: (message: BackendToFrontendMessage) => Promise<void> | void;
   projectRulesLoaded: boolean;
+  workspaceDirectory: string;
 }
 
 function createTargetLabel(targetDirectory: string): string {
@@ -50,6 +52,7 @@ export function createSessionStateMessage(
     sessionId: options.sessionState.sessionId,
     targetLabel: createTargetLabel(options.sessionState.targetDirectory),
     targetDirectory: options.sessionState.targetDirectory,
+    workspaceDirectory: options.workspaceDirectory,
     turnCount: options.sessionState.turnCount,
     startedAt: options.sessionState.startedAt,
     lastActiveAt: options.sessionState.lastActiveAt,
@@ -121,6 +124,7 @@ export function createUiInstructionReporter(
           sessionState: event.sessionState,
           connectionState: event.connectionState,
           projectRulesLoaded: options.projectRulesLoaded,
+          workspaceDirectory: options.workspaceDirectory,
         }),
       );
     },

@@ -14,6 +14,7 @@ const sessionState: SessionStateViewModel = {
   sessionId: "session-ui-123",
   targetLabel: "shipyard",
   targetDirectory: "/tmp/shipyard-demo",
+  workspaceDirectory: "/tmp/shipyard-workspace",
   turnCount: 2,
   startedAt: "2026-03-24T12:00:00.000Z",
   lastActiveAt: "2026-03-24T12:05:00.000Z",
@@ -165,6 +166,8 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain('class="surface-card session-banner"');
     expect(markup).toContain("Last attached context");
     expect(markup).toContain("Cmd/Ctrl+Enter");
+    expect(markup).toContain("Workspace");
+    expect(markup).toContain("/tmp/shipyard-workspace");
     expect(markup).toContain("Latest run");
     expect(markup).toContain("All runs");
     expect(markup).toContain('class="activity-block"');

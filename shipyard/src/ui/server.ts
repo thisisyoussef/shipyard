@@ -4,6 +4,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,6 +54,10 @@ export interface UiRuntimeServer {
   port: number;
   url: string;
   socketUrl: string;
+  requestedPort: number;
+  targetDirectory: string;
+  workspaceDirectory: string;
+  portResolution: UiPortResolution;
   close: () => Promise<void>;
   closed: Promise<void>;
 }
@@ -61,19 +66,103 @@ const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
+const workspaceDirectory = path.resolve(packageRoot, "..");
 const builtUiDirectory = path.join(packageRoot, "dist", "ui");
 const builtUiIndexPath = path.join(builtUiDirectory, "index.html");
 
+interface UiHealthResponse {
+  ok: true;
+  runtimeMode: "ui";
+  sessionId: string;
+  targetLabel: string;
+  targetDirectory: string;
+  workspaceDirectory: string;
+  turnCount: number;
+}
+
+export interface ExistingUiRuntimeInfo {
+  url: string;
+  sessionId: string;
+  targetLabel: string;
+  targetDirectory: string | null;
+  workspaceDirectory: string | null;
+}
+
+export interface UiPortResolution {
+  requestedPort: number;
+  actualPort: number;
+  usedFallbackPort: boolean;
+  existingRuntime: ExistingUiRuntimeInfo | null;
+}
+
 function createHealthResponse(
   sessionState: SessionState,
-): Record<string, unknown> {
+): UiHealthResponse {
   return {
     ok: true,
     runtimeMode: "ui",
     sessionId: sessionState.sessionId,
     targetLabel: path.basename(sessionState.targetDirectory) || sessionState.targetDirectory,
+    targetDirectory: sessionState.targetDirectory,
+    workspaceDirectory,
     turnCount: sessionState.turnCount,
   };
+}
+
+function isRecord(
+  value: unknown,
+): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isUiHealthResponse(value: unknown): value is UiHealthResponse {
+  return (
+    isRecord(value) &&
+    value.ok === true &&
+    value.runtimeMode === "ui" &&
+    typeof value.sessionId === "string" &&
+    typeof value.targetLabel === "string" &&
+    typeof value.targetDirectory === "string" &&
+    typeof value.workspaceDirectory === "string" &&
+    typeof value.turnCount === "number"
+  );
+}
+
+function isPortInUseError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "EADDRINUSE"
+  );
+}
+
+async function inspectExistingUiRuntime(
+  host: string,
+  port: number,
+): Promise<ExistingUiRuntimeInfo | null> {
+  try {
+    const response = await fetch(`http://${host}:${String(port)}/api/health`);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json();
+
+    if (!isUiHealthResponse(payload)) {
+      return null;
+    }
+
+    return {
+      url: `http://${host}:${String(port)}`,
+      sessionId: payload.sessionId,
+      targetLabel: payload.targetLabel,
+      targetDirectory: payload.targetDirectory,
+      workspaceDirectory: payload.workspaceDirectory,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -107,6 +196,7 @@ function createFallbackUiHtml(sessionState: SessionState): string {
     sessionState,
     connectionState: "ready",
     projectRulesLoaded: false,
+    workspaceDirectory,
   });
 
   return `<!doctype html>
@@ -306,6 +396,82 @@ function resolveUiPort(portOverride: number | undefined): number {
   return parsedPort;
 }
 
+async function listenOnPort(
+  httpServer: ReturnType<typeof createServer>,
+  host: string,
+  port: number,
+): Promise<AddressInfo> {
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => {
+      httpServer.off("error", onError);
+      reject(error);
+    };
+
+    httpServer.once("error", onError);
+    httpServer.listen(port, host, () => {
+      httpServer.off("error", onError);
+      resolve();
+    });
+  });
+
+  const address = httpServer.address();
+
+  if (!address || typeof address === "string") {
+    throw new Error("UI runtime failed to resolve a listening address.");
+  }
+
+  return address;
+}
+
+async function resolveUiPortBinding(
+  httpServer: ReturnType<typeof createServer>,
+  host: string,
+  portOverride: number | undefined,
+): Promise<UiPortResolution> {
+  const requestedPort = resolveUiPort(portOverride);
+
+  if (requestedPort === 0) {
+    const address = await listenOnPort(httpServer, host, 0);
+
+    return {
+      requestedPort,
+      actualPort: address.port,
+      usedFallbackPort: false,
+      existingRuntime: null,
+    };
+  }
+
+  let candidatePort = requestedPort;
+  let existingRuntime: ExistingUiRuntimeInfo | null = null;
+
+  for (let attempts = 0; attempts < 25; attempts += 1) {
+    try {
+      const address = await listenOnPort(httpServer, host, candidatePort);
+
+      return {
+        requestedPort,
+        actualPort: address.port,
+        usedFallbackPort: candidatePort !== requestedPort,
+        existingRuntime,
+      };
+    } catch (error) {
+      if (!isPortInUseError(error)) {
+        throw error;
+      }
+
+      if (candidatePort === requestedPort && existingRuntime === null) {
+        existingRuntime = await inspectExistingUiRuntime(host, candidatePort);
+      }
+
+      candidatePort += 1;
+    }
+  }
+
+  throw new Error(
+    `Unable to find an open UI port starting at ${String(requestedPort)}.`,
+  );
+}
+
 export async function startUiRuntimeServer(
   options: StartUiRuntimeServerOptions,
 ): Promise<UiRuntimeServer> {
@@ -383,6 +549,7 @@ export async function startUiRuntimeServer(
         sessionState: options.sessionState,
         connectionState: connectionState(),
         projectRulesLoaded: options.projectRulesLoaded,
+        workspaceDirectory,
       }),
     );
   };
@@ -404,6 +571,7 @@ export async function startUiRuntimeServer(
     const baseReporter = createUiInstructionReporter({
       send: broadcastBrowserMessage,
       projectRulesLoaded: options.projectRulesLoaded,
+      workspaceDirectory,
     });
     let pendingTurnState: TurnStateEvent | null = null;
     const reporter: InstructionTurnReporter = {
@@ -436,6 +604,7 @@ export async function startUiRuntimeServer(
       langSmithTrace: turnResult.langSmithTrace,
       runtimeSurface: "ui",
     });
+    await saveSessionState(options.sessionState);
 
     if (pendingTurnState) {
       await baseReporter.onTurnState?.(pendingTurnState);
@@ -521,33 +690,23 @@ export async function startUiRuntimeServer(
     });
   });
 
-  await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error) => {
-      httpServer.off("error", onError);
-      reject(error);
-    };
-
-    httpServer.on("error", onError);
-    httpServer.listen(resolveUiPort(options.port), host, () => {
-      httpServer.off("error", onError);
-      resolve();
-    });
-  });
-
-  const address = httpServer.address();
-
-  if (!address || typeof address === "string") {
-    throw new Error("UI runtime failed to resolve a listening address.");
-  }
-
-  const url = `http://${host}:${String(address.port)}`;
-  const socketUrl = `ws://${host}:${String(address.port)}/ws`;
+  const portResolution = await resolveUiPortBinding(
+    httpServer,
+    host,
+    options.port,
+  );
+  const url = `http://${host}:${String(portResolution.actualPort)}`;
+  const socketUrl = `ws://${host}:${String(portResolution.actualPort)}/ws`;
 
   return {
     host,
-    port: address.port,
+    port: portResolution.actualPort,
     url,
     socketUrl,
+    requestedPort: portResolution.requestedPort,
+    targetDirectory: options.sessionState.targetDirectory,
+    workspaceDirectory,
+    portResolution,
     async close(): Promise<void> {
       for (const client of socketServer.clients) {
         client.close(1001, "Shipyard UI shutting down");

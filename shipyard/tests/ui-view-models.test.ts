@@ -166,6 +166,7 @@ describe("ui view models", () => {
       sessionId: "session-restore",
       targetLabel: "shipyard",
       targetDirectory: "/tmp/shipyard",
+      workspaceDirectory: "/tmp/shipyard-workspace",
       turnCount: 1,
       startedAt: "2026-03-24T12:00:00.000Z",
       lastActiveAt: "2026-03-24T12:05:00.000Z",

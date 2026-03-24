@@ -32,6 +32,7 @@ describe("ui event helpers", () => {
       sessionState,
       connectionState: "agent-busy",
       projectRulesLoaded: true,
+      workspaceDirectory: "/tmp/shipyard-workspace",
     });
 
     expect(message).toMatchObject({
@@ -40,6 +41,7 @@ describe("ui event helpers", () => {
       sessionId: "session-123",
       targetLabel: "shipyard-demo",
       targetDirectory: "/tmp/shipyard-demo",
+      workspaceDirectory: "/tmp/shipyard-workspace",
       discoverySummary: "typescript (React) via pnpm",
       projectRulesLoaded: true,
       discovery: {
@@ -72,6 +74,7 @@ describe("ui event helpers", () => {
         messages.push(message);
       },
       projectRulesLoaded: false,
+      workspaceDirectory: "/tmp/shipyard-workspace",
     });
 
     await reporter.onTurnState?.({

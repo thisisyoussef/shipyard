@@ -359,6 +359,11 @@ pre,
   background: var(--surface-muted);
 }
 
+.signal-list code {
+  color: var(--text-strong);
+  word-break: break-all;
+}
+
 .script-list {
   display: grid;
   gap: var(--space-3);
@@ -1112,6 +1117,10 @@ pre,
 .session-banner-meta strong,
 .session-banner-meta code {
   color: var(--text-strong);
+}
+
+.session-banner-meta code {
+  word-break: break-all;
 }
 
 .composer-meta {

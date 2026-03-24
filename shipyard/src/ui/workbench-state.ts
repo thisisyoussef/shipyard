@@ -11,6 +11,7 @@ export interface SessionStateViewModel {
   sessionId: string;
   targetLabel: string;
   targetDirectory: string;
+  workspaceDirectory: string;
   turnCount: number;
   startedAt: string;
   lastActiveAt: string;
@@ -169,6 +170,7 @@ function createSessionStateViewModel(
     sessionId: message.sessionId,
     targetLabel: message.targetLabel,
     targetDirectory: message.targetDirectory,
+    workspaceDirectory: message.workspaceDirectory,
     turnCount: message.turnCount,
     startedAt: message.startedAt,
     lastActiveAt: message.lastActiveAt,
