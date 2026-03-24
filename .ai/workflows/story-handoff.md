@@ -22,6 +22,7 @@ Every completion gate must include:
 - `Current Status`
 - `Testing Brief`
 - `Decision / Design Brief`
+- `Docs / Diagrams`
 - `Visible Proof`
 - `GitHub Status`
 - `Completion Plan`
@@ -56,6 +57,21 @@ The completion gate must include the finalization plan in the same packet as the
 - recovery path: `.ai/workflows/finalization-recovery.md`
 
 Do not make the user go through a second human-facing git checklist after this packet.
+
+---
+
+## Docs / Diagrams Requirements
+
+The completion gate must include a `Docs / Diagrams` section that answers:
+- What docs/diagrams were updated (list exact paths), OR
+- Explicitly `N/A` with a one-line reason (for example: "no user-facing behavior or architecture changes").
+
+When architecture, runtime flow, tool contracts, or operator UX changed, prefer updating:
+- `shipyard/docs/architecture/README.md`
+- `shipyard/docs/README.md` or other impacted `shipyard/docs/**` pages
+- `.ai/docs/SINGLE_SOURCE_OF_TRUTH.md` or `.ai/memory/project/architecture.md` when repo-level truths changed
+
+If doc/diagram updates change the diff materially after the completion gate is issued, re-issue the completion gate before proceeding to finalization.
 
 ---
 
@@ -107,6 +123,7 @@ When a story changes user-visible behavior, the completion gate must treat UI in
 - Completion evidence summarized clearly
 - GitHub state and merge status made explicit so the user never has to guess whether work is only local, on a PR, or already merged
 - Finalization plan included in the same packet as the user audit
+- Docs/diagrams updated or explicitly marked `N/A` in the completion gate
 - User audit focused on manual judgment rather than routine commands
 - Finalization default is explicit and visible in the completion gate, with automatic follow-through unless the user pauses it
 - Story completion is defined as merged-to-`main` on GitHub unless the user explicitly pauses or selects a different merge path

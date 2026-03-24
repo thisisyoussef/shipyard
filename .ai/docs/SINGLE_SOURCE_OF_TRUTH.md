@@ -38,6 +38,7 @@
   - `pnpm --dir shipyard typecheck`
   - `pnpm --dir shipyard build`
   - `git diff --check`
+- **Finalization docs sweep**: before merging, update relevant docs/architecture diagrams (or explicitly record `N/A`)
 - **Helper-script status**: some imported workflow docs describe optional repo-owned helpers under `scripts/`; unless those helpers exist in this repo, follow the manual workflow equivalent instead of assuming the commands are wired today.
 
 ---
