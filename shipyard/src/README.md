@@ -18,6 +18,34 @@ below reflect stable subsystem boundaries rather than arbitrary file grouping.
 | [`tracing/`](./tracing/README.md) | local JSONL tracing and LangSmith integration | optional remote trace export |
 | [`ui/`](./ui/README.md) | browser runtime backend and WebSocket contract | separate from the React SPA in `../ui/` |
 
+## Source Diagram
+
+```mermaid
+flowchart LR
+  Bin["bin"]
+  Context["context"]
+  Engine["engine"]
+  Phases["phases"]
+  Tools["tools"]
+  Checkpoints["checkpoints"]
+  Tracing["tracing"]
+  Ui["ui backend"]
+  Frontend["../ui/src"]
+  Agents["agents"]
+  Artifacts["artifacts"]
+
+  Bin --> Context
+  Bin --> Engine
+  Engine --> Phases
+  Phases --> Tools
+  Engine --> Checkpoints
+  Engine --> Tracing
+  Engine --> Ui
+  Ui <--> Frontend
+  Engine --> Agents
+  Engine --> Artifacts
+```
+
 ## Choosing The Right Home
 
 - Add startup flags or process boot logic in `bin/`.

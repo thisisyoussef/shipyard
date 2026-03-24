@@ -11,6 +11,7 @@ have different responsibilities:
 ## Documentation Map
 
 - [`AGENTS.md`](./AGENTS.md): primary repository rulebook
+- [`.ai/README.md`](./.ai/README.md): helper-harness navigation guide
 - [`shipyard/README.md`](./shipyard/README.md): product overview and quick start
 - [`shipyard/docs/README.md`](./shipyard/docs/README.md): durable docs hub
 - [`shipyard/docs/architecture/README.md`](./shipyard/docs/architecture/README.md):

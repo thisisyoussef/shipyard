@@ -26,3 +26,22 @@ Supporting files:
   text at the runtime.
 - Prefer small, deterministic tools that compose cleanly inside the phase
   runtime over large tools that try to handle multiple jobs at once.
+
+## Diagram
+
+```mermaid
+flowchart LR
+  Runtime["phase runtime"]
+  Registry["registry.ts"]
+  Tool["individual tool"]
+  FileState["file-state.ts"]
+  Target["target repo / shell"]
+  Result["ToolResult"]
+
+  Runtime --> Registry
+  Registry --> Tool
+  Tool --> FileState
+  Tool --> Target
+  Target --> Result
+  Result --> Runtime
+```

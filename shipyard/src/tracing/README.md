@@ -16,3 +16,20 @@ when credentials are configured.
   variables are present.
 - Runtime code should pass structured metadata into tracing helpers instead of
   formatting opaque strings as late as possible.
+
+## Diagram
+
+```mermaid
+flowchart LR
+  Runtime["runtime event"]
+  Local["local-log.ts"]
+  Disk["target/.shipyard/traces/*.jsonl"]
+  Config["langsmith.ts config"]
+  Remote["LangSmith"]
+
+  Runtime --> Local
+  Local --> Disk
+  Runtime --> Config
+  Config -->|enabled| Remote
+  Config -->|disabled| Disk
+```

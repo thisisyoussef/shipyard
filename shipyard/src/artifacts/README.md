@@ -13,3 +13,21 @@ This folder holds small shared types that move between runtime layers.
 
 Keep this directory narrow. It should describe runtime contracts, not absorb
 business logic.
+
+## Diagram
+
+```mermaid
+flowchart LR
+  Discovery["DiscoveryReport"]
+  Context["Context layer"]
+  Plan["TaskPlan"]
+  Engine["Engine runtime"]
+  Verify["VerificationReport"]
+  Findings["ContextReport / ContextFinding"]
+
+  Discovery --> Context
+  Context --> Engine
+  Plan --> Engine
+  Findings --> Engine
+  Verify --> Engine
+```

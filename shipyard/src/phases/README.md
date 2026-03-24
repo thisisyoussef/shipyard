@@ -18,3 +18,21 @@ task plan artifact.
 
 If more phases are added later, keep them explicit and composable rather than
 letting prompt text or tool choices drift across unrelated folders.
+
+## Diagram
+
+```mermaid
+flowchart LR
+  Contract["phase.ts"]
+  Code["code/"]
+  Prompt["system prompt"]
+  Tools["tool bundle"]
+  Output["task_plan artifact"]
+  Runtime["engine runtime"]
+
+  Contract --> Code
+  Code --> Prompt
+  Code --> Tools
+  Code --> Output
+  Runtime --> Code
+```
