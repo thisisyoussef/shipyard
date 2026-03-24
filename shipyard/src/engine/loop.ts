@@ -301,6 +301,10 @@ export async function runShipyardLoop(
           console.log(JSON.stringify(turnResult.taskPlan, null, 2));
           printDivider();
           console.log(turnResult.finalText);
+          if (turnResult.langSmithTrace?.traceUrl) {
+            printDivider();
+            console.log(`LangSmith trace: ${turnResult.langSmithTrace.traceUrl}`);
+          }
           await traceLogger.log("instruction.plan", {
             instruction: line,
             phase: turnResult.phaseName,
@@ -309,6 +313,7 @@ export async function runShipyardLoop(
             taskPlan: turnResult.taskPlan,
             status: turnResult.status,
             summary: turnResult.summary,
+            langSmithTrace: turnResult.langSmithTrace,
           });
         }
       } catch (error) {

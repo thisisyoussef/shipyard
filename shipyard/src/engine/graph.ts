@@ -23,6 +23,12 @@ import {
   type RawToolLoopResult,
 } from "./raw-loop.js";
 import type { ContextEnvelope, FileHashMap } from "./state.js";
+import {
+  getLangSmithCallbacksForCurrentTrace,
+  getLangSmithConfig,
+  runWithLangSmithTrace,
+  type LangSmithTraceReference,
+} from "../tracing/langsmith.js";
 
 export type AgentRuntimeStatus =
   | "planning"
@@ -51,6 +57,7 @@ export interface AgentGraphState {
   actingIterations: number;
   fallbackMode: boolean;
   lastError: string | null;
+  langSmithTrace: LangSmithTraceReference | null;
 }
 
 export interface CreateAgentGraphStateOptions {
@@ -71,6 +78,7 @@ export interface CreateAgentGraphStateOptions {
   actingIterations?: number;
   fallbackMode?: boolean;
   lastError?: string | null;
+  langSmithTrace?: LangSmithTraceReference | null;
 }
 
 export interface ActingLoopResult {
@@ -125,6 +133,7 @@ const AgentGraphStateAnnotation = Annotation.Root({
   actingIterations: Annotation<number>(),
   fallbackMode: Annotation<boolean>(),
   lastError: Annotation<string | null>(),
+  langSmithTrace: Annotation<LangSmithTraceReference | null>(),
 });
 
 function ensureNonBlankString(value: string, fieldName: string): string {
@@ -279,6 +288,20 @@ export function createAgentGraphState(
     actingIterations: options.actingIterations ?? 0,
     fallbackMode: options.fallbackMode ?? false,
     lastError: options.lastError ?? null,
+    langSmithTrace: options.langSmithTrace ?? null,
+  };
+}
+
+function createRuntimeTraceMetadata(
+  state: AgentGraphState,
+  runtimeMode: "graph" | "fallback",
+): Record<string, unknown> {
+  return {
+    sessionId: state.sessionId,
+    runtimeMode,
+    phase: state.phaseConfig.name,
+    instruction: state.currentInstruction,
+    targetDirectory: state.targetDirectory,
   };
 }
 
@@ -573,14 +596,62 @@ export async function runAgentRuntime(
   initialState: AgentGraphState,
   options: AgentRuntimeOptions = {},
 ): Promise<AgentGraphState> {
+  const langSmith = getLangSmithConfig();
+
   if (options.mode === "fallback") {
-    return runFallbackRuntime(initialState, options);
+    if (!langSmith.enabled) {
+      const fallbackState = await runFallbackRuntime(initialState, options);
+
+      return applyStateUpdate(fallbackState, {
+        langSmithTrace: null,
+      });
+    }
+
+    const tracedFallbackRuntime = await runWithLangSmithTrace({
+      name: "shipyard.fallback-runtime",
+      runType: "chain",
+      tags: ["shipyard", "fallback-runtime", initialState.phaseConfig.name],
+      metadata: createRuntimeTraceMetadata(initialState, "fallback"),
+      fn: async () => runFallbackRuntime(initialState, options),
+      args: [],
+    });
+
+    return applyStateUpdate(tracedFallbackRuntime.result, {
+      fallbackMode: true,
+      langSmithTrace: tracedFallbackRuntime.trace,
+    });
   }
 
   const graph = createAgentRuntimeGraph(options);
-  const nextState = await graph.invoke(initialState);
 
-  return applyStateUpdate(nextState, {
+  if (!langSmith.enabled) {
+    const nextState = await graph.invoke(initialState);
+
+    return applyStateUpdate(nextState, {
+      fallbackMode: false,
+      langSmithTrace: null,
+    });
+  }
+
+  const tracedGraphRuntime = await runWithLangSmithTrace({
+    name: "shipyard.graph-runtime",
+    runType: "chain",
+    tags: ["shipyard", "graph-runtime", initialState.phaseConfig.name],
+    metadata: createRuntimeTraceMetadata(initialState, "graph"),
+    fn: async () => {
+      const callbacks = await getLangSmithCallbacksForCurrentTrace();
+
+      return graph.invoke(initialState, {
+        callbacks,
+        tags: ["shipyard", "graph-runtime", initialState.phaseConfig.name],
+        metadata: createRuntimeTraceMetadata(initialState, "graph"),
+      });
+    },
+    args: [],
+  });
+
+  return applyStateUpdate(tracedGraphRuntime.result, {
     fallbackMode: false,
+    langSmithTrace: tracedGraphRuntime.trace,
   });
 }

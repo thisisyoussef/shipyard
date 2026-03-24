@@ -8,8 +8,10 @@ import type {
   ToolResultBlockParam,
   ToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages";
+import { wrapAnthropic } from "langsmith/wrappers/anthropic";
 
 import type { AnthropicToolDefinition, ToolResult } from "../tools/registry.js";
+import { getLangSmithConfig } from "../tracing/langsmith.js";
 
 export const DEFAULT_ANTHROPIC_MODEL: Model = "claude-sonnet-4-5";
 export const DEFAULT_ANTHROPIC_MAX_TOKENS = 4_096;
@@ -165,11 +167,25 @@ export function createAnthropicClient(
   options: ResolveAnthropicConfigOptions = {},
 ): AnthropicMessagesClient {
   const config = resolveAnthropicConfig(options);
-
-  return new Anthropic({
+  const client = new Anthropic({
     apiKey: config.apiKey,
     timeout: config.timeoutMs,
     maxRetries: config.maxRetries,
+  });
+  const langSmith = getLangSmithConfig(options.env);
+
+  if (!langSmith.enabled) {
+    return client;
+  }
+
+  return wrapAnthropic(client, {
+    name: "shipyard.anthropic.messages.create",
+    project_name: langSmith.project ?? undefined,
+    metadata: {
+      runtime: "shipyard",
+      provider: "anthropic",
+    },
+    tags: ["shipyard", "anthropic"],
   });
 }
 

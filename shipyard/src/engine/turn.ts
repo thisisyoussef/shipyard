@@ -33,6 +33,7 @@ import {
   type ContextEnvelope,
   type SessionState,
 } from "./state.js";
+import type { LangSmithTraceReference } from "../tracing/langsmith.js";
 
 export type InstructionRuntimeMode = "graph" | "fallback";
 
@@ -103,6 +104,7 @@ export interface InstructionTurnResult {
   status: "success" | "error";
   summary: string;
   finalText: string;
+  langSmithTrace: LangSmithTraceReference | null;
 }
 
 const EXPLICIT_FILE_PATH_PATTERN =
@@ -669,6 +671,7 @@ export async function executeInstructionTurn(
         status: "error",
         summary: errorMessage,
         finalText: failedTurnText,
+        langSmithTrace: finalState.langSmithTrace,
       };
     }
 
@@ -695,6 +698,7 @@ export async function executeInstructionTurn(
       status: "success",
       summary,
       finalText,
+      langSmithTrace: finalState.langSmithTrace,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -735,6 +739,7 @@ export async function executeInstructionTurn(
       status: "error",
       summary: message,
       finalText,
+      langSmithTrace: null,
     };
   } finally {
     await saveSessionState(state);

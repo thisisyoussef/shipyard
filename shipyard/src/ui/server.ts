@@ -433,6 +433,7 @@ export async function startUiRuntimeServer(
       taskPlan: turnResult.taskPlan,
       status: turnResult.status,
       summary: turnResult.summary,
+      langSmithTrace: turnResult.langSmithTrace,
       runtimeSurface: "ui",
     });
 

@@ -15,6 +15,8 @@ The architecture is split into small layers:
 - `src/checkpoints/` prepares backup and restore support before edits
 - `src/tracing/` supports LangSmith configuration plus a local JSONL fallback log
 
+When `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, and `LANGCHAIN_PROJECT` are set, Shipyard traces both runtime paths automatically. Graph mode runs under LangGraph/LangChain callbacks, fallback mode wraps the raw Claude loop with LangSmith `traceable`, and the Anthropic client is wrapped so model calls appear as nested spans.
+
 The coordinator is the only writer. Explorer and verifier are modeled as read-only role definitions so the orchestration boundary is explicit before the multi-agent runtime is added.
 
 ## UI Runtime Contract
@@ -46,3 +48,8 @@ This keeps Day 1 simple while still covering the critical guardrails from the PR
 - no ambiguous multi-match replacements
 - no stale writes after the file changes
 - typed results the coordinator can inspect and trace
+
+## MVP Trace Links
+
+- Successful graph-mode file creation trace: [LangSmith trace](https://smith.langchain.com/o/4610debb-3062-47a4-a18d-faee6ddaa4c3/projects/p/debcf987-99bc-4986-b3e1-5af61ee1ff78/r/019d21b3-0b13-7000-8000-04db046b4bd7?trace_id=019d21b3-0b13-7000-8000-04db046b4bd7&start_time=2026-03-24T21:14:35.155001)
+- Fallback-mode missing-file error trace: [LangSmith trace](https://smith.langchain.com/o/4610debb-3062-47a4-a18d-faee6ddaa4c3/projects/p/debcf987-99bc-4986-b3e1-5af61ee1ff78/r/019d21b3-2e81-7000-8000-07611bad5091?trace_id=019d21b3-2e81-7000-8000-07611bad5091&start_time=2026-03-24T21:14:44.225001)
