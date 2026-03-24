@@ -83,7 +83,7 @@ If `lane: standard`:
 - Run `.ai/workflows/story-handoff.md`
 - Include the finalization plan in the same packet as the user audit checklist
 - Release the single writer lock if this story claimed it
-- After user approval, run `.ai/workflows/git-finalization.md`
+- Unless the user explicitly asks to pause or use a different merge path, run `.ai/workflows/git-finalization.md` after the completion gate.
 
 ---
 

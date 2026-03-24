@@ -77,7 +77,7 @@ Before implementation edits for a standard-lane story:
 
 ## Git Finalization Gate (Required)
 1. Use `.ai/workflows/story-handoff.md` as the combined completion gate
-2. After user approval, run `.ai/workflows/git-finalization.md`
+2. Unless the user explicitly asks to pause or use a different merge path, run `.ai/workflows/git-finalization.md` after the completion gate
 3. Run `bash scripts/git_finalize_guard.sh`; if finalization fails, route to `.ai/workflows/finalization-recovery.md`
 
 ## Task Routing
@@ -115,5 +115,5 @@ Cursor must follow the same standards in:
 Follow `.ai/codex.md` for the standard memory-update set after work.
 
 ## Post-Story User Audit Handoff (Required)
-After each story completion, follow `.ai/workflows/story-handoff.md`, include a **User Audit Checklist (Run This Now)** plus the finalization plan, run `.ai/workflows/ai-architecture-change.md` when needed, release `bash scripts/flight_slot.sh` when a standard-lane lock was claimed, and wait for user approval before `.ai/workflows/git-finalization.md`.
+After each story completion, follow `.ai/workflows/story-handoff.md`, include a **User Audit Checklist (Run This Now)** plus the finalization plan, run `.ai/workflows/ai-architecture-change.md` when needed, release `bash scripts/flight_slot.sh` when a standard-lane lock was claimed, and unless the user explicitly pauses finalization, continue into `.ai/workflows/git-finalization.md`.
 If the story changed visible UI behavior, run `.ai/workflows/ui-qa-critic.md`; if the story completed a visible pack, include or reference the pack-level `user-audit-checklist.md`.

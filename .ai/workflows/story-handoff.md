@@ -97,7 +97,7 @@ When a story changes user-visible behavior, the completion gate must treat UI in
 1. Treat this completion gate as the only user-facing approval step before final git actions.
 2. If the user gives narrow corrective feedback, run `.ai/workflows/user-correction-triage.md` before broadening the work.
 3. If the diff changes materially after feedback, issue a revised completion gate.
-4. When the user explicitly approves, move directly into `.ai/workflows/git-finalization.md`.
+4. Unless the user explicitly asks to pause or use a different merge path, move directly into `.ai/workflows/git-finalization.md` after issuing the completion gate.
 5. If finalization fails, stop and route to `.ai/workflows/finalization-recovery.md`, then return here with updated status.
 
 ---
@@ -108,4 +108,4 @@ When a story changes user-visible behavior, the completion gate must treat UI in
 - GitHub state and merge status made explicit so the user never has to guess whether work is only local, on a PR, or already merged
 - Finalization plan included in the same packet as the user audit
 - User audit focused on manual judgment rather than routine commands
-- Explicit user approval awaited before git finalization
+- Finalization default is explicit and visible in the completion gate, with automatic follow-through unless the user pauses it

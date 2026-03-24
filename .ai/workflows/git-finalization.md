@@ -1,6 +1,6 @@
 # Git Finalization Workflow
 
-**Purpose**: Execute commit, push, PR, merge, deploy, and cleanup atomically after the user approves the combined completion gate.
+**Purpose**: Execute commit, push, PR, merge, deploy, and cleanup atomically after the combined completion gate, unless the user explicitly pauses or requests a different merge path.
 
 ---
 
@@ -9,7 +9,7 @@
 Run this workflow only after:
 - implementation and validation are done
 - `.ai/workflows/story-handoff.md` has been issued
-- the user has explicitly approved finalization
+- the user has not explicitly paused finalization or requested a different merge path
 
 This workflow is execution-only. The user-facing review already happened in the combined completion gate.
 
@@ -20,7 +20,7 @@ This workflow is execution-only. The user-facing review already happened in the 
 Before final git actions:
 - confirm the active branch matches the current story
 - confirm the completion gate already recorded deploy status and finalization plan
-- confirm the user explicitly approved finalization
+- confirm the user has not explicitly paused finalization or requested a different merge path
 
 If any of these are false, stop and return to `.ai/workflows/story-handoff.md`.
 
@@ -150,6 +150,7 @@ Return a concise finalization update with:
 ## Exit Criteria
 
 - User approved the combined completion gate
+- No user pause or alternate merge-path request is in effect
 - Changes committed
 - Changes pushed to a writable remote
 - PR created or updated

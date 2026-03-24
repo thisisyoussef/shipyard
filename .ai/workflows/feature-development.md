@@ -150,7 +150,7 @@ Run the project-specific commands defined during setup and required by the activ
 - Run `.ai/workflows/story-handoff.md`
 - Include the finalization plan in the same packet as the user audit checklist
 - If a standard-lane flight lock was claimed, release it when the story is paused, blocked, or complete
-- After user approval, run `.ai/workflows/git-finalization.md`
+- Unless the user explicitly asks to pause or use a different merge path, run `.ai/workflows/git-finalization.md` after the completion gate.
 
 ---
 
