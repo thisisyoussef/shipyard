@@ -2,6 +2,8 @@
 
 **Purpose**: Execute commit, push, PR, merge, deploy, and cleanup atomically after the combined completion gate, unless the user explicitly pauses or requests a different merge path.
 
+For this workspace, a story is not considered complete until this workflow reaches a successful GitHub merge to `main`, unless the user explicitly pauses before merge or requests a different merge path.
+
 ---
 
 ## When To Run

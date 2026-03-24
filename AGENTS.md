@@ -44,4 +44,5 @@ If the change touches `.ai/`, re-read the source-of-truth files and verify the h
 ## Finalization Default
 
 - Do not assume deploy work exists unless the story explicitly adds it.
+- A story is not complete until it is merged to `main` on GitHub, unless the user explicitly asks to pause before merge or use a different merge path.
 - Once the requested work is complete and validated, default to the full GitHub flow automatically: commit, push, open or update a PR, merge to `main`, sync local `main`, and clean up the story branch unless the user explicitly asks to pause finalization or use a different merge path.

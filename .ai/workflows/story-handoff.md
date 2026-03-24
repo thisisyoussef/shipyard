@@ -109,3 +109,4 @@ When a story changes user-visible behavior, the completion gate must treat UI in
 - Finalization plan included in the same packet as the user audit
 - User audit focused on manual judgment rather than routine commands
 - Finalization default is explicit and visible in the completion gate, with automatic follow-through unless the user pauses it
+- Story completion is defined as merged-to-`main` on GitHub unless the user explicitly pauses or selects a different merge path
