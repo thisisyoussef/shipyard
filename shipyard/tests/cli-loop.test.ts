@@ -138,6 +138,33 @@ async function readSessionFile(
   return JSON.parse(contents) as SessionState;
 }
 
+async function waitForSessionState(
+  targetDirectory: string,
+  sessionId: string,
+  predicate: (state: SessionState) => boolean,
+  timeoutMs = 5_000,
+): Promise<SessionState> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const state = await readSessionFile(targetDirectory, sessionId);
+
+      if (predicate(state)) {
+        return state;
+      }
+    } catch {
+      // The file may not be written yet; keep polling until timeout.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(
+    `Timed out waiting for session ${sessionId} to satisfy the expected state.`,
+  );
+}
+
 describe("shipyard CLI loop", () => {
   afterEach(async () => {
     const directories = createdDirectories.splice(0, createdDirectories.length);
@@ -168,7 +195,11 @@ describe("shipyard CLI loop", () => {
         sendLine(runner, "create a README");
         await waitForText(runner, 'Turn 1 planned in phase "code".');
 
-        const firstSnapshot = await readSessionFile(targetDirectory, sessionId);
+        const firstSnapshot = await waitForSessionState(
+          targetDirectory,
+          sessionId,
+          (state) => state.turnCount === 1,
+        );
         expect(firstSnapshot.turnCount).toBe(1);
         expect(firstSnapshot.discovery.isGreenfield).toBe(true);
 
@@ -178,7 +209,11 @@ describe("shipyard CLI loop", () => {
         sendLine(runner, "add a package.json");
         await waitForText(runner, 'Turn 2 planned in phase "code".');
 
-        const secondSnapshot = await readSessionFile(targetDirectory, sessionId);
+        const secondSnapshot = await waitForSessionState(
+          targetDirectory,
+          sessionId,
+          (state) => state.turnCount === 2,
+        );
         expect(secondSnapshot.turnCount).toBe(2);
         expect(secondSnapshot.rollingSummary).toContain("Turn 1: create a README");
         expect(secondSnapshot.rollingSummary).toContain("Turn 2: add a package.json");
@@ -227,7 +262,11 @@ describe("shipyard CLI loop", () => {
         sendLine(resumedRun, "status");
         await waitForText(resumedRun, '"turnCount": 1');
 
-        const resumedSnapshot = await readSessionFile(targetDirectory, sessionId);
+        const resumedSnapshot = await waitForSessionState(
+          targetDirectory,
+          sessionId,
+          (state) => state.turnCount === 1,
+        );
         expect(resumedSnapshot.turnCount).toBe(1);
         expect(resumedSnapshot.sessionId).toBe(sessionId);
 

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -8,12 +8,13 @@ import {
   type ToolDefinition,
   type ToolInputSchema,
 } from "./registry.js";
-import { ToolError, readFileTool, resolveWithinTarget } from "./read-file.js";
+import { countLines, resolveWithinTarget } from "./file-state.js";
+import { ToolError, readFileTool } from "./read-file.js";
 
 export interface WriteFileInput {
   targetDirectory: string;
   path: string;
-  contents: string;
+  content: string;
   overwrite?: boolean;
 }
 
@@ -24,7 +25,7 @@ const writeFileInputSchema = {
       type: "string",
       description: "Path to create, relative to the target directory.",
     },
-    contents: {
+    content: {
       type: "string",
       description: "UTF-8 file contents to write.",
     },
@@ -33,29 +34,88 @@ const writeFileInputSchema = {
       description: "Whether Shipyard may replace an existing file.",
     },
   },
-  required: ["path", "contents"],
+  required: ["path", "content"],
   additionalProperties: false,
 } satisfies ToolInputSchema;
 
-export async function writeFileTool(input: WriteFileInput) {
-  const absolutePath = resolveWithinTarget(input.targetDirectory, input.path);
-  const fileExists = await readFileTool({
-    targetDirectory: input.targetDirectory,
-    path: input.path,
-  })
-    .then(() => true)
-    .catch(() => false);
+function formatWriteFileOutput(
+  pathLabel: string,
+  lineCount: number,
+  overwrite: boolean,
+): string {
+  return [
+    `${overwrite ? "Replaced" : "Created"} ${pathLabel}`,
+    `Lines: ${lineCount}`,
+  ].join("\n");
+}
 
-  if (fileExists && !input.overwrite) {
-    throw new ToolError(`File already exists: ${input.path}`);
+function toWriteToolError(pathLabel: string, error: unknown): ToolError {
+  if (error instanceof ToolError) {
+    return error;
   }
 
-  await mkdir(path.dirname(absolutePath), { recursive: true });
-  await writeFile(absolutePath, input.contents, "utf8");
+  if (error instanceof Error && error.message) {
+    return new ToolError(error.message);
+  }
+
+  return new ToolError(`Failed to write ${pathLabel}.`);
+}
+
+export async function writeFileTool(
+  input: WriteFileInput,
+) {
+  let resolvedPath: {
+    canonicalPath: string;
+    absolutePath: string;
+  };
+
+  try {
+    resolvedPath = resolveWithinTarget(input.targetDirectory, input.path);
+  } catch (error) {
+    throw toWriteToolError("path", error);
+  }
+
+  try {
+    const existing = await stat(resolvedPath.absolutePath);
+
+    if (existing.isDirectory()) {
+      throw new ToolError(
+        `Cannot write to a directory path: ${resolvedPath.canonicalPath}`,
+      );
+    }
+
+    if (!input.overwrite) {
+      throw new ToolError(
+        `File already exists: ${resolvedPath.canonicalPath}. Use edit_block for targeted changes or set overwrite: true for full replacement.`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof ToolError) {
+      throw error;
+    }
+
+    if (
+      !(
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "ENOENT"
+      )
+    ) {
+      throw toWriteToolError(resolvedPath.canonicalPath, error);
+    }
+  }
+
+  try {
+    await mkdir(path.dirname(resolvedPath.absolutePath), { recursive: true });
+    await writeFile(resolvedPath.absolutePath, input.content, "utf8");
+  } catch (error) {
+    throw toWriteToolError(resolvedPath.canonicalPath, error);
+  }
 
   return readFileTool({
     targetDirectory: input.targetDirectory,
-    path: input.path,
+    path: resolvedPath.canonicalPath,
   });
 }
 
@@ -71,11 +131,13 @@ export const writeFileDefinition: ToolDefinition<Omit<WriteFileInput, "targetDir
         ...input,
       });
 
-      return createToolSuccessResult({
-        path: result.path,
-        contents: result.contents,
-        hash: result.hash,
-      });
+      return createToolSuccessResult(
+        formatWriteFileOutput(
+          result.path,
+          countLines(result.contents),
+          input.overwrite ?? false,
+        ),
+      );
     } catch (error) {
       return createToolErrorResult(error);
     }

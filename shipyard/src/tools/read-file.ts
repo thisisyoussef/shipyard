@@ -1,6 +1,4 @@
-import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { readFile, stat } from "node:fs/promises";
 
 import {
   createToolErrorResult,
@@ -9,6 +7,13 @@ import {
   type ToolDefinition,
   type ToolInputSchema,
 } from "./registry.js";
+import {
+  countLines,
+  createDisplayHash,
+  hashContents,
+  rememberReadHash,
+  resolveWithinTarget,
+} from "./file-state.js";
 
 export class ToolError extends Error {}
 
@@ -36,52 +41,104 @@ const readFileInputSchema = {
   additionalProperties: false,
 } satisfies ToolInputSchema;
 
-function ensureRelativePath(filePath: string): void {
-  if (!filePath || path.isAbsolute(filePath)) {
-    throw new ToolError("Paths must be relative to the target directory.");
-  }
-}
-
-export function resolveWithinTarget(
-  targetDirectory: string,
-  relativePath: string,
-): string {
-  ensureRelativePath(relativePath);
-
-  const resolvedTarget = path.resolve(targetDirectory);
-  const resolvedPath = path.resolve(resolvedTarget, relativePath);
-
-  if (
-    resolvedPath !== resolvedTarget &&
-    !resolvedPath.startsWith(`${resolvedTarget}${path.sep}`)
-  ) {
-    throw new ToolError("Path escapes the target directory.");
+function toReadToolError(pathLabel: string, error: unknown): ToolError {
+  if (error instanceof ToolError) {
+    return error;
   }
 
-  return resolvedPath;
+  if (error instanceof Error && error.message) {
+    return new ToolError(error.message);
+  }
+
+  return new ToolError(`Failed to read ${pathLabel}.`);
 }
 
-export function hashContents(contents: string): string {
-  return createHash("sha256").update(contents, "utf8").digest("hex");
+function formatReadFileOutput(result: ReadFileResult): string {
+  return [
+    `Path: ${result.path}`,
+    `Lines: ${countLines(result.contents)}`,
+    `Hash: ${createDisplayHash(result.hash)}`,
+    "",
+    result.contents,
+  ].join("\n");
 }
 
 export async function readFileTool(
   input: ReadFileInput,
 ): Promise<ReadFileResult> {
-  const absolutePath = resolveWithinTarget(input.targetDirectory, input.path);
-  const contents = await readFile(absolutePath, "utf8");
-
-  return {
-    path: input.path,
-    absolutePath,
-    contents,
-    hash: hashContents(contents),
+  let resolvedPath: {
+    canonicalPath: string;
+    absolutePath: string;
   };
+
+  try {
+    resolvedPath = resolveWithinTarget(input.targetDirectory, input.path);
+  } catch (error) {
+    throw toReadToolError("path", error);
+  }
+
+  try {
+    const fileStats = await stat(resolvedPath.absolutePath);
+
+    if (fileStats.isDirectory()) {
+      throw new ToolError(
+        `Expected a file but found a directory: ${resolvedPath.canonicalPath}`,
+      );
+    }
+
+    const contents = await readFile(resolvedPath.absolutePath, "utf8");
+    const hash = hashContents(contents);
+    rememberReadHash(resolvedPath.canonicalPath, hash);
+
+    return {
+      path: resolvedPath.canonicalPath,
+      absolutePath: resolvedPath.absolutePath,
+      contents,
+      hash,
+    };
+  } catch (error) {
+    if (error instanceof ToolError) {
+      throw error;
+    }
+
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      throw new ToolError(`File not found: ${resolvedPath.canonicalPath}`);
+    }
+
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "EISDIR"
+    ) {
+      throw new ToolError(
+        `Expected a file but found a directory: ${resolvedPath.canonicalPath}`,
+      );
+    }
+
+    const errorCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string"
+        ? error.code
+        : "unknown error";
+
+    throw new ToolError(
+      `Failed to read ${resolvedPath.canonicalPath}: ${errorCode}`,
+    );
+  }
 }
 
 export const readFileDefinition: ToolDefinition<Omit<ReadFileInput, "targetDirectory">> = {
   name: "read_file",
-  description: "Read a file relative to the target directory and return its hash.",
+  description:
+    "Read a file relative to the target directory, return its contents, and remember its hash for later edits.",
   inputSchema: readFileInputSchema,
   async execute(input, targetDirectory) {
     try {
@@ -90,11 +147,7 @@ export const readFileDefinition: ToolDefinition<Omit<ReadFileInput, "targetDirec
         ...input,
       });
 
-      return createToolSuccessResult({
-        path: result.path,
-        contents: result.contents,
-        hash: result.hash,
-      });
+      return createToolSuccessResult(formatReadFileOutput(result));
     } catch (error) {
       return createToolErrorResult(error);
     }

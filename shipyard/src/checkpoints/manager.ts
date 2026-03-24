@@ -1,7 +1,8 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 
-import { hashContents, readFileTool, resolveWithinTarget } from "../tools/read-file.js";
+import { resolveWithinTarget } from "../tools/file-state.js";
+import { readFileTool } from "../tools/read-file.js";
 
 export interface CheckpointRecord {
   id: string;
@@ -18,7 +19,10 @@ export class CheckpointManager {
   async createCheckpoint(
     relativePath: string,
   ): Promise<CheckpointRecord> {
-    const sourcePath = resolveWithinTarget(this.targetDirectory, relativePath);
+    const { absolutePath: sourcePath } = resolveWithinTarget(
+      this.targetDirectory,
+      relativePath,
+    );
     const current = await readFileTool({
       targetDirectory: this.targetDirectory,
       path: relativePath,
@@ -42,7 +46,7 @@ export class CheckpointManager {
       relativePath,
       sourcePath,
       backupPath,
-      hash: hashContents(current.contents),
+      hash: current.hash,
       createdAt: new Date().toISOString(),
     };
   }

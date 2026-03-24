@@ -17,9 +17,12 @@ import {
 } from "../src/tools/registry.js";
 import {
   ToolError,
+  clearTrackedReadHashes,
   editBlockTool as editBlock,
+  getTrackedReadHash,
   listFilesTool as listFiles,
   readFileTool as readTargetFile,
+  resolveWithinTarget,
   runCommandTool as runCommand,
   searchFilesTool as searchFiles,
   writeFileTool as writeTargetFile,
@@ -50,6 +53,7 @@ function buildSizedFile(lineCount: number, anchorLabel: string): string {
 describe("file tools", () => {
   afterEach(async () => {
     const directories = createdDirectories.splice(0, createdDirectories.length);
+    clearTrackedReadHashes();
 
     await Promise.all(
       directories.map((directory) =>
@@ -64,11 +68,13 @@ describe("file tools", () => {
 
     const result = await readTargetFile({
       targetDirectory: directory,
-      path: "notes.txt",
+      path: "./notes.txt",
     });
 
+    expect(result.path).toBe("notes.txt");
     expect(result.contents).toBe("hello shipyard\n");
     expect(result.hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(getTrackedReadHash("notes.txt")).toBe(result.hash);
   });
 
   it("writes a new file and rejects overwriting by default", async () => {
@@ -77,18 +83,21 @@ describe("file tools", () => {
     const result = await writeTargetFile({
       targetDirectory: directory,
       path: "docs/output.md",
-      contents: "# Shipyard\n",
+      content: "# Shipyard\n",
     });
 
     expect(result.contents).toBe("# Shipyard\n");
+    expect(result.path).toBe("docs/output.md");
 
     await expect(
       writeTargetFile({
         targetDirectory: directory,
         path: "docs/output.md",
-        contents: "replace me\n",
+        content: "replace me\n",
       }),
-    ).rejects.toThrowError(ToolError);
+    ).rejects.toThrowError(
+      "Use edit_block for targeted changes or set overwrite: true for full replacement.",
+    );
   });
 
   it("edits a short file with a unique anchor", async () => {
@@ -153,6 +162,7 @@ describe("file tools", () => {
 describe("search and command tools", () => {
   afterEach(async () => {
     const directories = createdDirectories.splice(0, createdDirectories.length);
+    clearTrackedReadHashes();
 
     await Promise.all(
       directories.map((directory) =>
@@ -232,6 +242,7 @@ describe("search and command tools", () => {
 describe("tool registry", () => {
   afterEach(async () => {
     const directories = createdDirectories.splice(0, createdDirectories.length);
+    clearTrackedReadHashes();
 
     await Promise.all(
       directories.map((directory) =>
@@ -272,10 +283,10 @@ describe("tool registry", () => {
       },
     });
     expect(tools[0]).toHaveProperty("input_schema.properties.path");
-    expect(Object.keys(tools[1]?.input_schema.properties ?? {})).toContain("contents");
+    expect(Object.keys(tools[1]?.input_schema.properties ?? {})).toContain("content");
   });
 
-  it("executes a registered tool through the shared ToolResult contract", async () => {
+  it("executes read_file through the shared ToolResult contract", async () => {
     const directory = await createTempProject();
     await writeFile(path.join(directory, "notes.txt"), "hello registry\n", "utf8");
 
@@ -284,18 +295,133 @@ describe("tool registry", () => {
 
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
+    expect(result.output).toContain("Path: notes.txt");
+    expect(result.output).toContain("Lines: 1");
+    expect(result.output).toContain("Hash: ");
+    expect(result.output).toContain("hello registry\n");
+  });
 
-    const parsed = JSON.parse(result.output) as {
+  it("resolves paths safely within the target directory", async () => {
+    const directory = await createTempProject();
+
+    expect(resolveWithinTarget(directory, "src/../notes.txt")).toMatchObject({
+      canonicalPath: "notes.txt",
+    });
+    expect(() => resolveWithinTarget(directory, "../notes.txt")).toThrowError(
+      "Access denied: path must stay within the target directory.",
+    );
+    expect(() => resolveWithinTarget(directory, "/tmp/notes.txt")).toThrowError(
+      "Access denied: path must stay within the target directory.",
+    );
+  });
+
+  it("returns helpful read_file errors for missing files and directories", async () => {
+    const directory = await createTempProject();
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    const tool = getTool("read_file") as ToolDefinition<{ path: string }>;
+
+    await expect(tool.execute({ path: "missing.ts" }, directory)).resolves.toMatchObject({
+      success: false,
+      error: "File not found: missing.ts",
+    });
+
+    await expect(tool.execute({ path: "src" }, directory)).resolves.toMatchObject({
+      success: false,
+      error: "Expected a file but found a directory: src",
+    });
+  });
+
+  it("records the latest read hash for later stale-read checks", async () => {
+    const directory = await createTempProject();
+    await writeFile(path.join(directory, "notes.txt"), "before\n", "utf8");
+    const tool = getTool("read_file") as ToolDefinition<{ path: string }>;
+
+    const firstRead = await tool.execute({ path: "notes.txt" }, directory);
+    expect(firstRead.success).toBe(true);
+    const firstHash = getTrackedReadHash("notes.txt");
+    expect(firstHash).toMatch(/^[a-f0-9]{64}$/);
+
+    await writeFile(path.join(directory, "notes.txt"), "after\n", "utf8");
+    const secondRead = await tool.execute({ path: "notes.txt" }, directory);
+    expect(secondRead.success).toBe(true);
+    expect(getTrackedReadHash("notes.txt")).not.toBe(firstHash);
+  });
+
+  it("creates missing parent directories and reports line counts through write_file", async () => {
+    const directory = await createTempProject();
+    const tool = getTool("write_file") as ToolDefinition<{
       path: string;
-      contents: string;
-      hash: string;
-      absolutePath?: string;
-    };
+      content: string;
+      overwrite?: boolean;
+    }>;
 
-    expect(parsed.path).toBe("notes.txt");
-    expect(parsed.contents).toBe("hello registry\n");
-    expect(parsed.hash).toMatch(/^[a-f0-9]{64}$/);
-    expect(parsed.absolutePath).toBeUndefined();
+    const result = await tool.execute(
+      {
+        path: "docs/nested/output.md",
+        content: "# Shipyard\n",
+      },
+      directory,
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+    });
+    expect(result.output).toContain("Created docs/nested/output.md");
+    expect(result.output).toContain("Lines: 1");
+    await expect(
+      readFile(path.join(directory, "docs/nested/output.md"), "utf8"),
+    ).resolves.toBe("# Shipyard\n");
+  });
+
+  it("rejects write_file overwrites by default and keeps errors relative-only", async () => {
+    const directory = await createTempProject();
+    await mkdir(path.join(directory, "docs"), { recursive: true });
+    await writeFile(path.join(directory, "docs/output.md"), "original\n", "utf8");
+    const tool = getTool("write_file") as ToolDefinition<{
+      path: string;
+      content: string;
+      overwrite?: boolean;
+    }>;
+
+    const result = await tool.execute(
+      {
+        path: "docs/output.md",
+        content: "updated\n",
+      },
+      directory,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("File already exists: docs/output.md");
+    expect(result.error).toContain("Use edit_block");
+    expect(result.error).not.toContain(directory);
+  });
+
+  it("allows full replacement only when overwrite is explicitly true", async () => {
+    const directory = await createTempProject();
+    await mkdir(path.join(directory, "docs"), { recursive: true });
+    await writeFile(path.join(directory, "docs/output.md"), "original\n", "utf8");
+    const tool = getTool("write_file") as ToolDefinition<{
+      path: string;
+      content: string;
+      overwrite?: boolean;
+    }>;
+
+    const result = await tool.execute(
+      {
+        path: "docs/output.md",
+        content: "updated\n",
+        overwrite: true,
+      },
+      directory,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("Replaced docs/output.md");
+    expect(result.output).toContain("Lines: 1");
+    await expect(readFile(path.join(directory, "docs/output.md"), "utf8")).resolves.toBe(
+      "updated\n",
+    );
   });
 });
 
@@ -310,7 +436,7 @@ async function expectSingleEditPass(
   await writeTargetFile({
     targetDirectory: directory,
     path: relativePath,
-    contents: originalContents,
+    content: originalContents,
   });
 
   const current = await readTargetFile({
