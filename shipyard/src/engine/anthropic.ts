@@ -281,7 +281,9 @@ export function buildAnthropicMessageRequest(
 
   const request: MessageCreateParamsNonStreaming = {
     system: systemPrompt,
-    messages: input.messages,
+    // Snapshot the request history so later loop mutations do not retroactively
+    // change the payload we already sent to Anthropic.
+    messages: [...input.messages],
     model: input.model ?? DEFAULT_ANTHROPIC_MODEL,
     max_tokens: ensurePositiveInteger(
       input.maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS,

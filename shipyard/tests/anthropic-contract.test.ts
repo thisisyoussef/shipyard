@@ -67,10 +67,20 @@ describe("Anthropic client contract", () => {
     });
 
     expect(request.system).toBe("You are Shipyard.");
-    expect(request.messages).toBe(messages);
+    expect(request.messages).toEqual(messages);
+    expect(request.messages).not.toBe(messages);
     expect(request.tools).toBe(tools);
     expect(request.model).toBe(DEFAULT_ANTHROPIC_MODEL);
     expect(request.max_tokens).toBe(DEFAULT_ANTHROPIC_MAX_TOKENS);
+
+    messages.push(createUserTextMessage("Mutate after request assembly."));
+
+    expect(request.messages).toEqual([
+      {
+        role: "user",
+        content: "Inspect package.json",
+      },
+    ]);
   });
 
   it("rejects blank prompts and blank user messages before request assembly", () => {
