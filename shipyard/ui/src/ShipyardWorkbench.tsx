@@ -1,4 +1,10 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 
 import {
   buildActivityBlocks,
@@ -7,6 +13,10 @@ import {
   selectVisibleTurns,
   type ActivityScope,
 } from "./activity-diff.js";
+import {
+  buildTextPreview,
+  DEFAULT_VISIBLE_CONTEXT_RECEIPTS,
+} from "./context-ui.js";
 import {
   Badge,
   SectionHeader,
@@ -22,6 +32,12 @@ import type {
   WorkbenchConnectionState,
 } from "./view-models.js";
 
+interface ComposerNotice {
+  tone: BadgeTone;
+  title: string;
+  detail: string;
+}
+
 interface ShipyardWorkbenchProps {
   sessionState: SessionStateViewModel | null;
   turns: TurnViewModel[];
@@ -31,13 +47,31 @@ interface ShipyardWorkbenchProps {
   agentStatus: string;
   instruction: string;
   contextDraft: string;
+  composerNotice: ComposerNotice | null;
+  instructionInputRef: RefObject<HTMLTextAreaElement | null>;
+  contextInputRef: RefObject<HTMLTextAreaElement | null>;
   onInstructionChange: (value: string) => void;
   onContextChange: (value: string) => void;
+  onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onContextKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onClearContext: () => void;
   onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
   onRefreshStatus: () => void;
   onCopyTracePath: () => void;
   traceButtonLabel: string;
+}
+
+interface SessionBannerModel {
+  tone: BadgeTone;
+  statusLabel: string;
+  title: string;
+  detail: string;
+  hint: string;
+  meta: Array<{
+    label: string;
+    value: string;
+    monospace?: boolean;
+  }>;
 }
 
 function formatConnectionLabel(
@@ -165,11 +199,133 @@ function createHiddenFileEventCopy(
   return "Reads, edits, and diff previews will land here as soon as the next turn touches the repository.";
 }
 
+function buildSessionBannerModel(options: {
+  sessionState: SessionStateViewModel | null;
+  connectionState: WorkbenchConnectionState | "reconnecting";
+  agentStatus: string;
+  turnCount: number;
+  fileEventCount: number;
+  contextReceiptCount: number;
+  latestTurn: TurnViewModel | null;
+}): SessionBannerModel {
+  const {
+    sessionState,
+    connectionState,
+    agentStatus,
+    turnCount,
+    fileEventCount,
+    contextReceiptCount,
+    latestTurn,
+  } = options;
+
+  if (!sessionState) {
+    return {
+      tone: "warning",
+      statusLabel: "booting",
+      title: "Connecting to Shipyard",
+      detail: "Waiting for the browser runtime to publish the current local session.",
+      hint: "Once connected, this banner will show the active session, last activity, and recovery state.",
+      meta: [],
+    };
+  }
+
+  const sessionMeta = [
+    {
+      label: "Session",
+      value: sessionState.sessionId,
+      monospace: true,
+    },
+    {
+      label: "Turns",
+      value: String(turnCount),
+    },
+    {
+      label: "Last active",
+      value: formatTimestamp(sessionState.lastActiveAt),
+    },
+  ];
+
+  if (agentStatus === "Recovered session history after reload.") {
+    return {
+      tone: "success",
+      statusLabel: "restored",
+      title: `Session ${sessionState.sessionId} restored after reload`,
+      detail: `Recovered ${String(turnCount)} turn${turnCount === 1 ? "" : "s"}, ${String(fileEventCount)} file event${fileEventCount === 1 ? "" : "s"}, and ${String(contextReceiptCount)} context receipt${contextReceiptCount === 1 ? "" : "s"} from the saved browser state.`,
+      hint: "Review the latest turn below or keep working without losing local context.",
+      meta: sessionMeta,
+    };
+  }
+
+  if (connectionState === "reconnecting") {
+    return {
+      tone: "warning",
+      statusLabel: "reconnecting",
+      title: `Reconnecting to session ${sessionState.sessionId}`,
+      detail: `Last known activity from ${formatTimestamp(sessionState.lastActiveAt)} is still visible while the socket retries.`,
+      hint: "You can keep reading the current session state. Shipyard will resume live updates as soon as the connection returns.",
+      meta: sessionMeta,
+    };
+  }
+
+  if (connectionState === "error" || latestTurn?.status === "error") {
+    return {
+      tone: "danger",
+      statusLabel: "attention",
+      title: `Session ${sessionState.sessionId} needs attention`,
+      detail:
+        latestTurn?.summary ??
+        agentStatus ??
+        "Shipyard reported an error while keeping the last known state visible.",
+      hint: "Review the latest failing step, then refresh the session or resend a narrower instruction.",
+      meta: sessionMeta,
+    };
+  }
+
+  if (connectionState === "agent-busy") {
+    return {
+      tone: "accent",
+      statusLabel: "live",
+      title: `Session ${sessionState.sessionId} is streaming`,
+      detail: `Shipyard is actively working through turn ${String(sessionState.turnCount)} and publishing tool activity below.`,
+      hint: "Use the latest-run filter to stay focused on the current turn while it updates.",
+      meta: sessionMeta,
+    };
+  }
+
+  return {
+    tone: "success",
+    statusLabel: "stable",
+    title: `Connected to session ${sessionState.sessionId}`,
+    detail: `Last active ${formatTimestamp(sessionState.lastActiveAt)}. The current browser state matches the latest saved session snapshot.`,
+    hint: "Paste context only when a spec, schema, or local rule should ride with the next turn.",
+    meta: sessionMeta,
+  };
+}
+
+function createContextActionCopy(
+  contextDraft: string,
+  contextHistory: ContextReceiptViewModel[],
+): string {
+  if (contextDraft.trim()) {
+    return "This note is queued for the next run only. Submit with Cmd/Ctrl+Enter or clear it with Escape.";
+  }
+
+  if (contextHistory.length > 0) {
+    return "Shipyard keeps receipts for recent injected context so reloads never erase what you told it.";
+  }
+
+  return "Add a spec excerpt, schema, or repo-specific constraint only when the next turn truly needs it.";
+}
+
 export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
   const [activityScope, setActivityScope] = useState<ActivityScope>("latest");
   const [expandedDiffs, setExpandedDiffs] = useState<Record<string, boolean>>(
     {},
   );
+  const [expandedContextItems, setExpandedContextItems] = useState<
+    Record<string, boolean>
+  >({});
+  const [showAllContextHistory, setShowAllContextHistory] = useState(false);
   const hasSession = props.sessionState !== null;
   const surfaceState = formatSurfaceState(props.connectionState, hasSession);
   const connectionLabel = formatConnectionLabel(props.connectionState, hasSession);
@@ -185,11 +341,51 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
     props.fileEvents.length - visibleFileEvents.length,
     0,
   );
+  const latestTurn = props.turns[0] ?? null;
+  const latestContextReceipt = props.contextHistory[0] ?? null;
+  const trimmedContextDraft = props.contextDraft.trim();
+  const queuedContextPreview = trimmedContextDraft
+    ? buildTextPreview(
+        trimmedContextDraft,
+        expandedContextItems["queued-context"] === true,
+      )
+    : null;
+  const visibleContextHistory = showAllContextHistory
+    ? props.contextHistory
+    : props.contextHistory.slice(0, DEFAULT_VISIBLE_CONTEXT_RECEIPTS);
+  const hiddenContextHistoryCount = Math.max(
+    props.contextHistory.length - visibleContextHistory.length,
+    0,
+  );
+  const sessionBanner = buildSessionBannerModel({
+    sessionState: props.sessionState,
+    connectionState: surfaceState,
+    agentStatus: props.agentStatus,
+    turnCount: props.turns.length,
+    fileEventCount: props.fileEvents.length,
+    contextReceiptCount: props.contextHistory.length,
+    latestTurn,
+  });
+  const showRecoveryGuidance =
+    props.connectionState === "error" || latestTurn?.status === "error";
+  const latestContextPreview = latestContextReceipt
+    ? buildTextPreview(
+        latestContextReceipt.text,
+        expandedContextItems[latestContextReceipt.id] === true,
+      )
+    : null;
 
   function toggleDiffExpansion(fileEventId: string): void {
     setExpandedDiffs((current) => ({
       ...current,
       [fileEventId]: !current[fileEventId],
+    }));
+  }
+
+  function toggleContextExpansion(contextId: string): void {
+    setExpandedContextItems((current) => ({
+      ...current,
+      [contextId]: !current[contextId],
     }));
   }
 
@@ -242,6 +438,33 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
           </Badge>
         </div>
       </header>
+
+      <SurfaceCard className="session-banner">
+        <div className="session-banner-copy">
+          <div className="session-banner-status-row">
+            <StatusDot tone={sessionBanner.tone} />
+            <Badge tone={sessionBanner.tone}>{sessionBanner.statusLabel}</Badge>
+          </div>
+          <h2>{sessionBanner.title}</h2>
+          <p className="session-banner-detail">{sessionBanner.detail}</p>
+          <p className="session-banner-hint">{sessionBanner.hint}</p>
+        </div>
+
+        {sessionBanner.meta.length > 0 ? (
+          <ul className="session-banner-meta">
+            {sessionBanner.meta.map((item) => (
+              <li key={item.label}>
+                <span>{item.label}</span>
+                {item.monospace ? (
+                  <code>{item.value}</code>
+                ) : (
+                  <strong>{item.value}</strong>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </SurfaceCard>
 
       <div className="workbench-grid">
         <aside className="left-sidebar" aria-label="Session and context">
@@ -329,38 +552,128 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               )}
             />
 
+            {queuedContextPreview ? (
+              <div className="context-receipt-card queued-context-card">
+                <div className="context-receipt-header">
+                  <div>
+                    <span className="micro-label">Queued for next turn</span>
+                    <h3>Pending context note</h3>
+                  </div>
+                  <Badge tone="accent">Draft</Badge>
+                </div>
+                <p>{queuedContextPreview.text}</p>
+                <div className="context-receipt-meta">
+                  <span>{trimmedContextDraft.length} characters</span>
+                  {queuedContextPreview.isTruncated ? (
+                    <button
+                      type="button"
+                      className="ghost-action context-toggle"
+                      onClick={() => toggleContextExpansion("queued-context")}
+                    >
+                      Show full context
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {latestContextReceipt && latestContextPreview ? (
+              <div className="context-receipt-card">
+                <div className="context-receipt-header">
+                  <div>
+                    <span className="micro-label">Last attached context</span>
+                    <h3>{latestContextReceipt.turnId}</h3>
+                  </div>
+                  <Badge tone="success">
+                    {formatTimestamp(latestContextReceipt.submittedAt)}
+                  </Badge>
+                </div>
+                <p>{latestContextPreview.text}</p>
+                {latestContextPreview.isTruncated ? (
+                  <button
+                    type="button"
+                    className="ghost-action context-toggle"
+                    onClick={() => toggleContextExpansion(latestContextReceipt.id)}
+                  >
+                    Show full context
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="empty-state compact-empty-state">
+                <p className="empty-heading">No context attached yet</p>
+                <p className="empty-copy">
+                  Add a spec excerpt or repo-specific rule here when the next turn
+                  needs more than the current repository state.
+                </p>
+              </div>
+            )}
+
             <label className="field-label" htmlFor="context-draft">
               Notes that will ride with the next instruction
             </label>
             <textarea
               id="context-draft"
+              ref={props.contextInputRef}
               className="context-input"
               value={props.contextDraft}
               onChange={(event) => handleTextareaChange(event, props.onContextChange)}
+              onKeyDown={props.onContextKeyDown}
+              aria-keyshortcuts="Control+Enter Meta+Enter Escape"
               placeholder="Paste a spec excerpt, acceptance note, or local constraint."
               rows={8}
             />
             <p className="support-copy">
-              Context is attached to the next instruction only, then preserved
-              below as a visible receipt so reloads do not erase operator
-              intent.
+              {createContextActionCopy(props.contextDraft, props.contextHistory)}
             </p>
 
-            {props.contextHistory.length > 0 ? (
+            {visibleContextHistory.length > 0 ? (
               <div className="context-history-block">
-                <span className="micro-label">Recent injections</span>
+                <div className="context-history-header">
+                  <span className="micro-label">Recent injections</span>
+                  {hiddenContextHistoryCount > 0 ? (
+                    <button
+                      type="button"
+                      className="ghost-action context-toggle"
+                      onClick={() => setShowAllContextHistory((current) => !current)}
+                    >
+                      {showAllContextHistory
+                        ? "Show fewer receipts"
+                        : `Show ${String(hiddenContextHistoryCount)} older receipt${hiddenContextHistoryCount === 1 ? "" : "s"}`}
+                    </button>
+                  ) : null}
+                </div>
                 <ol className="context-history-list">
-                  {props.contextHistory.map((entry) => (
-                    <li key={entry.id} className="context-history-item">
-                      <time
-                        className="context-history-time"
-                        dateTime={entry.submittedAt}
-                      >
-                        {formatTimestamp(entry.submittedAt)}
-                      </time>
-                      <p>{entry.text}</p>
-                    </li>
-                  ))}
+                  {visibleContextHistory.map((entry) => {
+                    const preview = buildTextPreview(
+                      entry.text,
+                      expandedContextItems[entry.id] === true,
+                    );
+
+                    return (
+                      <li key={entry.id} className="context-history-item">
+                        <div className="context-history-item-header">
+                          <time
+                            className="context-history-time"
+                            dateTime={entry.submittedAt}
+                          >
+                            {formatTimestamp(entry.submittedAt)}
+                          </time>
+                          <Badge tone="neutral">{entry.turnId}</Badge>
+                        </div>
+                        <p>{preview.text}</p>
+                        {preview.isTruncated ? (
+                          <button
+                            type="button"
+                            className="ghost-action context-toggle"
+                            onClick={() => toggleContextExpansion(entry.id)}
+                          >
+                            Show full context
+                          </button>
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ol>
               </div>
             ) : null}
@@ -373,13 +686,26 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               kicker="Control surface"
               title="Send an instruction"
               meta={(
-                <Badge tone={props.contextDraft.trim() ? "accent" : "neutral"}>
-                  {props.contextDraft.trim()
-                    ? "Context queued"
-                    : "No extra context"}
-                </Badge>
+                <div className="composer-meta">
+                  <Badge tone={props.contextDraft.trim() ? "accent" : "neutral"}>
+                    {props.contextDraft.trim()
+                      ? "Context queued"
+                      : "No extra context"}
+                  </Badge>
+                  <Badge tone="accent">Cmd/Ctrl+Enter</Badge>
+                </div>
               )}
             />
+
+            {props.composerNotice ? (
+              <div className="composer-notice" data-tone={props.composerNotice.tone}>
+                <div className="composer-notice-header">
+                  <StatusDot tone={props.composerNotice.tone} />
+                  <strong>{props.composerNotice.title}</strong>
+                </div>
+                <p>{props.composerNotice.detail}</p>
+              </div>
+            ) : null}
 
             <form className="instruction-form" onSubmit={props.onSubmitInstruction}>
               <label className="field-label" htmlFor="instruction">
@@ -387,11 +713,14 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               </label>
               <textarea
                 id="instruction"
+                ref={props.instructionInputRef}
                 className="instruction-input"
                 value={props.instruction}
                 onChange={(event) =>
                   handleTextareaChange(event, props.onInstructionChange)
                 }
+                onKeyDown={props.onInstructionKeyDown}
+                aria-keyshortcuts="Control+Enter Meta+Enter"
                 placeholder="Ask Shipyard to inspect a file, explain the current diff, or map the next change."
                 rows={4}
               />
@@ -400,8 +729,8 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                   Run instruction
                 </button>
                 <p className="support-copy">
-                  Activity stays focused on the most recent run by default and
-                  expands into historical turns when you need the full trail.
+                  Submit with Cmd/Ctrl+Enter, keep focus in the instruction field,
+                  and use Escape in the context field to clear the queued note.
                 </p>
               </div>
             </form>
@@ -439,13 +768,27 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               )}
             />
 
+            {showRecoveryGuidance ? (
+              <div className="recovery-guidance-card">
+                <div className="recovery-guidance-header">
+                  <StatusDot tone="danger" />
+                  <strong>Recovery path</strong>
+                </div>
+                <p>
+                  Shipyard kept the last known state visible. Review the latest
+                  failing step, refresh the session, or rerun with a narrower
+                  instruction once the connection stabilizes.
+                </p>
+              </div>
+            ) : null}
+
             {props.turns.length === 0 ? (
               <div className="empty-state">
                 <p className="empty-heading">Ready for the first browser turn</p>
                 <p className="empty-copy">
-                  Session state, connection health, and file visibility are
-                  already live. Send one instruction to watch the tool stream and
-                  diff feed take over the workbench.
+                  Start with an instruction in the center column. Add context in
+                  the left panel only when a spec, schema, or non-obvious rule
+                  should ride with that next turn.
                 </p>
               </div>
             ) : (
@@ -509,7 +852,11 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                               <p key={message}>{message}</p>
                             ))}
                           </div>
-                        ) : null}
+                        ) : (
+                          <p className="empty-copy">
+                            Shipyard has not emitted a full agent response yet.
+                          </p>
+                        )}
 
                         <details
                           className="activity-log"
@@ -615,7 +962,9 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
 
             {visibleFileEvents.length === 0 ? (
               <div className="empty-state compact-empty-state">
-                <p className="empty-heading">No file events in {formatScopeLabel(activityScope).toLowerCase()}</p>
+                <p className="empty-heading">
+                  No file events in {formatScopeLabel(activityScope).toLowerCase()}
+                </p>
                 <p className="empty-copy">
                   {createHiddenFileEventCopy(activityScope, hiddenFileEventCount)}
                 </p>

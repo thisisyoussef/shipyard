@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -115,37 +115,13 @@ const fileEvents: FileEventViewModel[] = [
       },
     ],
   },
-  {
-    id: "file-1",
-    path: "src/app.ts",
-    status: "diff",
-    title: "Diff preview",
-    summary: "Updated the greeting copy.",
-    turnId: "turn-1",
-    diffLines: [
-      {
-        id: "diff-0",
-        kind: "meta",
-        text: "@@ -1,1 +1,1 @@",
-      },
-      {
-        id: "diff-1",
-        kind: "remove",
-        text: "-return 'before';",
-      },
-      {
-        id: "diff-2",
-        kind: "add",
-        text: "+return 'after';",
-      },
-    ],
-  },
 ];
 
 const contextHistory: ContextReceiptViewModel[] = [
   {
     id: "context-1",
-    text: "Honor the surgical editing contract.",
+    text:
+      "Honor the surgical editing contract. Keep edits anchored, avoid whole-file rewrites, and rerun the smallest verification command after each patch. If the anchor fails, reread before retrying.",
     submittedAt: "2026-03-24T12:03:00.000Z",
     turnId: "turn-1",
   },
@@ -154,6 +130,7 @@ const contextHistory: ContextReceiptViewModel[] = [
 function renderWorkbench(overrides?: {
   connectionState?: "connecting" | "ready" | "agent-busy" | "disconnected" | "error";
   agentStatus?: string;
+  contextDraft?: string;
 }) {
   return renderToStaticMarkup(
     createElement(ShipyardWorkbench, {
@@ -164,9 +141,14 @@ function renderWorkbench(overrides?: {
       connectionState: overrides?.connectionState ?? "ready",
       agentStatus: overrides?.agentStatus ?? "Ready for the next instruction.",
       instruction: "",
-      contextDraft: "",
+      contextDraft: overrides?.contextDraft ?? "",
+      composerNotice: null,
+      instructionInputRef: createRef<HTMLTextAreaElement>(),
+      contextInputRef: createRef<HTMLTextAreaElement>(),
       onInstructionChange: () => undefined,
       onContextChange: () => undefined,
+      onInstructionKeyDown: () => undefined,
+      onContextKeyDown: () => undefined,
       onClearContext: () => undefined,
       onSubmitInstruction: () => undefined,
       onRefreshStatus: () => undefined,
@@ -177,38 +159,31 @@ function renderWorkbench(overrides?: {
 }
 
 describe("ShipyardWorkbench", () => {
-  it("app shell renders the five major panels", () => {
+  it("renders session banner, context receipts, and the latest-run activity view", () => {
     const markup = renderWorkbench();
 
-    expect(markup).toContain('class="top-bar"');
-    expect(markup).toContain('aria-label="Session and context"');
-    expect(markup).toContain('role="main"');
-    expect(markup).toContain('aria-label="File activity"');
-    expect(markup).toContain('class="status-bar"');
-    expect(markup).toContain("Developer Workbench");
-    expect(markup).toContain("Recent injections");
-    expect(markup).toContain('class="section-header"');
-    expect(markup).toContain('class="ui-badge"');
-    expect(markup).toContain('class="status-dot"');
+    expect(markup).toContain('class="surface-card session-banner"');
+    expect(markup).toContain("Last attached context");
+    expect(markup).toContain("Cmd/Ctrl+Enter");
     expect(markup).toContain("Latest run");
     expect(markup).toContain("All runs");
     expect(markup).toContain('class="activity-block"');
     expect(markup).toContain('class="diff-line-label"');
     expect(markup).toContain(">ADD<");
     expect(markup).not.toContain("legacy hidden turn");
-    expect((markup.match(/class="section-header"/g) ?? []).length).toBeGreaterThan(2);
   });
 
-  it("connection and error states remain visible and keyboard accessible", () => {
+  it("keeps recovery messaging and keyboard affordances visible during errors", () => {
     const markup = renderWorkbench({
       connectionState: "error",
       agentStatus: "Connection error. Waiting to retry...",
+      contextDraft: "Use the current scripts before editing anything.",
     });
 
     expect(markup).toContain('aria-label="Connection status: error"');
-    expect(markup).toContain("Connection error. Waiting to retry...");
-    expect(markup).toContain('aria-live="polite"');
-    expect(markup).toContain('<button type="submit" class="primary-action">');
-    expect(markup).toContain("<summary>");
+    expect(markup).toContain("Recovery path");
+    expect(markup).toContain("Queued for next turn");
+    expect(markup).toContain('aria-keyshortcuts="Control+Enter Meta+Enter"');
+    expect(markup).toContain('aria-keyshortcuts="Control+Enter Meta+Enter Escape"');
   });
 });

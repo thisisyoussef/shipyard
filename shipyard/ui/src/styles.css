@@ -1038,3 +1038,223 @@ pre,
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* UIR-S03: context and session UX polish */
+
+.session-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
+  gap: var(--space-5);
+  align-items: start;
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+  border-color: rgba(213, 140, 83, 0.16);
+  background:
+    linear-gradient(135deg, rgba(213, 140, 83, 0.08), transparent 48%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 40%),
+    var(--surface-shell);
+}
+
+.session-banner-copy {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.session-banner-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.session-banner h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  letter-spacing: -0.03em;
+}
+
+.session-banner-detail,
+.session-banner-hint {
+  margin: 0;
+  line-height: 1.65;
+}
+
+.session-banner-detail {
+  color: var(--text-strong);
+}
+
+.session-banner-hint {
+  color: var(--text-body);
+}
+
+.session-banner-meta {
+  list-style: none;
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  margin: 0;
+}
+
+.session-banner-meta li {
+  display: grid;
+  gap: var(--space-1);
+  padding: 0.85rem 0.95rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(186, 197, 207, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.session-banner-meta span {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.session-banner-meta strong,
+.session-banner-meta code {
+  color: var(--text-strong);
+}
+
+.composer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.composer-notice {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(186, 197, 207, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.composer-notice[data-tone="accent"] {
+  border-color: rgba(213, 140, 83, 0.24);
+  background: rgba(213, 140, 83, 0.08);
+}
+
+.composer-notice[data-tone="success"] {
+  border-color: rgba(126, 201, 154, 0.24);
+  background: rgba(126, 201, 154, 0.08);
+}
+
+.composer-notice[data-tone="danger"] {
+  border-color: rgba(236, 129, 112, 0.24);
+  background: rgba(236, 129, 112, 0.08);
+}
+
+.composer-notice-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.composer-notice p {
+  margin: 0;
+  color: var(--text-body);
+  line-height: 1.6;
+}
+
+.context-receipt-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(186, 197, 207, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
+    rgba(7, 12, 16, 0.78);
+}
+
+.queued-context-card {
+  border-color: rgba(213, 140, 83, 0.22);
+  background:
+    linear-gradient(180deg, rgba(213, 140, 83, 0.08), transparent),
+    rgba(7, 12, 16, 0.78);
+}
+
+.context-receipt-header,
+.context-history-header,
+.context-history-item-header,
+.recovery-guidance-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.context-receipt-header h3 {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.context-receipt-card p {
+  margin: 0;
+  color: var(--text-body);
+  line-height: 1.65;
+}
+
+.context-receipt-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.context-toggle {
+  justify-self: start;
+}
+
+.recovery-guidance-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(236, 129, 112, 0.22);
+  background: linear-gradient(180deg, rgba(236, 129, 112, 0.08), transparent);
+}
+
+.recovery-guidance-card p {
+  margin: 0;
+  color: var(--text-body);
+  line-height: 1.6;
+}
+
+@media (max-width: 1180px) {
+  .session-banner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .context-receipt-header,
+  .context-history-header,
+  .context-history-item-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .session-banner {
+    padding: var(--space-4);
+  }
+
+  .composer-meta {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .context-receipt-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
