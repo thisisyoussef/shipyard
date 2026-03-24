@@ -19,6 +19,7 @@ import {
 } from "./context-ui.js";
 import {
   Badge,
+  MicroLabel,
   SectionHeader,
   StatusDot,
   SurfaceCard,
@@ -421,12 +422,12 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
 
         <div className="top-bar-actions">
           <div className="top-info-block">
-            <span className="micro-label">Workspace</span>
+            <MicroLabel>Workspace</MicroLabel>
             <code>{props.sessionState?.workspaceDirectory ?? "Waiting for workspace..."}</code>
           </div>
 
           <div className="top-info-block">
-            <span className="micro-label">Target</span>
+            <MicroLabel>Target</MicroLabel>
             <code>{props.sessionState?.targetDirectory ?? "Waiting for target..."}</code>
           </div>
 
@@ -525,7 +526,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                 </dl>
 
                 <div className="session-meta-block">
-                  <span className="micro-label">Paths</span>
+                  <MicroLabel>Paths</MicroLabel>
                   <ul className="signal-list">
                     <li>
                       <code>{props.sessionState.workspaceDirectory}</code>
@@ -537,7 +538,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                 </div>
 
                 <div className="session-meta-block">
-                  <span className="micro-label">Project signals</span>
+                  <MicroLabel>Project signals</MicroLabel>
                   <ul className="signal-list">
                     <li>{props.sessionState.discovery.projectName ?? "Unnamed project"}</li>
                     <li>{props.sessionState.discovery.language ?? "Unknown language"}</li>
@@ -552,7 +553,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
 
                 {Object.keys(props.sessionState.discovery.scripts).length > 0 ? (
                   <div className="session-meta-block">
-                    <span className="micro-label">Available scripts</span>
+                    <MicroLabel>Available scripts</MicroLabel>
                     <ul className="script-list">
                       {Object.entries(props.sessionState.discovery.scripts).map(
                         ([name, command]) => (
@@ -592,7 +593,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               <div className="context-receipt-card queued-context-card">
                 <div className="context-receipt-header">
                   <div>
-                    <span className="micro-label">Queued for next turn</span>
+                    <MicroLabel>Queued for next turn</MicroLabel>
                     <h3>Pending context note</h3>
                   </div>
                   <Badge tone="accent">Draft</Badge>
@@ -617,7 +618,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               <div className="context-receipt-card">
                 <div className="context-receipt-header">
                   <div>
-                    <span className="micro-label">Last attached context</span>
+                    <MicroLabel>Last attached context</MicroLabel>
                     <h3>{latestContextReceipt.turnId}</h3>
                   </div>
                   <Badge tone="success">
@@ -666,7 +667,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             {visibleContextHistory.length > 0 ? (
               <div className="context-history-block">
                 <div className="context-history-header">
-                  <span className="micro-label">Recent injections</span>
+                  <MicroLabel>Recent injections</MicroLabel>
                   {hiddenContextHistoryCount > 0 ? (
                     <button
                       type="button"
@@ -868,13 +869,13 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                         </div>
 
                         <div className="turn-summary-card">
-                          <span className="micro-label">Latest summary</span>
+                          <MicroLabel>Latest summary</MicroLabel>
                           <p>{turn.summary}</p>
                         </div>
 
                         {turn.contextPreview.length > 0 ? (
                           <div className="turn-context-strip">
-                            <span className="micro-label">Injected context</span>
+                            <MicroLabel>Injected context</MicroLabel>
                             {turn.contextPreview.map((entry) => (
                               <p key={entry}>{entry}</p>
                             ))}
@@ -883,7 +884,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
 
                         {turn.agentMessages.length > 0 ? (
                           <div className="agent-copy">
-                            <span className="micro-label">Agent copy</span>
+                            <MicroLabel>Agent copy</MicroLabel>
                             {turn.agentMessages.slice(-1).map((message) => (
                               <p key={message}>{message}</p>
                             ))}
@@ -1094,7 +1095,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         <div className="status-current" data-state={surfaceState}>
           <StatusDot tone={connectionTone} />
           <div>
-            <span className="micro-label">Current status</span>
+            <MicroLabel>Current status</MicroLabel>
             <strong aria-live="polite">{props.agentStatus}</strong>
           </div>
         </div>
