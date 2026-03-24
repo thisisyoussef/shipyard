@@ -176,9 +176,9 @@ more context.
 The shipped runtime still uses a single writing coordinator, but the repository
 now has an explicit multi-agent contract. `src/agents/coordinator.ts` owns the
 task plan, every write, and the final merge of evidence. `src/agents/explorer.ts`
-and `src/agents/verifier.ts` already define the read-only and verification-only
-roles, while the phase-6 story pack documents the next runtime step: isolated
-subagents with structured reports and no shared conversation history.
+defines the read-only discovery role, and `src/agents/verifier.ts` now also
+exposes the isolated verification helper runtime while the phase-6 story pack
+continues documenting the broader subagent rollout.
 
 ```mermaid
 flowchart LR
@@ -208,8 +208,8 @@ flowchart LR
   and remains the phase-6 design rule.
 - The explorer is intended to start from fresh history, use only `read_file`,
   `list_files`, and `search_files`, and return a `ContextReport`.
-- The verifier is intended to start from fresh history, use only `run_command`,
-  and return a `VerificationReport`.
+- The verifier now starts from fresh history, uses only `run_command`, and
+  returns a `VerificationReport`.
 - The coordinator decides when to spawn those helpers, how much of their output
   to keep, and whether to proceed, retry, recover, or escalate.
 

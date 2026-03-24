@@ -1,7 +1,8 @@
 # Agents
 
 This folder defines the role contracts that Shipyard reasons about when it
-plans work. Today these files are lightweight descriptors, not full runtimes.
+plans work. As Phase 6 lands, selected files also start to hold isolated helper
+runtimes behind those roles.
 
 ## Files
 
@@ -9,7 +10,7 @@ plans work. Today these files are lightweight descriptors, not full runtimes.
   final execution path
 - `explorer.ts`: read-only search and evidence gathering role
 - `verifier.ts`: read-only validation role for tests, lint, and structured
-  verification reports
+  verification reports; now also exposes the isolated verifier helper runtime
 
 ## Important Constraint
 
