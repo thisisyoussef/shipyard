@@ -5,38 +5,96 @@ import {
   type ToolDefinition,
   type ToolInputSchema,
 } from "./registry.js";
-import { runCommandTool } from "./run-command.js";
+import { normalizeTargetRelativePath } from "./file-state.js";
+import { ToolError } from "./read-file.js";
+import {
+  executeProcess,
+  type RunCommandResult,
+} from "./run-command.js";
 
 export interface GitDiffInput {
   targetDirectory: string;
-  args?: string;
+  staged?: boolean;
+  path?: string;
 }
 
 const gitDiffInputSchema = {
   type: "object",
   properties: {
-    args: {
+    staged: {
+      type: "boolean",
+      description: "Whether to diff staged changes instead of the working tree.",
+    },
+    path: {
       type: "string",
-      description: "Optional arguments to append after git diff --no-ext-diff.",
+      description: "Optional path, relative to the target directory, that scopes the diff.",
     },
   },
   additionalProperties: false,
 } satisfies ToolInputSchema;
 
-export async function gitDiffTool(input: GitDiffInput) {
-  const command = input.args?.trim()
-    ? `git diff --no-ext-diff ${input.args.trim()}`
-    : "git diff --no-ext-diff";
+function formatGitDiffOutput(result: RunCommandResult): string {
+  const lines = [
+    `Command: ${result.command}`,
+    `Exit code: ${String(result.exitCode)}`,
+    `Timed out: ${result.timedOut ? "yes" : "no"}`,
+  ];
 
-  return runCommandTool({
-    targetDirectory: input.targetDirectory,
-    command,
+  if (result.signal) {
+    lines.push(`Signal: ${result.signal}`);
+  }
+
+  if (result.truncated) {
+    lines.push("Output truncated to 5000 characters.");
+  }
+
+  if (result.combinedOutput) {
+    lines.push("", result.combinedOutput);
+  }
+
+  return lines.join("\n");
+}
+
+async function ensureGitRepository(targetDirectory: string): Promise<void> {
+  const result = await executeProcess({
+    cwd: targetDirectory,
+    command: "git",
+    args: ["rev-parse", "--is-inside-work-tree"],
+    timeoutMs: 5_000,
+  });
+
+  if (result.exitCode !== 0 || result.stdout.trim() !== "true") {
+    throw new ToolError("Target directory is not a git repository.");
+  }
+}
+
+export async function gitDiffTool(input: GitDiffInput): Promise<RunCommandResult> {
+  await ensureGitRepository(input.targetDirectory);
+
+  const args = ["diff", "--no-ext-diff"];
+
+  if (input.staged) {
+    args.push("--staged");
+  }
+
+  if (input.path?.trim()) {
+    args.push("--", normalizeTargetRelativePath(input.path));
+  }
+
+  return executeProcess({
+    cwd: input.targetDirectory,
+    command: "git",
+    args,
+    timeoutMs: 30_000,
   });
 }
 
-export const gitDiffDefinition: ToolDefinition<Omit<GitDiffInput, "targetDirectory">> = {
+export const gitDiffDefinition: ToolDefinition<
+  Omit<GitDiffInput, "targetDirectory">
+> = {
   name: "git_diff",
-  description: "Run git diff inside the target directory.",
+  description:
+    "Run git diff inside the target directory, optionally staged or path-scoped.",
   inputSchema: gitDiffInputSchema,
   async execute(input, targetDirectory) {
     try {
@@ -45,14 +103,15 @@ export const gitDiffDefinition: ToolDefinition<Omit<GitDiffInput, "targetDirecto
         ...input,
       });
 
-      return createToolSuccessResult({
-        command: result.command,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitCode: result.exitCode,
-        timedOut: result.timedOut,
-        signal: result.signal,
-      });
+      if (result.exitCode !== 0 || result.timedOut) {
+        return {
+          success: false,
+          output: "",
+          error: formatGitDiffOutput(result),
+        };
+      }
+
+      return createToolSuccessResult(formatGitDiffOutput(result));
     } catch (error) {
       return createToolErrorResult(error);
     }
