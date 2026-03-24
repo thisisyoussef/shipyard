@@ -17,5 +17,5 @@
     "allowSyntheticDefaultImports": true,
     "types": ["node"]
   },
-  "include": ["bin/**/*.ts", "packages/**/*.ts", "tests/**/*.ts"]
+  "include": ["bin/**/*.ts", "src/**/*.ts", "tests/**/*.ts"]
 }

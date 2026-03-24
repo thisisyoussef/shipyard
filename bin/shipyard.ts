@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-import { runShipyardRepl } from "../packages/core/index.js";
+import { runShipyardLoop } from "../src/engine/loop.js";
 
 interface CliOptions {
   targetPath: string;
@@ -31,8 +31,9 @@ async function main(): Promise<void> {
     throw new Error(`Target path does not exist: ${resolvedTargetPath}`);
   }
 
-  await runShipyardRepl({
+  await runShipyardLoop({
     targetPath: resolvedTargetPath,
+    workspaceRoot: process.cwd(),
   });
 }
 
