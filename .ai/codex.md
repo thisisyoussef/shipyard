@@ -31,7 +31,7 @@ Then use as needed:
 ## Route By Task Type
 
 - Feature implementation -> `.ai/workflows/feature-development.md`
-- Bug fix -> `.ai/workflows/bug-fixing.md`
+- Bug fix -> `.ai/workflows/bug-fixes.md`
 - Performance -> `.ai/workflows/performance-optimization.md`
 - Security review -> `.ai/workflows/security-review.md`
 - Deployment or release wiring -> `.ai/workflows/deployment-setup.md`
