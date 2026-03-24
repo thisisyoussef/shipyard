@@ -3,10 +3,40 @@ import { describe, expect, it } from "vitest";
 import {
   applyBackendMessage,
   createInitialWorkbenchState,
+  prepareInstructionSubmission,
   queueInstructionTurn,
 } from "../ui/src/view-models.js";
 
 describe("ui view models", () => {
+  it("injected context is attached to the next instruction and then cleared from draft state", () => {
+    const submission = prepareInstructionSubmission(
+      "inspect package.json",
+      "  Follow the package scripts before changing anything.  ",
+    );
+
+    expect(submission).toEqual({
+      instruction: "inspect package.json",
+      injectedContext: ["Follow the package scripts before changing anything."],
+      clearedContextDraft: "",
+    });
+
+    let state = createInitialWorkbenchState();
+    state = queueInstructionTurn(
+      state,
+      submission?.instruction ?? "",
+      submission?.injectedContext ?? [],
+    );
+
+    expect(state.turns[0]).toMatchObject({
+      instruction: "inspect package.json",
+      contextPreview: ["Follow the package scripts before changing anything."],
+    });
+    expect(state.contextHistory[0]).toMatchObject({
+      text: "Follow the package scripts before changing anything.",
+      turnId: "turn-1",
+    });
+  });
+
   it("tool events append to the active turn activity log", () => {
     let state = createInitialWorkbenchState();
 
@@ -120,5 +150,51 @@ describe("ui view models", () => {
         text: " }",
       },
     ]);
+  });
+
+  it("page reload restores the same session snapshot", () => {
+    const snapshot = queueInstructionTurn(
+      createInitialWorkbenchState(),
+      "inspect package.json",
+      ["Keep the current layout intact."],
+    );
+
+    const rehydrated = applyBackendMessage(createInitialWorkbenchState(), {
+      type: "session:state",
+      runtimeMode: "ui",
+      connectionState: "ready",
+      sessionId: "session-restore",
+      targetLabel: "shipyard",
+      targetDirectory: "/tmp/shipyard",
+      turnCount: 1,
+      startedAt: "2026-03-24T12:00:00.000Z",
+      lastActiveAt: "2026-03-24T12:05:00.000Z",
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: true,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: ["src"],
+        projectName: "shipyard",
+      },
+      discoverySummary: "typescript (React) via pnpm",
+      projectRulesLoaded: true,
+      workbenchState: snapshot,
+    });
+
+    expect(rehydrated.turns[0]).toMatchObject({
+      instruction: "inspect package.json",
+      contextPreview: ["Keep the current layout intact."],
+    });
+    expect(rehydrated.contextHistory[0]).toMatchObject({
+      text: "Keep the current layout intact.",
+    });
+    expect(rehydrated.agentStatus).toBe("Recovered session history after reload.");
   });
 });

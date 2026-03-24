@@ -17,7 +17,7 @@ import {
   executeInstructionTurn,
   type InstructionRuntimeState,
 } from "../engine/turn.js";
-import type { SessionState } from "../engine/state.js";
+import { saveSessionState, type SessionState } from "../engine/state.js";
 import type { BackendToFrontendMessage } from "./contracts.js";
 import {
   parseFrontendMessage,
@@ -27,6 +27,10 @@ import {
   createSessionStateMessage,
   createUiInstructionReporter,
 } from "./events.js";
+import {
+  applyBackendMessage,
+  queueInstructionTurn,
+} from "./workbench-state.js";
 
 export interface StartUiRuntimeServerOptions {
   sessionState: SessionState;
@@ -362,13 +366,23 @@ export async function startUiRuntimeServer(
       }),
     );
   };
+  const broadcastBrowserMessage = async (
+    message: BackendToFrontendMessage,
+  ): Promise<void> => {
+    options.sessionState.workbenchState =
+      message.type === "session:state"
+        ? message.workbenchState
+        : applyBackendMessage(options.sessionState.workbenchState, message);
+
+    await broadcast(message);
+  };
 
   const runBrowserInstruction = async (
     instruction: string,
     injectedContext: string[] | undefined,
   ): Promise<void> => {
     const reporter = createUiInstructionReporter({
-      send: broadcast,
+      send: broadcastBrowserMessage,
       projectRulesLoaded: options.projectRulesLoaded,
     });
 
@@ -421,6 +435,12 @@ export async function startUiRuntimeServer(
               break;
             }
 
+            options.sessionState.workbenchState = queueInstructionTurn(
+              options.sessionState.workbenchState,
+              message.text,
+              message.injectedContext ?? [],
+            );
+            await saveSessionState(options.sessionState);
             activeInstruction = runBrowserInstruction(
               message.text,
               message.injectedContext,
@@ -433,7 +453,7 @@ export async function startUiRuntimeServer(
             }
             break;
         }
-      } catch (error) {
+        } catch (error) {
           const message = error instanceof Error
             ? error.message
             : "Invalid client message.";

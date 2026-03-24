@@ -25,6 +25,21 @@ export interface CliOptions {
   ui: boolean;
 }
 
+export function formatUiStartupLines(options: {
+  url: string;
+  socketUrl: string;
+  sessionId: string;
+  connectionState: "ready" | "agent-busy" | "connecting" | "disconnected" | "error";
+}): string[] {
+  return [
+    chalk.green(`UI mode ready for session ${options.sessionId}`),
+    `Browser: ${options.url}`,
+    `WebSocket: ${options.socketUrl}`,
+    `Initial browser state: ${options.connectionState}`,
+    "Press Ctrl+C to stop Shipyard UI.",
+  ];
+}
+
 export function parseArgs(argv: string[]): CliOptions {
   const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
   const program = new Command();
@@ -132,9 +147,14 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
 
-    console.log(chalk.green(`UI mode ready at ${uiRuntime.url}`));
-    console.log(`WebSocket: ${uiRuntime.socketUrl}`);
-    console.log("Press Ctrl+C to stop Shipyard UI.");
+    for (const line of formatUiStartupLines({
+      url: uiRuntime.url,
+      socketUrl: uiRuntime.socketUrl,
+      sessionId: sessionState.sessionId,
+      connectionState: "ready",
+    })) {
+      console.log(line);
+    }
 
     await uiRuntime.closed;
     return;

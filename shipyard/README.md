@@ -65,3 +65,4 @@ The pre-2 developer UI uses:
 - a single React SPA built with Vite into `shipyard/dist/ui`
 - the same persisted Shipyard session and engine state used by terminal mode
 - a live event bridge that streams thinking, tool calls, tool results, errors, and session snapshots over one WebSocket session
+- browser-visible context injection receipts and reload-safe session rehydration for the active `--ui` session

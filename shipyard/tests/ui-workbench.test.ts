@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { ShipyardWorkbench } from "../ui/src/ShipyardWorkbench.js";
 import type {
+  ContextReceiptViewModel,
   FileEventViewModel,
   SessionStateViewModel,
   TurnViewModel,
@@ -85,6 +86,15 @@ const fileEvents: FileEventViewModel[] = [
   },
 ];
 
+const contextHistory: ContextReceiptViewModel[] = [
+  {
+    id: "context-1",
+    text: "Honor the surgical editing contract.",
+    submittedAt: "2026-03-24T12:03:00.000Z",
+    turnId: "turn-1",
+  },
+];
+
 function renderWorkbench(overrides?: {
   connectionState?: "connecting" | "ready" | "agent-busy" | "disconnected" | "error";
   agentStatus?: string;
@@ -94,6 +104,7 @@ function renderWorkbench(overrides?: {
       sessionState,
       turns,
       fileEvents,
+      contextHistory,
       connectionState: overrides?.connectionState ?? "ready",
       agentStatus: overrides?.agentStatus ?? "Ready for the next instruction.",
       instruction: "",
@@ -119,6 +130,7 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain('aria-label="File activity"');
     expect(markup).toContain('class="status-bar"');
     expect(markup).toContain("Developer Workbench");
+    expect(markup).toContain("Recent injections");
   });
 
   it("connection and error states remain visible and keyboard accessible", () => {
