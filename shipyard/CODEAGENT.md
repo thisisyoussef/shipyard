@@ -22,7 +22,9 @@ The coordinator is the only writer. Explorer and verifier are modeled as read-on
 Shipyard's browser mode is an alternate runtime surface over the same session and engine state, not a second product.
 
 - `src/bin/shipyard.ts` selects terminal mode or `--ui`
+- `src/engine/turn.ts` owns the shared per-instruction execution path used by both terminal and browser mode
 - `src/ui/contracts.ts` owns the typed WebSocket request/response protocol
+- `src/ui/events.ts` maps shared turn events into browser-safe messages
 - `src/ui/server.ts` owns the local HTTP and WebSocket runtime
 - `ui/` contains the React SPA source
 - `vite.config.ts` builds that SPA into `dist/ui`

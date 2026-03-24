@@ -64,3 +64,4 @@ The pre-2 developer UI uses:
 - Node's built-in `http` server plus `ws` for the local backend transport
 - a single React SPA built with Vite into `shipyard/dist/ui`
 - the same persisted Shipyard session and engine state used by terminal mode
+- a live event bridge that streams thinking, tool calls, tool results, errors, and session snapshots over one WebSocket session

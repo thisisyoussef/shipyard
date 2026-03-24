@@ -42,9 +42,22 @@ export const sessionStateMessageSchema = z.object({
   connectionState: uiConnectionStateSchema,
   sessionId: z.string(),
   targetLabel: z.string(),
+  targetDirectory: z.string(),
   turnCount: z.number().int().nonnegative(),
   startedAt: z.string(),
   lastActiveAt: z.string(),
+  discovery: z.object({
+    isGreenfield: z.boolean(),
+    language: z.string().nullable(),
+    framework: z.string().nullable(),
+    packageManager: z.string().nullable(),
+    scripts: z.record(z.string(), z.string()),
+    hasReadme: z.boolean(),
+    hasAgentsMd: z.boolean(),
+    topLevelFiles: z.array(z.string()),
+    topLevelDirectories: z.array(z.string()),
+    projectName: z.string().nullable(),
+  }),
   discoverySummary: z.string(),
   projectRulesLoaded: z.boolean(),
 });
@@ -56,12 +69,14 @@ export const agentThinkingMessageSchema = z.object({
 
 export const agentToolCallMessageSchema = z.object({
   type: z.literal("agent:tool_call"),
+  callId: z.string(),
   toolName: z.string(),
   summary: z.string().optional(),
 });
 
 export const agentToolResultMessageSchema = z.object({
   type: z.literal("agent:tool_result"),
+  callId: z.string(),
   toolName: z.string(),
   success: z.boolean(),
   summary: z.string(),
@@ -76,6 +91,7 @@ export const agentEditMessageSchema = z.object({
   type: z.literal("agent:edit"),
   path: z.string(),
   summary: z.string(),
+  diff: z.string(),
 });
 
 export const agentDoneMessageSchema = z.object({

@@ -2,7 +2,6 @@ import { access, readFile } from "node:fs/promises";
 import {
   createServer,
   type IncomingMessage,
-  type Server as HttpServer,
   type ServerResponse,
 } from "node:http";
 import path from "node:path";
@@ -10,27 +9,32 @@ import { fileURLToPath } from "node:url";
 
 import {
   WebSocketServer,
-  type RawData,
   type WebSocket,
 } from "ws";
 
-import { formatDiscoverySummary } from "../context/discovery.js";
 import {
-  createSessionSnapshot,
-  type SessionState,
-  type SessionSnapshot,
-} from "../engine/state.js";
+  createInstructionRuntimeState,
+  executeInstructionTurn,
+  type InstructionRuntimeState,
+} from "../engine/turn.js";
+import type { SessionState } from "../engine/state.js";
 import type { BackendToFrontendMessage } from "./contracts.js";
 import {
   parseFrontendMessage,
   serializeBackendMessage,
 } from "./contracts.js";
+import {
+  createSessionStateMessage,
+  createUiInstructionReporter,
+} from "./events.js";
 
 export interface StartUiRuntimeServerOptions {
   sessionState: SessionState;
   host?: string;
   port?: number;
+  projectRules: string;
   projectRulesLoaded: boolean;
+  baseInjectedContext?: string[];
 }
 
 export interface UiRuntimeServer {
@@ -49,39 +53,14 @@ const packageRoot = path.resolve(
 const builtUiDirectory = path.join(packageRoot, "dist", "ui");
 const builtUiIndexPath = path.join(builtUiDirectory, "index.html");
 
-function createTargetLabel(targetDirectory: string): string {
-  const targetLabel = path.basename(targetDirectory);
-  return targetLabel || targetDirectory;
-}
-
-function createSessionStateMessage(
-  sessionState: SessionState,
-  projectRulesLoaded: boolean,
-): BackendToFrontendMessage {
-  const snapshot = createSessionSnapshot(sessionState);
-
-  return {
-    type: "session:state",
-    runtimeMode: "ui",
-    connectionState: "ready",
-    sessionId: snapshot.sessionId,
-    targetLabel: createTargetLabel(snapshot.targetDirectory),
-    turnCount: snapshot.turnCount,
-    startedAt: snapshot.startedAt,
-    lastActiveAt: snapshot.lastActiveAt,
-    discoverySummary: formatDiscoverySummary(snapshot.discovery),
-    projectRulesLoaded,
-  };
-}
-
 function createHealthResponse(
-  sessionState: SessionSnapshot,
+  sessionState: SessionState,
 ): Record<string, unknown> {
   return {
     ok: true,
     runtimeMode: "ui",
     sessionId: sessionState.sessionId,
-    targetLabel: createTargetLabel(sessionState.targetDirectory),
+    targetLabel: path.basename(sessionState.targetDirectory) || sessionState.targetDirectory,
     turnCount: sessionState.turnCount,
   };
 }
@@ -113,7 +92,11 @@ function contentTypeFor(filePath: string): string {
 }
 
 function createFallbackUiHtml(sessionState: SessionState): string {
-  const sessionMessage = createSessionStateMessage(sessionState, false);
+  const sessionMessage = createSessionStateMessage({
+    sessionState,
+    connectionState: "ready",
+    projectRulesLoaded: false,
+  });
 
   return `<!doctype html>
 <html lang="en">
@@ -276,6 +259,10 @@ function sendMessage(
   socket: WebSocket,
   message: BackendToFrontendMessage,
 ): void {
+  if (socket.readyState !== socket.OPEN) {
+    return;
+  }
+
   socket.send(serializeBackendMessage(message));
 }
 
@@ -313,6 +300,10 @@ export async function startUiRuntimeServer(
 ): Promise<UiRuntimeServer> {
   const host = options.host ?? "127.0.0.1";
   const fallbackHtml = createFallbackUiHtml(options.sessionState);
+  const runtimeState = createInstructionRuntimeState({
+    projectRules: options.projectRules,
+    baseInjectedContext: options.baseInjectedContext,
+  });
   const httpServer = createServer(
     async (request: IncomingMessage, response: ServerResponse) => {
       const requestUrl = request.url ?? "/";
@@ -323,7 +314,7 @@ export async function startUiRuntimeServer(
         });
         response.end(
           JSON.stringify(
-            createHealthResponse(createSessionSnapshot(options.sessionState)),
+            createHealthResponse(options.sessionState),
           ),
         );
         return;
@@ -333,65 +324,122 @@ export async function startUiRuntimeServer(
     },
   );
   const socketServer = new WebSocketServer({ noServer: true });
+  const sockets = new Set<WebSocket>();
+  let activeInstruction: Promise<void> | null = null;
   const closed = new Promise<void>((resolve) => {
     httpServer.once("close", () => {
       resolve();
     });
   });
 
-  socketServer.on("connection", (socket) => {
-    sendMessage(
-      socket,
-      createSessionStateMessage(
-        options.sessionState,
-        options.projectRulesLoaded,
-      ),
-    );
+  const connectionState = (): "ready" | "agent-busy" =>
+    activeInstruction === null ? "ready" : "agent-busy";
 
-    socket.on("message", (rawData: RawData) => {
+  const sendToSocket = async (
+    socket: WebSocket,
+    message: BackendToFrontendMessage,
+  ): Promise<void> => {
+    try {
+      sendMessage(socket, message);
+    } catch {
+      // Keep the local engine running if a browser connection drops mid-turn.
+    }
+  };
+
+  const broadcast = async (message: BackendToFrontendMessage): Promise<void> => {
+    await Promise.all(
+      [...sockets].map((socket) => sendToSocket(socket, message)),
+    );
+  };
+
+  const sendSessionState = async (socket: WebSocket): Promise<void> => {
+    await sendToSocket(
+      socket,
+      createSessionStateMessage({
+        sessionState: options.sessionState,
+        connectionState: connectionState(),
+        projectRulesLoaded: options.projectRulesLoaded,
+      }),
+    );
+  };
+
+  const runBrowserInstruction = async (
+    instruction: string,
+    injectedContext: string[] | undefined,
+  ): Promise<void> => {
+    const reporter = createUiInstructionReporter({
+      send: broadcast,
+      projectRulesLoaded: options.projectRulesLoaded,
+    });
+
+    await executeInstructionTurn({
+      sessionState: options.sessionState,
+      runtimeState,
+      instruction,
+      injectedContext,
+      reporter,
+    });
+  };
+
+  socketServer.on("connection", (socket) => {
+    sockets.add(socket);
+    void sendSessionState(socket);
+
+    socket.on("close", () => {
+      sockets.delete(socket);
+    });
+
+    socket.on("message", (rawData) => {
       const rawMessage = rawData.toString();
 
-      try {
+      void (async () => {
+        try {
         const message = parseFrontendMessage(rawMessage);
 
         switch (message.type) {
           case "status":
-            sendMessage(
-              socket,
-              createSessionStateMessage(
-                options.sessionState,
-                options.projectRulesLoaded,
-              ),
-            );
+            await sendSessionState(socket);
             break;
           case "cancel":
-            sendMessage(
+            await sendToSocket(
               socket,
               createErrorMessage(
-                "No active browser-driven instruction is running yet.",
+                activeInstruction === null
+                  ? "No active browser-driven instruction is running yet."
+                  : "Cancellation is not implemented yet for browser turns.",
               ),
             );
             break;
           case "instruction":
-            sendMessage(socket, {
-              type: "agent:thinking",
-              message:
-                "UI mode accepted the instruction contract. Live engine streaming lands in PRE2-S02.",
-            });
-            sendMessage(socket, {
-              type: "agent:done",
-              status: "error",
-              summary:
-                "Instruction execution is not wired to the browser yet in PRE2-S01.",
-            });
+            if (activeInstruction !== null) {
+              await sendToSocket(
+                socket,
+                createErrorMessage(
+                  "A browser instruction is already in progress for this session.",
+                ),
+              );
+              break;
+            }
+
+            activeInstruction = runBrowserInstruction(
+              message.text,
+              message.injectedContext,
+            );
+
+            try {
+              await activeInstruction;
+            } finally {
+              activeInstruction = null;
+            }
             break;
         }
       } catch (error) {
-        const message = error instanceof Error
-          ? error.message
-          : "Invalid client message.";
-        sendMessage(socket, createErrorMessage(message));
-      }
+          const message = error instanceof Error
+            ? error.message
+            : "Invalid client message.";
+          await sendToSocket(socket, createErrorMessage(message));
+        }
+      })();
     });
   });
 
