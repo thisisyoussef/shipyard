@@ -1,5 +1,12 @@
-import type { ChangeEvent, FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 
+import {
+  buildActivityBlocks,
+  buildDiffPreview,
+  selectVisibleFileEvents,
+  selectVisibleTurns,
+  type ActivityScope,
+} from "./activity-diff.js";
 import {
   Badge,
   SectionHeader,
@@ -129,11 +136,62 @@ function getFileEventTone(status: FileEventViewModel["status"]): BadgeTone {
   return "neutral";
 }
 
+function getTurnOrdinal(
+  turnId: string,
+  fallback: number,
+): number {
+  const match = turnId.match(/(\d+)$/);
+
+  if (!match) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(match[1] ?? "", 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function formatScopeLabel(scope: ActivityScope): string {
+  return scope === "latest" ? "Latest run" : "All runs";
+}
+
+function createHiddenFileEventCopy(
+  scope: ActivityScope,
+  hiddenFileEventCount: number,
+): string {
+  if (scope === "latest" && hiddenFileEventCount > 0) {
+    return `The latest run has no file activity yet. Switch to all runs to review ${String(hiddenFileEventCount)} earlier item${hiddenFileEventCount === 1 ? "" : "s"}.`;
+  }
+
+  return "Reads, edits, and diff previews will land here as soon as the next turn touches the repository.";
+}
+
 export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
+  const [activityScope, setActivityScope] = useState<ActivityScope>("latest");
+  const [expandedDiffs, setExpandedDiffs] = useState<Record<string, boolean>>(
+    {},
+  );
   const hasSession = props.sessionState !== null;
   const surfaceState = formatSurfaceState(props.connectionState, hasSession);
   const connectionLabel = formatConnectionLabel(props.connectionState, hasSession);
   const connectionTone = getConnectionTone(surfaceState);
+  const visibleTurns = selectVisibleTurns(props.turns, activityScope);
+  const visibleFileEvents = selectVisibleFileEvents(
+    props.fileEvents,
+    visibleTurns,
+    activityScope,
+  );
+  const hiddenTurnCount = Math.max(props.turns.length - visibleTurns.length, 0);
+  const hiddenFileEventCount = Math.max(
+    props.fileEvents.length - visibleFileEvents.length,
+    0,
+  );
+
+  function toggleDiffExpansion(fileEventId: string): void {
+    setExpandedDiffs((current) => ({
+      ...current,
+      [fileEventId]: !current[fileEventId],
+    }));
+  }
 
   return (
     <div className="workbench-shell" data-state={surfaceState}>
@@ -342,7 +400,8 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                   Run instruction
                 </button>
                 <p className="support-copy">
-                  Activity logs stay compact by default and expand per turn.
+                  Activity stays focused on the most recent run by default and
+                  expands into historical turns when you need the full trail.
                 </p>
               </div>
             </form>
@@ -353,9 +412,30 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               kicker="Activity"
               title="Chat and execution log"
               meta={(
-                <Badge tone="neutral">
-                  {props.turns.length} turn{props.turns.length === 1 ? "" : "s"}
-                </Badge>
+                <div className="activity-toolbar">
+                  {hiddenTurnCount > 0 ? (
+                    <Badge tone="warning">
+                      {hiddenTurnCount} older hidden
+                    </Badge>
+                  ) : null}
+                  <div
+                    className="segmented-control"
+                    role="group"
+                    aria-label="Activity scope"
+                  >
+                    {(["latest", "all"] as const).map((scope) => (
+                      <button
+                        key={scope}
+                        type="button"
+                        className="scope-toggle"
+                        data-active={activityScope === scope}
+                        onClick={() => setActivityScope(scope)}
+                      >
+                        {formatScopeLabel(scope)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             />
 
@@ -370,28 +450,47 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               </div>
             ) : (
               <ol className="turn-list">
-                {props.turns.map((turn, index) => {
+                {visibleTurns.map((turn, index) => {
                   const turnTone = getTurnTone(turn.status);
+                  const originalIndex = props.turns.findIndex(
+                    (candidate) => candidate.id === turn.id,
+                  );
+                  const turnOrdinal = getTurnOrdinal(
+                    turn.id,
+                    originalIndex === -1
+                      ? visibleTurns.length - index
+                      : props.turns.length - originalIndex,
+                  );
+                  const activityBlocks = buildActivityBlocks(turn.activity);
 
                   return (
                     <li key={turn.id}>
                       <SurfaceCard
                         as="article"
                         className="turn-card"
+                        data-tone={turnTone}
                       >
                         <div className="turn-header">
                           <div className="turn-heading">
-                            <span className="turn-label">
-                              Turn {props.turns.length - index}
-                            </span>
+                            <span className="turn-label">Turn {turnOrdinal}</span>
                             <h3>{turn.instruction}</h3>
                           </div>
-                          <Badge
-                            className="turn-status-pill"
-                            tone={turnTone}
-                          >
-                            {turn.status}
-                          </Badge>
+                          <div className="turn-header-meta">
+                            <Badge
+                              className="turn-status-pill"
+                              tone={turnTone}
+                            >
+                              {turn.status}
+                            </Badge>
+                            <span className="turn-started-at">
+                              {formatTimestamp(turn.startedAt)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="turn-summary-card">
+                          <span className="micro-label">Latest summary</span>
+                          <p>{turn.summary}</p>
                         </div>
 
                         {turn.contextPreview.length > 0 ? (
@@ -405,49 +504,83 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
 
                         {turn.agentMessages.length > 0 ? (
                           <div className="agent-copy">
-                            {turn.agentMessages.map((message) => (
+                            <span className="micro-label">Agent copy</span>
+                            {turn.agentMessages.slice(-1).map((message) => (
                               <p key={message}>{message}</p>
                             ))}
                           </div>
-                        ) : (
-                          <p className="empty-copy">
-                            Shipyard has not emitted a full agent response yet.
-                          </p>
-                        )}
+                        ) : null}
 
                         <details
                           className="activity-log"
                           open={index === 0 || turn.status === "working"}
                         >
                           <summary>
-                            <span>Activity log</span>
-                            <Badge tone="neutral">{turn.activity.length} events</Badge>
+                            <div className="activity-log-summary-copy">
+                              <span>Tool timeline</span>
+                              <small>{activityBlocks.length} grouped steps</small>
+                            </div>
+                            <div className="activity-log-summary-meta">
+                              <Badge tone="neutral">
+                                {turn.activity.length} raw events
+                              </Badge>
+                              {turn.status === "working" ? (
+                                <Badge tone="accent">Live</Badge>
+                              ) : null}
+                            </div>
                           </summary>
-                          <ol className="activity-list">
-                            {turn.activity.map((activity) => (
+                          <ol className="activity-block-list">
+                            {activityBlocks.map((activity) => (
                               <li
                                 key={activity.id}
-                                className="activity-row"
+                                className="activity-block"
                                 data-tone={activity.tone}
+                                data-kind={activity.kind}
                               >
-                                <StatusDot
-                                  tone={
-                                    activity.tone === "danger"
-                                      ? "danger"
-                                      : activity.tone === "success"
-                                      ? "success"
-                                      : "accent"
-                                  }
-                                />
-                                <div>
-                                  <div className="activity-headline">
-                                    <strong>{activity.title}</strong>
-                                    {activity.toolName ? (
-                                      <code>{activity.toolName}</code>
-                                    ) : null}
+                                <div className="activity-block-header">
+                                  <div className="activity-block-title-row">
+                                    <StatusDot tone={activity.tone} />
+                                    <div>
+                                      <p className="activity-block-kicker">
+                                        {activity.kind === "tool"
+                                          ? "Tool step"
+                                          : "Agent event"}
+                                      </p>
+                                      <h4>{activity.title}</h4>
+                                    </div>
                                   </div>
-                                  <p>{activity.detail}</p>
+                                  <Badge tone={activity.tone}>
+                                    {activity.statusLabel}
+                                  </Badge>
                                 </div>
+
+                                {activity.metadata.length > 0 ? (
+                                  <ul className="activity-block-meta">
+                                    {activity.metadata.map((item) => (
+                                      <li key={`${activity.id}-${item.label}`}>
+                                        <span>{item.label}</span>
+                                        {item.monospace ? (
+                                          <code>{item.value}</code>
+                                        ) : (
+                                          <strong>{item.value}</strong>
+                                        )}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : null}
+
+                                <dl className="activity-detail-list">
+                                  {activity.details.map((detail) => (
+                                    <div
+                                      key={detail.id}
+                                      className="activity-detail-row"
+                                      data-tone={detail.tone}
+                                    >
+                                      <dt>{detail.label}</dt>
+                                      <dd>{detail.text}</dd>
+                                    </div>
+                                  ))}
+                                </dl>
                               </li>
                             ))}
                           </ol>
@@ -467,58 +600,105 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               kicker="File activity"
               title="Diff-first sidebar"
               meta={(
-                <Badge tone="neutral">
-                  {props.fileEvents.length} items
-                </Badge>
+                <div className="file-panel-meta">
+                  <Badge tone="neutral">
+                    {visibleFileEvents.length} items
+                  </Badge>
+                  {hiddenFileEventCount > 0 ? (
+                    <Badge tone="warning">
+                      {hiddenFileEventCount} hidden
+                    </Badge>
+                  ) : null}
+                </div>
               )}
             />
 
-            {props.fileEvents.length === 0 ? (
+            {visibleFileEvents.length === 0 ? (
               <div className="empty-state compact-empty-state">
-                <p className="empty-heading">No file events yet</p>
+                <p className="empty-heading">No file events in {formatScopeLabel(activityScope).toLowerCase()}</p>
                 <p className="empty-copy">
-                  Reads, edits, and diff previews will land here as soon as the
-                  next turn touches the repository.
+                  {createHiddenFileEventCopy(activityScope, hiddenFileEventCount)}
                 </p>
               </div>
             ) : (
               <ol className="file-event-list">
-                {props.fileEvents.map((fileEvent) => (
-                  <li key={fileEvent.id}>
-                    <SurfaceCard
-                      as="article"
-                      className="file-event-card"
-                    >
-                      <div className="file-event-header">
-                        <div>
-                          <span className="file-event-title">{fileEvent.title}</span>
-                          <h3>{fileEvent.path}</h3>
-                        </div>
-                        <Badge
-                          className="file-event-status"
-                          tone={getFileEventTone(fileEvent.status)}
-                        >
-                          {fileEvent.status}
-                        </Badge>
-                      </div>
-                      <p className="file-event-summary">{fileEvent.summary}</p>
+                {visibleFileEvents.map((fileEvent) => {
+                  const expanded = expandedDiffs[fileEvent.id] === true;
+                  const diffPreview = buildDiffPreview(fileEvent, expanded);
 
-                      {fileEvent.diffLines.length > 0 ? (
-                        <pre className="diff-preview" aria-label={`Diff preview for ${fileEvent.path}`}>
-                          {fileEvent.diffLines.map((line) => (
-                            <span
-                              key={line.id}
-                              className="diff-line"
-                              data-kind={line.kind}
+                  return (
+                    <li key={fileEvent.id}>
+                      <SurfaceCard
+                        as="article"
+                        className="file-event-card"
+                        data-tone={getFileEventTone(fileEvent.status)}
+                      >
+                        <div className="file-event-header">
+                          <div>
+                            <span className="file-event-title">{fileEvent.title}</span>
+                            <h3>{fileEvent.path}</h3>
+                          </div>
+                          <Badge
+                            className="file-event-status"
+                            tone={getFileEventTone(fileEvent.status)}
+                          >
+                            {fileEvent.status}
+                          </Badge>
+                        </div>
+
+                        <div className="file-event-meta-row">
+                          {fileEvent.toolName ? <code>{fileEvent.toolName}</code> : null}
+                          <span>{fileEvent.turnId}</span>
+                        </div>
+                        <p className="file-event-summary">{fileEvent.summary}</p>
+
+                        {fileEvent.diffLines.length > 0 ? (
+                          <div className="diff-preview-shell">
+                            <div className="diff-legend">
+                              <Badge tone="success">ADD</Badge>
+                              <Badge tone="danger">DEL</Badge>
+                              <Badge tone="neutral">CTX</Badge>
+                              <Badge tone="warning">META</Badge>
+                              <span>{diffPreview.totalLineCount} lines</span>
+                            </div>
+
+                            <ol
+                              className="diff-line-list"
+                              aria-label={`Diff preview for ${fileEvent.path}`}
                             >
-                              {line.text}
-                            </span>
-                          ))}
-                        </pre>
-                      ) : null}
-                    </SurfaceCard>
-                  </li>
-                ))}
+                              {diffPreview.lines.map((line) => (
+                                <li
+                                  key={line.id}
+                                  className="diff-render-line"
+                                  data-kind={line.kind}
+                                >
+                                  <span className="diff-line-label">
+                                    {line.label}
+                                  </span>
+                                  <code className="diff-line-text">
+                                    {line.text || " "}
+                                  </code>
+                                </li>
+                              ))}
+                            </ol>
+
+                            {diffPreview.hasOverflow ? (
+                              <button
+                                type="button"
+                                className="ghost-action diff-toggle"
+                                onClick={() => toggleDiffExpansion(fileEvent.id)}
+                              >
+                                {expanded
+                                  ? "Show fewer lines"
+                                  : `Show ${String(diffPreview.hiddenLineCount)} more lines`}
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </SurfaceCard>
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </SurfaceCard>

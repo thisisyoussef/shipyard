@@ -39,8 +39,37 @@ const sessionState: SessionStateViewModel = {
 
 const turns: TurnViewModel[] = [
   {
+    id: "turn-2",
+    instruction: "inspect package.json",
+    status: "success",
+    startedAt: "2026-03-24T12:05:00.000Z",
+    summary: "Read the package manifest and confirmed the scripts.",
+    contextPreview: ["Use the package scripts as the source of truth."],
+    agentMessages: ["Read the package manifest and confirmed the scripts."],
+    activity: [
+      {
+        id: "event-2",
+        kind: "tool",
+        title: "read file",
+        detail: "path: package.json",
+        tone: "working",
+        toolName: "read_file",
+        callId: "call-read-1",
+      },
+      {
+        id: "event-3",
+        kind: "tool",
+        title: "read file finished",
+        detail: "Read package.json (18 lines).",
+        tone: "success",
+        toolName: "read_file",
+        callId: "call-read-1",
+      },
+    ],
+  },
+  {
     id: "turn-1",
-    instruction: "inspect src/app.ts",
+    instruction: "legacy hidden turn",
     status: "error",
     startedAt: "2026-03-24T12:04:00.000Z",
     summary: "Connection error. Waiting to retry...",
@@ -59,6 +88,33 @@ const turns: TurnViewModel[] = [
 ];
 
 const fileEvents: FileEventViewModel[] = [
+  {
+    id: "file-2",
+    path: "package.json",
+    status: "diff",
+    title: "Diff preview",
+    summary: "Normalized the package scripts.",
+    toolName: "read_file",
+    callId: "call-read-1",
+    turnId: "turn-2",
+    diffLines: [
+      {
+        id: "pkg-diff-0",
+        kind: "meta",
+        text: "@@ -1,5 +1,5 @@",
+      },
+      {
+        id: "pkg-diff-1",
+        kind: "remove",
+        text: "-\"test\": \"echo old\"",
+      },
+      {
+        id: "pkg-diff-2",
+        kind: "add",
+        text: "+\"test\": \"vitest run\"",
+      },
+    ],
+  },
   {
     id: "file-1",
     path: "src/app.ts",
@@ -134,6 +190,12 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain('class="section-header"');
     expect(markup).toContain('class="ui-badge"');
     expect(markup).toContain('class="status-dot"');
+    expect(markup).toContain("Latest run");
+    expect(markup).toContain("All runs");
+    expect(markup).toContain('class="activity-block"');
+    expect(markup).toContain('class="diff-line-label"');
+    expect(markup).toContain(">ADD<");
+    expect(markup).not.toContain("legacy hidden turn");
     expect((markup.match(/class="section-header"/g) ?? []).length).toBeGreaterThan(2);
   });
 
