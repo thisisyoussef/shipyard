@@ -10,6 +10,7 @@
 1. Prove Shipyard's MVP requirements hold under repeated, messy, real-world usage rather than only narrow happy-path tests.
 2. Turn the current scattered smoke coverage into one explicit requirement matrix with clear pass/fail expectations.
 3. Catch regressions early in the persistent loop, tool guardrails, UI runtime, context injection, and tracing surfaces.
+4. Keep contract tests aligned with the runtime so failures indicate real product regressions, not stale assertions.
 
 ## Shared Constraints
 
@@ -23,11 +24,14 @@
 
 | Story ID | Title | Purpose | Depends On |
 |---|---|---|---|
-| SV-S01 | MVP Stress and Smoke Matrix | Build one requirement-driven stress and smoke suite for the persistent loop, tools, context/runtime behavior, UI flow, and tracing evidence. | Phase 4 implementation, Phase Pre-2 implementation |
+| SV-S02 | UI Error-Stream Contract Alignment | Align UI runtime error-stream tests with the authoritative turn reporter contract and remove ordering flake. | Phase Pre-2 implementation |
+| SV-S03 | Persistent Loop Test Flakiness Hardening | Make the persistent-loop integration test resilient to load and timing variance. | Phase 1 implementation |
+| SV-S01 | MVP Stress and Smoke Matrix | Build one requirement-driven stress and smoke suite for the persistent loop, tools, context/runtime behavior, UI flow, and tracing evidence. | SV-S02, SV-S03 |
 
 ## Sequencing Rationale
 
-- `SV-S01` is a single hardening story because the value comes from one shared matrix that spans the whole MVP, not from isolated test fragments.
+- `SV-S02` and `SV-S03` land first so the matrix suite is built on stable, contract-accurate signals rather than flaky tests.
+- `SV-S01` is then valuable because it can rely on those stable building blocks instead of rediscovering them.
 
 ## Whole-Pack Success Signal
 
