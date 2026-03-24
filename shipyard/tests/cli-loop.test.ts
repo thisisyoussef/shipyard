@@ -194,7 +194,10 @@ describe("shipyard CLI loop", () => {
         await waitForText(runner, '"turnCount": 0');
 
         sendLine(runner, "create a README");
-        await waitForText(runner, 'Turn 1 planned in phase "code".');
+        await waitForText(
+          runner,
+          'Turn 1 finished in phase "code" via graph runtime.',
+        );
 
         const firstSnapshot = await waitForSessionState(
           targetDirectory,
@@ -208,7 +211,10 @@ describe("shipyard CLI loop", () => {
         await waitForText(runner, '"turnCount": 1');
 
         sendLine(runner, "add a package.json");
-        await waitForText(runner, 'Turn 2 planned in phase "code".');
+        await waitForText(
+          runner,
+          'Turn 2 finished in phase "code" via graph runtime.',
+        );
 
         const secondSnapshot = await waitForSessionState(
           targetDirectory,
@@ -216,8 +222,8 @@ describe("shipyard CLI loop", () => {
           (state) => state.turnCount === 2,
         );
         expect(secondSnapshot.turnCount).toBe(2);
-        expect(secondSnapshot.rollingSummary).toContain("Turn 1: create a README");
-        expect(secondSnapshot.rollingSummary).toContain("Turn 2: add a package.json");
+        expect(secondSnapshot.rollingSummary).toContain("Turn 1: create a README ->");
+        expect(secondSnapshot.rollingSummary).toContain("Turn 2: add a package.json ->");
 
         sendLine(runner, "exit");
         await waitForText(runner, "Shipyard session closed.");
@@ -243,7 +249,10 @@ describe("shipyard CLI loop", () => {
         sessionId = extractSessionId(firstRun.output.combined);
 
         sendLine(firstRun, "inspect the repo");
-        await waitForText(firstRun, 'Turn 1 planned in phase "code".');
+        await waitForText(
+          firstRun,
+          'Turn 1 finished in phase "code" via graph runtime.',
+        );
         await waitForText(firstRun, "Observations: Found no files in the target directory.");
         sendLine(firstRun, "exit");
         await waitForText(firstRun, "Shipyard session closed.");

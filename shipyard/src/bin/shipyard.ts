@@ -11,6 +11,7 @@ import { nanoid } from "nanoid";
 import { discoverTarget, formatDiscoverySummary } from "../context/discovery.js";
 import { loadProjectRules } from "../context/envelope.js";
 import { runShipyardLoop } from "../engine/loop.js";
+import type { InstructionRuntimeMode } from "../engine/turn.js";
 import {
   createSessionState,
   ensureShipyardDirectories,
@@ -84,6 +85,24 @@ function isDirectExecution(): boolean {
   return import.meta.url === pathToFileURL(entryPath).href;
 }
 
+function resolveRuntimeMode(
+  env: NodeJS.ProcessEnv = process.env,
+): InstructionRuntimeMode {
+  const configuredMode = env.SHIPYARD_RUNTIME_MODE?.trim();
+
+  if (!configuredMode || configuredMode === "graph") {
+    return "graph";
+  }
+
+  if (configuredMode === "fallback") {
+    return "fallback";
+  }
+
+  throw new Error(
+    `Invalid SHIPYARD_RUNTIME_MODE value: ${configuredMode}. Expected "graph" or "fallback".`,
+  );
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const options = parseArgs(argv);
   const resolvedTargetPath = path.resolve(process.cwd(), options.targetPath);
@@ -129,6 +148,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   printDiscovery(discovery);
 
   const projectRules = await loadProjectRules(resolvedTargetPath);
+  const runtimeMode = resolveRuntimeMode();
   const injectedContext = projectRules
     ? ["Loaded AGENTS.md rules into the stable context layer."]
     : [];
@@ -139,6 +159,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       projectRules,
       projectRulesLoaded: Boolean(projectRules),
       baseInjectedContext: injectedContext,
+      runtimeMode,
     });
     const shutdown = () => {
       void uiRuntime.close();
@@ -163,6 +184,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   await runShipyardLoop({
     sessionState,
     injectedContext,
+    runtimeMode,
   });
 }
 
