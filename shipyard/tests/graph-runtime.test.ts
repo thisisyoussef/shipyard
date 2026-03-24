@@ -21,6 +21,12 @@ import {
   runFallbackRuntime,
 } from "../src/engine/graph.js";
 import { createCodePhase } from "../src/phases/code/index.js";
+import type {
+  LangSmithTraceReference,
+  RunWithLangSmithTraceOptions,
+  RunWithLangSmithTraceResult,
+} from "../src/tracing/langsmith.js";
+import * as langsmith from "../src/tracing/langsmith.js";
 import { CheckpointManager } from "../src/checkpoints/manager.js";
 import {
   clearTrackedReadHashes,
@@ -128,6 +134,27 @@ async function createTempProject(): Promise<string> {
   return directory;
 }
 
+function mockLangSmithTrace(trace: LangSmithTraceReference): void {
+  vi.spyOn(langsmith, "getLangSmithConfig").mockReturnValue({
+    enabled: true,
+    project: trace.projectName,
+    endpoint: "https://api.smith.langchain.com",
+    apiKey: "lsv2_test_123",
+    workspaceId: null,
+  });
+  vi
+    .spyOn(langsmith, "getLangSmithCallbacksForCurrentTrace")
+    .mockResolvedValue(undefined);
+  vi.spyOn(langsmith, "runWithLangSmithTrace").mockImplementation(
+    async <Args extends unknown[], Result>(
+      options: RunWithLangSmithTraceOptions<Args, Result>,
+    ): Promise<RunWithLangSmithTraceResult<Result>> => ({
+      result: await options.fn(...options.args),
+      trace,
+    }),
+  );
+}
+
 function createInitialState(targetDirectory = "/tmp/shipyard-graph") {
   return createAgentGraphState({
     sessionId: "session-123",
@@ -141,6 +168,7 @@ function createInitialState(targetDirectory = "/tmp/shipyard-graph") {
 describe("Phase 4 graph runtime contract", () => {
   afterEach(async () => {
     clearTrackedReadHashes();
+    vi.restoreAllMocks();
 
     const directories = createdDirectories.splice(0, createdDirectories.length);
 
@@ -365,6 +393,70 @@ describe("Phase 4 graph runtime contract", () => {
     expect(finalState.status).toBe("done");
     expect(finalState.finalResult).toMatch(
       /Blocked src\/app\.ts after 3 failed verification attempts\./,
+    );
+  });
+
+  it("attaches LangSmith trace metadata to successful graph runs when tracing is enabled", async () => {
+    const trace = {
+      projectName: "shipyard",
+      runId: "graph-run-123",
+      traceUrl: "https://smith.langchain.com/runs/graph-run-123",
+      projectUrl: "https://smith.langchain.com/projects/shipyard",
+    } satisfies LangSmithTraceReference;
+
+    mockLangSmithTrace(trace);
+
+    const finalState = await runAgentRuntime(createInitialState(), {
+      dependencies: {
+        runActingLoop: async () => ({
+          finalText: "Inspection complete without edits.",
+          messageHistory: [],
+          iterations: 1,
+          didEdit: false,
+          lastEditedFile: null,
+        }),
+      },
+    });
+
+    expect(finalState.status).toBe("done");
+    expect(finalState.langSmithTrace).toEqual(trace);
+    expect(langsmith.getLangSmithCallbacksForCurrentTrace).toHaveBeenCalledTimes(1);
+    expect(langsmith.runWithLangSmithTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "shipyard.graph-runtime",
+        tags: expect.arrayContaining(["shipyard", "graph-runtime", "code"]),
+      }),
+    );
+  });
+
+  it("attaches LangSmith trace metadata to intentional fallback failures", async () => {
+    const trace = {
+      projectName: "shipyard",
+      runId: "fallback-run-123",
+      traceUrl: "https://smith.langchain.com/runs/fallback-run-123",
+      projectUrl: "https://smith.langchain.com/projects/shipyard",
+    } satisfies LangSmithTraceReference;
+
+    mockLangSmithTrace(trace);
+
+    const finalState = await runAgentRuntime(createInitialState(), {
+      mode: "fallback",
+      dependencies: {
+        runActingLoop: async () => {
+          throw new Error("Intentional fallback failure.");
+        },
+      },
+    });
+
+    expect(finalState.status).toBe("failed");
+    expect(finalState.finalResult).toContain("Intentional fallback failure.");
+    expect(finalState.fallbackMode).toBe(true);
+    expect(finalState.langSmithTrace).toEqual(trace);
+    expect(langsmith.runWithLangSmithTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "shipyard.fallback-runtime",
+        tags: expect.arrayContaining(["shipyard", "fallback-runtime", "code"]),
+      }),
     );
   });
 

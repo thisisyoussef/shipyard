@@ -21,6 +21,7 @@
     "test-target:init": "bash ../scripts/init-test-target.sh",
     "test-target:cli": "node --env-file=.env --import tsx ./src/bin/shipyard.ts --target ../test-targets/tic-tac-toe",
     "test-target:ui": "node --env-file=.env --import tsx ./src/bin/shipyard.ts --target ../test-targets/tic-tac-toe --ui",
+    "test:smoke": "vitest run tests/cli-loop.test.ts tests/tooling.test.ts tests/context-envelope.test.ts tests/turn-runtime.test.ts tests/graph-runtime.test.ts tests/ui-runtime.test.ts tests/langsmith-tracing.test.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.ui.json"
   },

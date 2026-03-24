@@ -176,6 +176,60 @@ describe("file tools", () => {
     await expectSingleEditPass(240, "LARGE_ANCHOR");
   });
 
+  it("supports repeated surgical edits to the same file when each change is re-read", async () => {
+    const directory = await createTempProject();
+    const relativePath = "src/repeated.ts";
+
+    await writeTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+      content: [
+        'export const alpha = "one";',
+        'export const beta = "two";',
+        'export const gamma = "three";',
+        "",
+      ].join("\n"),
+    });
+
+    await readTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+    });
+
+    const firstEdit = await editBlock({
+      targetDirectory: directory,
+      path: relativePath,
+      old_string: 'export const alpha = "one";',
+      new_string: 'export const alpha = "uno";',
+    });
+
+    expect(firstEdit.changed).toBe(true);
+
+    const reread = await readTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+    });
+
+    expect(reread.contents).toContain('export const alpha = "uno";');
+
+    const secondEdit = await editBlock({
+      targetDirectory: directory,
+      path: relativePath,
+      old_string: 'export const beta = "two";',
+      new_string: 'export const beta = "dos";',
+    });
+
+    expect(secondEdit.changed).toBe(true);
+    await expect(readFile(path.join(directory, relativePath), "utf8")).resolves.toBe(
+      [
+        'export const alpha = "uno";',
+        'export const beta = "dos";',
+        'export const gamma = "three";',
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("rejects stale hashes before editing", async () => {
     const directory = await createTempProject();
     const filePath = path.join(directory, "stale.ts");
