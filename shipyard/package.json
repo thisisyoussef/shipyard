@@ -18,6 +18,9 @@
     "dev": "node --env-file=.env --import tsx ./src/bin/shipyard.ts",
     "start": "node --env-file=.env --import tsx ./src/bin/shipyard.ts",
     "shipyard": "node --env-file=.env --import tsx ./src/bin/shipyard.ts",
+    "test-target:init": "bash ../scripts/init-test-target.sh",
+    "test-target:cli": "node --env-file=.env --import tsx ./src/bin/shipyard.ts --target ../test-targets/tic-tac-toe",
+    "test-target:ui": "node --env-file=.env --import tsx ./src/bin/shipyard.ts --target ../test-targets/tic-tac-toe --ui",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.ui.json"
   },
