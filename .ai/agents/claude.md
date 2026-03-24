@@ -1,36 +1,82 @@
-# Shipyard Claude Compatibility Orchestrator
+# Shipyard Claude Code Orchestrator
 
-`.ai/codex.md` is the canonical orchestrator for this workspace.
-This file keeps Claude-compatible entrypoints aligned without carrying a second full master contract.
+This file keeps Claude Code aligned with the same workflow contract used by Codex and other agents.
 
-## Startup Order
+## How Claude Code Loads This Workspace
 
-1. Read `AGENTS.md`
-2. Read `.ai/docs/SINGLE_SOURCE_OF_TRUTH.md`
-3. Read `.ai/codex.md`
-4. Use this file only for Claude-specific compatibility reminders
-5. Route to the correct workflow in `.ai/workflows/`
+Claude Code reads `CLAUDE.md` files automatically. The primary entry point is `.claude/CLAUDE.md`, which contains:
+- The full read order chain
+- Workspace layout and validation commands
+- Story rules and workflow routing table
+- Memory system references
+- Shipyard app architecture summary
+
+This file (`.ai/agents/claude.md`) provides the **workflow contract** that `.claude/CLAUDE.md` references.
+
+## Claude Code Native Extensions
+
+### Skills (`.claude/skills/`)
+
+| Skill | Invocation | Purpose |
+|-------|-----------|---------|
+| `story-workflow` | `/story-workflow` | Full story lifecycle (lookup → sizing → spec → TDD → handoff → finalize) |
+| `validate` | `/validate` | Run test + typecheck + build + git diff check |
+| `tdd` | `/tdd` | RED/GREEN/REFACTOR cycle with evidence |
+
+### Subagents (`.claude/agents/`)
+
+| Agent | Model | Role |
+|-------|-------|------|
+| `explorer` | sonnet | Read-only codebase search and context gathering |
+| `verifier` | sonnet | Read-only test/typecheck/build validation |
+| `architect` | opus | Architecture review and design decisions |
+
+### Hooks (`.claude/settings.json`)
+
+| Event | Trigger | Action |
+|-------|---------|--------|
+| PostToolUse | Edit or Write | Auto-typecheck after every file change |
+| PreToolUse | Edit or Write | Block edits to `.env`, `.secret`, `.key` files |
 
 ## Required Workflow Contract
 
-Claude should follow the same gates defined in `.ai/codex.md` and `AGENTS.md`:
+Claude Code should follow the same gates defined in `AGENTS.md` and `.ai/codex.md`:
 
-- `agent-preflight`
-- `.ai/workflows/story-lookup.md`
-- `.ai/workflows/story-sizing.md`
-- `.ai/workflows/user-correction-triage.md`
-- `.ai/workflows/eval-driven-development.md`
-- `.ai/workflows/spec-driven-delivery.md`
-- `.ai/workflows/tdd-pipeline.md`
-- `.ai/workflows/parallel-flight.md`
-- `.ai/workflows/story-handoff.md`
-- `.ai/workflows/git-finalization.md`
-- `.ai/workflows/finalization-recovery.md`
-- `.ai/workflows/ui-qa-critic.md` for visible UI stories
-- `.ai/workflows/ai-architecture-change.md` for harness and orchestrator changes
+1. **Preparation pass** — read context chain before edits
+2. **Story lookup** — `.ai/workflows/story-lookup.md`
+3. **Story sizing** — `.ai/workflows/story-sizing.md` (trivial vs standard)
+4. **Spec-driven delivery** — `.ai/workflows/spec-driven-delivery.md` (standard lane only)
+5. **TDD pipeline** — `.ai/workflows/tdd-pipeline.md` (behavior changes)
+6. **Story handoff** — `.ai/workflows/story-handoff.md` (completion gate)
+7. **Git finalization** — `.ai/workflows/git-finalization.md` (merge to main)
+8. **Recovery** — `.ai/workflows/finalization-recovery.md` (if finalization fails)
+
+Additional gates when applicable:
+- `.ai/workflows/user-correction-triage.md` — handle user feedback
+- `.ai/workflows/ui-qa-critic.md` — visible UI stories
+- `.ai/workflows/ai-architecture-change.md` — harness/orchestrator changes
+- `.ai/workflows/langsmith-finish-check.md` — traced AI behavior changes
+
+## Using Subagents Effectively
+
+Claude Code can spawn subagents for parallel work:
+
+```
+# Parallel reconnaissance while planning
+Agent(explorer): "Find all tool implementations in shipyard/src/tools/ and their contracts"
+Agent(explorer): "Search for how discovery.ts builds the context envelope"
+
+# Parallel validation after changes
+Agent(verifier): "Run full validation suite and report results"
+
+# Architecture review for major changes
+Agent(architect): "Review this proposed change against existing patterns"
+```
 
 ## Compatibility Notes
 
-- Product code lives under `shipyard/`.
-- Treat `.ai/` as repo-local helper scaffolding for Shipyard work.
-- If repo-owned helper scripts exist for handoff, locking, or guards, prefer them. If they do not exist, follow the same workflow steps manually rather than inventing a source-project-specific script dependency.
+- Product code lives under `shipyard/`
+- `.ai/` is helper scaffolding only — never add product code here
+- If repo-owned helper scripts exist, prefer them; otherwise follow workflow steps manually
+- Validation commands work from both repo root (`pnpm --dir shipyard ...`) and inside `shipyard/` (`pnpm ...`)
+- The `.ai/workflows/` files are the authoritative workflow definitions — read them when executing a gate
