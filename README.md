@@ -1,37 +1,39 @@
-# Shipyard
+# Shipyard Workspace
 
-Shipyard is a standalone coding-agent repo that starts with a persistent CLI, stable target discovery, and a typed tool layer for file operations, search, command execution, checkpoints, and tracing.
+This repo now has two parallel surfaces:
+
+- `.ai/` is a helper harness for planning, workflows, memory, and reusable execution rules.
+- `shipyard/` is the actual TypeScript CLI application we are building.
+
+## Working From The Repo Root
+
+```bash
+pnpm --dir shipyard install
+pnpm --dir shipyard build
+pnpm --dir shipyard test
+pnpm --dir shipyard typecheck
+```
+
+To run the current CLI build from the root:
+
+```bash
+node shipyard/dist/bin/shipyard.js --target ../ship
+```
 
 ## Layout
 
 ```text
-shipyard/
-  src/
-    engine/
-    phases/
-    tools/
-    agents/
-    context/
-    artifacts/
-    checkpoints/
-    tracing/
-  bin/
-    shipyard.ts
+.
+├── .ai/
+│   ├── docs/
+│   ├── memory/
+│   ├── skills/
+│   ├── state/
+│   ├── templates/
+│   └── workflows/
+└── shipyard/
+    ├── bin/
+    ├── docs/
+    ├── src/
+    └── tests/
 ```
-
-## Day 1 Goals
-
-- persistent `shipyard --target <path>` process
-- target discovery for existing or greenfield repositories
-- safe read, write, edit, search, command, and git-diff primitives
-- typed artifacts, context envelopes, checkpoints, and local tracing scaffolds
-
-## Quick Start
-
-```bash
-pnpm install
-pnpm build
-node dist/bin/shipyard.js --target ../ship
-```
-
-Once you want a bare `shipyard` command outside the repo, link the package with your preferred global package-manager workflow.

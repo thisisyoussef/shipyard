@@ -1,0 +1,64 @@
+# Shipyard Workspace - Single Source of Truth
+
+**Last Updated**: 2026-03-24
+**Current Phase**: Day 1 foundation
+**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI
+**Project Status**: Active
+**Canonical App Directory**: `shipyard/`
+**Canonical Harness Directory**: `.ai/`
+
+---
+
+## Current Focus
+
+### Active Task
+
+- **Title**: Establish the nested workspace layout and import a generic `.ai` helper harness
+- **Status**: In progress
+- **Owner**: Codex
+
+### Next Immediate Actions
+
+1. Keep the harness aligned with the actual repo shape: `.ai/` beside `shipyard/`.
+2. Continue building the persistent CLI loop, typed tools, and tracing inside `shipyard/`.
+3. Expand tests as the tool surface and orchestration model grow.
+
+---
+
+## Repo Baseline
+
+- **Canonical repo handbook**: `AGENTS.md`
+- **Canonical orchestrator**: `.ai/codex.md`
+- **Claude compatibility mirror**: `.ai/agents/claude.md`
+- **Root app package**: `shipyard/package.json`
+- **App runtime state**: `shipyard/.shipyard/`
+- **Branch rule**: start non-trivial work on a fresh `codex/` branch
+- **Default validation commands**:
+  - `pnpm --dir shipyard test`
+  - `pnpm --dir shipyard typecheck`
+  - `pnpm --dir shipyard build`
+  - `git diff --check`
+- **Helper-script status**: some imported workflow docs describe optional repo-owned helpers under `scripts/`; unless those helpers exist in this repo, follow the manual workflow equivalent instead of assuming the commands are wired today.
+
+---
+
+## Story Execution Guardrails
+
+- `.ai/` is a helper harness for this workspace only. Do not let it drift into imported product-specific memory or unrelated backlog history.
+- `shipyard/` is the only product-code surface in this repo.
+- Keep durable repo truths in `.ai/memory/project/`.
+- Keep current-work notes in `.ai/memory/session/`.
+- Use the workflow files to size work, route features, and record handoff state instead of improvising a different process per task.
+- Treat deployment as explicit. If a story does not define a deploy surface, say so instead of implying one.
+
+---
+
+## Read Order
+
+1. `AGENTS.md`
+2. `.ai/docs/SINGLE_SOURCE_OF_TRUTH.md`
+3. `.ai/codex.md`
+4. `shipyard/README.md`
+5. `shipyard/CODEAGENT.md`
+6. `shipyard/PRESEARCH.md`
+7. `.claude/CLAUDE.md`

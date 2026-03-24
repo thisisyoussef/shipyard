@@ -1,0 +1,68 @@
+{
+  "$schema": "Feature specification for the software factory pipeline",
+
+  "entity": "EntityName",
+  "pattern": "crud_ui",
+
+  "fields": [
+    {
+      "name": "field_name",
+      "kind": "string",
+      "_comment": "kind: string | number | boolean | enum | date | uuid | json"
+    },
+    {
+      "name": "status",
+      "kind": "enum",
+      "values": ["active", "inactive", "pending"],
+      "_comment": "enum fields require a 'values' array"
+    },
+    {
+      "name": "amount",
+      "kind": "number",
+      "_comment": "numbers map to DECIMAL or INTEGER based on context"
+    },
+    {
+      "name": "is_active",
+      "kind": "boolean",
+      "_comment": "booleans get NOT NULL DEFAULT FALSE unless specified otherwise"
+    },
+    {
+      "name": "secret_token",
+      "kind": "string",
+      "sensitive": true,
+      "_comment": "sensitive fields: excluded from response DTOs, stored via vault, redacted in logs"
+    },
+    {
+      "name": "parent_id",
+      "kind": "uuid",
+      "references": "parents(id)",
+      "_comment": "foreign key reference"
+    }
+  ],
+
+  "permissions": "entity_name:manage",
+  "audit": true,
+
+  "integrations": ["vault", "notifications"],
+  "_integrations_comment": "Available: vault, audit, notifications, caching, search, file-upload",
+
+  "ui": {
+    "list": true,
+    "detail": true,
+    "form": true
+  },
+
+  "custom_methods": [
+    {
+      "name": "setDefault",
+      "description": "Set this entity as the default, unsetting any previous default",
+      "_comment": "optional — for business logic beyond basic CRUD"
+    }
+  ],
+
+  "compliance": {
+    "soc2": false,
+    "hipaa": false,
+    "_comment": "If true, adds security verification gates and migration approval"
+  }
+}
