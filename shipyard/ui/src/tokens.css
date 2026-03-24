@@ -1,56 +1,142 @@
+/* ───────────────────────────────────────────────
+   Shipyard Visual Token System
+   UIR-S01 · Visual System and Layout Refresh
+   ─────────────────────────────────────────────── */
+
 :root {
   color-scheme: dark;
+
+  /* ── Typography ─────────────────────────────── */
 
   --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --font-body: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
 
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.25rem;
-  --space-6: 1.5rem;
-  --space-7: 2rem;
-  --space-8: 2.5rem;
-  --space-9: 3rem;
+  /* Type scale — modular, minor-third ratio anchored at 1rem */
+  --text-xs:  0.69rem;   /* micro labels, kickers */
+  --text-sm:  0.78rem;   /* captions, metadata */
+  --text-base: 0.92rem;  /* body text */
+  --text-md:  1rem;      /* default / block titles */
+  --text-lg:  1.2rem;    /* subsection headings */
+  --text-xl:  1.55rem;   /* section headings */
+  --text-2xl: 2rem;      /* banner headings */
+  --text-hero: clamp(2.25rem, 4vw, 3.35rem); /* top-bar title */
 
-  --radius-sm: 0.75rem;
-  --radius-md: 1rem;
-  --radius-lg: 1.4rem;
-  --radius-xl: 1.8rem;
+  /* Line height — tighter for headings, generous for body */
+  --leading-none:  0.94;
+  --leading-tight: 1.0;
+  --leading-snug:  1.25;
+  --leading-normal: 1.45;
+  --leading-relaxed: 1.6;
+
+  /* Letter spacing */
+  --tracking-tighter: -0.05em;
+  --tracking-tight:   -0.03em;
+  --tracking-normal:   0;
+  --tracking-wide:     0.02em;
+  --tracking-wider:    0.08em;
+  --tracking-widest:   0.16em;
+
+  /* Font weights */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ── Spacing ────────────────────────────────── */
+
+  --space-0:  0;
+  --space-px: 1px;
+  --space-1:  0.25rem;   /*  4px */
+  --space-2:  0.5rem;    /*  8px */
+  --space-3:  0.75rem;   /* 12px */
+  --space-4:  1rem;      /* 16px */
+  --space-5:  1.25rem;   /* 20px */
+  --space-6:  1.5rem;    /* 24px */
+  --space-7:  2rem;      /* 32px */
+  --space-8:  2.5rem;    /* 40px */
+  --space-9:  3rem;      /* 48px */
+  --space-10: 4rem;      /* 64px */
+
+  /* ── Border radius ─────────────────────────── */
+
+  --radius-sm:   0.5rem;
+  --radius-md:   0.75rem;
+  --radius-lg:   1rem;
+  --radius-xl:   1.25rem;
+  --radius-2xl:  1.5rem;
   --radius-pill: 999px;
 
-  --surface-canvas: #061015;
-  --surface-shell: rgba(8, 16, 22, 0.86);
-  --surface-card: rgba(14, 21, 28, 0.88);
+  /* ── Surfaces ──────────────────────────────── */
+
+  --surface-canvas:      #061015;
+  --surface-shell:       rgba(8, 16, 22, 0.86);
+  --surface-card:        rgba(14, 21, 28, 0.88);
   --surface-card-strong: rgba(18, 28, 37, 0.95);
-  --surface-muted: rgba(255, 255, 255, 0.035);
-  --surface-highlight: rgba(213, 140, 83, 0.1);
+  --surface-muted:       rgba(255, 255, 255, 0.035);
+  --surface-highlight:   rgba(213, 140, 83, 0.1);
+  --surface-inset:       rgba(6, 11, 15, 0.74);
 
-  --border-subtle: rgba(209, 220, 228, 0.1);
-  --border-strong: rgba(213, 140, 83, 0.26);
-  --border-danger: rgba(236, 129, 112, 0.24);
+  /* ── Borders ───────────────────────────────── */
+
+  --border-subtle:  rgba(209, 220, 228, 0.1);
+  --border-medium:  rgba(186, 197, 207, 0.16);
+  --border-strong:  rgba(213, 140, 83, 0.26);
+  --border-danger:  rgba(236, 129, 112, 0.24);
   --border-success: rgba(126, 201, 154, 0.24);
+  --border-warning: rgba(214, 181, 109, 0.24);
 
-  --text-strong: #f2f5f7;
-  --text-body: #cbd6dc;
-  --text-muted: #8e9faa;
+  /* ── Text ──────────────────────────────────── */
+
+  --text-strong:  #f2f5f7;
+  --text-body:    #cbd6dc;
+  --text-muted:   #8e9faa;
+  --text-faint:   rgba(142, 159, 170, 0.6);
   --text-inverse: #120d08;
 
-  --accent-strong: #d58c53;
-  --accent-soft: rgba(213, 140, 83, 0.12);
-  --accent-glow: rgba(213, 140, 83, 0.3);
-  --success-strong: #7ec99a;
-  --success-soft: rgba(126, 201, 154, 0.12);
-  --danger-strong: #ec8170;
-  --danger-soft: rgba(236, 129, 112, 0.14);
-  --warning-strong: #d6b56d;
-  --warning-soft: rgba(214, 181, 109, 0.14);
+  /* ── Accent / Status ───────────────────────── */
 
-  --shadow-soft: 0 24px 70px rgba(0, 0, 0, 0.28);
-  --shadow-card: 0 18px 40px rgba(0, 0, 0, 0.24);
+  --accent-strong: #d58c53;
+  --accent-soft:   rgba(213, 140, 83, 0.12);
+  --accent-glow:   rgba(213, 140, 83, 0.3);
+  --accent-border: rgba(213, 140, 83, 0.24);
+
+  --success-strong: #7ec99a;
+  --success-soft:   rgba(126, 201, 154, 0.12);
+
+  --danger-strong: #ec8170;
+  --danger-soft:   rgba(236, 129, 112, 0.14);
+
+  --warning-strong: #d6b56d;
+  --warning-soft:   rgba(214, 181, 109, 0.14);
+
+  /* ── Elevation ─────────────────────────────── */
+
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.16);
+  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --elevation-3: 0 18px 40px rgba(0, 0, 0, 0.24);
+  --elevation-4: 0 24px 70px rgba(0, 0, 0, 0.28);
   --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
+  /* ── Transitions ───────────────────────────── */
+
+  --duration-fast:   120ms;
+  --duration-normal: 180ms;
+  --duration-slow:   300ms;
+  --ease-default: ease;
+
+  /* ── Layout ────────────────────────────────── */
+
   --grid-line: rgba(186, 197, 207, 0.06);
+  --shell-max-width: 104rem;
+  --sidebar-min: 18rem;
+  --sidebar-max-left: 22rem;
+  --sidebar-max-right: 25rem;
+  --panel-gap: var(--space-5);
+
+  /* ── Blur ──────────────────────────────────── */
+
+  --blur-card: blur(16px);
+  --blur-shell: blur(18px);
 }
