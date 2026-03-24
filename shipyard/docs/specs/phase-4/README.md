@@ -15,7 +15,7 @@
 ## Shared Constraints
 
 - Product code and product docs stay under `shipyard/`; `.ai/` remains helper-only.
-- Phase Pre-2's browser UI remains a first-class interface in this phase; graph and fallback runtime work should stream naturally into it rather than bypass it.
+- Phase Pre-2's browser UI, inserted after `P2-S02`, remains a first-class interface in this phase; graph and fallback runtime work should stream naturally into it rather than bypass it.
 - The repo already includes `@langchain/langgraph`, `@langchain/anthropic`, `@anthropic-ai/sdk`, and `langsmith`, so this phase is primarily about orchestration and integration rather than dependency discovery.
 - LangGraph.js `StateGraph` nodes operate on shared state and return `Partial<State>` updates, and graphs must be `.compile()`d before use.
 - `addConditionalEdges` is the routing primitive to use when implementing the Phase 4 node transitions.
@@ -36,7 +36,7 @@
 ## Sequencing Rationale
 
 - `P4-S01` sets the execution contract for the entire phase, including the explicit fallback path if LangGraph setup becomes a time sink.
-- Phase Pre-2 lands before this pack so runtime state and trace visibility can build on a browser-first operator surface rather than reinventing one here.
+- Phase Pre-2 lands after `P2-S02` and before this pack so runtime state and trace visibility can build on a browser-first operator surface rather than reinventing one here.
 - `P4-S02` isolates reversible editing and recovery, which are critical safety features and easy to reason about separately from prompt/context work.
 - `P4-S03` then wires the runtime into the user-facing CLI once the engine and recovery primitives are defined.
 - `P4-S04` closes the phase by proving the graph or fallback loop produces usable traces and can complete both a clean task and an error task.
