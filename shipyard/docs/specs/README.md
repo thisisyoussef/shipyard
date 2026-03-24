@@ -1,0 +1,28 @@
+# Spec Packs
+
+The `docs/specs/` tree holds phase-oriented story packs. Each phase README
+explains the goal of the pack, its sequencing, and the stories it contains.
+Story folders typically include:
+
+- `feature-spec.md`
+- `technical-plan.md`
+- `task-breakdown.md`
+- `constitution-check.md`
+
+Use these packs for implementation history and planned work. Use
+[`../README.md`](../README.md) and [`../architecture/README.md`](../architecture/README.md)
+for durable onboarding and architecture reference.
+
+## Indexed Phase Packs
+
+- [`phase-pre-2/README.md`](./phase-pre-2/README.md): introduces the browser runtime before Phase 2 finishes
+- [`phase-2/README.md`](./phase-2/README.md): tool registry, file I/O, edit guardrails, and discovery smoke coverage
+- [`phase-3/README.md`](./phase-3/README.md): Anthropic client contract and raw tool loop work
+- [`phase-4/README.md`](./phase-4/README.md): graph runtime, checkpoints, context wiring, and LangSmith MVP verification
+
+## Reading Order
+
+1. Read the phase README for pack-level intent and constraints.
+2. Read the specific story folder for the implementation contract.
+3. Cross-reference the durable docs if you need current runtime structure or
+   directory ownership.
