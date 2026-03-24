@@ -1,6 +1,7 @@
 import readline from "node:readline";
 import process from "node:process";
 
+import type { AgentRuntimeDependencies } from "./graph.js";
 import type { SessionState } from "./state.js";
 import { createSessionSnapshot, saveSessionState } from "./state.js";
 import { loadProjectRules } from "../context/envelope.js";
@@ -10,6 +11,7 @@ import {
 import {
   createInstructionRuntimeState,
   executeInstructionTurn,
+  type InstructionRuntimeMode,
 } from "./turn.js";
 import {
   ToolError,
@@ -27,6 +29,8 @@ import { getLangSmithConfig } from "../tracing/langsmith.js";
 export interface RunShipyardLoopOptions {
   sessionState: SessionState;
   injectedContext?: string[];
+  runtimeMode?: InstructionRuntimeMode;
+  runtimeDependencies?: AgentRuntimeDependencies;
 }
 
 function printDivider(): void {
@@ -63,22 +67,6 @@ function rememberRecent(
   while (values.length > limit) {
     values.shift();
   }
-}
-
-function updateRollingSummary(
-  currentSummary: string,
-  turnCount: number,
-  instruction: string,
-): string {
-  const nextLine = `Turn ${turnCount}: ${instruction}`;
-  const nextSummary = currentSummary
-    ? `${currentSummary}\n${nextLine}`
-    : nextLine;
-
-  return nextSummary
-    .split("\n")
-    .slice(-8)
-    .join("\n");
 }
 
 async function printSearchMatches(result: SearchFilesResult): Promise<void> {
@@ -170,6 +158,8 @@ export async function runShipyardLoop(
   const runtimeState = createInstructionRuntimeState({
     projectRules: await loadProjectRules(state.targetDirectory),
     baseInjectedContext: options.injectedContext ?? [],
+    runtimeMode: options.runtimeMode,
+    runtimeDependencies: options.runtimeDependencies,
   });
   const traceLogger = await createLocalTraceLogger(
     state.targetDirectory,
@@ -306,7 +296,7 @@ export async function runShipyardLoop(
           });
 
           console.log(
-            `Turn ${state.turnCount} planned in phase "${turnResult.phaseName}".`,
+            `Turn ${state.turnCount} finished in phase "${turnResult.phaseName}" via ${turnResult.runtimeMode} runtime.`,
           );
           console.log(JSON.stringify(turnResult.taskPlan, null, 2));
           printDivider();
@@ -314,6 +304,7 @@ export async function runShipyardLoop(
           await traceLogger.log("instruction.plan", {
             instruction: line,
             phase: turnResult.phaseName,
+            runtimeMode: turnResult.runtimeMode,
             contextEnvelope: turnResult.contextEnvelope,
             taskPlan: turnResult.taskPlan,
             status: turnResult.status,

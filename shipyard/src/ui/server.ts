@@ -15,10 +15,12 @@ import {
 import {
   createInstructionRuntimeState,
   executeInstructionTurn,
+  type InstructionRuntimeMode,
   type InstructionRuntimeState,
   type InstructionTurnReporter,
   type TurnStateEvent,
 } from "../engine/turn.js";
+import type { AgentRuntimeDependencies } from "../engine/graph.js";
 import { saveSessionState, type SessionState } from "../engine/state.js";
 import type { BackendToFrontendMessage } from "./contracts.js";
 import {
@@ -42,6 +44,8 @@ export interface StartUiRuntimeServerOptions {
   projectRules: string;
   projectRulesLoaded: boolean;
   baseInjectedContext?: string[];
+  runtimeMode?: InstructionRuntimeMode;
+  runtimeDependencies?: AgentRuntimeDependencies;
 }
 
 export interface UiRuntimeServer {
@@ -310,6 +314,8 @@ export async function startUiRuntimeServer(
   const runtimeState = createInstructionRuntimeState({
     projectRules: options.projectRules,
     baseInjectedContext: options.baseInjectedContext,
+    runtimeMode: options.runtimeMode,
+    runtimeDependencies: options.runtimeDependencies,
   });
   const traceLogger = await createLocalTraceLogger(
     options.sessionState.targetDirectory,
@@ -422,11 +428,12 @@ export async function startUiRuntimeServer(
     await traceLogger.log("instruction.plan", {
       instruction,
       phase: turnResult.phaseName,
+      runtimeMode: turnResult.runtimeMode,
       contextEnvelope: turnResult.contextEnvelope,
       taskPlan: turnResult.taskPlan,
       status: turnResult.status,
       summary: turnResult.summary,
-      runtimeMode: "ui",
+      runtimeSurface: "ui",
     });
 
     if (pendingTurnState) {

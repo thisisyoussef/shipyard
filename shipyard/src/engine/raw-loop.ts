@@ -30,6 +30,11 @@ export interface RawLoopToolHookContext {
   targetDirectory: string;
 }
 
+export interface RawLoopToolResultHookContext extends RawLoopToolHookContext {
+  result: ToolResult;
+  toolExecution: RawToolExecution;
+}
+
 export interface RawToolExecution {
   toolName: string;
   input: unknown;
@@ -54,6 +59,9 @@ export interface RawToolLoopOptions {
   maxIterations?: number;
   beforeToolExecution?: (
     context: RawLoopToolHookContext,
+  ) => Promise<void> | void;
+  afterToolExecution?: (
+    context: RawLoopToolResultHookContext,
   ) => Promise<void> | void;
 }
 
@@ -192,6 +200,9 @@ async function executeToolUsesForTurn(
   beforeToolExecution?: (
     context: RawLoopToolHookContext,
   ) => Promise<void> | void,
+  afterToolExecution?: (
+    context: RawLoopToolResultHookContext,
+  ) => Promise<void> | void,
 ): Promise<{
   toolResultMessage: MessageParam;
   toolExecutions: RawToolExecution[];
@@ -220,13 +231,22 @@ async function executeToolUsesForTurn(
       )}`,
     );
 
-    toolExecutions.push({
+    const toolExecution: RawToolExecution = {
       toolName: toolUse.name,
       input: toolUse.input,
       success: result.success,
       output: result.output,
       error: result.error,
       editedPath: extractEditedPath(toolUse.name, toolUse.input, result),
+    };
+
+    toolExecutions.push(toolExecution);
+    await afterToolExecution?.({
+      toolUse,
+      turnNumber,
+      targetDirectory,
+      result,
+      toolExecution,
     });
     toolResultBlocks.push(createUserToolResultBlock(toolUse.id, result));
   }
@@ -298,6 +318,7 @@ export async function runRawToolLoopDetailed(
         logger,
         turnNumber,
         options.beforeToolExecution,
+        options.afterToolExecution,
       );
 
       toolExecutions.push(...toolTurnResult.toolExecutions);

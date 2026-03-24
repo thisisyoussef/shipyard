@@ -1,0 +1,124 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
+
+import {
+  buildContextEnvelope,
+  serializeContextEnvelope,
+} from "../src/context/envelope.js";
+
+const createdDirectories: string[] = [];
+
+async function createTempDirectory(prefix: string): Promise<string> {
+  const directory = await mkdtemp(path.join(tmpdir(), prefix));
+  createdDirectories.push(directory);
+  return directory;
+}
+
+describe("context envelope", () => {
+  afterEach(async () => {
+    const directories = createdDirectories.splice(0, createdDirectories.length);
+
+    await Promise.all(
+      directories.map((directory) =>
+        rm(directory, { recursive: true, force: true }),
+      ),
+    );
+  });
+
+  it("builds the envelope with AGENTS rules, retries, blocked files, and recent errors", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-envelope-");
+    await writeFile(
+      path.join(targetDirectory, "AGENTS.md"),
+      "Follow the repo rules before editing.\n",
+      "utf8",
+    );
+
+    const envelope = await buildContextEnvelope({
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: true,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: ["src"],
+        projectName: "shipyard",
+      },
+      currentInstruction: "inspect src/app.ts",
+      rollingSummary: "Turn 1: inspect README -> completed",
+      injectedContext: ["Keep the tests green."],
+      targetFilePaths: ["src/app.ts"],
+      recentToolOutputs: ["read_file src/app.ts"],
+      recentErrors: ["Verification failed."],
+      currentGitDiff: "diff --git a/src/app.ts b/src/app.ts",
+      retryCountsByFile: {
+        "src/app.ts": 2,
+      },
+      blockedFiles: ["src/blocked.ts"],
+    });
+
+    expect(envelope.stable.projectRules).toContain("Follow the repo rules");
+    expect(envelope.session.retryCountsByFile).toEqual({
+      "src/app.ts": 2,
+    });
+    expect(envelope.session.blockedFiles).toEqual(["src/blocked.ts"]);
+    expect(envelope.runtime.recentErrors).toEqual(["Verification failed."]);
+    expect(envelope.task.injectedContext).toEqual(["Keep the tests green."]);
+  });
+
+  it("serializes the envelope with the required section headers in a stable order", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-envelope-order-");
+    const envelope = await buildContextEnvelope({
+      targetDirectory,
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: [],
+        topLevelDirectories: [],
+        projectName: null,
+      },
+      currentInstruction: "create a README",
+      rollingSummary: "",
+      injectedContext: [],
+      recentErrors: [],
+      retryCountsByFile: {},
+      blockedFiles: [],
+    });
+
+    const serialized = serializeContextEnvelope(envelope);
+    const expectedHeaders = [
+      "Project Context",
+      "Project Rules",
+      "Injected Context",
+      "Session History",
+      "Recent Errors",
+      "Blocked Files",
+    ];
+
+    expect(expectedHeaders.every((header) => serialized.includes(header))).toBe(true);
+
+    for (let index = 1; index < expectedHeaders.length; index += 1) {
+      expect(serialized.indexOf(expectedHeaders[index - 1]!)).toBeLessThan(
+        serialized.indexOf(expectedHeaders[index]!),
+      );
+    }
+
+    expect(serialized).toContain("Instruction: create a README");
+    expect(serialized).toContain("Available Scripts:\n(none)");
+    expect(serialized).toContain("Injected Context\n(none)");
+    expect(serialized).toContain("Blocked Files\n(none)");
+  });
+});
