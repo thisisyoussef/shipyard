@@ -3,6 +3,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import chalk from "chalk";
 import { Command } from "commander";
 import { nanoid } from "nanoid";
@@ -16,13 +17,15 @@ import {
   loadSessionState,
   saveSessionState,
 } from "../engine/state.js";
+import { startUiRuntimeServer } from "../ui/server.js";
 
-interface CliOptions {
+export interface CliOptions {
   targetPath: string;
   sessionId?: string;
+  ui: boolean;
 }
 
-function parseArgs(argv: string[]): CliOptions {
+export function parseArgs(argv: string[]): CliOptions {
   const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
   const program = new Command();
 
@@ -31,13 +34,19 @@ function parseArgs(argv: string[]): CliOptions {
     .description("Persistent coding-agent CLI")
     .requiredOption("--target <path>", "Path to the target repository")
     .option("--session <id>", "Resume a saved session by ID")
+    .option("--ui", "Start the browser-based developer UI runtime")
     .parse(normalizedArgv, { from: "user" });
 
-  const options = program.opts<{ target: string; session?: string }>();
+  const options = program.opts<{
+    target: string;
+    session?: string;
+    ui?: boolean;
+  }>();
 
   return {
     targetPath: options.target,
     sessionId: options.session,
+    ui: options.ui ?? false,
   };
 }
 
@@ -50,8 +59,18 @@ function printDiscovery(report: Awaited<ReturnType<typeof discoverTarget>>): voi
   console.log(`Package manager: ${report.packageManager ?? "unknown"}`);
 }
 
-async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+function isDirectExecution(): boolean {
+  const entryPath = process.argv[1];
+
+  if (!entryPath) {
+    return false;
+  }
+
+  return import.meta.url === pathToFileURL(entryPath).href;
+}
+
+export async function main(argv = process.argv.slice(2)): Promise<void> {
+  const options = parseArgs(argv);
   const resolvedTargetPath = path.resolve(process.cwd(), options.targetPath);
   await mkdir(resolvedTargetPath, { recursive: true });
   await ensureShipyardDirectories(resolvedTargetPath);
@@ -94,16 +113,41 @@ async function main(): Promise<void> {
   console.log(`Discovery: ${formatDiscoverySummary(discovery)}`);
   printDiscovery(discovery);
 
+  const projectRules = await loadProjectRules(resolvedTargetPath);
+  const injectedContext = projectRules
+    ? ["Loaded AGENTS.md rules into the stable context layer."]
+    : [];
+
+  if (options.ui) {
+    const uiRuntime = await startUiRuntimeServer({
+      sessionState,
+      projectRulesLoaded: Boolean(projectRules),
+    });
+    const shutdown = () => {
+      void uiRuntime.close();
+    };
+
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
+
+    console.log(chalk.green(`UI mode ready at ${uiRuntime.url}`));
+    console.log(`WebSocket: ${uiRuntime.socketUrl}`);
+    console.log("Press Ctrl+C to stop Shipyard UI.");
+
+    await uiRuntime.closed;
+    return;
+  }
+
   await runShipyardLoop({
     sessionState,
-    injectedContext: (await loadProjectRules(resolvedTargetPath))
-      ? ["Loaded AGENTS.md rules into the stable context layer."]
-      : [],
+    injectedContext,
   });
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : "Unknown error";
-  console.error(chalk.red(`shipyard failed to start: ${message}`));
-  process.exitCode = 1;
-});
+if (isDirectExecution()) {
+  main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(chalk.red(`shipyard failed to start: ${message}`));
+    process.exitCode = 1;
+  });
+}

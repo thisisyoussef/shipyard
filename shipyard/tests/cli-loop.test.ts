@@ -186,6 +186,7 @@ describe("shipyard CLI loop", () => {
         await waitForText(runner, "Started new session");
         await waitForText(runner, "Detected greenfield target.");
         await waitForText(runner, 'Type "help" for commands.');
+        await waitForText(runner, "shipyard > ");
 
         const sessionId = extractSessionId(runner.output.combined);
 
@@ -238,6 +239,7 @@ describe("shipyard CLI loop", () => {
       try {
         await waitForText(firstRun, "Started new session");
         await waitForText(firstRun, 'Type "help" for commands.');
+        await waitForText(firstRun, "shipyard > ");
         sessionId = extractSessionId(firstRun.output.combined);
 
         sendLine(firstRun, "inspect the repo");
@@ -259,6 +261,7 @@ describe("shipyard CLI loop", () => {
       try {
         await waitForText(resumedRun, `Resumed session ${sessionId} (1 turn)`);
         await waitForText(resumedRun, 'Type "help" for commands.');
+        await waitForText(resumedRun, "shipyard > ");
         sendLine(resumedRun, "status");
         await waitForText(resumedRun, '"turnCount": 1');
 
@@ -316,6 +319,7 @@ describe("shipyard CLI loop", () => {
         await waitForText(runner, "Framework: React");
         await waitForText(runner, "Package manager: unknown");
         await waitForText(runner, 'Type "help" for commands.');
+        await waitForText(runner, "shipyard > ");
 
         sendLine(runner, "exit");
         await waitForText(runner, "Shipyard session closed.");

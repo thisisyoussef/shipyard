@@ -17,6 +17,18 @@ The architecture is split into small layers:
 
 The coordinator is the only writer. Explorer and verifier are modeled as read-only role definitions so the orchestration boundary is explicit before the multi-agent runtime is added.
 
+## UI Runtime Contract
+
+Shipyard's browser mode is an alternate runtime surface over the same session and engine state, not a second product.
+
+- `src/bin/shipyard.ts` selects terminal mode or `--ui`
+- `src/ui/contracts.ts` owns the typed WebSocket request/response protocol
+- `src/ui/server.ts` owns the local HTTP and WebSocket runtime
+- `ui/` contains the React SPA source
+- `vite.config.ts` builds that SPA into `dist/ui`
+
+For MVP, the local backend stack is Node `http` + `ws`, and the frontend build path is React + Vite. The UI must stay local-only and should never require a second agent runtime or duplicate session state.
+
 ## File Editing Strategy
 
 Shipyard uses anchor-based surgical editing.
