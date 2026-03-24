@@ -1,4 +1,11 @@
+import "../../tools/index.js";
 import type { TaskPlan } from "../../artifacts/types.js";
+import {
+  getAnthropicTools,
+  getTools,
+  type AnthropicToolDefinition,
+  type ToolDefinition,
+} from "../../tools/registry.js";
 import type { Phase } from "../phase.js";
 import { CODE_PHASE_SYSTEM_PROMPT } from "./prompts.js";
 
@@ -24,6 +31,14 @@ export const codePhase: Phase = {
 
 export function createCodePhase(): Phase {
   return codePhase;
+}
+
+export function getCodePhaseToolDefinitions(): ToolDefinition[] {
+  return getTools(CODE_PHASE_TOOL_NAMES);
+}
+
+export function getCodePhaseAnthropicTools(): AnthropicToolDefinition[] {
+  return getAnthropicTools(CODE_PHASE_TOOL_NAMES);
 }
 
 export function createStubCodeTaskPlan(instruction: string): TaskPlan {

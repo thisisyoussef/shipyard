@@ -1,6 +1,12 @@
 import { writeFile } from "node:fs/promises";
 
-import type { ToolDefinition } from "./registry.js";
+import {
+  createToolErrorResult,
+  createToolSuccessResult,
+  registerTool,
+  type ToolDefinition,
+  type ToolInputSchema,
+} from "./registry.js";
 import { ToolError, readFileTool } from "./read-file.js";
 
 export interface EditBlockInput {
@@ -18,6 +24,30 @@ export interface EditBlockResult {
   hash: string;
   replacements: number;
 }
+
+const editBlockInputSchema = {
+  type: "object",
+  properties: {
+    path: {
+      type: "string",
+      description: "Path to edit, relative to the target directory.",
+    },
+    oldString: {
+      type: "string",
+      description: "Exact anchor text that must match once.",
+    },
+    newString: {
+      type: "string",
+      description: "Replacement text for the matched anchor.",
+    },
+    expectedHash: {
+      type: "string",
+      description: "SHA-256 hash returned by the prior read.",
+    },
+  },
+  required: ["path", "oldString", "newString", "expectedHash"],
+  additionalProperties: false,
+} satisfies ToolInputSchema;
 
 function countOccurrences(contents: string, needle: string): number {
   if (!needle) {
@@ -73,10 +103,31 @@ export async function editBlockTool(
   };
 }
 
-export const editBlockDefinition: ToolDefinition<EditBlockInput, EditBlockResult> =
+export const editBlockDefinition: ToolDefinition<
+  Omit<EditBlockInput, "targetDirectory">
+> =
   {
     name: "edit_block",
     description:
       "Replace exactly one anchored block in a file and reject stale or ambiguous edits.",
-    invoke: editBlockTool,
+    inputSchema: editBlockInputSchema,
+    async execute(input, targetDirectory) {
+      try {
+        const result = await editBlockTool({
+          targetDirectory,
+          ...input,
+        });
+
+        return createToolSuccessResult({
+          path: result.path,
+          contents: result.contents,
+          hash: result.hash,
+          replacements: result.replacements,
+        });
+      } catch (error) {
+        return createToolErrorResult(error);
+      }
+    },
   };
+
+registerTool(editBlockDefinition);

@@ -1,6 +1,12 @@
 import { spawn } from "node:child_process";
 
-import type { ToolDefinition } from "./registry.js";
+import {
+  createToolErrorResult,
+  createToolSuccessResult,
+  registerTool,
+  type ToolDefinition,
+  type ToolInputSchema,
+} from "./registry.js";
 import { ToolError } from "./read-file.js";
 
 export interface SearchFilesInput {
@@ -15,6 +21,32 @@ export interface SearchMatch {
   lineText: string;
   submatches: string[];
 }
+
+const searchFilesInputSchema = {
+  type: "object",
+  properties: {
+    query: {
+      type: "string",
+      description: "Literal or regex ripgrep query to search for.",
+    },
+    glob: {
+      description: "Optional glob patterns that narrow the search scope.",
+      anyOf: [
+        {
+          type: "string",
+        },
+        {
+          type: "array",
+          items: {
+            type: "string",
+          },
+        },
+      ],
+    },
+  },
+  required: ["query"],
+  additionalProperties: false,
+} satisfies ToolInputSchema;
 
 function normalizeGlobs(glob: string | string[] | undefined): string[] {
   if (!glob) {
@@ -101,10 +133,23 @@ export async function searchFilesTool(
 }
 
 export const searchFilesDefinition: ToolDefinition<
-  SearchFilesInput,
-  SearchMatch[]
+  Omit<SearchFilesInput, "targetDirectory">
 > = {
   name: "search_files",
   description: "Search the target directory with ripgrep and return structured matches.",
-  invoke: searchFilesTool,
+  inputSchema: searchFilesInputSchema,
+  async execute(input, targetDirectory) {
+    try {
+      const result = await searchFilesTool({
+        targetDirectory,
+        ...input,
+      });
+
+      return createToolSuccessResult(result);
+    } catch (error) {
+      return createToolErrorResult(error);
+    }
+  },
 };
+
+registerTool(searchFilesDefinition);

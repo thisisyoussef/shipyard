@@ -1,6 +1,12 @@
 import { spawn } from "node:child_process";
 
-import type { ToolDefinition } from "./registry.js";
+import {
+  createToolErrorResult,
+  createToolSuccessResult,
+  registerTool,
+  type ToolDefinition,
+  type ToolInputSchema,
+} from "./registry.js";
 
 export interface RunCommandInput {
   targetDirectory: string;
@@ -17,6 +23,22 @@ export interface RunCommandResult {
   timedOut: boolean;
   signal: NodeJS.Signals | null;
 }
+
+const runCommandInputSchema = {
+  type: "object",
+  properties: {
+    command: {
+      type: "string",
+      description: "Shell command to run inside the target directory.",
+    },
+    timeoutMs: {
+      type: "integer",
+      description: "Optional timeout in milliseconds.",
+    },
+  },
+  required: ["command"],
+  additionalProperties: false,
+} satisfies ToolInputSchema;
 
 export async function runCommandTool(
   input: RunCommandInput,
@@ -68,10 +90,30 @@ export async function runCommandTool(
 }
 
 export const runCommandDefinition: ToolDefinition<
-  RunCommandInput,
-  RunCommandResult
+  Omit<RunCommandInput, "targetDirectory">
 > = {
   name: "run_command",
   description: "Run a shell command inside the target directory with a timeout.",
-  invoke: runCommandTool,
+  inputSchema: runCommandInputSchema,
+  async execute(input, targetDirectory) {
+    try {
+      const result = await runCommandTool({
+        targetDirectory,
+        ...input,
+      });
+
+      return createToolSuccessResult({
+        command: result.command,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        signal: result.signal,
+      });
+    } catch (error) {
+      return createToolErrorResult(error);
+    }
+  },
 };
+
+registerTool(runCommandDefinition);

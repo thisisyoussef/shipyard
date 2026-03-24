@@ -5,6 +5,17 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  CODE_PHASE_TOOL_NAMES,
+  getCodePhaseToolDefinitions,
+} from "../src/phases/code/index.js";
+import {
+  getAnthropicTools,
+  getTool,
+  getTools,
+  registerTool,
+  type ToolDefinition,
+} from "../src/tools/registry.js";
+import {
   ToolError,
   editBlockTool as editBlock,
   listFilesTool as listFiles,
@@ -13,6 +24,7 @@ import {
   searchFilesTool as searchFiles,
   writeFileTool as writeTargetFile,
 } from "../src/tools/index.js";
+import { readFileDefinition } from "../src/tools/read-file.js";
 
 const createdDirectories: string[] = [];
 
@@ -214,6 +226,76 @@ describe("search and command tools", () => {
 
     expect(result.timedOut).toBe(true);
     expect(result.exitCode).not.toBe(0);
+  });
+});
+
+describe("tool registry", () => {
+  afterEach(async () => {
+    const directories = createdDirectories.splice(0, createdDirectories.length);
+
+    await Promise.all(
+      directories.map((directory) =>
+        rm(directory, { recursive: true, force: true }),
+      ),
+    );
+  });
+
+  it("registers the full code-phase tool surface through the barrel import", () => {
+    const tools = getCodePhaseToolDefinitions();
+
+    expect(tools.map((tool) => tool.name)).toEqual(CODE_PHASE_TOOL_NAMES);
+  });
+
+  it("rejects duplicate tool names", () => {
+    expect(() => registerTool(readFileDefinition)).toThrowError(
+      'Failed to register tool "read_file": duplicate tool name.',
+    );
+  });
+
+  it("preserves requested ordering while skipping unknown names", () => {
+    const tools = getTools(["search_files", "missing_tool", "read_file"]);
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "search_files",
+      "read_file",
+    ]);
+  });
+
+  it("exports Anthropic-ready schemas for requested tools", () => {
+    const tools = getAnthropicTools(["read_file", "write_file"]);
+
+    expect(tools).toHaveLength(2);
+    expect(tools[0]).toMatchObject({
+      name: "read_file",
+      input_schema: {
+        type: "object",
+      },
+    });
+    expect(tools[0]).toHaveProperty("input_schema.properties.path");
+    expect(Object.keys(tools[1]?.input_schema.properties ?? {})).toContain("contents");
+  });
+
+  it("executes a registered tool through the shared ToolResult contract", async () => {
+    const directory = await createTempProject();
+    await writeFile(path.join(directory, "notes.txt"), "hello registry\n", "utf8");
+
+    const tool = getTool("read_file") as ToolDefinition<{ path: string }>;
+    const result = await tool.execute({ path: "notes.txt" }, directory);
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+
+    const parsed = JSON.parse(result.output) as {
+      path: string;
+      contents: string;
+      hash: string;
+      absolutePath?: string;
+    };
+
+    expect(parsed.path).toBe("notes.txt");
+    expect(parsed.contents).toBe("hello registry\n");
+    expect(parsed.hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(parsed.absolutePath).toBeUndefined();
   });
 });
 
