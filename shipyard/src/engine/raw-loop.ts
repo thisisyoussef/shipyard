@@ -24,6 +24,24 @@ export interface RawLoopLogger {
   log: (message: string) => void;
 }
 
+export interface RawToolExecution {
+  toolName: string;
+  input: unknown;
+  success: boolean;
+  output: string;
+  error?: string;
+  editedPath: string | null;
+}
+
+export interface RawToolLoopResult {
+  finalText: string;
+  messageHistory: MessageParam[];
+  toolExecutions: RawToolExecution[];
+  iterations: number;
+  didEdit: boolean;
+  lastEditedFile: string | null;
+}
+
 export interface RawToolLoopOptions {
   client?: AnthropicMessagesClient;
   logger?: RawLoopLogger;
@@ -89,6 +107,32 @@ function formatToolResultPreview(result: ToolResult): string {
   return truncateForLog(result.output);
 }
 
+function extractEditedPath(
+  toolName: string,
+  input: unknown,
+  result: ToolResult,
+): string | null {
+  if (!result.success) {
+    return null;
+  }
+
+  if (toolName !== "edit_block" && toolName !== "write_file") {
+    return null;
+  }
+
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "path" in input &&
+    typeof input.path === "string" &&
+    input.path.trim()
+  ) {
+    return input.path;
+  }
+
+  return null;
+}
+
 function createUserToolResultHistoryMessage(
   toolResultBlocks: MessageParam["content"],
 ): MessageParam {
@@ -136,8 +180,12 @@ async function executeToolUsesForTurn(
   allowedToolNames: Set<string>,
   logger: RawLoopLogger,
   turnNumber: number,
-): Promise<MessageParam> {
+): Promise<{
+  toolResultMessage: MessageParam;
+  toolExecutions: RawToolExecution[];
+}> {
   const toolResultBlocks: Exclude<MessageParam["content"], string> = [];
+  const toolExecutions: RawToolExecution[] = [];
 
   for (const toolUse of toolUses) {
     logger.log(
@@ -154,10 +202,21 @@ async function executeToolUsesForTurn(
       )}`,
     );
 
+    toolExecutions.push({
+      toolName: toolUse.name,
+      input: toolUse.input,
+      success: result.success,
+      output: result.output,
+      error: result.error,
+      editedPath: extractEditedPath(toolUse.name, toolUse.input, result),
+    });
     toolResultBlocks.push(createUserToolResultBlock(toolUse.id, result));
   }
 
-  return createUserToolResultHistoryMessage(toolResultBlocks);
+  return {
+    toolResultMessage: createUserToolResultHistoryMessage(toolResultBlocks),
+    toolExecutions,
+  };
 }
 
 function validateToolUseTurn(
@@ -175,13 +234,13 @@ function validateToolUseTurn(
   return toolUses;
 }
 
-export async function runRawToolLoop(
+export async function runRawToolLoopDetailed(
   systemPrompt: string,
   userMessage: string,
   toolNames: string[],
   targetDirectory: string,
   options: RawToolLoopOptions = {},
-): Promise<string> {
+): Promise<RawToolLoopResult> {
   const normalizedSystemPrompt = ensureNonBlankString(systemPrompt, "systemPrompt");
   const normalizedUserMessage = ensureNonBlankString(userMessage, "userMessage");
   const normalizedToolNames = ensureValidToolNames(toolNames);
@@ -193,6 +252,8 @@ export async function runRawToolLoop(
   const allowedToolNames = new Set(normalizedToolNames);
   const messages: MessageParam[] = [createUserTextMessage(normalizedUserMessage)];
   const anthropicTools = getAnthropicTools(normalizedToolNames);
+  const toolExecutions: RawToolExecution[] = [];
+  let lastEditedFile: string | null = null;
 
   for (let turnNumber = 1; turnNumber <= maxIterations; turnNumber += 1) {
     logger.log(
@@ -212,7 +273,7 @@ export async function runRawToolLoop(
     if (assistantMessage.stop_reason === "tool_use") {
       const toolUses = validateToolUseTurn(assistantMessage, turnNumber);
       const assistantHistoryMessage = createAssistantHistoryMessage(assistantMessage);
-      const toolResultMessage = await executeToolUsesForTurn(
+      const toolTurnResult = await executeToolUsesForTurn(
         toolUses,
         targetDirectory,
         allowedToolNames,
@@ -220,7 +281,16 @@ export async function runRawToolLoop(
         turnNumber,
       );
 
-      messages.push(assistantHistoryMessage, toolResultMessage);
+      toolExecutions.push(...toolTurnResult.toolExecutions);
+      const editedExecution = [...toolTurnResult.toolExecutions]
+        .reverse()
+        .find((execution) => execution.editedPath !== null);
+
+      if (editedExecution?.editedPath) {
+        lastEditedFile = editedExecution.editedPath;
+      }
+
+      messages.push(assistantHistoryMessage, toolTurnResult.toolResultMessage);
       continue;
     }
 
@@ -236,10 +306,37 @@ export async function runRawToolLoop(
       `[raw-loop] turn ${String(turnNumber)} final_text=${truncateForLog(finalText)}`,
     );
 
-    return finalText;
+    messages.push(createAssistantHistoryMessage(assistantMessage));
+
+    return {
+      finalText,
+      messageHistory: messages,
+      toolExecutions,
+      iterations: turnNumber,
+      didEdit: lastEditedFile !== null,
+      lastEditedFile,
+    };
   }
 
   throw new Error(
     `Raw Claude loop exceeded ${String(maxIterations)} iterations without reaching a final response.`,
   );
+}
+
+export async function runRawToolLoop(
+  systemPrompt: string,
+  userMessage: string,
+  toolNames: string[],
+  targetDirectory: string,
+  options: RawToolLoopOptions = {},
+): Promise<string> {
+  const result = await runRawToolLoopDetailed(
+    systemPrompt,
+    userMessage,
+    toolNames,
+    targetDirectory,
+    options,
+  );
+
+  return result.finalText;
 }
