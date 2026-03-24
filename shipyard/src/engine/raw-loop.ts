@@ -1,4 +1,5 @@
 import type { Message, MessageParam, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
+import { traceable } from "langsmith/traceable";
 
 import {
   createAnthropicClient,
@@ -16,6 +17,7 @@ import {
   getTool,
   type ToolResult,
 } from "../tools/registry.js";
+import { getLangSmithConfig } from "../tracing/langsmith.js";
 
 export const RAW_LOOP_MAX_ITERATIONS = 25;
 const LOG_PREVIEW_LIMIT = 160;
@@ -191,6 +193,36 @@ async function executeToolUse(
   }
 }
 
+async function executeToolUseWithTracing(
+  toolUse: ToolUseBlock,
+  targetDirectory: string,
+  allowedToolNames: Set<string>,
+  turnNumber: number,
+): Promise<ToolResult> {
+  const langSmith = getLangSmithConfig();
+
+  if (!langSmith.enabled) {
+    return executeToolUse(toolUse, targetDirectory, allowedToolNames);
+  }
+
+  const tracedToolExecution = traceable(
+    async () => executeToolUse(toolUse, targetDirectory, allowedToolNames),
+    {
+      name: `shipyard.tool.${toolUse.name}`,
+      run_type: "tool",
+      project_name: langSmith.project ?? undefined,
+      tags: ["shipyard", "tool", toolUse.name],
+      metadata: {
+        toolName: toolUse.name,
+        turnNumber,
+        targetDirectory,
+      },
+    },
+  );
+
+  return tracedToolExecution();
+}
+
 async function executeToolUsesForTurn(
   toolUses: ToolUseBlock[],
   targetDirectory: string,
@@ -223,7 +255,12 @@ async function executeToolUsesForTurn(
       )}`,
     );
 
-    const result = await executeToolUse(toolUse, targetDirectory, allowedToolNames);
+    const result = await executeToolUseWithTracing(
+      toolUse,
+      targetDirectory,
+      allowedToolNames,
+      turnNumber,
+    );
 
     logger.log(
       `[raw-loop] turn ${String(turnNumber)} tool_result ${toolUse.name} ${result.success ? "success" : "failure"} output=${formatToolResultPreview(
@@ -272,7 +309,7 @@ function validateToolUseTurn(
   return toolUses;
 }
 
-export async function runRawToolLoopDetailed(
+async function runRawToolLoopDetailedCore(
   systemPrompt: string,
   userMessage: string,
   toolNames: string[],
@@ -361,6 +398,46 @@ export async function runRawToolLoopDetailed(
   throw new Error(
     `Raw Claude loop exceeded ${String(maxIterations)} iterations without reaching a final response.`,
   );
+}
+
+export async function runRawToolLoopDetailed(
+  systemPrompt: string,
+  userMessage: string,
+  toolNames: string[],
+  targetDirectory: string,
+  options: RawToolLoopOptions = {},
+): Promise<RawToolLoopResult> {
+  const langSmith = getLangSmithConfig();
+
+  if (!langSmith.enabled) {
+    return runRawToolLoopDetailedCore(
+      systemPrompt,
+      userMessage,
+      toolNames,
+      targetDirectory,
+      options,
+    );
+  }
+
+  const tracedRawLoop = traceable(async () =>
+    runRawToolLoopDetailedCore(
+      systemPrompt,
+      userMessage,
+      toolNames,
+      targetDirectory,
+      options,
+    ), {
+    name: "shipyard.raw-tool-loop",
+    run_type: "chain",
+    project_name: langSmith.project ?? undefined,
+    tags: ["shipyard", "raw-loop"],
+    metadata: {
+      targetDirectory,
+      toolCount: toolNames.length,
+    },
+  });
+
+  return tracedRawLoop();
 }
 
 export async function runRawToolLoop(
