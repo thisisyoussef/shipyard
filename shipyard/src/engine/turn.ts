@@ -439,6 +439,7 @@ export async function executeInstructionTurn(
     const finalText = `Turn ${String(state.turnCount)} stopped: ${message}`;
 
     rememberRecent(runtimeState.recentErrors, message);
+    await options.reporter?.onText?.(finalText);
     await options.reporter?.onError?.(message);
     await options.reporter?.onDone?.({
       status: "error",

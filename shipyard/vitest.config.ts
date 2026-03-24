@@ -9,6 +9,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // The suite includes long-lived CLI and local runtime integration tests.
+    // Keep file-level parallelism off so `pnpm test` stays deterministic.
+    fileParallelism: false,
     root: packageRoot,
   },
 });
