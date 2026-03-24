@@ -6,6 +6,7 @@
 
 ## Execution Notes
 - Keep the startup and transport contract small and explicit.
+- Assume `P2-S02` has already landed and reuse its real file-IO/tool surfaces instead of inventing placeholders.
 - Do not let the browser mode fork the engine.
 - Choose one backend and one frontend build path and stick to them.
 

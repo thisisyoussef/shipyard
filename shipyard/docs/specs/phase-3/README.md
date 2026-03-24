@@ -15,7 +15,7 @@
 ## Shared Constraints
 
 - Product code and product docs stay under `shipyard/`; `.ai/` remains helper-only.
-- Phase Pre-2's browser UI is assumed to be the primary human-facing progress surface for demos and operator feedback.
+- Phase Pre-2's browser UI, inserted after `P2-S02`, is assumed to be the primary human-facing progress surface for demos and operator feedback.
 - Phase 3 assumes the Phase 2 tool contract exists first: tools self-register, expose Anthropic-ready schemas, and return `ToolResult` with `success`, `output`, and optional `error`.
 - The raw loop stays framework-free. LangGraph remains explicitly out of scope for this phase.
 - Anthropic's current official model overview lists the Sonnet 4.5 alias as `claude-sonnet-4-5` and the versioned API ID as `claude-sonnet-4-5-20250929`; prefer the alias in code unless the repo later chooses to pin a specific version.
@@ -33,7 +33,7 @@
 ## Sequencing Rationale
 
 - `P3-S01` lands first because the raw loop needs a stable Claude client, model choice, and typed content-block helpers before any iteration logic exists.
-- Phase Pre-2 lands before this pack so raw-loop activity has a browser surface waiting for it instead of staying console-only.
+- Phase Pre-2 lands after `P2-S02` and before this pack so raw-loop activity has a browser surface waiting for it instead of staying console-only.
 - `P3-S02` implements the framework-free fallback loop once the client and tool-schema plumbing are stable.
 - `P3-S03` closes the phase by proving Claude actually honors surgical editing under live calls and by tightening prompts only if the observed behavior demands it.
 

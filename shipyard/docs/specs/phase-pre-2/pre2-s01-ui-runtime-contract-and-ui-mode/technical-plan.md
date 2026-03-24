@@ -24,7 +24,7 @@
   - browser-first progress surface
   - real-time event streaming
   - visual proof of context injection and surgical edits
-- Story ordering rationale: the startup contract and message schema land first so backend and frontend work can target the same runtime surface.
+- Story ordering rationale: once `P2-S02` is in place, the startup contract and message schema land first so backend and frontend work can target the same runtime surface.
 - Gaps/overlap check: this story owns contract and bootstrapping only; the actual event emission and rendering live in later stories.
 - Whole-pack success signal: later UI stories do not need to re-decide transport or runtime shape.
 

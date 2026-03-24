@@ -9,7 +9,7 @@
 
 ## Problem Statement
 
-Shipyard currently presents progress through a terminal REPL, which makes the agent feel opaque unless someone watches console output carefully. Before later work deepens the engine, the repo needs a stable UI runtime contract that adds a browser-first mode without forking the application into a separate product.
+Shipyard currently presents progress through a terminal REPL, which makes the agent feel opaque unless someone watches console output carefully. Once `P2-S02` has established the real tool registry and safe file-IO foundation, the repo needs a stable UI runtime contract that adds a browser-first mode without forking the application into a separate product.
 
 ## Story Pack Objectives (for phase packs or multi-story planning)
 - Objective 1: Define a single runtime that can start in terminal or browser mode from the same CLI.
