@@ -1,15 +1,25 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 
 import type {
   BackendToFrontendMessage,
   FrontendToBackendMessage,
 } from "../../src/ui/contracts.js";
 import { backendToFrontendMessageSchema } from "../../src/ui/contracts.js";
-
-type SessionStateMessage = Extract<
-  BackendToFrontendMessage,
-  { type: "session:state" }
->;
+import { ShipyardWorkbench } from "./ShipyardWorkbench.js";
+import {
+  applyBackendMessage,
+  createInitialWorkbenchState,
+  queueInstructionTurn,
+  setTransportState,
+} from "./view-models.js";
 
 function createSocketUrl(): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -17,73 +27,108 @@ function createSocketUrl(): string {
 }
 
 export function App() {
-  const [connectionState, setConnectionState] = useState(
-    "connecting",
-  );
+  const [viewState, setViewState] = useState(createInitialWorkbenchState);
   const [instruction, setInstruction] = useState("");
-  const [sessionState, setSessionState] = useState<SessionStateMessage | null>(
-    null,
-  );
-  const [messages, setMessages] = useState<BackendToFrontendMessage[]>([]);
+  const [contextDraft, setContextDraft] = useState("");
+  const [traceButtonLabel, setTraceButtonLabel] = useState("Copy trace path");
   const socketRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const hasSessionRef = useRef(false);
+  const deferredTurns = useDeferredValue(viewState.turns);
+  const deferredFileEvents = useDeferredValue(viewState.fileEvents);
+
+  const applyMessage = useEffectEvent((message: BackendToFrontendMessage) => {
+    if (message.type === "session:state") {
+      hasSessionRef.current = true;
+    }
+
+    startTransition(() => {
+      setViewState((currentState) => applyBackendMessage(currentState, message));
+    });
+  });
+
+  const applyTransportState = useEffectEvent(
+    (connectionState: Parameters<typeof setTransportState>[1], status: string) => {
+      startTransition(() => {
+        setViewState((currentState) =>
+          setTransportState(currentState, connectionState, status)
+        );
+      });
+    },
+  );
 
   useEffect(() => {
-    const socket = new WebSocket(createSocketUrl());
-    socketRef.current = socket;
+    let disposed = false;
 
-    socket.addEventListener("open", () => {
-      setConnectionState("connecting");
-      const statusMessage: FrontendToBackendMessage = { type: "status" };
-      socket.send(JSON.stringify(statusMessage));
-    });
-
-    socket.addEventListener("message", (event) => {
-      const parsed = backendToFrontendMessageSchema.safeParse(
-        JSON.parse(event.data as string),
-      );
-
-      if (!parsed.success) {
-        setConnectionState("error");
+    const connect = () => {
+      if (disposed) {
         return;
       }
 
-      const nextMessage = parsed.data;
+      applyTransportState(
+        "connecting",
+        hasSessionRef.current
+          ? "Reconnecting to Shipyard..."
+          : "Connecting to Shipyard...",
+      );
 
-      if (nextMessage.type === "session:state") {
-        setSessionState(nextMessage);
-        setConnectionState(nextMessage.connectionState);
-      } else {
-        setMessages((currentMessages) => [
-          nextMessage,
-          ...currentMessages.slice(0, 11),
-        ]);
+      const socket = new WebSocket(createSocketUrl());
+      socketRef.current = socket;
 
-        if (nextMessage.type === "agent:error") {
-          setConnectionState("error");
-        } else if (nextMessage.type === "agent:thinking") {
-          setConnectionState("agent-busy");
-        } else if (nextMessage.type === "agent:done") {
-          setConnectionState("ready");
+      socket.addEventListener("open", () => {
+        const statusMessage: FrontendToBackendMessage = { type: "status" };
+        socket.send(JSON.stringify(statusMessage));
+      });
+
+      socket.addEventListener("message", (event) => {
+        const parsed = backendToFrontendMessageSchema.safeParse(
+          JSON.parse(event.data as string),
+        );
+
+        if (!parsed.success) {
+          applyTransportState("error", "Shipyard sent an unrecognized event.");
+          return;
         }
-      }
-    });
 
-    socket.addEventListener("close", () => {
-      setConnectionState("disconnected");
-      socketRef.current = null;
-    });
+        applyMessage(parsed.data);
+      });
 
-    socket.addEventListener("error", () => {
-      setConnectionState("error");
-    });
+      socket.addEventListener("error", () => {
+        applyTransportState("error", "Connection error. Waiting to retry...");
+      });
+
+      socket.addEventListener("close", () => {
+        socketRef.current = null;
+
+        if (disposed) {
+          applyTransportState("disconnected", "Shipyard UI disconnected.");
+          return;
+        }
+
+        applyTransportState("connecting", "Reconnecting to Shipyard...");
+        reconnectTimerRef.current = window.setTimeout(connect, 1_500);
+      });
+    };
+
+    connect();
 
     return () => {
-      socket.close();
+      disposed = true;
+
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+      }
+
+      socketRef.current?.close();
     };
-  }, []);
+  }, [applyMessage, applyTransportState]);
 
   function sendMessage(message: FrontendToBackendMessage): void {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
+      applyTransportState(
+        "error",
+        "Cannot send instructions while the browser runtime is disconnected.",
+      );
       return;
     }
 
@@ -93,134 +138,67 @@ export function App() {
   function handleInstructionSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
 
-    if (!instruction.trim()) {
+    const trimmedInstruction = instruction.trim();
+
+    if (!trimmedInstruction) {
       return;
     }
 
+    const injectedContext = contextDraft.trim() ? [contextDraft.trim()] : undefined;
     sendMessage({
       type: "instruction",
-      text: instruction,
+      text: trimmedInstruction,
+      injectedContext,
+    });
+
+    startTransition(() => {
+      setViewState((currentState) =>
+        queueInstructionTurn(
+          currentState,
+          trimmedInstruction,
+          injectedContext ?? [],
+        )
+      );
     });
     setInstruction("");
   }
 
+  function handleCopyTracePath(): void {
+    const tracePath = viewState.sessionState?.tracePath;
+
+    if (!tracePath) {
+      return;
+    }
+
+    if (!("clipboard" in navigator)) {
+      setTraceButtonLabel("Trace unavailable");
+      return;
+    }
+
+    void navigator.clipboard.writeText(tracePath).then(() => {
+      setTraceButtonLabel("Trace path copied");
+      window.setTimeout(() => {
+        setTraceButtonLabel("Copy trace path");
+      }, 1_200);
+    });
+  }
+
   return (
-    <main className="app-shell">
-      <section className="hero-card">
-        <div className="hero-copy">
-          <span className="eyebrow">Shipyard UI Runtime</span>
-          <h1>One engine, two control surfaces.</h1>
-          <p>
-            Browser mode is now a first-class runtime contract over the same
-            session model that powers the terminal loop. This shell will grow
-            into the diff-first developer console in the next pre-2 stories.
-          </p>
-        </div>
-        <div className="status-pill" data-state={connectionState}>
-          {connectionState}
-        </div>
-      </section>
-
-      <section className="app-grid">
-        <article className="panel">
-          <header className="panel-header">
-            <h2>Session</h2>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => sendMessage({ type: "status" })}
-            >
-              Refresh status
-            </button>
-          </header>
-          {sessionState ? (
-            <dl className="definition-grid">
-              <div>
-                <dt>Session ID</dt>
-                <dd>{sessionState.sessionId}</dd>
-              </div>
-              <div>
-                <dt>Target</dt>
-                <dd>{sessionState.targetLabel}</dd>
-              </div>
-              <div>
-                <dt>Turns</dt>
-                <dd>{sessionState.turnCount}</dd>
-              </div>
-              <div>
-                <dt>Discovery</dt>
-                <dd>{sessionState.discoverySummary}</dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="muted-copy">Waiting for the session bridge.</p>
-          )}
-        </article>
-
-        <article className="panel">
-          <header className="panel-header">
-            <h2>Runtime Contract</h2>
-          </header>
-          <ul className="contract-list">
-            <li>`instruction` sends text plus optional injected context.</li>
-            <li>`cancel` reserves the control path for interrupt support.</li>
-            <li>`status` rehydrates the shared session snapshot.</li>
-            <li>
-              `agent:*` and `session:state` messages are already typed and ready
-              for the real activity stream.
-            </li>
-          </ul>
-        </article>
-      </section>
-
-      <section className="panel workbench-panel">
-        <header className="panel-header">
-          <h2>Instruction Probe</h2>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => sendMessage({ type: "cancel" })}
-          >
-            Cancel placeholder
-          </button>
-        </header>
-        <form className="instruction-form" onSubmit={handleInstructionSubmit}>
-          <label className="instruction-label" htmlFor="instruction">
-            Send a browser instruction against the runtime contract
-          </label>
-          <textarea
-            id="instruction"
-            className="instruction-input"
-            rows={4}
-            placeholder="Ask Shipyard to inspect a file or explain the next diff."
-            value={instruction}
-            onChange={(event) => setInstruction(event.target.value)}
-          />
-          <button type="submit" className="primary-button">
-            Send instruction
-          </button>
-        </form>
-      </section>
-
-      <section className="panel">
-        <header className="panel-header">
-          <h2>Recent Messages</h2>
-        </header>
-        <div className="message-stack">
-          {messages.length === 0 ? (
-            <p className="muted-copy">
-              No streamed agent events yet. PRE2-S02 will wire the real activity
-              feed.
-            </p>
-          ) : (
-            messages.map((message, index) => (
-              <pre key={`${message.type}-${String(index)}`} className="message-card">
-                {JSON.stringify(message, null, 2)}
-              </pre>
-            ))
-          )}
-        </div>
-      </section>
-    </main>
+    <ShipyardWorkbench
+      sessionState={viewState.sessionState}
+      turns={deferredTurns}
+      fileEvents={deferredFileEvents}
+      connectionState={viewState.connectionState}
+      agentStatus={viewState.agentStatus}
+      instruction={instruction}
+      contextDraft={contextDraft}
+      onInstructionChange={setInstruction}
+      onContextChange={setContextDraft}
+      onClearContext={() => setContextDraft("")}
+      onSubmitInstruction={handleInstructionSubmit}
+      onRefreshStatus={() => sendMessage({ type: "status" })}
+      onCopyTracePath={handleCopyTracePath}
+      traceButtonLabel={traceButtonLabel}
+    />
   );
 }
