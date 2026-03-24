@@ -16,3 +16,19 @@ This is Shipyard's active default phase for repository changes.
 
 When the runtime grows more phases, this folder should remain the reference
 shape for how a phase declares prompt text, tools, and exported helpers.
+
+## Diagram
+
+```mermaid
+flowchart LR
+  Prompt["prompts.ts"]
+  Index["index.ts"]
+  Names["CODE_PHASE_TOOL_NAMES"]
+  Registry["../../tools/registry.ts"]
+  Runtime["../../engine/turn.ts"]
+
+  Prompt --> Index
+  Names --> Index
+  Index --> Registry
+  Runtime --> Index
+```

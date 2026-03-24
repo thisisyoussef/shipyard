@@ -21,3 +21,27 @@
   runtime state or execution semantics.
 - Prefer explicit runtime state over hidden module globals so sessions remain
   inspectable and serializable.
+
+## Diagram
+
+```mermaid
+flowchart LR
+  Loop["loop.ts"]
+  Turn["turn.ts"]
+  Graph["graph.ts"]
+  Raw["raw-loop.ts"]
+  State["state.ts"]
+  Anthropic["anthropic.ts"]
+  Verify["live-verification.ts"]
+  Tools["../tools"]
+  Traces["../tracing"]
+
+  Loop --> Turn
+  Turn --> State
+  Turn --> Graph
+  Turn --> Raw
+  Graph --> Anthropic
+  Graph --> Tools
+  Turn --> Verify
+  Turn --> Traces
+```

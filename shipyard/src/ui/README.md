@@ -20,3 +20,22 @@ itself lives in `../../ui/`.
 
 When adding browser features, keep that split intact so UI transport concerns do
 not leak into the core runtime.
+
+## Diagram
+
+```mermaid
+flowchart LR
+  Browser["browser client"]
+  Server["server.ts"]
+  Contracts["contracts.ts"]
+  Events["events.ts"]
+  State["workbench-state.ts"]
+  Turn["../engine/turn.ts"]
+
+  Browser --> Server
+  Server --> Contracts
+  Server --> Turn
+  Turn --> Events
+  Events --> State
+  State --> Browser
+```

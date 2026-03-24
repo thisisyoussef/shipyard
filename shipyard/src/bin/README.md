@@ -16,3 +16,25 @@
 - Do not move shared instruction behavior into the CLI entrypoint.
 - Do route behavior shared by terminal mode and UI mode through
   `src/engine/turn.ts`.
+
+## Diagram
+
+```mermaid
+flowchart TD
+  Args["CLI args"]
+  Parse["parseArgs"]
+  Discovery["discoverTarget"]
+  Session["load/create session"]
+  Rules["loadProjectRules"]
+  Choose{"--ui?"}
+  Loop["runShipyardLoop"]
+  Ui["startUiRuntimeServer"]
+
+  Args --> Parse
+  Parse --> Discovery
+  Discovery --> Session
+  Session --> Rules
+  Rules --> Choose
+  Choose -->|no| Loop
+  Choose -->|yes| Ui
+```

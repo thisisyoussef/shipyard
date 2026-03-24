@@ -18,3 +18,22 @@
 - Production assets build into `dist/ui`.
 - The backend server in `src/ui/server.ts` serves the built shell when present
   and falls back to a simple contract view when it is not.
+
+See [`src/README.md`](./src/README.md) for the source-level guide.
+
+## Diagram
+
+```mermaid
+flowchart LR
+  Vite["Vite root"]
+  Src["src/"]
+  Html["index.html"]
+  Build["dist/ui"]
+  Backend["../src/ui/server.ts"]
+
+  Vite --> Src
+  Vite --> Html
+  Src --> Build
+  Html --> Build
+  Backend --> Build
+```

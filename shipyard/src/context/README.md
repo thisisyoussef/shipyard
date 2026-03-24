@@ -16,3 +16,21 @@ instruction turn.
 This folder is the bridge between "raw target directory on disk" and "usable
 prompt context." When behavior depends on repository shape or project rules, it
 should usually start here rather than inside the CLI or tool layer.
+
+## Diagram
+
+```mermaid
+flowchart LR
+  Target["Target repo"]
+  Discovery["discovery.ts"]
+  Rules["AGENTS.md"]
+  Envelope["buildContextEnvelope"]
+  Prompt["composeSystemPrompt"]
+  Runtime["engine/turn.ts"]
+
+  Target --> Discovery
+  Rules --> Envelope
+  Discovery --> Envelope
+  Envelope --> Prompt
+  Prompt --> Runtime
+```

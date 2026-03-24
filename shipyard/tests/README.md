@@ -29,3 +29,19 @@ See [`manual/README.md`](./manual/README.md) for the current script map.
   against internal implementation details.
 - Add or update automated coverage when a change affects session state, tool
   contracts, CLI behavior, or browser runtime messaging.
+
+## Diagram
+
+```mermaid
+flowchart LR
+  Cli["CLI tests"]
+  Runtime["runtime tests"]
+  Ui["UI transport tests"]
+  Tracing["tracing and checkpoint tests"]
+  Manual["manual smoke scripts"]
+
+  Cli --> Runtime
+  Runtime --> Ui
+  Runtime --> Tracing
+  Runtime --> Manual
+```
