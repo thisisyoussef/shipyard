@@ -1,21 +1,13 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
 
-import { nanoid } from "nanoid";
-
 import type { TaskPlan } from "../artifacts/types.js";
 import {
   buildContextEnvelope,
   composeSystemPrompt,
 } from "../context/envelope.js";
 import { createCodePhase } from "../phases/code/index.js";
-import {
-  gitDiffTool,
-  listFilesTool,
-  readFileTool,
-} from "../tools/index.js";
-import type { ListFilesResult } from "../tools/list-files.js";
-import type { ReadFileResult } from "../tools/read-file.js";
+import { gitDiffTool } from "../tools/index.js";
 import type { ToolResult } from "../tools/registry.js";
 import type { RunCommandResult } from "../tools/run-command.js";
 import {
@@ -153,26 +145,6 @@ function updateRollingSummary(
     .join("\n");
 }
 
-function summarizeReadResult(result: ReadFileResult): string {
-  return `Read ${result.path} (${result.contents.split(/\r?\n/).filter(Boolean).length} lines).`;
-}
-
-function summarizeListFiles(result: ListFilesResult): string {
-  if (result.entries.length === 0) {
-    return "Found no files in the target directory.";
-  }
-
-  const preview = result.entries
-    .slice(0, 5)
-    .map((entry) => entry.path)
-    .join(", ");
-  const remainder = result.entries.length > 5
-    ? `, +${String(result.entries.length - 5)} more`
-    : "";
-
-  return `Found ${String(result.entries.length)} entries under ${result.path}: ${preview}${remainder}.`;
-}
-
 function summarizeGitDiff(result: RunCommandResult): string {
   if (result.exitCode !== 0) {
     const stderr = truncateText(result.stderr, 180);
@@ -210,10 +182,6 @@ function summarizeGitDiffPreview(result: RunCommandResult): string | null {
 function extractExplicitFilePath(instruction: string): string | null {
   const match = instruction.match(EXPLICIT_FILE_PATH_PATTERN);
   return match?.[0] ?? null;
-}
-
-function hasAnthropicApiKey(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.ANTHROPIC_API_KEY?.trim());
 }
 
 async function isGitRepository(targetDirectory: string): Promise<boolean> {
@@ -330,161 +298,11 @@ function createTurnSummary(
   return `Turn ${turnCount} ${statusLabel} via ${runtimeMode}: ${truncateText(finalText, 140)}`;
 }
 
-function createOfflinePreviewDependencies(
-  state: SessionState,
-  runtimeState: InstructionRuntimeState,
-  explicitFilePath: string | null,
-  reporter: InstructionTurnReporter | undefined,
-): AgentRuntimeDependencies {
-  return {
-    async runActingLoop(graphState) {
-      const observations: string[] = [];
-
-      if (explicitFilePath) {
-        const callId = nanoid();
-        await reporter?.onToolCall?.({
-          callId,
-          toolName: "read_file",
-          summary: `path: ${explicitFilePath}`,
-        });
-
-        try {
-          const result = await readFileTool({
-            targetDirectory: state.targetDirectory,
-            path: explicitFilePath,
-          });
-          const summary = summarizeReadResult(result);
-          rememberRecent(runtimeState.recentToolOutputs, `read_file ${result.path}`);
-          observations.push(summary);
-          await reporter?.onToolResult?.({
-            callId,
-            toolName: "read_file",
-            success: true,
-            summary,
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          rememberRecent(runtimeState.recentErrors, message);
-          await reporter?.onToolResult?.({
-            callId,
-            toolName: "read_file",
-            success: false,
-            summary: message,
-          });
-          throw new Error(message);
-        }
-      }
-
-      {
-        const callId = nanoid();
-        await reporter?.onToolCall?.({
-          callId,
-          toolName: "list_files",
-          summary: "glob: all tracked files in the target",
-        });
-
-        try {
-          const result = await listFilesTool({
-            targetDirectory: state.targetDirectory,
-            path: ".",
-          });
-          const summary = summarizeListFiles(result);
-          rememberRecent(
-            runtimeState.recentToolOutputs,
-            `list_files -> ${String(result.entries.length)} result(s)`,
-          );
-          observations.push(summary);
-          await reporter?.onToolResult?.({
-            callId,
-            toolName: "list_files",
-            success: true,
-            summary,
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          rememberRecent(runtimeState.recentErrors, message);
-          await reporter?.onToolResult?.({
-            callId,
-            toolName: "list_files",
-            success: false,
-            summary: message,
-          });
-          throw new Error(message);
-        }
-      }
-
-      if (await isGitRepository(state.targetDirectory)) {
-        const callId = nanoid();
-        await reporter?.onToolCall?.({
-          callId,
-          toolName: "git_diff",
-          summary: "args: --no-ext-diff",
-        });
-
-        const result = await gitDiffTool({
-          targetDirectory: state.targetDirectory,
-        });
-        const summary = summarizeGitDiff(result);
-        const success = result.exitCode === 0;
-
-        rememberRecent(runtimeState.recentToolOutputs, `git_diff -> ${summary}`);
-        observations.push(summary);
-        await reporter?.onToolResult?.({
-          callId,
-          toolName: "git_diff",
-          success,
-          summary,
-        });
-
-        const diffPreview = summarizeGitDiffPreview(result);
-
-        if (success && diffPreview) {
-          await reporter?.onEdit?.({
-            path: extractDiffPath(result),
-            summary: "Current workspace diff preview",
-            diff: diffPreview,
-          });
-        }
-      }
-
-      const finalText = [
-        `Goal: ${graphState.taskPlan?.goal ?? graphState.currentInstruction}`,
-        graphState.contextEnvelope.task.targetFilePaths.length > 0
-          ? `Target files: ${graphState.contextEnvelope.task.targetFilePaths.join(", ")}`
-          : "Target files: none identified yet.",
-        observations.length > 0
-          ? `Observations: ${observations.join(" ")}`
-          : "Observations: no tool activity was required for this turn.",
-        "Runtime note: Shipyard used the offline preview path because ANTHROPIC_API_KEY is not configured.",
-      ].join("\n");
-
-      return {
-        finalText,
-        messageHistory: [],
-        iterations: 1,
-        didEdit: false,
-        lastEditedFile: null,
-      };
-    },
-  };
-}
-
 function createRuntimeDependencies(
-  state: SessionState,
   runtimeState: InstructionRuntimeState,
-  explicitFilePath: string | null,
   reporter: InstructionTurnReporter | undefined,
 ): AgentRuntimeDependencies {
   const baseDependencies = runtimeState.runtimeDependencies;
-
-  if (!baseDependencies && !hasAnthropicApiKey()) {
-    return createOfflinePreviewDependencies(
-      state,
-      runtimeState,
-      explicitFilePath,
-      reporter,
-    );
-  }
 
   return {
     ...baseDependencies,
@@ -602,9 +420,7 @@ export async function executeInstructionTurn(
     blockedFiles: runtimeState.blockedFiles,
   });
   const runtimeDependencies = createRuntimeDependencies(
-    state,
     runtimeState,
-    explicitFilePath,
     options.reporter,
   );
 

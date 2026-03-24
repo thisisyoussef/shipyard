@@ -85,24 +85,6 @@ function isDirectExecution(): boolean {
   return import.meta.url === pathToFileURL(entryPath).href;
 }
 
-function resolveRuntimeMode(
-  env: NodeJS.ProcessEnv = process.env,
-): InstructionRuntimeMode {
-  const configuredMode = env.SHIPYARD_RUNTIME_MODE?.trim();
-
-  if (!configuredMode || configuredMode === "graph") {
-    return "graph";
-  }
-
-  if (configuredMode === "fallback") {
-    return "fallback";
-  }
-
-  throw new Error(
-    `Invalid SHIPYARD_RUNTIME_MODE value: ${configuredMode}. Expected "graph" or "fallback".`,
-  );
-}
-
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const options = parseArgs(argv);
   const resolvedTargetPath = path.resolve(process.cwd(), options.targetPath);
@@ -148,7 +130,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   printDiscovery(discovery);
 
   const projectRules = await loadProjectRules(resolvedTargetPath);
-  const runtimeMode = resolveRuntimeMode();
+  const runtimeMode: InstructionRuntimeMode = "graph";
   const injectedContext = projectRules
     ? ["Loaded AGENTS.md rules into the stable context layer."]
     : [];
