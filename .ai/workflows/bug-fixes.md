@@ -101,6 +101,11 @@ Primary tracking file:
 - For bugs with a visible local UI surface, do a browser smoke test against the exact changed flow
 - Do not treat code review alone as sufficient visible verification
 
+### Step 8.5: Run the LangSmith Finish Check When the Bug Touches Traced Behavior
+- If the bug fix changes traced AI/runtime behavior or was diagnosed from LangSmith evidence, run `.ai/workflows/langsmith-finish-check.md`
+- Use the CLI to confirm the repaired path now traces cleanly and that recent run errors match expectations
+- If unexpected trace or monitoring behavior remains, keep the bug open and correct it before handoff
+
 ---
 
 ## Phase 5: Document and Complete

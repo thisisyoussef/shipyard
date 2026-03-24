@@ -39,6 +39,7 @@
   - `pnpm --dir shipyard build`
   - `git diff --check`
 - **Finalization docs sweep**: before merging, update relevant docs/architecture diagrams (or explicitly record `N/A`)
+- **Relevant traced-story finish gate**: use the LangSmith CLI to review recent traces, runs, and insights before merge, and fix unexpected behavior first
 - **Helper-script status**: some imported workflow docs describe optional repo-owned helpers under `scripts/`; unless those helpers exist in this repo, follow the manual workflow equivalent instead of assuming the commands are wired today.
 
 ---
