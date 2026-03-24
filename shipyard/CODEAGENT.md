@@ -1,55 +1,330 @@
-# CODEAGENT
+# Appendix: CODEAGENT.md
 
-## Agent Architecture
+Submission template - fill in each section as you build. Do not write this at the end.
 
-Shipyard runs as a persistent local Node process with a terminal loop in `src/engine/loop.ts`. The loop holds session state across instructions, bootstraps discovery for the selected target, and rebuilds a stable `ContextEnvelope` as the session evolves.
+| Section | Due |
+| --- | --- |
+| Agent Architecture | MVP |
+| File Editing Strategy | MVP |
+| Multi-Agent Design | MVP |
+| Trace Links | MVP |
+| Architecture Decisions | Final Submission |
+| Ship Rebuild Log | Final Submission |
+| Comparative Analysis | Final Submission |
+| Cost Analysis | Final Submission |
 
-The architecture is split into small layers:
+## Agent Architecture (MVP)
 
-- `src/bin/` owns the CLI entrypoint
-- `src/engine/` owns the loop, state snapshots, and a generic graph abstraction
-- `src/context/` builds target discovery and per-turn context envelopes
-- `src/tools/` exposes file, search, command, and git primitives through a dynamic registry
-- `src/agents/` defines coordinator, explorer, and verifier roles
-- `src/phases/` defines phase contracts and the initial code-phase configuration
-- `src/checkpoints/` prepares backup and restore support before edits
-- `src/tracing/` supports LangSmith configuration plus a local JSONL fallback log
+Shipyard is a local-first coding agent with two entry surfaces, one shared turn
+executor, one tool layer, and one persisted session model. `src/bin/shipyard.ts`
+resolves the target, creates or resumes a session, refreshes discovery, loads
+target `AGENTS.md` rules, and then routes the operator into terminal REPL mode
+or browser `--ui` mode. Both surfaces call `executeInstructionTurn` in
+`src/engine/turn.ts`, which rebuilds the `ContextEnvelope`, selects the code
+phase, and runs either the graph runtime or the fallback raw tool loop.
 
-When `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, and `LANGCHAIN_PROJECT` are set, Shipyard traces both runtime paths automatically. Graph mode runs under LangGraph/LangChain callbacks, fallback mode wraps the raw Claude loop with LangSmith `traceable`, and the Anthropic client is wrapped so model calls appear as nested spans.
+```mermaid
+flowchart TD
+  Operator["Operator"]
+  Entry["CLI or UI entry"]
+  Bootstrap["Target resolution, session load/create, discovery, AGENTS.md load"]
+  Turn["executeInstructionTurn"]
+  Envelope["Context envelope"]
+  Graph["Graph runtime"]
+  Raw["Fallback raw loop"]
+  Tools["Typed tools"]
+  Target["Target repository"]
+  Checkpoints["Checkpoint manager"]
+  Verify{"Verification passed?"}
+  Recover["Recover and retry"]
+  Respond["Final response"]
+  Session["Session persistence"]
+  Trace["Local JSONL / LangSmith trace"]
 
-The coordinator is the only writer. Explorer and verifier are modeled as read-only role definitions so the orchestration boundary is explicit before the multi-agent runtime is added.
+  Operator --> Entry
+  Entry --> Bootstrap
+  Bootstrap --> Turn
+  Turn --> Envelope
+  Turn --> Graph
+  Turn --> Raw
+  Graph --> Tools
+  Raw --> Tools
+  Tools --> Target
+  Graph --> Checkpoints
+  Graph --> Verify
+  Verify -- yes --> Respond
+  Verify -- no --> Recover
+  Recover --> Graph
+  Respond --> Session
+  Turn --> Trace
+```
 
-## UI Runtime Contract
+### Loop design
 
-Shipyard's browser mode is an alternate runtime surface over the same session and engine state, not a second product.
+- `runShipyardLoop` in `src/engine/loop.ts` keeps the process alive, exposes
+  utility commands like `read`, `list`, `search`, `run`, and `diff`, and sends
+  any other input into the shared instruction path.
+- `executeInstructionTurn` assembles stable runtime context, captures recent
+  tool output and error summaries, wires reporter callbacks, and persists
+  updated session state after the turn completes.
+- `runAgentRuntime` in `src/engine/graph.ts` executes the explicit
+  `plan -> act -> verify -> recover -> respond` state machine. When the runtime
+  is started in fallback mode, the system still preserves the same planning,
+  tool, and response contract, but executes it through the lower-level raw loop
+  in `src/engine/raw-loop.ts`.
 
-- `src/bin/shipyard.ts` selects terminal mode or `--ui`
-- `src/engine/turn.ts` owns the shared per-instruction execution path used by both terminal and browser mode
-- `src/ui/contracts.ts` owns the typed WebSocket request/response protocol
-- `src/ui/events.ts` maps shared turn events into browser-safe messages
-- `src/ui/server.ts` owns the local HTTP and WebSocket runtime
-- `ui/` contains the React SPA source
-- `vite.config.ts` builds that SPA into `dist/ui`
+### Tool calls
 
-For MVP, the local backend stack is Node `http` + `ws`, and the frontend build path is React + Vite. The UI must stay local-only and should never require a second agent runtime or duplicate session state.
+The code phase currently exposes seven typed tools through the registry:
+`read_file`, `write_file`, `edit_block`, `list_files`, `search_files`,
+`run_command`, and `git_diff`. Tool execution is structured, target-relative,
+and schema-described before it reaches the model.
 
-## File Editing Strategy
+### State management
 
-Shipyard uses anchor-based surgical editing.
+- `SessionState` in `src/engine/state.ts` persists durable session data under
+  `target/.shipyard/sessions/<sessionId>.json`.
+- `InstructionRuntimeState` in `src/engine/turn.ts` keeps per-session rolling
+  context such as `recentToolOutputs`, `recentErrors`, `retryCountsByFile`,
+  `blockedFiles`, and the selected runtime mode.
+- `AgentGraphState` in `src/engine/graph.ts` carries the active instruction,
+  `messageHistory`, `taskPlan`, `verificationReport`, `lastEditedFile`,
+  recovery counters, and `langSmithTrace`.
+- Checkpoints are stored under
+  `target/.shipyard/checkpoints/<sessionId>/...checkpoint`, and local trace logs
+  are stored under `target/.shipyard/traces/<sessionId>.jsonl`.
 
-1. `read-file` reads the target file and returns both contents and a SHA-256 hash.
-2. `edit-block` re-reads the file, compares the hash to the caller's `expectedHash`, and rejects stale edits.
-3. The edit only proceeds when `oldString` matches exactly once.
-4. The tool replaces only that anchored block and re-reads the file to return the new contents and hash.
+### Entry conditions
 
-This keeps Day 1 simple while still covering the critical guardrails from the PRD:
+- Target directory is resolved and `.shipyard/` runtime directories exist.
+- Discovery has been refreshed for the target repository.
+- Project rules from target `AGENTS.md` have been loaded into the stable context
+  layer when available.
+- A saved session has been resumed or a new session has been created.
+- Runtime mode has been chosen: graph by default, fallback when explicitly
+  requested or injected.
 
-- no full-file rewrites for targeted edits
-- no ambiguous multi-match replacements
-- no stale writes after the file changes
-- typed results the coordinator can inspect and trace
+### Normal exit conditions
 
-## MVP Trace Links
+- The graph reaches `respond` and marks the turn `done`.
+- A fallback run returns final text without unhandled runtime errors.
+- Session state, rolling summaries, and trace references are saved.
+- Terminal mode can later exit the process cleanly with `quit` or `exit`, which
+  emits a `session.end` trace record and writes the final session snapshot.
 
-- Successful graph-mode file creation trace: [LangSmith trace](https://smith.langchain.com/o/4610debb-3062-47a4-a18d-faee6ddaa4c3/projects/p/debcf987-99bc-4986-b3e1-5af61ee1ff78/r/019d21b3-0b13-7000-8000-04db046b4bd7?trace_id=019d21b3-0b13-7000-8000-04db046b4bd7&start_time=2026-03-24T21:14:35.155001)
-- Fallback-mode missing-file error trace: [LangSmith trace](https://smith.langchain.com/o/4610debb-3062-47a4-a18d-faee6ddaa4c3/projects/p/debcf987-99bc-4986-b3e1-5af61ee1ff78/r/019d21b3-2e81-7000-8000-07611bad5091?trace_id=019d21b3-2e81-7000-8000-07611bad5091&start_time=2026-03-24T21:14:44.225001)
+### Error branches
+
+- Tool failures are surfaced as structured tool results instead of crashing the
+  loop.
+- Verification failure sends the graph into `recover`, where the latest
+  checkpoint is restored and the edited file is re-read before replanning.
+- If a file keeps failing verification beyond the retry cap, the file is added
+  to `blockedFiles` and the coordinator escalates instead of writing again.
+- Runtime-level failures produce a final `failed` status and preserve the last
+  error in state.
+
+## File Editing Strategy (MVP)
+
+Shipyard makes surgical edits by combining a prior `read_file` requirement, an
+exact-string anchor, hash tracking, and checkpoint-backed recovery.
+
+1. The runtime first calls `read_file` for the target path. This normalizes the
+   path, returns file contents, and stores a tracked SHA-256 hash in
+   `src/tools/file-state.ts`.
+2. When the model is ready to edit, it calls `edit_block` with the same
+   relative path plus `old_string` and `new_string`.
+3. `edit_block` resolves the path inside the target, re-reads the live file,
+   and rejects the edit immediately if the file was never read first.
+4. The tool compares the current hash against the tracked read hash. If the file
+   changed since the read, the edit is rejected as stale and the model must
+   re-read before trying again.
+5. The tool counts occurrences of `old_string`. The edit only proceeds when the
+   anchor matches exactly once.
+6. For larger files, `edit_block` rejects changes that would rewrite more than
+   60% of a file larger than 500 characters. This keeps "surgical edit" calls
+   from turning into disguised full-file rewrites.
+7. Under the graph runtime, a checkpoint is created before each `edit_block`
+   call so failed verification can revert the file.
+8. After a successful write, the tool returns the updated contents, the new
+   hash, line-count deltas, and before/after previews so the coordinator can
+   summarize exactly what changed.
+
+### How the correct block is located
+
+- The locator is the literal `old_string`, not a line number.
+- Path matching is target-relative and normalized before access.
+- Uniqueness is mandatory. Exact-one-match is the guardrail that makes the edit
+  deterministic.
+
+### What happens when the location is wrong
+
+| Failure mode | Response |
+| --- | --- |
+| File was not read first | Reject with "Read the file with read_file before editing." |
+| File changed after read | Reject as stale and require a fresh read. |
+| Anchor not found | Reject and include the first 30 lines of the live file to help the coordinator re-anchor. |
+| Anchor matched multiple times | Reject and ask for more surrounding context so the match becomes unique. |
+| Edit is too large | Reject and require smaller `edit_block` calls. |
+| Post-edit verification fails | Restore the checkpoint, re-read the file, increment retry state, and either replan or block the file. |
+
+This mechanism deliberately prefers false negatives over ambiguous writes. When
+Shipyard cannot prove the anchor is correct, it stops and asks the model to get
+more context.
+
+## Multi-Agent Design (MVP)
+
+The shipped runtime still uses a single writing coordinator, but the repository
+now has an explicit multi-agent contract. `src/agents/coordinator.ts` owns the
+task plan, every write, and the final merge of evidence. `src/agents/explorer.ts`
+and `src/agents/verifier.ts` already define the read-only and verification-only
+roles, while the phase-6 story pack documents the next runtime step: isolated
+subagents with structured reports and no shared conversation history.
+
+```mermaid
+flowchart LR
+  Operator["Operator instruction"]
+  Coordinator["Coordinator"]
+  Explorer["Explorer subagent"]
+  Verifier["Verifier subagent"]
+  ContextReport["ContextReport"]
+  VerificationReport["VerificationReport"]
+  Tools["Typed tools"]
+  Target["Target repository"]
+
+  Operator --> Coordinator
+  Coordinator -->|broad discovery request| Explorer
+  Explorer -->|read-only findings| ContextReport
+  ContextReport --> Coordinator
+  Coordinator -->|writes and planning| Tools
+  Tools --> Target
+  Coordinator -->|post-edit checks| Verifier
+  Verifier -->|structured result| VerificationReport
+  VerificationReport --> Coordinator
+```
+
+### Orchestration model
+
+- The coordinator remains the only writer. This is true in the shipped runtime
+  and remains the phase-6 design rule.
+- The explorer is intended to start from fresh history, use only `read_file`,
+  `list_files`, and `search_files`, and return a `ContextReport`.
+- The verifier is intended to start from fresh history, use only `run_command`,
+  and return a `VerificationReport`.
+- The coordinator decides when to spawn those helpers, how much of their output
+  to keep, and whether to proceed, retry, recover, or escalate.
+
+### How agents communicate
+
+- Communication is report-based, not chat-history-based.
+- Explorer output is shaped as `ContextFinding[]` inside a `ContextReport`.
+- Verifier output is shaped as a typed `VerificationReport`.
+- The coordinator summarizes those reports into its own planning state instead
+  of copying raw logs or raw search hits wholesale.
+
+### How parallel outputs are merged
+
+The phase-6 plan keeps merge authority centralized:
+
+- discovery evidence narrows file selection and plan steps
+- verification evidence decides whether edits are accepted, recovered, or
+  blocked
+- if exploration and verification disagree, verification wins because it is
+  direct runtime evidence rather than a guess from code search
+
+This design keeps subagents useful without letting them race each other for
+write authority.
+
+## Trace Links (MVP)
+
+The LangSmith MVP landed in commit `e978152`, and the repository still carries
+the two canonical public trace examples below:
+
+- Successful graph-mode file creation trace:
+  [LangSmith trace](https://smith.langchain.com/o/4610debb-3062-47a4-a18d-faee6ddaa4c3/projects/p/debcf987-99bc-4986-b3e1-5af61ee1ff78/r/019d21b3-0b13-7000-8000-04db046b4bd7?trace_id=019d21b3-0b13-7000-8000-04db046b4bd7&start_time=2026-03-24T21:14:35.155001)
+- Fallback-mode missing-file error trace:
+  [LangSmith trace](https://smith.langchain.com/o/4610debb-3062-47a4-a18d-faee6ddaa4c3/projects/p/debcf987-99bc-4986-b3e1-5af61ee1ff78/r/019d21b3-2e81-7000-8000-07611bad5091?trace_id=019d21b3-2e81-7000-8000-07611bad5091&start_time=2026-03-24T21:14:44.225001)
+
+Every local run also writes JSONL traces to
+`target/.shipyard/traces/<sessionId>.jsonl`, so the runtime always has a local
+audit trail even when LangSmith credentials are absent.
+
+## Architecture Decisions (Final Submission)
+
+The current `HEAD` architecture is the result of a few decisions that survived
+the entire rebuild:
+
+| Decision | Why it stuck | History evidence |
+| --- | --- | --- |
+| Persistent local sessions instead of one-shot CLI runs | Sessions let Shipyard preserve discovery, rolling summaries, and recovery state across turns. | `93d239a`, `f28c451`, `15bbdef` |
+| Typed tool registry instead of ad hoc filesystem/shell access inside the loop | Tool schemas, registration, and structured results keep the model-facing surface inspectable and testable. | `de94cc6`, `4a9de9c` |
+| Anchor-based `edit_block` instead of line-number or full-file rewriting | A literal anchor plus hash checks works across TypeScript, JSON, Markdown, and config files without a language-specific AST stack. | `e3f3158`, `2e044c1` |
+| Checkpoint-backed recovery instead of "best effort" retries | If verification fails, the system can restore the file before trying again rather than compounding damage. | `4f02495`, `98fc167` |
+| Graph runtime with raw fallback instead of betting on one loop implementation | The graph model makes planning and recovery explicit, while fallback preserves a simpler escape hatch and trace parity. | `98fc167`, `e978152` |
+| One shared turn executor for terminal and browser mode | This avoids maintaining two agent semantics and forced later UI fixes to improve the shared core instead of forking logic. | `46887a3`, `2dca737`, `c5b7d11`, `15bbdef` |
+| Single-writer coordinator with isolated read-only or verification helpers | Centralized merge authority kept the system understandable while phase-6 plans matured. | `5c672f5`, `2ef53ab`, `src/agents/*.ts` |
+| Local tracing first, LangSmith second | The repo can run offline or without vendor credentials, but still exposes trace links when configured. | `5c672f5`, `e978152`, `da74e4c` |
+
+## Ship Rebuild Log (Final Submission)
+
+The grouped log below covers every `HEAD` commit that touched `shipyard/`:
+40 direct commits plus 10 merge checkpoints. `git log --follow shipyard/CODEAGENT.md`
+also shows one pre-mainline ancestor, `6b99fba`, where the first version of
+this file appeared before the nested workspace layout settled.
+
+| Wave | Commits | Outcome |
+| --- | --- | --- |
+| Prehistory | `6b99fba` | First `CODEAGENT.md` scaffold before the repo settled into the checked-in `shipyard/` layout. |
+| Workspace bootstrap | `5c672f5` | Created the nested Shipyard app, initial docs, agents, tools, tracing, checkpoints, tests, and this appendix file. |
+| Spec pack foundation | `89d17c5`, `31ab087`, `879504e`, `6e81346`, `cf2faf4`, `f0cb877`, `21ba632`, `2ef53ab`, `3031f55`, `e22c0c0` | Established the repo's story-pack rhythm: tools, model wiring, graph runtime, UI, stress validation, local preview, cancellation, and subagent planning were all documented before or alongside implementation. |
+| Persistent operator loop | `93d239a` | Turned Shipyard from static scaffold into a session-aware REPL with saved state and operator utility commands. |
+| Tooling and edit safety | `de94cc6`, `e3f3158`, `2e044c1`, `4a9de9c` | Added self-registering tools, safe relative IO, stricter `edit_block` guardrails, and fuller tool/test coverage. |
+| Browser runtime wave | `46887a3`, `2dca737`, `46b0d3c`, `c5b7d11` | Added `--ui`, live activity streaming, diff-first workbench UX, and session rehydration without creating a second agent engine. |
+| Model execution wave | `e9623e0`, `749443e`, `e6bab52` | Added Anthropic contract wiring, the raw tool loop, and live verification smoke coverage. |
+| Graph, recovery, and tracing | `98fc167`, `4f02495`, `f28c451`, `e978152` | Added the graph runtime, checkpoint recovery, richer context injection, and LangSmith-backed MVP trace verification. |
+| UI refresh and architecture docs | `296ee25`, `136d159`, `8c4301c` | Refreshed the visual system, added durable architecture docs, and expanded repo navigation and diagrams. |
+| Hardening and polish | `dba7eb5`, `b6d78f3`, `ad260c2`, `15bbdef`, `a5f5cfe`, `867e3bf`, `fb4774e` | Forced live runtime behavior, improved activity/diff surfaces, stabilized reconnects, polished context/session flows, clarified workspace identity and port collisions, aligned UI error tests, and hardened CLI loop milestones. |
+| Merge checkpoints | `bb64d47`, `c0d62af`, `11e214a`, `72a0799`, `ba6beb7`, `0353679`, `a413190`, `1fd948e`, `e728821`, `d43c9f7` | Merged the major waves back into `main`, showing a repeated pattern of short-lived `codex/` branches landing as reviewable increments. |
+
+## Comparative Analysis (Final Submission)
+
+| Concern | Chosen approach | Alternative | Why Shipyard's choice was better for this repo |
+| --- | --- | --- | --- |
+| Turn orchestration | Explicit graph runtime with raw fallback | Raw loop only or graph only | Graph nodes made recovery and status routing legible, but fallback preserved an easier operational escape hatch. |
+| File mutation | Hash-gated anchor replacement with checkpoints | Line-number patches, regex patches, or full-file rewrites | The chosen design works across code and docs, fails closed on ambiguity, and gives recovery a clean revert point. |
+| Tool surface | Typed registry with schema-described tools | Shell-first free-form commands embedded in prompts | Registry-based tools are easier to test, trace, and reason about than hidden side effects in the agent loop. |
+| UI architecture | Local browser workbench over the same session engine | Separate backend service or separate browser-only agent runtime | Reusing the same `executeInstructionTurn` path prevented feature drift and kept fixes concentrated in one runtime. |
+| Multi-agent model | Single writer plus isolated helper roles | Symmetric multi-writer agents | Centralized writes are slower to scale, but much safer while the repo is still stabilizing recovery, tracing, and verification. |
+| Observability | Local JSONL default with optional LangSmith | LangSmith-only tracing | The local-first default keeps the app usable in any environment while still allowing linked traces for MVP validation. |
+
+The commit history reinforces that each time Shipyard added capability, it
+biased toward explicit contracts and reversible behavior over cleverness. That
+pattern is visible in the tool registry, checkpoint recovery, trace layering,
+and the still-conservative subagent plan.
+
+## Cost Analysis (Final Submission)
+
+This repo does not track dollar cost inside Git, so the best comparable measure
+is engineering cost expressed through commit count, churn, and where the churn
+landed.
+
+| Metric | Value | Interpretation |
+| --- | --- | --- |
+| Mainline commits touching `shipyard/` | 50 total: 40 direct commits and 10 merge commits | The rebuild happened as many small landings instead of one rewrite dump. |
+| Code churn | 29,111 insertions and 3,375 deletions | The app mostly expanded rather than refactored in place; the insertion/deletion ratio is about `8.63:1`. |
+| Commit mix | 19 `feat`, 13 `docs`, 5 `fix`, 2 `chore`, 1 `test` | Nearly a third of the work went into specs and docs, which matches the repo's spec-driven operating model. |
+| Biggest single churn spikes | `5c672f5`, `46b0d3c`, `46887a3`, `296ee25`, `c5b7d11` | The largest costs were bootstrap plus UI/workbench waves, not the later hardening passes. |
+| Highest recurring cost center | Browser workbench and operator UX | UI mode introduced the most repeated follow-up work: initial runtime, activity stream, diff-first workbench, rehydration, visual refresh, reconnect hardening, and session/context polish. |
+| Lowest-cost high-leverage additions | `e978152`, `da74e4c`, `136d159` | Trace linking, finish-gate workflow, and architecture docs improved debuggability and handoff quality without the churn of the UI waves. |
+
+### Cost takeaways
+
+- The expensive part of Shipyard was not tool registration or tracing. It was
+  building and then refining the second operator surface without splitting the
+  runtime in two.
+- Documentation is a first-class cost in this repo by design. The story packs
+  and architecture docs are not overhead around the system; they are part of how
+  the system is built and reviewed.
+- Phase 6 subagents currently cost more in design than in code. The commit
+  history shows the team intentionally paying documentation and planning cost
+  first so the eventual implementation can preserve the single-writer safety
+  model.
