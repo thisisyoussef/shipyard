@@ -7,6 +7,12 @@ import "./search-files.js";
 import "./write-file.js";
 
 export { editBlockTool } from "./edit-block.js";
+export {
+  clearTrackedReadHashes,
+  getTrackedReadHash,
+  normalizeTargetRelativePath,
+  resolveWithinTarget,
+} from "./file-state.js";
 export { gitDiffTool } from "./git-diff.js";
 export { listFilesTool } from "./list-files.js";
 export { ToolError, readFileTool } from "./read-file.js";
