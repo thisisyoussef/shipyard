@@ -1,5 +1,3 @@
-import { spawn } from "node:child_process";
-
 import {
   createToolErrorResult,
   createToolSuccessResult,
@@ -8,135 +6,152 @@ import {
   type ToolInputSchema,
 } from "./registry.js";
 import { ToolError } from "./read-file.js";
+import { executeProcess } from "./run-command.js";
+
+const DEFAULT_LIMIT = 30;
+const MAX_LIMIT = 100;
 
 export interface SearchFilesInput {
   targetDirectory: string;
-  query: string;
-  glob?: string | string[];
+  pattern: string;
+  file_pattern?: string;
+  limit?: number;
 }
 
 export interface SearchMatch {
   path: string;
   lineNumber: number;
   lineText: string;
-  submatches: string[];
+}
+
+export interface SearchFilesResult {
+  pattern: string;
+  filePattern?: string;
+  limit: number;
+  matches: SearchMatch[];
+  truncated: boolean;
 }
 
 const searchFilesInputSchema = {
   type: "object",
   properties: {
-    query: {
+    pattern: {
       type: "string",
-      description: "Literal or regex ripgrep query to search for.",
+      description: "Literal or regex search pattern to find with ripgrep.",
     },
-    glob: {
-      description: "Optional glob patterns that narrow the search scope.",
-      anyOf: [
-        {
-          type: "string",
-        },
-        {
-          type: "array",
-          items: {
-            type: "string",
-          },
-        },
-      ],
+    file_pattern: {
+      type: "string",
+      description: "Optional glob pattern that narrows the file search scope.",
+    },
+    limit: {
+      type: "integer",
+      description: "Optional maximum number of matches to return. Defaults to 30.",
     },
   },
-  required: ["query"],
+  required: ["pattern"],
   additionalProperties: false,
 } satisfies ToolInputSchema;
 
-function normalizeGlobs(glob: string | string[] | undefined): string[] {
-  if (!glob) {
-    return [];
+function clampLimit(limit: number | undefined): number {
+  if (typeof limit !== "number" || Number.isNaN(limit)) {
+    return DEFAULT_LIMIT;
   }
 
-  return Array.isArray(glob) ? glob : [glob];
+  return Math.min(Math.max(Math.floor(limit), 1), MAX_LIMIT);
 }
 
-function collectProcessOutput(
-  command: string,
-  args: string[],
-  cwd: string,
-): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+function parseRipgrepLine(line: string): SearchMatch | null {
+  const match = line.match(/^(.+?):(\d+):(.*)$/);
 
-    let stdout = "";
-    let stderr = "";
+  if (!match) {
+    return null;
+  }
 
-    child.stdout.on("data", (chunk: Buffer | string) => {
-      stdout += chunk.toString();
-    });
+  return {
+    path: match[1]?.replace(/^\.\//, "") ?? "",
+    lineNumber: Number.parseInt(match[2] ?? "0", 10),
+    lineText: match[3] ?? "",
+  };
+}
 
-    child.stderr.on("data", (chunk: Buffer | string) => {
-      stderr += chunk.toString();
-    });
+function formatSearchFilesOutput(result: SearchFilesResult): string {
+  if (result.matches.length === 0) {
+    return `No matches found for pattern "${result.pattern}".`;
+  }
 
-    child.on("error", (error) => {
-      reject(error);
-    });
+  const lines = [
+    `Pattern: ${result.pattern}`,
+    `Matches: ${String(result.matches.length)}`,
+  ];
 
-    child.on("close", (code) => {
-      resolve({ code, stdout, stderr });
-    });
-  });
+  if (result.filePattern) {
+    lines.push(`File pattern: ${result.filePattern}`);
+  }
+
+  if (result.truncated) {
+    lines.push(`Results truncated to ${String(result.limit)} matches.`);
+  }
+
+  lines.push("");
+
+  for (const match of result.matches) {
+    lines.push(`${match.path}:${String(match.lineNumber)}: ${match.lineText}`);
+  }
+
+  return lines.join("\n");
 }
 
 export async function searchFilesTool(
   input: SearchFilesInput,
-): Promise<SearchMatch[]> {
-  if (!input.query) {
-    throw new ToolError("query must not be empty.");
+): Promise<SearchFilesResult> {
+  const pattern = input.pattern.trim();
+
+  if (!pattern) {
+    throw new ToolError("pattern must not be empty.");
   }
 
-  const globArgs = normalizeGlobs(input.glob).flatMap((pattern) => ["-g", pattern]);
-  const result = await collectProcessOutput(
-    "rg",
-    ["--json", "--line-number", ...globArgs, input.query, "."],
-    input.targetDirectory,
-  );
+  const limit = clampLimit(input.limit);
+  const args = ["--line-number", "--color", "never"];
 
-  if (result.code !== 0 && result.code !== 1) {
-    throw new ToolError(result.stderr || "rg search failed.");
+  if (input.file_pattern?.trim()) {
+    args.push("--glob", input.file_pattern.trim());
   }
 
-  if (!result.stdout.trim()) {
-    return [];
+  args.push(pattern, ".");
+
+  const result = await executeProcess({
+    cwd: input.targetDirectory,
+    command: "rg",
+    args,
+    timeoutMs: 30_000,
+  });
+
+  if (result.exitCode !== 0 && result.exitCode !== 1) {
+    throw new ToolError(result.stderr.trim() || "search_files failed.");
   }
 
-  return result.stdout
-    .trim()
+  const matches = result.stdout
     .split("\n")
-    .map((line) => JSON.parse(line) as Record<string, unknown>)
-    .filter((record) => record.type === "match")
-    .map((record) => {
-      const data = record.data as {
-        path: { text: string };
-        line_number: number;
-        lines: { text?: string };
-        submatches: Array<{ match: { text: string } }>;
-      };
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .map((line) => parseRipgrepLine(line))
+    .filter((match): match is SearchMatch => match !== null);
 
-      return {
-        path: data.path.text.replace(/^\.\//, ""),
-        lineNumber: data.line_number,
-        lineText: data.lines.text?.trimEnd() ?? "",
-        submatches: data.submatches.map((submatch) => submatch.match.text),
-      };
-    });
+  return {
+    pattern,
+    filePattern: input.file_pattern?.trim() || undefined,
+    limit,
+    matches: matches.slice(0, limit),
+    truncated: matches.length > limit,
+  };
 }
 
 export const searchFilesDefinition: ToolDefinition<
   Omit<SearchFilesInput, "targetDirectory">
 > = {
   name: "search_files",
-  description: "Search the target directory with ripgrep and return structured matches.",
+  description:
+    "Search the target directory with ripgrep and return bounded relative matches.",
   inputSchema: searchFilesInputSchema,
   async execute(input, targetDirectory) {
     try {
@@ -145,7 +160,7 @@ export const searchFilesDefinition: ToolDefinition<
         ...input,
       });
 
-      return createToolSuccessResult(result);
+      return createToolSuccessResult(formatSearchFilesOutput(result));
     } catch (error) {
       return createToolErrorResult(error);
     }

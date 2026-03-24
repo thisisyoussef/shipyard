@@ -20,7 +20,7 @@ import {
   searchFilesTool,
 } from "../tools/index.js";
 import type { RunCommandResult } from "../tools/run-command.js";
-import type { SearchMatch } from "../tools/search-files.js";
+import type { SearchFilesResult } from "../tools/search-files.js";
 import { createLocalTraceLogger } from "../tracing/local-log.js";
 import { getLangSmithConfig } from "../tracing/langsmith.js";
 
@@ -40,10 +40,10 @@ function printHelp(): void {
   console.log("  discover              Refresh project rules and discovery");
   console.log("  tools                 List registered tools");
   console.log("  read <path>           Read a file relative to the target");
-  console.log("  list [glob]           List files in the target");
-  console.log("  search <query>        Search the target with ripgrep");
+  console.log("  list [path]           List visible files in the target");
+  console.log("  search <pattern>      Search the target with ripgrep");
   console.log("  run <command>         Run a shell command in the target");
-  console.log("  diff [args]           Run git diff inside the target");
+  console.log("  diff [staged] [path]  Run git diff inside the target");
   console.log("  exit | quit           Save the session and quit");
   printDivider();
   console.log("Any other input is treated as a Shipyard instruction.");
@@ -81,29 +81,68 @@ function updateRollingSummary(
     .join("\n");
 }
 
-async function printSearchMatches(matches: SearchMatch[]): Promise<void> {
-  if (matches.length === 0) {
+async function printSearchMatches(result: SearchFilesResult): Promise<void> {
+  if (result.matches.length === 0) {
     console.log("No matches found.");
     return;
   }
 
-  for (const match of matches) {
+  for (const match of result.matches) {
     console.log(`${match.path}:${match.lineNumber}: ${match.lineText}`);
+  }
+
+  if (result.truncated) {
+    printDivider();
+    console.log(`Results truncated to ${String(result.limit)} matches.`);
   }
 }
 
 async function printCommandResult(result: RunCommandResult): Promise<void> {
   console.log(`exitCode: ${String(result.exitCode)}`);
+  console.log(`timedOut: ${result.timedOut ? "yes" : "no"}`);
 
-  if (result.stdout.trim()) {
-    printDivider();
-    console.log(result.stdout.trimEnd());
+  if (result.truncated) {
+    console.log("output truncated: yes");
   }
 
-  if (result.stderr.trim()) {
+  if (result.combinedOutput.trim()) {
     printDivider();
-    console.log(result.stderr.trimEnd());
+    console.log(result.combinedOutput.trimEnd());
   }
+}
+
+function parseDiffArguments(
+  rawArgs: string | undefined,
+): { staged?: boolean; path?: string } {
+  if (!rawArgs?.trim()) {
+    return {};
+  }
+
+  const trimmedArgs = rawArgs.trim();
+
+  if (trimmedArgs === "staged" || trimmedArgs === "--staged") {
+    return {
+      staged: true,
+    };
+  }
+
+  if (trimmedArgs.startsWith("staged ")) {
+    return {
+      staged: true,
+      path: trimmedArgs.slice("staged ".length).trim() || undefined,
+    };
+  }
+
+  if (trimmedArgs.startsWith("--staged ")) {
+    return {
+      staged: true,
+      path: trimmedArgs.slice("--staged ".length).trim() || undefined,
+    };
+  }
+
+  return {
+    path: trimmedArgs,
+  };
 }
 
 async function captureCurrentGitDiff(
@@ -212,34 +251,28 @@ export async function runShipyardLoop(
           printDivider();
           console.log(result.contents);
         } else if (line === "list" || line.startsWith("list ")) {
-          const glob = line === "list" ? undefined : line.slice(5).trim();
+          const targetPath = line === "list" ? "." : line.slice(5).trim() || ".";
           const files = await listFilesTool({
             targetDirectory: state.targetDirectory,
-            glob: glob || undefined,
+            path: targetPath,
           });
 
           rememberRecent(
             runtimeState.recentToolOutputs,
-            `list_files ${glob ?? "(all)"} -> ${files.length} result(s)`,
+            `list_files ${targetPath} -> ${String(files.entries.length)} entry(ies)`,
           );
 
-          if (files.length === 0) {
-            console.log("No files matched.");
-          } else {
-            for (const file of files) {
-              console.log(file);
-            }
-          }
+          console.log(files.tree);
         } else if (line.startsWith("search ")) {
-          const query = line.slice(7).trim();
+          const pattern = line.slice(7).trim();
           const matches = await searchFilesTool({
             targetDirectory: state.targetDirectory,
-            query,
+            pattern,
           });
 
           rememberRecent(
             runtimeState.recentToolOutputs,
-            `search_files ${query} -> ${matches.length} match(es)`,
+            `search_files ${pattern} -> ${String(matches.matches.length)} match(es)`,
           );
           await printSearchMatches(matches);
         } else if (line.startsWith("run ")) {
@@ -255,10 +288,12 @@ export async function runShipyardLoop(
           );
           await printCommandResult(result);
         } else if (line === "diff" || line.startsWith("diff ")) {
-          const args = line === "diff" ? undefined : line.slice(5).trim();
+          const diffOptions = parseDiffArguments(
+            line === "diff" ? undefined : line.slice(5).trim(),
+          );
           const result = await gitDiffTool({
             targetDirectory: state.targetDirectory,
-            args: args || undefined,
+            ...diffOptions,
           });
 
           rememberRecent(runtimeState.recentToolOutputs, "git_diff");

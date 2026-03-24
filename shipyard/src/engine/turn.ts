@@ -11,6 +11,7 @@ import {
 } from "../phases/code/index.js";
 import { countLines, createDisplayHash } from "../tools/file-state.js";
 import { gitDiffTool, listFilesTool, readFileTool } from "../tools/index.js";
+import type { ListFilesResult } from "../tools/list-files.js";
 import type { ReadFileResult } from "../tools/read-file.js";
 import type { RunCommandResult } from "../tools/run-command.js";
 import { saveSessionState, type ContextEnvelope, type SessionState } from "./state.js";
@@ -173,15 +174,17 @@ function summarizeReadResult(result: ReadFileResult): string {
   return `Read ${result.path} (${countLines(result.contents)} lines, hash ${createDisplayHash(result.hash)}).`;
 }
 
-function summarizeListFiles(files: string[]): string {
-  if (files.length === 0) {
+function summarizeListFiles(result: ListFilesResult): string {
+  if (result.entries.length === 0) {
     return "Found no files in the target directory.";
   }
 
-  const preview = files.slice(0, 5).join(", ");
-  const remainder = files.length > 5 ? `, +${String(files.length - 5)} more` : "";
+  const preview = result.entries.slice(0, 5).map((entry) => entry.path).join(", ");
+  const remainder = result.entries.length > 5
+    ? `, +${String(result.entries.length - 5)} more`
+    : "";
 
-  return `Found ${String(files.length)} files: ${preview}${remainder}.`;
+  return `Found ${String(result.entries.length)} entries under ${result.path}: ${preview}${remainder}.`;
 }
 
 function summarizeGitDiff(result: RunCommandResult): string {
@@ -347,11 +350,12 @@ export async function executeInstructionTurn(
       try {
         const result = await listFilesTool({
           targetDirectory: state.targetDirectory,
+          path: ".",
         });
         const summary = summarizeListFiles(result);
         rememberRecent(
           runtimeState.recentToolOutputs,
-          `${toolName} -> ${String(result.length)} result(s)`,
+          `${toolName} -> ${String(result.entries.length)} result(s)`,
         );
         observations.push(summary);
         await options.reporter?.onToolResult?.({

@@ -1,6 +1,8 @@
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import process from "node:process";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -31,10 +33,72 @@ import { readFileDefinition } from "../src/tools/read-file.js";
 
 const createdDirectories: string[] = [];
 
+interface RawCommandResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+}
+
 async function createTempProject(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "shipyard-tools-"));
   createdDirectories.push(directory);
   return directory;
+}
+
+async function runRawCommand(
+  cwd: string,
+  command: string,
+): Promise<RawCommandResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, {
+      cwd,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        FORCE_COLOR: "0",
+        NO_COLOR: "1",
+      },
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (exitCode) => {
+      resolve({
+        stdout,
+        stderr,
+        exitCode,
+      });
+    });
+  });
+}
+
+async function expectRawCommandSuccess(
+  cwd: string,
+  command: string,
+): Promise<void> {
+  const result = await runRawCommand(cwd, command);
+
+  expect(result.exitCode).toBe(0);
+}
+
+async function initializeGitRepository(cwd: string): Promise<void> {
+  await expectRawCommandSuccess(cwd, "git init");
+  await expectRawCommandSuccess(cwd, "git config user.email shipyard@example.com");
+  await expectRawCommandSuccess(cwd, "git config user.name 'Shipyard Tests'");
 }
 
 function buildSizedFile(lineCount: number, anchorLabel: string): string {
@@ -335,28 +399,196 @@ describe("search and command tools", () => {
     );
   });
 
-  it("lists files with glob support", async () => {
+  it("list_files returns a tree-style view with directories before files", async () => {
     const directory = await createTempProject();
     await mkdir(path.join(directory, "src"), { recursive: true });
-    await writeFile(path.join(directory, "src/alpha.ts"), "export const alpha = 1;\n", {
-      encoding: "utf8",
-      flag: "w",
-    });
-    await writeFile(path.join(directory, "src/beta.ts"), "export const beta = 2;\n", {
-      encoding: "utf8",
-      flag: "w",
-    });
+    await mkdir(path.join(directory, "src/nested/deeper"), { recursive: true });
+    await mkdir(path.join(directory, "node_modules/pkg"), { recursive: true });
+    await writeFile(path.join(directory, ".env"), "SECRET=true\n", "utf8");
+    await writeFile(path.join(directory, "src/alpha.ts"), "export const alpha = 1;\n", "utf8");
+    await writeFile(
+      path.join(directory, "src/nested/deeper/too-deep.ts"),
+      "export const hidden = true;\n",
+      "utf8",
+    );
     await writeFile(path.join(directory, "README.md"), "# demo\n", "utf8");
+    const tool = getTool("list_files") as ToolDefinition<{
+      path?: string;
+      depth?: number;
+    }>;
 
-    const files = await listFiles({
-      targetDirectory: directory,
-      glob: "src/*.ts",
-    });
+    const result = await tool.execute(
+      {
+        path: ".",
+        depth: 2,
+      },
+      directory,
+    );
 
-    expect(files).toEqual(["src/alpha.ts", "src/beta.ts"]);
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("./");
+    expect(result.output).toContain("src/");
+    expect(result.output).toContain("README.md");
+    expect(result.output.indexOf("src/")).toBeLessThan(result.output.indexOf("README.md"));
+    expect(result.output).toContain("nested/");
+    expect(result.output).not.toContain("node_modules");
+    expect(result.output).not.toContain(".env");
+    expect(result.output).not.toContain("too-deep.ts");
   });
 
-  it("searches files with ripgrep", async () => {
+  it("search_files treats no matches as a successful result", async () => {
+    const directory = await createTempProject();
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    await writeFile(path.join(directory, "src/search.ts"), "export const alpha = true;\n", "utf8");
+    const tool = getTool("search_files") as ToolDefinition<{
+      pattern: string;
+      file_pattern?: string;
+      limit?: number;
+    }>;
+
+    const result = await tool.execute(
+      {
+        pattern: "SHIPYARD_NOT_FOUND",
+      },
+      directory,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('No matches found for pattern "SHIPYARD_NOT_FOUND".');
+  });
+
+  it("search_files limits results and rewrites paths relative to the target", async () => {
+    const directory = await createTempProject();
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    await mkdir(path.join(directory, "docs"), { recursive: true });
+
+    for (let index = 1; index <= 5; index += 1) {
+      await writeFile(
+        path.join(directory, "src", `match-${String(index)}.ts`),
+        `export const MATCH_TOKEN_${String(index)} = "SHIPYARD_LIMIT";\n`,
+        "utf8",
+      );
+    }
+
+    await writeFile(
+      path.join(directory, "docs/search.md"),
+      "SHIPYARD_LIMIT in docs should be filtered out.\n",
+      "utf8",
+    );
+
+    const matches = await searchFiles({
+      targetDirectory: directory,
+      pattern: "SHIPYARD_LIMIT",
+      file_pattern: "src/*.ts",
+      limit: 3,
+    });
+
+    expect(matches.matches).toHaveLength(3);
+    expect(matches.truncated).toBe(true);
+    expect(matches.matches.every((match) => match.path.startsWith("src/"))).toBe(true);
+    expect(matches.matches.every((match) => !path.isAbsolute(match.path))).toBe(true);
+  });
+
+  it("run_command returns failing command diagnostics without ANSI color noise", async () => {
+    const directory = await createTempProject();
+    const tool = getTool("run_command") as ToolDefinition<{
+      command: string;
+      timeout_seconds?: number;
+    }>;
+
+    const result = await tool.execute(
+      {
+        command: "node -e \"process.stdout.write('\\u001b[31mRED\\u001b[0m\\n'); process.stderr.write('bad\\n'); process.exit(2)\"",
+      },
+      directory,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Exit code: 2");
+    expect(result.error).toContain("RED");
+    expect(result.error).toContain("bad");
+    expect(result.error).not.toContain("\u001b[31m");
+  });
+
+  it("run_command executes in the target directory", async () => {
+    const directory = await createTempProject();
+    const result = await runCommand({
+      targetDirectory: directory,
+      command: "pwd",
+      timeout_seconds: 2,
+    });
+
+    const canonicalDirectory = await realpath(directory);
+    const canonicalStdout = await realpath(result.stdout.trim());
+
+    expect(result.exitCode).toBe(0);
+    expect(canonicalStdout).toBe(canonicalDirectory);
+    expect(result.timedOut).toBe(false);
+  });
+
+  it("run_command clips combined output at 5000 characters", async () => {
+    const directory = await createTempProject();
+    const result = await runCommand({
+      targetDirectory: directory,
+      command: "node -e \"process.stdout.write('x'.repeat(6000));\"",
+      timeout_seconds: 2,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.truncated).toBe(true);
+    expect(result.combinedOutput.length).toBeLessThanOrEqual(5_000);
+  });
+
+  it("times out long-running commands", async () => {
+    const directory = await createTempProject();
+    const result = await runCommand({
+      targetDirectory: directory,
+      command: "node -e \"setTimeout(() => console.log('done'), 2000)\"",
+      timeout_seconds: 1,
+    });
+
+    expect(result.timedOut).toBe(true);
+    expect(result.exitCode).not.toBe(0);
+  });
+
+  it("git_diff reports a non-git directory clearly", async () => {
+    const directory = await createTempProject();
+    const tool = getTool("git_diff") as ToolDefinition<{
+      staged?: boolean;
+      path?: string;
+    }>;
+
+    const result = await tool.execute({}, directory);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Target directory is not a git repository.");
+  });
+
+  it("git_diff supports staged and path-scoped calls", async () => {
+    const directory = await createTempProject();
+    await initializeGitRepository(directory);
+    await writeFile(path.join(directory, "alpha.ts"), "export const alpha = 1;\n", "utf8");
+    await writeFile(path.join(directory, "beta.ts"), "export const beta = 1;\n", "utf8");
+    await expectRawCommandSuccess(directory, "git add .");
+    await expectRawCommandSuccess(directory, "git commit -m 'initial'");
+
+    await writeFile(path.join(directory, "alpha.ts"), "export const alpha = 2;\n", "utf8");
+    await writeFile(path.join(directory, "beta.ts"), "export const beta = 2;\n", "utf8");
+    await expectRawCommandSuccess(directory, "git add alpha.ts");
+
+    const result = await (await import("../src/tools/git-diff.js")).gitDiffTool({
+      targetDirectory: directory,
+      staged: true,
+      path: "alpha.ts",
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.command).toContain("git diff --no-ext-diff --staged -- alpha.ts");
+    expect(result.stdout).toContain("diff --git a/alpha.ts b/alpha.ts");
+    expect(result.stdout).not.toContain("beta.ts");
+  });
+
+  it("searches files with relative line matches", async () => {
     const directory = await createTempProject();
     await mkdir(path.join(directory, "src"), { recursive: true });
     await writeFile(
@@ -367,39 +599,67 @@ describe("search and command tools", () => {
 
     const matches = await searchFiles({
       targetDirectory: directory,
-      query: "SHIPYARD_MARKER",
+      pattern: "SHIPYARD_MARKER",
     });
 
-    expect(matches).toHaveLength(1);
-    expect(matches[0]?.path).toBe("src/search.ts");
-    expect(matches[0]?.lineNumber).toBe(1);
+    expect(matches.matches).toHaveLength(1);
+    expect(matches.matches[0]?.path).toBe("src/search.ts");
+    expect(matches.matches[0]?.lineNumber).toBe(1);
   });
 
-  it("runs shell commands in the target directory", async () => {
+  it("lists files through the internal helper with bounded depth", async () => {
     const directory = await createTempProject();
-    const result = await runCommand({
-      targetDirectory: directory,
-      command: "pwd",
-      timeoutMs: 2_000,
-    });
-    const canonicalDirectory = await realpath(directory);
-    const canonicalStdout = await realpath(result.stdout.trim());
+    await mkdir(path.join(directory, "src/nested/deeper"), { recursive: true });
+    await writeFile(path.join(directory, "src/index.ts"), "export {};\n", "utf8");
+    await writeFile(path.join(directory, "src/nested/deeper/deep.ts"), "export {};\n", "utf8");
 
-    expect(result.exitCode).toBe(0);
-    expect(canonicalStdout).toBe(canonicalDirectory);
-    expect(result.timedOut).toBe(false);
+    const files = await listFiles({
+      targetDirectory: directory,
+      path: ".",
+      depth: 2,
+    });
+
+    expect(files.entries.some((entry) => entry.path === "src/index.ts")).toBe(true);
+    expect(files.entries.some((entry) => entry.path === "src/nested/deeper/deep.ts")).toBe(false);
   });
 
-  it("times out long-running commands", async () => {
+  it("runs search with file pattern filtering through the tool result contract", async () => {
     const directory = await createTempProject();
-    const result = await runCommand({
-      targetDirectory: directory,
-      command: "node -e \"setTimeout(() => console.log('done'), 2000)\"",
-      timeoutMs: 100,
-    });
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    await mkdir(path.join(directory, "docs"), { recursive: true });
+    await writeFile(
+      path.join(directory, "src/search.ts"),
+      "export const SHIPYARD_MARKER = true;\n",
+      "utf8",
+    );
+    await writeFile(
+      path.join(directory, "docs/search.md"),
+      "SHIPYARD_MARKER in docs\n",
+      "utf8",
+    );
 
-    expect(result.timedOut).toBe(true);
-    expect(result.exitCode).not.toBe(0);
+    const tool = getTool("search_files") as ToolDefinition<{
+      pattern: string;
+      file_pattern?: string;
+      limit?: number;
+    }>;
+    const result = await tool.execute(
+      {
+        pattern: "SHIPYARD_MARKER",
+        file_pattern: "src/*.ts",
+      },
+      directory,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("src/search.ts:1:");
+    expect(result.output).not.toContain("docs/search.md");
+  });
+
+  it("supports a manual phase 2 smoke script entrypoint", async () => {
+    await expect(
+      readFile(path.join(process.cwd(), "tests/manual/phase2-tools-smoke.ts"), "utf8"),
+    ).resolves.toContain("Phase 2 tool smoke passed.");
   });
 });
 
