@@ -75,7 +75,7 @@ export async function editBlockTool(
 
 export const editBlockDefinition: ToolDefinition<EditBlockInput, EditBlockResult> =
   {
-    name: "edit-block",
+    name: "edit_block",
     description:
       "Replace exactly one anchored block in a file and reject stale or ambiguous edits.",
     invoke: editBlockTool,

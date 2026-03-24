@@ -1,158 +1,190 @@
-import { access, readFile, readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
-export interface DiscoveryReport {
-  targetPath: string;
-  isEmpty: boolean;
-  isGreenfield: boolean;
-  packageJsonExists: boolean;
-  primaryLanguage: string | null;
-  packageManager: string | null;
-  scripts: string[];
-  hasReadme: boolean;
-  readmePath: string | null;
-  hasAgents: boolean;
-  agentsPath: string | null;
-  summary: string;
-}
+import type { DiscoveryReport } from "../artifacts/types.js";
 
 interface PackageManifest {
+  name?: string;
   packageManager?: string;
   scripts?: Record<string, string>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
 }
 
-const IGNORED_DIRECTORIES = new Set([
-  ".git",
-  "node_modules",
-  "dist",
-  "build",
-  "coverage",
-]);
+const IGNORED_TOP_LEVEL_NAMES = new Set([".git", ".shipyard", ".DS_Store"]);
 
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function walkDirectory(
-  rootPath: string,
-  currentPath = rootPath,
-  collected: string[] = [],
-): Promise<string[]> {
-  const entries = await readdir(currentPath, { withFileTypes: true });
-
-  for (const entry of entries) {
-    if (entry.name === ".DS_Store") {
-      continue;
-    }
-
-    const absolutePath = path.join(currentPath, entry.name);
-    const relativePath = path.relative(rootPath, absolutePath);
-
-    collected.push(relativePath);
-
-    if (entry.isDirectory() && !IGNORED_DIRECTORIES.has(entry.name)) {
-      await walkDirectory(rootPath, absolutePath, collected);
-    }
-  }
-
-  return collected;
+function createEmptyDiscoveryReport(): DiscoveryReport {
+  return {
+    isGreenfield: true,
+    language: null,
+    framework: null,
+    packageManager: null,
+    scripts: {},
+    hasReadme: false,
+    hasAgentsMd: false,
+    topLevelFiles: [],
+    topLevelDirectories: [],
+    projectName: null,
+  };
 }
 
 function detectPackageManager(
+  topLevelFiles: string[],
   packageManifest: PackageManifest | null,
-  discoveredFiles: string[],
 ): string | null {
-  const packageManager = packageManifest?.packageManager?.split("@")[0];
+  const manifestPackageManager = packageManifest?.packageManager?.split("@")[0];
 
-  if (packageManager) {
-    return packageManager;
+  if (manifestPackageManager) {
+    return manifestPackageManager;
   }
 
-  if (discoveredFiles.includes("pnpm-lock.yaml")) {
+  if (topLevelFiles.includes("pnpm-lock.yaml")) {
     return "pnpm";
   }
 
-  if (discoveredFiles.includes("package-lock.json")) {
-    return "npm";
-  }
-
-  if (discoveredFiles.includes("yarn.lock")) {
+  if (topLevelFiles.includes("yarn.lock")) {
     return "yarn";
   }
 
+  if (topLevelFiles.includes("package-lock.json")) {
+    return "npm";
+  }
+
   if (
-    discoveredFiles.includes("bun.lock") ||
-    discoveredFiles.includes("bun.lockb")
+    topLevelFiles.includes("bun.lock") ||
+    topLevelFiles.includes("bun.lockb")
   ) {
     return "bun";
   }
 
+  if (topLevelFiles.includes("poetry.lock")) {
+    return "poetry";
+  }
+
+  if (topLevelFiles.includes("Pipfile")) {
+    return "pipenv";
+  }
+
+  if (
+    topLevelFiles.includes("pyproject.toml") ||
+    topLevelFiles.includes("requirements.txt")
+  ) {
+    return "pip";
+  }
+
+  if (topLevelFiles.includes("go.mod")) {
+    return "go modules";
+  }
+
   return null;
 }
 
-function detectPrimaryLanguage(discoveredFiles: string[]): string | null {
-  const hasFile = (predicate: (filePath: string) => boolean): boolean =>
-    discoveredFiles.some(predicate);
-
+function detectLanguage(
+  topLevelFiles: string[],
+  packageManifest: PackageManifest | null,
+): string | null {
   if (
-    hasFile((filePath) => /\.(ts|tsx)$/.test(filePath)) ||
-    discoveredFiles.includes("tsconfig.json")
-  ) {
-    return "typescript";
-  }
-
-  if (hasFile((filePath) => /\.(js|jsx|mjs|cjs)$/.test(filePath))) {
-    return "javascript";
-  }
-
-  if (
-    hasFile((filePath) => filePath.endsWith(".dart")) ||
-    discoveredFiles.includes("pubspec.yaml")
-  ) {
-    return "dart";
-  }
-
-  if (
-    hasFile((filePath) => filePath.endsWith(".py")) ||
-    discoveredFiles.includes("requirements.txt") ||
-    discoveredFiles.includes("pyproject.toml")
+    topLevelFiles.includes("pyproject.toml") ||
+    topLevelFiles.includes("requirements.txt") ||
+    topLevelFiles.includes("Pipfile")
   ) {
     return "python";
   }
 
-  if (
-    hasFile((filePath) => filePath.endsWith(".java")) ||
-    discoveredFiles.includes("pom.xml") ||
-    discoveredFiles.includes("build.gradle")
-  ) {
-    return "java";
+  if (topLevelFiles.includes("go.mod")) {
+    return "go";
+  }
+
+  if (topLevelFiles.includes("tsconfig.json")) {
+    return "typescript";
   }
 
   if (
-    hasFile((filePath) => filePath.endsWith(".go")) ||
-    discoveredFiles.includes("go.mod")
+    packageManifest !== null ||
+    topLevelFiles.some((filePath) => /\.(ts|tsx|mts|cts)$/.test(filePath))
   ) {
-    return "go";
+    if (topLevelFiles.some((filePath) => /\.(ts|tsx|mts|cts)$/.test(filePath))) {
+      return "typescript";
+    }
+
+    if (topLevelFiles.some((filePath) => /\.(js|jsx|mjs|cjs)$/.test(filePath))) {
+      return "javascript";
+    }
+
+    return "javascript";
   }
 
   return null;
 }
 
-function buildSummary(report: Omit<DiscoveryReport, "summary">): string {
+function detectFramework(packageManifest: PackageManifest | null): string | null {
+  const dependencies = {
+    ...(packageManifest?.dependencies ?? {}),
+    ...(packageManifest?.devDependencies ?? {}),
+  };
+
+  if ("next" in dependencies) {
+    return "Next.js";
+  }
+
+  if ("nuxt" in dependencies || "nuxt3" in dependencies) {
+    return "Nuxt";
+  }
+
+  if ("@angular/core" in dependencies) {
+    return "Angular";
+  }
+
+  if ("vue" in dependencies) {
+    return "Vue";
+  }
+
+  if ("react" in dependencies) {
+    return "React";
+  }
+
+  if ("fastify" in dependencies) {
+    return "Fastify";
+  }
+
+  if ("hono" in dependencies) {
+    return "Hono";
+  }
+
+  if ("express" in dependencies) {
+    return "Express";
+  }
+
+  return null;
+}
+
+function detectHasReadme(topLevelFiles: string[]): boolean {
+  return topLevelFiles.some((filePath) => filePath.toLowerCase().startsWith("readme"));
+}
+
+async function readPackageManifest(
+  targetPath: string,
+  topLevelFiles: string[],
+): Promise<PackageManifest | null> {
+  if (!topLevelFiles.includes("package.json")) {
+    return null;
+  }
+
+  const packageJsonPath = path.join(targetPath, "package.json");
+  const packageJsonContents = await readFile(packageJsonPath, "utf8");
+
+  return JSON.parse(packageJsonContents) as PackageManifest;
+}
+
+export function formatDiscoverySummary(report: DiscoveryReport): string {
   if (report.isGreenfield) {
-    return "greenfield project";
+    return "greenfield target";
   }
 
   const parts = [
-    report.primaryLanguage ?? "unknown language",
-    "project",
-    report.packageManager ? `using ${report.packageManager}` : null,
-    report.packageJsonExists ? "with package.json" : "without package.json",
+    report.language ?? "unknown language",
+    report.framework ? `(${report.framework})` : null,
+    report.packageManager ? `via ${report.packageManager}` : null,
   ].filter(Boolean);
 
   return parts.join(" ");
@@ -161,60 +193,37 @@ function buildSummary(report: Omit<DiscoveryReport, "summary">): string {
 export async function discoverTarget(
   targetPath: string,
 ): Promise<DiscoveryReport> {
-  const discoveredFiles = await walkDirectory(targetPath);
-  const isEmpty = discoveredFiles.length === 0;
+  const entries = await readdir(targetPath, { withFileTypes: true });
+  const relevantEntries = entries.filter(
+    (entry) => !IGNORED_TOP_LEVEL_NAMES.has(entry.name),
+  );
 
-  if (isEmpty) {
-    const reportWithoutSummary: Omit<DiscoveryReport, "summary"> = {
-      targetPath,
-      isEmpty: true,
-      isGreenfield: true,
-      packageJsonExists: false,
-      primaryLanguage: null,
-      packageManager: null,
-      scripts: [],
-      hasReadme: false,
-      readmePath: null,
-      hasAgents: false,
-      agentsPath: null,
-    };
+  const topLevelFiles = relevantEntries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
 
-    return {
-      ...reportWithoutSummary,
-      summary: buildSummary(reportWithoutSummary),
-    };
+  const topLevelDirectories = relevantEntries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+
+  if (topLevelFiles.length === 0 && topLevelDirectories.length === 0) {
+    return createEmptyDiscoveryReport();
   }
 
-  const packageJsonPath = path.join(targetPath, "package.json");
-  const packageJsonExists = await pathExists(packageJsonPath);
-  const packageManifest = packageJsonExists
-    ? ((JSON.parse(
-        await readFile(packageJsonPath, "utf8"),
-      ) as PackageManifest) ?? null)
-    : null;
-
-  const readmePath =
-    discoveredFiles.find((filePath) => /^README(\..+)?$/i.test(filePath)) ??
-    null;
-  const agentsPath =
-    discoveredFiles.find((filePath) => /^AGENTS\.md$/i.test(filePath)) ?? null;
-
-  const reportWithoutSummary: Omit<DiscoveryReport, "summary"> = {
-    targetPath,
-    isEmpty: false,
-    isGreenfield: false,
-    packageJsonExists,
-    primaryLanguage: detectPrimaryLanguage(discoveredFiles),
-    packageManager: detectPackageManager(packageManifest, discoveredFiles),
-    scripts: Object.keys(packageManifest?.scripts ?? {}),
-    hasReadme: readmePath !== null,
-    readmePath,
-    hasAgents: agentsPath !== null,
-    agentsPath,
-  };
+  const packageManifest = await readPackageManifest(targetPath, topLevelFiles);
 
   return {
-    ...reportWithoutSummary,
-    summary: buildSummary(reportWithoutSummary),
+    isGreenfield: false,
+    language: detectLanguage(topLevelFiles, packageManifest),
+    framework: detectFramework(packageManifest),
+    packageManager: detectPackageManager(topLevelFiles, packageManifest),
+    scripts: { ...(packageManifest?.scripts ?? {}) },
+    hasReadme: detectHasReadme(topLevelFiles),
+    hasAgentsMd: topLevelFiles.includes("AGENTS.md"),
+    topLevelFiles,
+    topLevelDirectories,
+    projectName: packageManifest?.name ?? null,
   };
 }

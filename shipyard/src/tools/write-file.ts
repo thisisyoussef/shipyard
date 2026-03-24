@@ -34,7 +34,7 @@ export async function writeFileTool(input: WriteFileInput) {
 }
 
 export const writeFileDefinition: ToolDefinition<WriteFileInput> = {
-  name: "write-file",
+  name: "write_file",
   description:
     "Create a file relative to the target directory. Rejects overwrites by default.",
   invoke: writeFileTool,

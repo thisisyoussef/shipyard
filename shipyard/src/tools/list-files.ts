@@ -68,7 +68,7 @@ export async function listFilesTool(input: ListFilesInput): Promise<string[]> {
 }
 
 export const listFilesDefinition: ToolDefinition<ListFilesInput, string[]> = {
-  name: "list-files",
+  name: "list_files",
   description: "List files within the target directory, optionally filtered by glob.",
   invoke: listFilesTool,
 };

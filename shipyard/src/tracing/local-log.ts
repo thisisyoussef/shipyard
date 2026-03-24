@@ -1,6 +1,8 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 
+import { getTraceDirectory } from "../engine/state.js";
+
 export interface TraceEvent {
   timestamp: string;
   event: string;
@@ -13,10 +15,11 @@ export interface LocalTraceLogger {
 }
 
 export async function createLocalTraceLogger(
-  workspaceRoot: string,
+  targetDirectory: string,
+  sessionId: string,
 ): Promise<LocalTraceLogger> {
-  const traceDirectory = path.join(workspaceRoot, ".shipyard", "traces");
-  const filePath = path.join(traceDirectory, "session.jsonl");
+  const traceDirectory = getTraceDirectory(targetDirectory);
+  const filePath = path.join(traceDirectory, `${sessionId}.jsonl`);
 
   await mkdir(traceDirectory, { recursive: true });
 

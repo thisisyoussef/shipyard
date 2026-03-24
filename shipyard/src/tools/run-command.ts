@@ -71,7 +71,7 @@ export const runCommandDefinition: ToolDefinition<
   RunCommandInput,
   RunCommandResult
 > = {
-  name: "run-command",
+  name: "run_command",
   description: "Run a shell command inside the target directory with a timeout.",
   invoke: runCommandTool,
 };

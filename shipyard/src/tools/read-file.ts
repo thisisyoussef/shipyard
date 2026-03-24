@@ -62,7 +62,7 @@ export async function readFileTool(
 }
 
 export const readFileDefinition: ToolDefinition<ReadFileInput, ReadFileResult> = {
-  name: "read-file",
+  name: "read_file",
   description: "Read a file relative to the target directory and return its hash.",
   invoke: readFileTool,
 };
