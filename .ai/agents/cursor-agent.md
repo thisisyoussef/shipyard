@@ -82,7 +82,7 @@ Before implementation edits for a standard-lane story:
 
 ## Task Routing
 - Feature: `.ai/workflows/feature-development.md`
-- Bug fix: `.ai/workflows/bug-fixing.md`
+- Bug fix: `.ai/workflows/bug-fixes.md`
 - Performance: `.ai/workflows/performance-optimization.md`
 - Security: `.ai/workflows/security-review.md`
 - Deployment: `.ai/workflows/deployment-setup.md`

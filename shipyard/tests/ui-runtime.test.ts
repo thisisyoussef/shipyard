@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -171,8 +171,18 @@ describe("ui runtime contract", () => {
       projectRules: "Always inspect the file before editing it.",
       projectRulesLoaded: true,
     });
+    const tracePath = path.join(
+      targetDirectory,
+      ".shipyard",
+      "traces",
+      "ui-session.jsonl",
+    );
 
     try {
+      const initialTrace = await readFile(tracePath, "utf8");
+      expect(initialTrace).toContain('"event":"session.start"');
+      expect(initialTrace).toContain('"sessionId":"ui-session"');
+
       const healthResponse = await fetch(`${runtime.url}/api/health`);
       expect(healthResponse.ok).toBe(true);
 
@@ -257,6 +267,11 @@ describe("ui runtime contract", () => {
         expect(toolResults[0]?.callId).toBe(toolCalls[0]?.callId);
         expect(toolResults[1]?.callId).toBe(toolCalls[1]?.callId);
 
+        const updatedTrace = await readFile(tracePath, "utf8");
+        expect(updatedTrace).toContain('"event":"instruction.plan"');
+        expect(updatedTrace).toContain('"status":"success"');
+        expect(updatedTrace).toContain('"instruction":"inspect package.json"');
+
         const refreshedStatusPromise = waitForSocketMessage(
           socket,
           (message) =>
@@ -334,6 +349,12 @@ describe("ui runtime contract", () => {
       projectRules: "",
       projectRulesLoaded: false,
     });
+    const tracePath = path.join(
+      targetDirectory,
+      ".shipyard",
+      "traces",
+      "ui-error-session.jsonl",
+    );
 
     try {
       const socket = new WebSocket(runtime.socketUrl);
@@ -367,6 +388,7 @@ describe("ui runtime contract", () => {
           "agent:thinking",
           "agent:tool_call",
           "agent:tool_result",
+          "agent:text",
           "agent:error",
           "agent:done",
           "session:state",
@@ -381,14 +403,23 @@ describe("ui runtime contract", () => {
           success: false,
         });
         expect(errorSequence[4]).toMatchObject({
+          type: "agent:text",
+          text: "Turn 1 stopped: File not found: missing.ts",
+        });
+        expect(errorSequence[5]).toMatchObject({
           type: "agent:error",
           message: "File not found: missing.ts",
         });
-        expect(errorSequence[5]).toMatchObject({
+        expect(errorSequence[6]).toMatchObject({
           type: "agent:done",
           status: "error",
           summary: "File not found: missing.ts",
         });
+
+        const errorTrace = await readFile(tracePath, "utf8");
+        expect(errorTrace).toContain('"event":"instruction.plan"');
+        expect(errorTrace).toContain('"status":"error"');
+        expect(errorTrace).toContain('"instruction":"inspect missing.ts"');
 
         const statusAfterErrorPromise = waitForSocketMessage(
           socket,
