@@ -244,6 +244,7 @@ describe("shipyard CLI loop", () => {
 
         sendLine(firstRun, "inspect the repo");
         await waitForText(firstRun, 'Turn 1 planned in phase "code".');
+        await waitForText(firstRun, "Observations: Found no files in the target directory.");
         sendLine(firstRun, "exit");
         await waitForText(firstRun, "Shipyard session closed.");
         await waitForProcessExit(firstRun);

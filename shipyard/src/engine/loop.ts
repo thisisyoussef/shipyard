@@ -1,16 +1,16 @@
 import readline from "node:readline/promises";
 import process from "node:process";
 
-import type { ContextEnvelope } from "./state.js";
 import type { SessionState } from "./state.js";
 import { createSessionSnapshot, saveSessionState } from "./state.js";
-import { createContextEnvelope } from "../context/envelope.js";
 import { loadProjectRules } from "../context/envelope.js";
 import {
-  createCodePhase,
-  createStubCodeTaskPlan,
   getCodePhaseToolDefinitions,
 } from "../phases/code/index.js";
+import {
+  createInstructionRuntimeState,
+  executeInstructionTurn,
+} from "./turn.js";
 import {
   ToolError,
   gitDiffTool,
@@ -124,45 +124,14 @@ async function captureCurrentGitDiff(
   return null;
 }
 
-async function buildContextEnvelope(
-  state: SessionState,
-  projectRules: string,
-  currentInstruction: string,
-  injectedContext: string[],
-  recentToolOutputs: string[],
-  recentErrors: string[],
-  retryCountsByFile: Record<string, number>,
-  blockedFiles: string[],
-): Promise<ContextEnvelope> {
-  const currentGitDiff = await captureCurrentGitDiff(state.targetDirectory);
-
-  return createContextEnvelope({
-    targetDirectory: state.targetDirectory,
-    discovery: state.discovery,
-    projectRules,
-    currentInstruction,
-    injectedContext,
-    targetFilePaths: [],
-    recentToolOutputs,
-    recentErrors,
-    currentGitDiff,
-    rollingSummary: state.rollingSummary,
-    retryCountsByFile,
-    blockedFiles,
-  });
-}
-
 export async function runShipyardLoop(
   options: RunShipyardLoopOptions,
 ): Promise<void> {
   const state = options.sessionState;
-  let projectRules = await loadProjectRules(state.targetDirectory);
-  const phase = createCodePhase();
-  const recentToolOutputs: string[] = [];
-  const recentErrors: string[] = [];
-  const retryCountsByFile: Record<string, number> = {};
-  const blockedFiles: string[] = [];
-  const injectedContext = [...(options.injectedContext ?? [])];
+  const runtimeState = createInstructionRuntimeState({
+    projectRules: await loadProjectRules(state.targetDirectory),
+    baseInjectedContext: options.injectedContext ?? [],
+  });
   const traceLogger = await createLocalTraceLogger(
     state.targetDirectory,
     state.sessionId,
@@ -187,7 +156,7 @@ export async function runShipyardLoop(
     sessionId: state.sessionId,
     targetDirectory: state.targetDirectory,
     discovery: state.discovery,
-    phase: phase.name,
+    phase: "code",
   });
 
   try {
@@ -214,7 +183,7 @@ export async function runShipyardLoop(
             "../context/discovery.js"
           );
           state.discovery = await discoverTarget(state.targetDirectory);
-          projectRules = await loadProjectRules(state.targetDirectory);
+          runtimeState.projectRules = await loadProjectRules(state.targetDirectory);
           console.log(`Discovery refreshed: ${formatDiscoverySummary(state.discovery)}`);
           await traceLogger.log("discovery.refresh", state.discovery);
         } else if (line === "exit" || line === "quit") {
@@ -232,7 +201,7 @@ export async function runShipyardLoop(
             path: targetPath,
           });
 
-          rememberRecent(recentToolOutputs, `read_file ${targetPath}`);
+          rememberRecent(runtimeState.recentToolOutputs, `read_file ${targetPath}`);
           console.log(`Hash: ${result.hash}`);
           printDivider();
           console.log(result.contents);
@@ -244,7 +213,7 @@ export async function runShipyardLoop(
           });
 
           rememberRecent(
-            recentToolOutputs,
+            runtimeState.recentToolOutputs,
             `list_files ${glob ?? "(all)"} -> ${files.length} result(s)`,
           );
 
@@ -263,7 +232,7 @@ export async function runShipyardLoop(
           });
 
           rememberRecent(
-            recentToolOutputs,
+            runtimeState.recentToolOutputs,
             `search_files ${query} -> ${matches.length} match(es)`,
           );
           await printSearchMatches(matches);
@@ -275,7 +244,7 @@ export async function runShipyardLoop(
           });
 
           rememberRecent(
-            recentToolOutputs,
+            runtimeState.recentToolOutputs,
             `run_command ${command} -> exit ${String(result.exitCode)}`,
           );
           await printCommandResult(result);
@@ -286,37 +255,28 @@ export async function runShipyardLoop(
             args: args || undefined,
           });
 
-          rememberRecent(recentToolOutputs, "git_diff");
+          rememberRecent(runtimeState.recentToolOutputs, "git_diff");
           await printCommandResult(result);
         } else {
-          state.turnCount += 1;
-          const contextEnvelope = await buildContextEnvelope(
-            state,
-            projectRules,
-            line,
-            injectedContext,
-            recentToolOutputs,
-            recentErrors,
-            retryCountsByFile,
-            blockedFiles,
-          );
-          const taskPlan = createStubCodeTaskPlan(line);
-
-          state.rollingSummary = updateRollingSummary(
-            state.rollingSummary,
-            state.turnCount,
-            line,
-          );
+          const turnResult = await executeInstructionTurn({
+            sessionState: state,
+            runtimeState,
+            instruction: line,
+          });
 
           console.log(
-            `Turn ${state.turnCount} planned in phase "${phase.name}".`,
+            `Turn ${state.turnCount} planned in phase "${turnResult.phaseName}".`,
           );
-          console.log(JSON.stringify(taskPlan, null, 2));
+          console.log(JSON.stringify(turnResult.taskPlan, null, 2));
+          printDivider();
+          console.log(turnResult.finalText);
           await traceLogger.log("instruction.plan", {
             instruction: line,
-            phase: phase.name,
-            contextEnvelope,
-            taskPlan,
+            phase: turnResult.phaseName,
+            contextEnvelope: turnResult.contextEnvelope,
+            taskPlan: turnResult.taskPlan,
+            status: turnResult.status,
+            summary: turnResult.summary,
           });
         }
       } catch (error) {
@@ -324,7 +284,7 @@ export async function runShipyardLoop(
           error instanceof ToolError || error instanceof Error
             ? error.message
             : "Unknown error";
-        rememberRecent(recentErrors, message);
+        rememberRecent(runtimeState.recentErrors, message);
         console.error(`shipyard error: ${message}`);
         await traceLogger.log("error", {
           sessionId: state.sessionId,

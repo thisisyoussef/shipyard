@@ -121,7 +121,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   if (options.ui) {
     const uiRuntime = await startUiRuntimeServer({
       sessionState,
+      projectRules,
       projectRulesLoaded: Boolean(projectRules),
+      baseInjectedContext: injectedContext,
     });
     const shutdown = () => {
       void uiRuntime.close();
