@@ -174,6 +174,55 @@ async function waitForSocketOpen(socket: WebSocket): Promise<void> {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Canonical UI event-stream contract (SV-S02)
+//
+// Source of truth: src/engine/turn.ts executeInstructionTurn + src/ui/events.ts
+//
+// Success turn:
+//   REQUIRED: session:state(agent-busy), agent:thinking, agent:text, agent:done(success), session:state(ready)
+//   OPTIONAL (interleaved): agent:tool_call, agent:tool_result, agent:edit
+//   ORDERING: agent:text BEFORE agent:done; every tool_result AFTER its matching tool_call
+//
+// Failed turn:
+//   REQUIRED: session:state(agent-busy), agent:thinking, agent:text, agent:error, agent:done(error), session:state(error)
+//   OPTIONAL (interleaved): agent:tool_call, agent:tool_result, agent:edit
+//   ORDERING: agent:text BEFORE agent:error; agent:error BEFORE agent:done
+// ---------------------------------------------------------------------------
+
+/**
+ * Assert that `required` events appear in the sequence in order, allowing
+ * other events between them. This is the contract-style alternative to a
+ * brittle `toEqual` on the full array.
+ */
+function assertEventOrdering(
+  actual: BackendToFrontendMessage[],
+  required: BackendToFrontendMessage["type"][],
+): void {
+  const types = actual.map((m) => m.type);
+  let cursor = 0;
+
+  for (const expected of required) {
+    const index = types.indexOf(expected, cursor);
+    expect(index, `Expected "${expected}" after position ${cursor} in [${types.join(", ")}]`).toBeGreaterThanOrEqual(cursor);
+    cursor = index + 1;
+  }
+}
+
+/**
+ * Assert that every event type in `required` appears at least once.
+ */
+function assertRequiredEvents(
+  actual: BackendToFrontendMessage[],
+  required: BackendToFrontendMessage["type"][],
+): void {
+  const types = new Set(actual.map((m) => m.type));
+
+  for (const r of required) {
+    expect(types, `Expected event "${r}" to be present`).toContain(r);
+  }
+}
+
 describe("ui runtime contract", () => {
   afterEach(async () => {
     const directories = createdDirectories.splice(0, createdDirectories.length);
@@ -333,18 +382,26 @@ describe("ui runtime contract", () => {
         );
 
         const turnMessages = await turnMessagesPromise;
-        expect(turnMessages.map((message) => message.type)).toEqual([
+
+        // Contract-style: assert required events are present and in order,
+        // allowing optional tool/edit events between them.
+        assertRequiredEvents(turnMessages, [
           "session:state",
           "agent:thinking",
           "agent:tool_call",
           "agent:tool_result",
-          "agent:tool_call",
-          "agent:tool_result",
+          "agent:text",
+          "agent:done",
+        ]);
+        assertEventOrdering(turnMessages, [
+          "session:state",
+          "agent:thinking",
           "agent:text",
           "agent:done",
           "session:state",
         ]);
 
+        // Tool calls must appear before their results (paired by callId below).
         const toolCalls = turnMessages.filter((message) => message.type === "agent:tool_call");
         const toolResults = turnMessages.filter((message) => message.type === "agent:tool_result");
         expect(toolCalls).toHaveLength(2);
@@ -487,7 +544,17 @@ describe("ui runtime contract", () => {
         );
 
         const errorSequence = await errorSequencePromise;
-        expect(errorSequence.map((message) => message.type)).toEqual([
+
+        // Contract-style: assert required events and ordering.
+        // The runtime may legitimately insert tool events between these.
+        assertRequiredEvents(errorSequence, [
+          "session:state",
+          "agent:thinking",
+          "agent:text",
+          "agent:error",
+          "agent:done",
+        ]);
+        assertEventOrdering(errorSequence, [
           "session:state",
           "agent:thinking",
           "agent:text",
@@ -495,15 +562,21 @@ describe("ui runtime contract", () => {
           "agent:done",
           "session:state",
         ]);
-        expect(errorSequence[2]).toMatchObject({
+
+        // Verify content payloads by filtering, not by index.
+        const agentText = errorSequence.find((m) => m.type === "agent:text");
+        const agentError = errorSequence.find((m) => m.type === "agent:error");
+        const agentDone = errorSequence.find((m) => m.type === "agent:done");
+
+        expect(agentText).toMatchObject({
           type: "agent:text",
           text: expect.stringContaining("Turn 1 stopped: Missing ANTHROPIC_API_KEY"),
         });
-        expect(errorSequence[3]).toMatchObject({
+        expect(agentError).toMatchObject({
           type: "agent:error",
           message: expect.stringContaining("Missing ANTHROPIC_API_KEY"),
         });
-        expect(errorSequence[4]).toMatchObject({
+        expect(agentDone).toMatchObject({
           type: "agent:done",
           status: "error",
           summary: expect.stringContaining("Missing ANTHROPIC_API_KEY"),
@@ -534,6 +607,73 @@ describe("ui runtime contract", () => {
       await runtime.close();
     }
   }, 20_000);
+
+  // Repeated-run stability guard (AC-4): run the error-stream contract
+  // assertion 3 times sequentially in a single test to surface ordering flakes.
+  it("error-stream contract is stable across 3 repeated runs", async () => {
+    for (let run = 0; run < 3; run++) {
+      const targetDirectory = await createTempDirectory("shipyard-ui-stability-");
+      const discovery = await discoverTarget(targetDirectory);
+      const sessionState = createSessionState({
+        sessionId: `stability-${String(run)}-${Date.now()}`,
+        targetDirectory,
+        discovery,
+      });
+      const runtime = await startUiRuntimeServer({
+        sessionState,
+        host: "127.0.0.1",
+        port: 0,
+        projectRules: "",
+        projectRulesLoaded: false,
+      });
+
+      try {
+        const socket = new WebSocket(runtime.socketUrl);
+        // Attach message handler BEFORE waiting for open, so we don't miss
+        // the session:state the server sends immediately on connection.
+        const initialStatePromise = waitForSocketMessage(
+          socket,
+          (m) => m.type === "session:state",
+        );
+        await waitForSocketOpen(socket);
+        await initialStatePromise;
+
+        const errorSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((m) =>
+              m.type === "session:state" && m.connectionState === "error"
+            ),
+        );
+        socket.send(
+          JSON.stringify({ type: "instruction", text: "inspect nothing.ts" }),
+        );
+
+        const errorSequence = await errorSequencePromise;
+
+        // Contract invariants that must hold on every run:
+        assertRequiredEvents(errorSequence, [
+          "session:state",
+          "agent:thinking",
+          "agent:text",
+          "agent:error",
+          "agent:done",
+        ]);
+        assertEventOrdering(errorSequence, [
+          "agent:text",
+          "agent:error",
+          "agent:done",
+        ]);
+
+        const done = errorSequence.find((m) => m.type === "agent:done");
+        expect(done).toMatchObject({ status: "error" });
+
+        socket.close();
+      } finally {
+        await runtime.close();
+      }
+    }
+  }, 30_000);
 
   it("rejects invalid websocket messages clearly", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-runtime-invalid-");
