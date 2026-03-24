@@ -1,7 +1,7 @@
 # Phase 4: LangGraph State Machine Story Pack
 
 - Pack: Phase 4 LangGraph State Machine
-- Estimate: 2-3 hours
+- Estimate: 3-4 hours
 - Date: 2026-03-24
 - Status: Drafted for implementation
 
@@ -11,6 +11,7 @@
 2. Make every file edit reversible, every retry bounded, and every blocked file visible in runtime state.
 3. Finish the MVP by wiring the CLI to the real engine path and capturing usable LangSmith traces for both a clean run and an error run.
 4. Preserve the browser UI as a first-class interface while the engine grows more sophisticated.
+5. Let operators interrupt an in-flight turn without killing the shared session or diverging terminal and browser behavior.
 
 ## Shared Constraints
 
@@ -23,6 +24,7 @@
 - If LangGraph wiring starts consuming the whole time budget, the fallback path is the Phase 3 raw loop plus manual state management and `traceable` instrumentation. The pack must preserve that escape hatch explicitly.
 - The current worktree already contains unrelated source edits. This pack documents Phase 4 without assuming those unrelated changes are part of the same implementation commit.
 - The `--ui` mode and browser activity panels should keep working whether the runtime path is graph-based or fallback-based.
+- Interrupt semantics must stay shared across terminal and `--ui` mode; one surface cannot get true cancellation while the other still requires restart.
 
 ## Planned Stories
 
@@ -32,6 +34,7 @@
 | P4-S02 | Checkpointing and Recovery Flow | Make every edit reversible and wire retry/blocking behavior into graph recovery. | P4-S01 |
 | P4-S03 | Context Envelope and CLI Execution Wiring | Assemble the full prompt context, replace the CLI stub path, and persist turn summaries back to session state. | P4-S01 |
 | P4-S04 | LangSmith Tracing and MVP Verification | Capture automatic or `traceable` traces, run the two required tasks, and record the trace URLs in `CODEAGENT.md`. | P4-S02, P4-S03 |
+| P4-S05 | Operator Interrupts and Turn Cancellation | Add true operator-controlled turn interruption so terminal and browser sessions can stop bad work and accept the next instruction without restart. | P4-S04 |
 
 ## Sequencing Rationale
 
@@ -40,6 +43,7 @@
 - `P4-S02` isolates reversible editing and recovery, which are critical safety features and easy to reason about separately from prompt/context work.
 - `P4-S03` then wires the runtime into the user-facing CLI once the engine and recovery primitives are defined.
 - `P4-S04` closes the phase by proving the graph or fallback loop produces usable traces and can complete both a clean task and an error task.
+- `P4-S05` closes the remaining operator-control gap by turning the placeholder cancel contract into a real interrupt path across the shared session model.
 
 ## Whole-Pack Success Signal
 
@@ -48,3 +52,4 @@
 - Retry counts, blocked files, last edited file, and final summaries live in runtime state rather than being inferred from logs alone.
 - The browser UI continues to show live progress, file activity, and trace access while the engine shifts from raw loop to graph orchestration.
 - LangSmith shows full traces for one successful task and one failing task, and those two MVP trace URLs are saved into `shipyard/CODEAGENT.md`.
+- An operator can interrupt a bad or long-running turn from terminal mode or browser mode and continue in the same session without restarting Shipyard.
