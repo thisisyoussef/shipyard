@@ -1,6 +1,7 @@
 import type { ChangeEvent, FormEvent } from "react";
 
 import type {
+  ContextReceiptViewModel,
   FileEventViewModel,
   SessionStateViewModel,
   TurnViewModel,
@@ -11,6 +12,7 @@ interface ShipyardWorkbenchProps {
   sessionState: SessionStateViewModel | null;
   turns: TurnViewModel[];
   fileEvents: FileEventViewModel[];
+  contextHistory: ContextReceiptViewModel[];
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
   instruction: string;
@@ -223,9 +225,29 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               rows={8}
             />
             <p className="support-copy">
-              Context stays visible here so the workbench keeps operator intent
-              in view. Persistence and rehydration land in PRE2-S04.
+              Context is attached to the next instruction only, then preserved
+              below as a visible receipt so reloads do not erase operator
+              intent.
             </p>
+
+            {props.contextHistory.length > 0 ? (
+              <div className="context-history-block">
+                <span className="micro-label">Recent injections</span>
+                <ol className="context-history-list">
+                  {props.contextHistory.map((entry) => (
+                    <li key={entry.id} className="context-history-item">
+                      <time
+                        className="context-history-time"
+                        dateTime={entry.submittedAt}
+                      >
+                        {formatTimestamp(entry.submittedAt)}
+                      </time>
+                      <p>{entry.text}</p>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
           </section>
         </aside>
 

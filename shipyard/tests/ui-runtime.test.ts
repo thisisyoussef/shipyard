@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { discoverTarget } from "../src/context/discovery.js";
 import { createSessionState } from "../src/engine/state.js";
-import { parseArgs } from "../src/bin/shipyard.js";
+import { formatUiStartupLines, parseArgs } from "../src/bin/shipyard.js";
 import type { BackendToFrontendMessage } from "../src/ui/contracts.js";
 import { startUiRuntimeServer } from "../src/ui/server.js";
 
@@ -137,6 +137,20 @@ describe("ui runtime contract", () => {
     });
   });
 
+  it("UI startup surfaces the browser URL and current connection state", () => {
+    const lines = formatUiStartupLines({
+      url: "http://127.0.0.1:3210",
+      socketUrl: "ws://127.0.0.1:3210/ws",
+      sessionId: "ui-session",
+      connectionState: "ready",
+    });
+
+    expect(lines.join("\n")).toContain("http://127.0.0.1:3210");
+    expect(lines.join("\n")).toContain("ws://127.0.0.1:3210/ws");
+    expect(lines.join("\n")).toContain("ui-session");
+    expect(lines.join("\n")).toContain("ready");
+  });
+
   it("streams ordered tool activity and reconnects with the current session snapshot", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-runtime-");
     await writeFile(
@@ -200,6 +214,7 @@ describe("ui runtime contract", () => {
           JSON.stringify({
             type: "instruction",
             text: "inspect package.json",
+            injectedContext: ["Use the current scripts as the source of truth."],
           }),
         );
 
@@ -269,17 +284,30 @@ describe("ui runtime contract", () => {
             (message) => message.type === "session:state",
           );
           await waitForSocketOpen(reconnectedSocket);
-          const reconnectState = await reconnectStatePromise;
-          expect(reconnectState).toMatchObject({
-            type: "session:state",
-            turnCount: 1,
-            targetDirectory,
+        const reconnectState = await reconnectStatePromise;
+        expect(reconnectState).toMatchObject({
+          type: "session:state",
+          turnCount: 1,
+          targetDirectory,
             discovery: {
-              projectName: "ui-bridge-target",
-            },
-          });
-        } finally {
-          reconnectedSocket.close();
+            projectName: "ui-bridge-target",
+          },
+          workbenchState: {
+            turns: [
+              {
+                instruction: "inspect package.json",
+                contextPreview: ["Use the current scripts as the source of truth."],
+              },
+            ],
+            contextHistory: [
+              {
+                text: "Use the current scripts as the source of truth.",
+              },
+            ],
+          },
+        });
+      } finally {
+        reconnectedSocket.close();
         }
       } finally {
         if (socket.readyState === socket.OPEN) {

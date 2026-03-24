@@ -17,6 +17,7 @@ import { ShipyardWorkbench } from "./ShipyardWorkbench.js";
 import {
   applyBackendMessage,
   createInitialWorkbenchState,
+  prepareInstructionSubmission,
   queueInstructionTurn,
   setTransportState,
 } from "./view-models.js";
@@ -36,6 +37,7 @@ export function App() {
   const hasSessionRef = useRef(false);
   const deferredTurns = useDeferredValue(viewState.turns);
   const deferredFileEvents = useDeferredValue(viewState.fileEvents);
+  const deferredContextHistory = useDeferredValue(viewState.contextHistory);
 
   const applyMessage = useEffectEvent((message: BackendToFrontendMessage) => {
     if (message.type === "session:state") {
@@ -81,9 +83,16 @@ export function App() {
       });
 
       socket.addEventListener("message", (event) => {
-        const parsed = backendToFrontendMessageSchema.safeParse(
-          JSON.parse(event.data as string),
-        );
+        let rawMessage: unknown;
+
+        try {
+          rawMessage = JSON.parse(event.data as string);
+        } catch {
+          applyTransportState("error", "Shipyard sent malformed JSON.");
+          return;
+        }
+
+        const parsed = backendToFrontendMessageSchema.safeParse(rawMessage);
 
         if (!parsed.success) {
           applyTransportState("error", "Shipyard sent an unrecognized event.");
@@ -123,44 +132,49 @@ export function App() {
     };
   }, [applyMessage, applyTransportState]);
 
-  function sendMessage(message: FrontendToBackendMessage): void {
+  function sendMessage(message: FrontendToBackendMessage): boolean {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
       applyTransportState(
         "error",
         "Cannot send instructions while the browser runtime is disconnected.",
       );
-      return;
+      return false;
     }
 
     socketRef.current.send(JSON.stringify(message));
+    return true;
   }
 
   function handleInstructionSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
 
-    const trimmedInstruction = instruction.trim();
+    const submission = prepareInstructionSubmission(instruction, contextDraft);
 
-    if (!trimmedInstruction) {
+    if (submission === null) {
       return;
     }
 
-    const injectedContext = contextDraft.trim() ? [contextDraft.trim()] : undefined;
-    sendMessage({
+    const sent = sendMessage({
       type: "instruction",
-      text: trimmedInstruction,
-      injectedContext,
+      text: submission.instruction,
+      injectedContext: submission.injectedContext,
     });
+
+    if (!sent) {
+      return;
+    }
 
     startTransition(() => {
       setViewState((currentState) =>
         queueInstructionTurn(
           currentState,
-          trimmedInstruction,
-          injectedContext ?? [],
+          submission.instruction,
+          submission.injectedContext ?? [],
         )
       );
     });
     setInstruction("");
+    setContextDraft(submission.clearedContextDraft);
   }
 
   function handleCopyTracePath(): void {
@@ -188,6 +202,7 @@ export function App() {
       sessionState={viewState.sessionState}
       turns={deferredTurns}
       fileEvents={deferredFileEvents}
+      contextHistory={deferredContextHistory}
       connectionState={viewState.connectionState}
       agentStatus={viewState.agentStatus}
       instruction={instruction}

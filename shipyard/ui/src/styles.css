@@ -335,6 +335,41 @@ summary {
   color: var(--text);
 }
 
+.context-history-block {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid var(--panel-border);
+}
+
+.context-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.context-history-item {
+  border: 1px solid rgba(88, 182, 176, 0.2);
+  border-radius: 1rem;
+  padding: 0.8rem 0.85rem;
+  background: var(--accent-soft);
+}
+
+.context-history-item p {
+  margin: 0.35rem 0 0;
+  color: var(--muted-strong);
+  line-height: 1.5;
+}
+
+.context-history-time {
+  color: var(--accent);
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.78rem;
+}
+
 .field-label {
   display: inline-block;
   margin-bottom: 0.55rem;
@@ -368,6 +403,7 @@ summary {
 .support-copy,
 .empty-copy,
 .file-event-summary,
+.context-history-item p,
 .activity-row p,
 .turn-context-strip p,
 .agent-copy p {

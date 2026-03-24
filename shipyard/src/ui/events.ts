@@ -8,6 +8,7 @@ import type {
   TurnStateEvent,
 } from "../engine/turn.js";
 import type { BackendToFrontendMessage } from "./contracts.js";
+import { applySessionSnapshot } from "./workbench-state.js";
 
 interface CreateSessionStateMessageOptions {
   connectionState: TurnStateEvent["connectionState"];
@@ -42,7 +43,7 @@ function createDiscoverySummary(discovery: DiscoveryReport): string {
 export function createSessionStateMessage(
   options: CreateSessionStateMessageOptions,
 ): BackendToFrontendMessage {
-  return {
+  const baseMessage = {
     type: "session:state",
     runtimeMode: "ui",
     connectionState: options.connectionState,
@@ -55,6 +56,20 @@ export function createSessionStateMessage(
     discovery: options.sessionState.discovery,
     discoverySummary: createDiscoverySummary(options.sessionState.discovery),
     projectRulesLoaded: options.projectRulesLoaded,
+  } as const;
+  const syncedWorkbenchState = applySessionSnapshot(
+    options.sessionState.workbenchState,
+    {
+      ...baseMessage,
+      workbenchState: options.sessionState.workbenchState,
+    },
+  );
+
+  options.sessionState.workbenchState = syncedWorkbenchState;
+
+  return {
+    ...baseMessage,
+    workbenchState: syncedWorkbenchState,
   };
 }
 

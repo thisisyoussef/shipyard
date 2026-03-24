@@ -8,3 +8,4 @@ shipyard/node_modules
 shipyard/dist
 shipyard/coverage
 shipyard/.shipyard
+.shipyard

@@ -8,8 +8,109 @@ export const uiConnectionStateSchema = z.enum([
   "agent-busy",
   "error",
 ]);
+const turnStatusSchema = z.enum(["working", "success", "error", "idle"]);
+const activityKindSchema = z.enum([
+  "thinking",
+  "tool",
+  "text",
+  "edit",
+  "done",
+  "error",
+]);
+const activityToneSchema = z.enum([
+  "neutral",
+  "working",
+  "success",
+  "danger",
+]);
+const diffKindSchema = z.enum(["meta", "context", "add", "remove"]);
+const fileEventStatusSchema = z.enum(["running", "success", "error", "diff"]);
 
 const nonEmptyTextSchema = z.string().trim().min(1);
+const discoverySchema = z.object({
+  isGreenfield: z.boolean(),
+  language: z.string().nullable(),
+  framework: z.string().nullable(),
+  packageManager: z.string().nullable(),
+  scripts: z.record(z.string(), z.string()),
+  hasReadme: z.boolean(),
+  hasAgentsMd: z.boolean(),
+  topLevelFiles: z.array(z.string()),
+  topLevelDirectories: z.array(z.string()),
+  projectName: z.string().nullable(),
+});
+const sessionStateViewModelSchema = z.object({
+  sessionId: z.string(),
+  targetLabel: z.string(),
+  targetDirectory: z.string(),
+  turnCount: z.number().int().nonnegative(),
+  startedAt: z.string(),
+  lastActiveAt: z.string(),
+  discoverySummary: z.string(),
+  discovery: discoverySchema,
+  projectRulesLoaded: z.boolean(),
+  tracePath: z.string(),
+});
+const activityItemSchema = z.object({
+  id: z.string(),
+  kind: activityKindSchema,
+  title: z.string(),
+  detail: z.string(),
+  tone: activityToneSchema,
+  toolName: z.string().optional(),
+  callId: z.string().optional(),
+});
+const turnViewModelSchema = z.object({
+  id: z.string(),
+  instruction: z.string(),
+  status: turnStatusSchema,
+  startedAt: z.string(),
+  summary: z.string(),
+  contextPreview: z.array(z.string()),
+  agentMessages: z.array(z.string()),
+  activity: z.array(activityItemSchema),
+});
+const diffLineSchema = z.object({
+  id: z.string(),
+  kind: diffKindSchema,
+  text: z.string(),
+});
+const fileEventSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  status: fileEventStatusSchema,
+  title: z.string(),
+  summary: z.string(),
+  toolName: z.string().optional(),
+  callId: z.string().optional(),
+  turnId: z.string(),
+  diffLines: z.array(diffLineSchema),
+});
+const contextReceiptSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  submittedAt: z.string(),
+  turnId: z.string(),
+});
+const pendingToolCallSchema = z.object({
+  turnId: z.string(),
+  fileEventId: z.string().optional(),
+  toolName: z.string(),
+});
+export const workbenchStateSchema = z.object({
+  connectionState: uiConnectionStateSchema,
+  agentStatus: z.string(),
+  sessionState: sessionStateViewModelSchema.nullable(),
+  turns: z.array(turnViewModelSchema),
+  fileEvents: z.array(fileEventSchema),
+  activeTurnId: z.string().nullable(),
+  pendingToolCalls: z.record(z.string(), pendingToolCallSchema),
+  latestError: z.string().nullable(),
+  nextTurnNumber: z.number().int().nonnegative(),
+  nextEventNumber: z.number().int().nonnegative(),
+  nextFileEventNumber: z.number().int().nonnegative(),
+  contextHistory: z.array(contextReceiptSchema),
+});
 
 export const instructionMessageSchema = z.object({
   type: z.literal("instruction"),
@@ -46,20 +147,10 @@ export const sessionStateMessageSchema = z.object({
   turnCount: z.number().int().nonnegative(),
   startedAt: z.string(),
   lastActiveAt: z.string(),
-  discovery: z.object({
-    isGreenfield: z.boolean(),
-    language: z.string().nullable(),
-    framework: z.string().nullable(),
-    packageManager: z.string().nullable(),
-    scripts: z.record(z.string(), z.string()),
-    hasReadme: z.boolean(),
-    hasAgentsMd: z.boolean(),
-    topLevelFiles: z.array(z.string()),
-    topLevelDirectories: z.array(z.string()),
-    projectName: z.string().nullable(),
-  }),
+  discovery: discoverySchema,
   discoverySummary: z.string(),
   projectRulesLoaded: z.boolean(),
+  workbenchState: workbenchStateSchema,
 });
 
 export const agentThinkingMessageSchema = z.object({

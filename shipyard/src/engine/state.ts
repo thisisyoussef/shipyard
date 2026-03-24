@@ -2,6 +2,10 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { DiscoveryReport } from "../artifacts/types.js";
+import {
+  createInitialWorkbenchState,
+  type WorkbenchViewState,
+} from "../ui/workbench-state.js";
 
 export interface SessionState {
   sessionId: string;
@@ -11,6 +15,7 @@ export interface SessionState {
   turnCount: number;
   rollingSummary: string;
   discovery: DiscoveryReport;
+  workbenchState: WorkbenchViewState;
 }
 
 export interface ContextEnvelope {
@@ -46,6 +51,7 @@ export interface SessionSnapshot {
   turnCount: number;
   rollingSummary: string;
   discovery: DiscoveryReport;
+  workbenchState: WorkbenchViewState;
 }
 
 export interface CreateSessionStateOptions {
@@ -67,6 +73,7 @@ export function createSessionState(
     turnCount: 0,
     rollingSummary: "",
     discovery: options.discovery,
+    workbenchState: createInitialWorkbenchState(),
   };
 }
 
@@ -79,6 +86,7 @@ export function createSessionSnapshot(state: SessionState): SessionSnapshot {
     turnCount: state.turnCount,
     rollingSummary: state.rollingSummary,
     discovery: state.discovery,
+    workbenchState: state.workbenchState,
   };
 }
 
@@ -138,5 +146,10 @@ export async function loadSessionState(
   }
 
   const contents = await readFile(sessionFilePath, "utf8");
-  return JSON.parse(contents) as SessionState;
+  const parsed = JSON.parse(contents) as Partial<SessionState> & Omit<SessionState, "workbenchState">;
+
+  return {
+    ...parsed,
+    workbenchState: parsed.workbenchState ?? createInitialWorkbenchState(),
+  } as SessionState;
 }
