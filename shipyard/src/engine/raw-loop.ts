@@ -24,6 +24,12 @@ export interface RawLoopLogger {
   log: (message: string) => void;
 }
 
+export interface RawLoopToolHookContext {
+  toolUse: ToolUseBlock;
+  turnNumber: number;
+  targetDirectory: string;
+}
+
 export interface RawToolExecution {
   toolName: string;
   input: unknown;
@@ -46,6 +52,9 @@ export interface RawToolLoopOptions {
   client?: AnthropicMessagesClient;
   logger?: RawLoopLogger;
   maxIterations?: number;
+  beforeToolExecution?: (
+    context: RawLoopToolHookContext,
+  ) => Promise<void> | void;
 }
 
 function ensureNonBlankString(value: string, fieldName: string): string {
@@ -180,6 +189,9 @@ async function executeToolUsesForTurn(
   allowedToolNames: Set<string>,
   logger: RawLoopLogger,
   turnNumber: number,
+  beforeToolExecution?: (
+    context: RawLoopToolHookContext,
+  ) => Promise<void> | void,
 ): Promise<{
   toolResultMessage: MessageParam;
   toolExecutions: RawToolExecution[];
@@ -188,6 +200,12 @@ async function executeToolUsesForTurn(
   const toolExecutions: RawToolExecution[] = [];
 
   for (const toolUse of toolUses) {
+    await beforeToolExecution?.({
+      toolUse,
+      turnNumber,
+      targetDirectory,
+    });
+
     logger.log(
       `[raw-loop] turn ${String(turnNumber)} tool_call ${toolUse.name} input=${truncateForLog(
         stringifyForLog(toolUse.input),
@@ -279,6 +297,7 @@ export async function runRawToolLoopDetailed(
         allowedToolNames,
         logger,
         turnNumber,
+        options.beforeToolExecution,
       );
 
       toolExecutions.push(...toolTurnResult.toolExecutions);

@@ -6,12 +6,20 @@ import {
   StateGraph,
 } from "@langchain/langgraph";
 
+import {
+  CheckpointManager,
+  type CheckpointManagerLike,
+} from "../checkpoints/manager.js";
 import type { TaskPlan, VerificationReport } from "../artifacts/types.js";
 import { createStubCodeTaskPlan } from "../phases/code/index.js";
 import type { Phase } from "../phases/phase.js";
+import { readFileTool } from "../tools/read-file.js";
+import { normalizeTargetRelativePath } from "../tools/file-state.js";
 import {
   RAW_LOOP_MAX_ITERATIONS,
   runRawToolLoopDetailed,
+  type RawToolLoopOptions,
+  type RawLoopToolHookContext,
   type RawToolLoopResult,
 } from "./raw-loop.js";
 import type { ContextEnvelope, FileHashMap } from "./state.js";
@@ -26,6 +34,7 @@ export type AgentRuntimeStatus =
   | "failed";
 
 export interface AgentGraphState {
+  sessionId: string;
   messageHistory: MessageParam[];
   currentInstruction: string;
   contextEnvelope: ContextEnvelope;
@@ -45,6 +54,7 @@ export interface AgentGraphState {
 }
 
 export interface CreateAgentGraphStateOptions {
+  sessionId?: string;
   instruction: string;
   contextEnvelope: ContextEnvelope;
   targetDirectory: string;
@@ -79,6 +89,12 @@ export interface AgentRuntimeDependencies {
   verifyState?: (
     state: AgentGraphState,
   ) => VerificationReport | Promise<VerificationReport>;
+  createCheckpointManager?: (
+    state: AgentGraphState,
+  ) => CheckpointManagerLike;
+  createRawLoopOptions?: (
+    state: AgentGraphState,
+  ) => RawToolLoopOptions | Promise<RawToolLoopOptions>;
 }
 
 export interface AgentRuntimeOptions {
@@ -92,6 +108,7 @@ type AgentGraphNodeName = "plan" | "act" | "verify" | "recover" | "respond";
 const DEFAULT_MAX_RECOVERIES_PER_FILE = 2;
 
 const AgentGraphStateAnnotation = Annotation.Root({
+  sessionId: Annotation<string>(),
   messageHistory: Annotation<MessageParam[]>(),
   currentInstruction: Annotation<string>(),
   contextEnvelope: Annotation<ContextEnvelope>(),
@@ -134,6 +151,45 @@ function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function getCheckpointManager(
+  state: AgentGraphState,
+  dependencies: AgentRuntimeDependencies,
+): CheckpointManagerLike {
+  return dependencies.createCheckpointManager?.(state)
+    ?? new CheckpointManager(state.targetDirectory, state.sessionId);
+}
+
+function getRelativeToolPath(input: unknown): string | null {
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "path" in input &&
+    typeof input.path === "string" &&
+    input.path.trim()
+  ) {
+    return normalizeTargetRelativePath(input.path);
+  }
+
+  return null;
+}
+
+async function checkpointBeforeEdit(
+  context: RawLoopToolHookContext,
+  checkpointManager: CheckpointManagerLike,
+): Promise<void> {
+  if (context.toolUse.name !== "edit_block") {
+    return;
+  }
+
+  const relativePath = getRelativeToolPath(context.toolUse.input);
+
+  if (!relativePath) {
+    throw new Error("edit_block requires a non-empty relative path before checkpointing.");
+  }
+
+  await checkpointManager.checkpoint(relativePath);
+}
+
 function createDefaultVerificationReport(
   state: AgentGraphState,
 ): VerificationReport {
@@ -160,14 +216,25 @@ function createDefaultVerificationReport(
 
 async function defaultActingLoop(
   state: AgentGraphState,
+  dependencies: AgentRuntimeDependencies,
 ): Promise<ActingLoopResult> {
+  const rawLoopOptions =
+    await dependencies.createRawLoopOptions?.(state)
+    ?? {};
+  const checkpointManager = getCheckpointManager(state, dependencies);
+  const existingBeforeToolExecution = rawLoopOptions.beforeToolExecution;
   const result: RawToolLoopResult = await runRawToolLoopDetailed(
     state.phaseConfig.systemPrompt,
     state.currentInstruction,
     state.phaseConfig.tools,
     state.targetDirectory,
     {
-      maxIterations: RAW_LOOP_MAX_ITERATIONS,
+      ...rawLoopOptions,
+      maxIterations: rawLoopOptions.maxIterations ?? RAW_LOOP_MAX_ITERATIONS,
+      beforeToolExecution: async (context) => {
+        await checkpointBeforeEdit(context, checkpointManager);
+        await existingBeforeToolExecution?.(context);
+      },
     },
   );
 
@@ -192,6 +259,7 @@ export function createAgentGraphState(
   options: CreateAgentGraphStateOptions,
 ): AgentGraphState {
   return {
+    sessionId: options.sessionId ?? "runtime-session",
     messageHistory: [...(options.messageHistory ?? [])],
     currentInstruction: ensureNonBlankString(
       options.instruction,
@@ -293,7 +361,7 @@ export function createAgentRuntimeNodes(
       try {
         const actingLoop = await (dependencies.runActingLoop
           ? dependencies.runActingLoop(state)
-          : defaultActingLoop(state));
+          : defaultActingLoop(state, dependencies));
 
         return {
           messageHistory: actingLoop.messageHistory,
@@ -342,25 +410,73 @@ export function createAgentRuntimeNodes(
       const currentRetries =
         state.retryCountsByFile[state.lastEditedFile] ?? 0;
       const nextRetries = currentRetries + 1;
+      const checkpointManager = getCheckpointManager(state, dependencies);
       const retryCountsByFile = {
         ...state.retryCountsByFile,
         [state.lastEditedFile]: nextRetries,
       };
+      let restored = false;
 
-      if (nextRetries >= maxRecoveriesPerFile) {
-        const blockedFiles = state.blockedFiles.includes(state.lastEditedFile)
-          ? state.blockedFiles
-          : [...state.blockedFiles, state.lastEditedFile];
+      try {
+        restored = await checkpointManager.revert(state.lastEditedFile);
+      } catch (error) {
+        const message = `Recovery failed while restoring ${state.lastEditedFile}: ${toErrorMessage(error)}`;
 
         return {
           retryCountsByFile,
-          blockedFiles,
           status: "failed",
-          finalResult: `Blocked ${state.lastEditedFile} after ${String(nextRetries)} failed verification attempts.`,
+          finalResult: message,
+          lastError: message,
+        };
+      }
+
+      let rereadHashUpdate: Partial<AgentGraphState>;
+
+      try {
+        const rereadResult = await readFileTool({
+          targetDirectory: state.targetDirectory,
+          path: state.lastEditedFile,
+        });
+
+        rereadHashUpdate = {
+          fileHashes: {
+            ...state.fileHashes,
+            [rereadResult.path]: rereadResult.hash,
+          },
+        };
+      } catch (error) {
+        const message = `Recovery failed while re-reading ${state.lastEditedFile}: ${toErrorMessage(error)}`;
+
+        return {
+          retryCountsByFile,
+          status: "failed",
+          finalResult: message,
+          lastError: message,
+        };
+      }
+
+      if (nextRetries > maxRecoveriesPerFile) {
+        const blockedFiles = state.blockedFiles.includes(state.lastEditedFile)
+          ? state.blockedFiles
+          : [...state.blockedFiles, state.lastEditedFile];
+        const escalationSummary = restored
+          ? `Restored the latest checkpoint for ${state.lastEditedFile} before blocking further retries.`
+          : `No checkpoint was available for ${state.lastEditedFile}, so Shipyard blocked further retries after re-reading the file.`;
+
+        return {
+          ...rereadHashUpdate,
+          retryCountsByFile,
+          blockedFiles,
+          status: "responding",
+          lastEditedFile: null,
+          verificationReport: null,
+          lastError: escalationSummary,
+          finalResult: `Blocked ${state.lastEditedFile} after ${String(nextRetries)} failed verification attempts. ${escalationSummary}`,
         };
       }
 
       return {
+        ...rereadHashUpdate,
         retryCountsByFile,
         status: "planning",
         lastEditedFile: null,
