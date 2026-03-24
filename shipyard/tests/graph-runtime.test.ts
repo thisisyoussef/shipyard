@@ -182,6 +182,74 @@ describe("Phase 4 graph runtime contract", () => {
     expect(routeAfterVerify({ status: "recovering" })).toBe("recover");
   });
 
+  it("plan node delegates broad instructions to the explorer before acting", async () => {
+    const contextReport = {
+      query: "Fix the auth flow",
+      findings: [
+        {
+          filePath: "src/auth.ts",
+          excerpt: "export async function authenticate() {}",
+          relevanceNote: "This file owns the auth entry point.",
+        },
+      ],
+    };
+    const runExplorerSubagent = vi.fn(async () => contextReport);
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runExplorerSubagent,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Fix the auth flow",
+      contextEnvelope: createContextEnvelope(),
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+    });
+
+    const update = await nodes.plan(state);
+    const explorerCall = runExplorerSubagent.mock.calls.at(0) as
+      | unknown[]
+      | undefined;
+
+    expect(runExplorerSubagent).toHaveBeenCalledTimes(1);
+    expect(explorerCall?.[0]).toContain("Fix the auth flow");
+    expect(explorerCall?.[1]).toBe("/tmp/shipyard-graph");
+    expect(update.contextReport).toEqual(contextReport);
+    expect(update.taskPlan).toEqual(
+      expect.objectContaining({
+        targetFilePaths: ["src/auth.ts"],
+      }),
+    );
+    expect(update.status).toBe("acting");
+  });
+
+  it("plan node skips explorer when the instruction already names an exact path", async () => {
+    const runExplorerSubagent = vi.fn();
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runExplorerSubagent,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Update src/app.ts to rename the counter export.",
+      contextEnvelope: createContextEnvelope(),
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+    });
+
+    const update = await nodes.plan(state);
+
+    expect(runExplorerSubagent).not.toHaveBeenCalled();
+    expect(update.contextReport).toBeNull();
+    expect(update.taskPlan).toEqual(
+      expect.objectContaining({
+        targetFilePaths: ["src/app.ts"],
+      }),
+    );
+  });
+
   it("act node checkpoints before edit_block runs", async () => {
     const directory = await createTempProject();
     const appPath = path.join(directory, "src", "app.ts");
@@ -260,6 +328,50 @@ describe("Phase 4 graph runtime contract", () => {
     expect(await readFile(appPath, "utf8")).toBe("export const count = 2;\n");
     expect(update.status).toBe("verifying");
     expect(update.lastEditedFile).toBe("src/app.ts");
+  });
+
+  it("verify node delegates post-edit checks to the verifier helper", async () => {
+    const runVerifierSubagent = vi.fn(
+      async (command: string) => ({
+        command,
+        exitCode: 0,
+        passed: true,
+        stdout: "",
+        stderr: "",
+        summary: "Verification passed.",
+      }),
+    );
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runVerifierSubagent,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Fix src/app.ts",
+      contextEnvelope: createContextEnvelope(),
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+      lastEditedFile: "src/app.ts",
+    });
+
+    const update = await nodes.verify(state);
+    const verifierCall = runVerifierSubagent.mock.calls.at(0) as
+      | unknown[]
+      | undefined;
+
+    expect(runVerifierSubagent).toHaveBeenCalledTimes(1);
+    expect(verifierCall?.[0]).toBe("pnpm test");
+    expect(verifierCall?.[1]).toBe("/tmp/shipyard-graph");
+    expect(update.verificationReport).toEqual({
+      command: "pnpm test",
+      exitCode: 0,
+      passed: true,
+      stdout: "",
+      stderr: "",
+      summary: "Verification passed.",
+    });
+    expect(update.status).toBe("responding");
   });
 
   it("recover restores the latest checkpoint, refreshes hashes, and retries", async () => {
@@ -366,6 +478,73 @@ describe("Phase 4 graph runtime contract", () => {
     expect(finalState.finalResult).toMatch(
       /Blocked src\/app\.ts after 3 failed verification attempts\./,
     );
+  });
+
+  it("verification evidence beats explorer guesses and keeps recovery intact", async () => {
+    const directory = await createTempProject();
+    const appPath = path.join(directory, "src", "app.ts");
+
+    await mkdir(path.dirname(appPath), { recursive: true });
+    await writeFile(appPath, "export const count = 1;\n", "utf8");
+
+    const runExplorerSubagent = vi.fn(async () => ({
+      query: "Fix the auth flow",
+      findings: [
+        {
+          filePath: "src/guessed.ts",
+          excerpt: "export const guessed = true;",
+          relevanceNote: "Explorer thinks this file may matter.",
+        },
+      ],
+    }));
+    const runActingLoop = vi.fn(async () => ({
+      finalText: "Applied a change.",
+      messageHistory: [],
+      iterations: 1,
+      didEdit: true,
+      lastEditedFile: "src/app.ts",
+    }));
+    const runVerifierSubagent = vi.fn(async (command: string) => ({
+      command,
+      exitCode: 1,
+      passed: false,
+      stdout: "",
+      stderr: "tests failed",
+      summary: "Verification failed for src/app.ts.",
+    }));
+    const checkpointManager = {
+      checkpoint: vi.fn(async () => "/tmp/mock.checkpoint"),
+      revert: vi.fn(async () => false),
+    };
+    const finalState = await runFallbackRuntime(
+      createAgentGraphState({
+        sessionId: "session-123",
+        instruction: "Fix the auth flow",
+        contextEnvelope: createContextEnvelope(),
+        targetDirectory: directory,
+        phaseConfig: createCodePhase(),
+      }),
+      {
+        maxRecoveriesPerFile: 1,
+        dependencies: {
+          runExplorerSubagent,
+          runActingLoop,
+          runVerifierSubagent,
+          createCheckpointManager: () => checkpointManager,
+        },
+      },
+    );
+
+    expect(runExplorerSubagent).toHaveBeenCalledTimes(1);
+    expect(runVerifierSubagent).toHaveBeenCalledTimes(2);
+    expect(finalState.taskPlan).toEqual(
+      expect.objectContaining({
+        targetFilePaths: ["src/guessed.ts"],
+      }),
+    );
+    expect(finalState.blockedFiles).toEqual(["src/app.ts"]);
+    expect(finalState.status).toBe("done");
+    expect(finalState.finalResult).toMatch(/src\/app\.ts/);
   });
 
   it("graph runtime follows plan to act to respond when no edit occurs", async () => {

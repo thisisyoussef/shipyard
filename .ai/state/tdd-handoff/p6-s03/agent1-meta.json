@@ -1,0 +1,17 @@
+{
+  "storyId": "p6-s03",
+  "role": "agent1",
+  "status": "completed",
+  "testFiles": [
+    "shipyard/tests/graph-runtime.test.ts",
+    ".ai/state/tdd-handoff/p6-s03/agent1-tests/README.md"
+  ],
+  "redCheck": {
+    "command": "pnpm --dir shipyard test -- tests/graph-runtime.test.ts",
+    "result": "failed as expected",
+    "summary": "4 coordinator-integration assertions failed because explorer/verifier routing and ContextReport state were not wired yet."
+  },
+  "notes": [
+    "Manual TDD scaffold created because helper scripts are not present in this repo."
+  ]
+}

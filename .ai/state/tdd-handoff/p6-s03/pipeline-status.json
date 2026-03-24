@@ -1,0 +1,22 @@
+{
+  "storyId": "p6-s03",
+  "specPath": "shipyard/docs/specs/phase-6/p6-s03-coordinator-integration/feature-spec.md",
+  "focusedTestCommand": "pnpm --dir shipyard test -- tests/graph-runtime.test.ts",
+  "propertyTestsRequired": false,
+  "mutationGate": "skipped: scripts/run_targeted_mutation.sh is not present in this repo",
+  "redCheckpoint": {
+    "command": "pnpm --dir shipyard test -- tests/graph-runtime.test.ts",
+    "result": "failed as expected",
+    "summary": "New coordinator-integration assertions failed before implementation, proving explorer/verifier routing was still missing."
+  },
+  "greenCheckpoint": {
+    "command": "pnpm --dir shipyard test -- tests/graph-runtime.test.ts",
+    "result": "passed",
+    "summary": "Coordinator planning now uses explorer heuristics, post-edit verification routes through the verifier helper, and recovery still obeys verification evidence."
+  },
+  "stages": {
+    "agent1": "completed",
+    "agent2": "completed",
+    "agent3": "completed"
+  }
+}

@@ -173,12 +173,12 @@ more context.
 
 ## Multi-Agent Design (MVP)
 
-The shipped runtime still uses a single writing coordinator, but the repository
-now has an explicit multi-agent contract. `src/agents/coordinator.ts` owns the
-task plan, every write, and the final merge of evidence. `src/agents/explorer.ts`
-defines the read-only discovery role, and `src/agents/verifier.ts` now also
-exposes the isolated verification helper runtime while the phase-6 story pack
-continues documenting the broader subagent rollout.
+The shipped runtime still uses a single writing coordinator, and the graph
+runtime now routes broad discovery requests through the explorer helper and
+post-edit checks through the verifier helper. `src/agents/coordinator.ts` owns
+the task plan, every write, the delegation heuristics, and the final merge of
+evidence. `src/agents/explorer.ts` defines the read-only discovery role, and
+`src/agents/verifier.ts` exposes the isolated verification helper runtime.
 
 ```mermaid
 flowchart LR
@@ -206,9 +206,11 @@ flowchart LR
 
 - The coordinator remains the only writer. This is true in the shipped runtime
   and remains the phase-6 design rule.
-- The explorer is intended to start from fresh history, use only `read_file`,
-  `list_files`, and `search_files`, and return a `ContextReport`.
-- The verifier now starts from fresh history, uses only `run_command`, and
+- Broad instructions without known target paths can trigger the explorer, while
+  exact-path or greenfield instructions can skip that extra hop.
+- The explorer starts from fresh history, uses only `read_file`, `list_files`,
+  and `search_files`, and returns a `ContextReport`.
+- The verifier starts from fresh history, uses only `run_command`, and
   returns a `VerificationReport`.
 - The coordinator decides when to spawn those helpers, how much of their output
   to keep, and whether to proceed, retry, recover, or escalate.
