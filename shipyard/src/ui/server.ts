@@ -16,6 +16,8 @@ import {
   createInstructionRuntimeState,
   executeInstructionTurn,
   type InstructionRuntimeState,
+  type InstructionTurnReporter,
+  type TurnStateEvent,
 } from "../engine/turn.js";
 import { saveSessionState, type SessionState } from "../engine/state.js";
 import type { BackendToFrontendMessage } from "./contracts.js";
@@ -31,6 +33,7 @@ import {
   applyBackendMessage,
   queueInstructionTurn,
 } from "./workbench-state.js";
+import { createLocalTraceLogger } from "../tracing/local-log.js";
 
 export interface StartUiRuntimeServerOptions {
   sessionState: SessionState;
@@ -308,6 +311,17 @@ export async function startUiRuntimeServer(
     projectRules: options.projectRules,
     baseInjectedContext: options.baseInjectedContext,
   });
+  const traceLogger = await createLocalTraceLogger(
+    options.sessionState.targetDirectory,
+    options.sessionState.sessionId,
+  );
+  await traceLogger.log("session.start", {
+    sessionId: options.sessionState.sessionId,
+    targetDirectory: options.sessionState.targetDirectory,
+    discovery: options.sessionState.discovery,
+    phase: "code",
+    runtimeMode: "ui",
+  });
   const httpServer = createServer(
     async (request: IncomingMessage, response: ServerResponse) => {
       const requestUrl = request.url ?? "/";
@@ -381,18 +395,43 @@ export async function startUiRuntimeServer(
     instruction: string,
     injectedContext: string[] | undefined,
   ): Promise<void> => {
-    const reporter = createUiInstructionReporter({
+    const baseReporter = createUiInstructionReporter({
       send: broadcastBrowserMessage,
       projectRulesLoaded: options.projectRulesLoaded,
     });
+    let pendingTurnState: TurnStateEvent | null = null;
+    const reporter: InstructionTurnReporter = {
+      ...baseReporter,
+      async onTurnState(event) {
+        if (event.connectionState === "agent-busy") {
+          await baseReporter.onTurnState?.(event);
+          return;
+        }
 
-    await executeInstructionTurn({
+        pendingTurnState = event;
+      },
+    };
+
+    const turnResult = await executeInstructionTurn({
       sessionState: options.sessionState,
       runtimeState,
       instruction,
       injectedContext,
       reporter,
     });
+    await traceLogger.log("instruction.plan", {
+      instruction,
+      phase: turnResult.phaseName,
+      contextEnvelope: turnResult.contextEnvelope,
+      taskPlan: turnResult.taskPlan,
+      status: turnResult.status,
+      summary: turnResult.summary,
+      runtimeMode: "ui",
+    });
+
+    if (pendingTurnState) {
+      await baseReporter.onTurnState?.(pendingTurnState);
+    }
   };
 
   socketServer.on("connection", (socket) => {

@@ -117,7 +117,7 @@ describe("file tools", () => {
     const filePath = path.join(directory, "stale.ts");
     await writeFile(filePath, 'const value = "before";\n', "utf8");
 
-    const initial = await readTargetFile({
+    await readTargetFile({
       targetDirectory: directory,
       path: "stale.ts",
     });
@@ -128,14 +128,74 @@ describe("file tools", () => {
       editBlock({
         targetDirectory: directory,
         path: "stale.ts",
-        oldString: 'const value = "changed";',
-        newString: 'const value = "after";',
-        expectedHash: initial.hash,
+        old_string: 'const value = "changed";',
+        new_string: 'const value = "after";',
       }),
-    ).rejects.toThrowError("File changed since last read");
+    ).rejects.toThrowError(/File changed since the last read: stale\.ts/);
   });
 
-  it("rejects ambiguous anchors", async () => {
+  it("tells the caller to use write_file when edit_block targets a missing file", async () => {
+    const directory = await createTempProject();
+
+    await expect(
+      editBlock({
+        targetDirectory: directory,
+        path: "missing.ts",
+        old_string: 'const status = "before";',
+        new_string: 'const status = "after";',
+      }),
+    ).rejects.toThrowError(/Use write_file to create it first/);
+  });
+
+  it("fails with a preview when the anchor is missing", async () => {
+    const directory = await createTempProject();
+    await writeFile(
+      path.join(directory, "missing-anchor.ts"),
+      [
+        "export const first = 1;",
+        "export const second = 2;",
+        "export function marker() {",
+        "  return first + second;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    await readTargetFile({
+      targetDirectory: directory,
+      path: "missing-anchor.ts",
+    });
+
+    await expect(
+      editBlock({
+        targetDirectory: directory,
+        path: "missing-anchor.ts",
+        old_string: "const doesNotExist = true;",
+        new_string: "const doesNotExist = false;",
+      }),
+    ).rejects.toThrowError(/Anchor not found in missing-anchor\.ts/);
+
+    await expect(
+      editBlock({
+        targetDirectory: directory,
+        path: "missing-anchor.ts",
+        old_string: "const doesNotExist = true;",
+        new_string: "const doesNotExist = false;",
+      }),
+    ).rejects.toThrowError(/check whitespace and indentation/i);
+
+    await expect(
+      editBlock({
+        targetDirectory: directory,
+        path: "missing-anchor.ts",
+        old_string: "const doesNotExist = true;",
+        new_string: "const doesNotExist = false;",
+      }),
+    ).rejects.toThrowError(/1\| export const first = 1;/);
+  });
+
+  it("rejects ambiguous anchors with the exact match count", async () => {
     const directory = await createTempProject();
     await writeFile(
       path.join(directory, "ambiguous.ts"),
@@ -151,11 +211,115 @@ describe("file tools", () => {
       editBlock({
         targetDirectory: directory,
         path: "ambiguous.ts",
-        oldString: 'const value = "same";',
-        newString: 'const value = "new";',
-        expectedHash: current.hash,
+        old_string: 'const value = "same";',
+        new_string: 'const value = "new";',
       }),
-    ).rejects.toThrowError("Anchor must match exactly once");
+    ).rejects.toThrowError(/Anchor matched 2 times in ambiguous\.ts/);
+
+    await expect(
+      editBlock({
+        targetDirectory: directory,
+        path: "ambiguous.ts",
+        old_string: 'const value = "same";',
+        new_string: 'const value = "new";',
+      }),
+    ).rejects.toThrowError(/more surrounding context/i);
+  });
+
+  it("rejects large rewrites on files larger than 500 characters", async () => {
+    const directory = await createTempProject();
+    const relativePath = "large-rewrite.ts";
+    const originalContents = buildSizedFile(180, "OVERSIZED");
+
+    await writeTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+      content: originalContents,
+    });
+
+    await readTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+    });
+
+    await expect(
+      editBlock({
+        targetDirectory: directory,
+        path: relativePath,
+        old_string: originalContents,
+        new_string: `${"replacement line\n".repeat(18)}final line\n`,
+      }),
+    ).rejects.toThrowError(/Break the change into smaller edit_block calls/i);
+  });
+
+  it("returns a no-op result when old_string equals new_string", async () => {
+    const directory = await createTempProject();
+    const relativePath = "no-change.ts";
+
+    await writeTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+      content: 'const status = "steady";\n',
+    });
+
+    const current = await readTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+    });
+
+    const result = await editBlock({
+      targetDirectory: directory,
+      path: relativePath,
+      old_string: 'const status = "steady";',
+      new_string: 'const status = "steady";',
+    });
+
+    expect(result.changed).toBe(false);
+    expect(result.hash).toBe(current.hash);
+    await expect(readFile(path.join(directory, relativePath), "utf8")).resolves.toBe(
+      'const status = "steady";\n',
+    );
+  });
+
+  it("surfaces summary output for successful edits through the tool contract", async () => {
+    const directory = await createTempProject();
+    const relativePath = "summary.ts";
+
+    await writeTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+      content: 'const status = "before";\n',
+    });
+
+    await readTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+    });
+
+    const tool = getTool("edit_block") as ToolDefinition<{
+      path: string;
+      old_string: string;
+      new_string: string;
+    }>;
+
+    const result = await tool.execute(
+      {
+        path: relativePath,
+        old_string: 'const status = "before";',
+        new_string: 'const status = "after";',
+      },
+      directory,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("Edited summary.ts");
+    expect(result.output).toContain("Removed lines: 1");
+    expect(result.output).toContain("Added lines: 1");
+    expect(result.output).toContain("Total lines: 1");
+    expect(result.output).toContain("Before preview:");
+    expect(result.output).toContain('const status = "before";');
+    expect(result.output).toContain("After preview:");
+    expect(result.output).toContain('const status = "after";');
   });
 });
 
@@ -447,14 +611,15 @@ async function expectSingleEditPass(
   const next = await editBlock({
     targetDirectory: directory,
     path: relativePath,
-    oldString: `const ${anchorLabel} = "anchor";`,
-    newString: `const ${anchorLabel} = "updated";`,
-    expectedHash: current.hash,
+    old_string: `const ${anchorLabel} = "anchor";`,
+    new_string: `const ${anchorLabel} = "updated";`,
   });
 
   expect(next.replacements).toBe(1);
+  expect(next.changed).toBe(true);
   expect(next.contents).toContain(`const ${anchorLabel} = "updated";`);
   expect(next.hash).not.toBe(current.hash);
+  expect(getTrackedReadHash(relativePath)).toBe(next.hash);
 
   const fileOnDisk = await readFile(path.join(directory, relativePath), "utf8");
   expect(fileOnDisk).toContain(`const ${anchorLabel} = "updated";`);

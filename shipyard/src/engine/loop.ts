@@ -1,4 +1,4 @@
-import readline from "node:readline/promises";
+import readline from "node:readline";
 import process from "node:process";
 
 import type { SessionState } from "./state.js";
@@ -142,6 +142,7 @@ export async function runShipyardLoop(
     output: process.stdout,
     terminal: process.stdin.isTTY && process.stdout.isTTY,
   });
+  rl.setPrompt("shipyard > ");
 
   console.log("Shipyard booted.");
   console.log(`Session: ${state.sessionId}`);
@@ -160,10 +161,14 @@ export async function runShipyardLoop(
   });
 
   try {
-    while (true) {
-      const line = (await rl.question("shipyard > ")).trim();
+    rl.prompt();
+
+    for await (const rawLine of rl) {
+      const line = rawLine.trim();
+      let shouldPromptAgain = true;
 
       if (!line) {
+        rl.prompt();
         continue;
       }
 
@@ -193,6 +198,7 @@ export async function runShipyardLoop(
             sessionId: state.sessionId,
             turnCount: state.turnCount,
           });
+          shouldPromptAgain = false;
           break;
         } else if (line.startsWith("read ")) {
           const targetPath = line.slice(5).trim();
@@ -292,6 +298,10 @@ export async function runShipyardLoop(
         });
       } finally {
         await saveSessionState(state);
+
+        if (shouldPromptAgain) {
+          rl.prompt();
+        }
       }
     }
   } finally {
