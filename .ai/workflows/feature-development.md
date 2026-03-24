@@ -135,6 +135,11 @@ Run the project-specific commands defined during setup and required by the activ
 - If the critic finds non-blocking improvements, suggest follow-on stories at the tail of the active sequence instead of silently expanding the current story
 - If the story closes a visible pack, update or create the pack-level `user-audit-checklist.md`
 
+### Step 9.6: Run the LangSmith Finish Check for Relevant Stories
+- If the story changes traced AI/runtime behavior, run `.ai/workflows/langsmith-finish-check.md`
+- Use the LangSmith CLI to inspect the fresh verification trace, recent run errors, and available insights before handoff
+- If the CLI surfaces unexpected behavior, fix it and re-run validation plus the LangSmith check before continuing
+
 ---
 
 ## Phase 5: Completion

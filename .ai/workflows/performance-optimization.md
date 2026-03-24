@@ -75,6 +75,11 @@ If `lane: standard`:
 - Keep if gains are material and safe
 - Roll back if gains are marginal or regressions appear
 
+### Step 8.5: Run the LangSmith Finish Check for Traced AI Paths
+- If the optimization changes traced AI/runtime behavior, run `.ai/workflows/langsmith-finish-check.md`
+- Use the CLI to verify the recent traces/runs reflect the expected latency and error profile
+- If monitoring surfaces a regression or anomalous slowdown, correct it or roll back before the completion gate
+
 ---
 
 ## Phase 5: Completion

@@ -43,6 +43,19 @@ When `.ai/workflows/tdd-pipeline.md` was used, the completion gate must also inc
 
 ---
 
+## LangSmith / Monitoring Requirements
+
+When `.ai/workflows/langsmith-finish-check.md` was used, the completion gate must also include:
+- `LangSmith / Monitoring`
+- project name used for the check
+- commands run through the LangSmith CLI
+- trace IDs or trace URLs reviewed
+- any unexpected behavior found, plus whether it was corrected or is still blocked
+
+If the story was relevant but the LangSmith finish check could not run because credentials or live access were missing, say so explicitly in this section and mark the story blocked from full finish-proof.
+
+---
+
 ## Completion Plan Requirements
 
 The completion gate must include the finalization plan in the same packet as the user audit:
@@ -124,6 +137,7 @@ When a story changes user-visible behavior, the completion gate must treat UI in
 - GitHub state and merge status made explicit so the user never has to guess whether work is only local, on a PR, or already merged
 - Finalization plan included in the same packet as the user audit
 - Docs/diagrams updated or explicitly marked `N/A` in the completion gate
+- Relevant traced stories include LangSmith CLI evidence or an explicit block reason
 - User audit focused on manual judgment rather than routine commands
 - Finalization default is explicit and visible in the completion gate, with automatic follow-through unless the user pauses it
 - Story completion is defined as merged-to-`main` on GitHub unless the user explicitly pauses or selects a different merge path

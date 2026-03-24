@@ -26,7 +26,7 @@ Then use as needed:
 - AI or harness changes: use `.ai/workflows/ai-architecture-change.md` and keep `.ai/` aligned with the real repo layout.
 - Behavior changes: use `.ai/workflows/tdd-pipeline.md`; if repo-owned helper scripts exist, use them, otherwise keep the same staged boundaries manually.
 - Visible UI work: use `.ai/docs/design/DESIGN_PHILOSOPHY_AND_LANGUAGE.md`, `.ai/skills/frontend-design.md`, and `.ai/workflows/ui-qa-critic.md` when UI surfaces exist.
-- Story finish: use `.ai/workflows/story-handoff.md`; unless the user explicitly asks to pause or choose a different merge path, continue through `.ai/workflows/git-finalization.md` automatically after the completion gate, and treat the story as incomplete until it is merged to `main` on GitHub.
+- Story finish: use `.ai/workflows/story-handoff.md`; when the story changes traced AI/runtime behavior, run `.ai/workflows/langsmith-finish-check.md` before the completion gate; unless the user explicitly asks to pause or choose a different merge path, continue through `.ai/workflows/git-finalization.md` automatically after the completion gate, and treat the story as incomplete until it is merged to `main` on GitHub.
 
 ## Route By Task Type
 

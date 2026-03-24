@@ -23,6 +23,7 @@ Before final git actions:
 - confirm the active branch matches the current story
 - confirm the completion gate already recorded deploy status and finalization plan
 - confirm the completion gate included `Docs / Diagrams` with updated paths or an explicit `N/A`
+- confirm the completion gate included `LangSmith / Monitoring` when the story changed traced AI/runtime behavior
 - confirm the user has not explicitly paused finalization or requested a different merge path
 
 If any of these are false, stop and return to `.ai/workflows/story-handoff.md`.
