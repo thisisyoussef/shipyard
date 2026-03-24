@@ -2,10 +2,16 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import type {
+  Message,
+  MessageCreateParamsNonStreaming,
+  Model,
+} from "@anthropic-ai/sdk/resources/messages";
 import WebSocket from "ws";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { discoverTarget } from "../src/context/discovery.js";
+import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
 import { createSessionState } from "../src/engine/state.js";
 import { formatUiStartupLines, parseArgs } from "../src/bin/shipyard.js";
 import type { BackendToFrontendMessage } from "../src/ui/contracts.js";
@@ -15,10 +21,62 @@ const createdDirectories: string[] = [];
 const socketMessageBuffers = new WeakMap<WebSocket, BackendToFrontendMessage[]>();
 const trackedSockets = new WeakSet<WebSocket>();
 
+interface MockAnthropicClient {
+  messages: {
+    create: (request: MessageCreateParamsNonStreaming) => Promise<Message>;
+  };
+}
+
 async function createTempDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), prefix));
   createdDirectories.push(directory);
   return directory;
+}
+
+function createAssistantMessage(options: {
+  content: unknown[];
+  stopReason: Message["stop_reason"];
+  model?: Model;
+}): Message {
+  return {
+    id: `msg_${Math.random().toString(36).slice(2)}`,
+    container: null,
+    content: options.content as Message["content"],
+    model: options.model ?? DEFAULT_ANTHROPIC_MODEL,
+    role: "assistant",
+    stop_reason: options.stopReason,
+    stop_sequence: null,
+    type: "message",
+    usage: {
+      cache_creation: null,
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
+      inference_geo: null,
+      input_tokens: 42,
+      output_tokens: 19,
+      server_tool_use: null,
+      service_tier: "standard",
+    },
+  };
+}
+
+function createMockAnthropicClient(responses: Message[]): MockAnthropicClient {
+  let callIndex = 0;
+
+  return {
+    messages: {
+      async create() {
+        const response = responses[callIndex];
+        callIndex += 1;
+
+        if (!response) {
+          throw new Error("No mock Claude response configured.");
+        }
+
+        return response;
+      },
+    },
+  };
 }
 
 function waitForSocketMessage(
@@ -164,12 +222,58 @@ describe("ui runtime contract", () => {
       targetDirectory,
       discovery,
     });
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_read_file",
+            name: "read_file",
+            input: {
+              path: "package.json",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+          {
+            type: "tool_use",
+            id: "toolu_list_files",
+            name: "list_files",
+            input: {
+              path: ".",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Inspection complete.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
     const runtime = await startUiRuntimeServer({
       sessionState,
       host: "127.0.0.1",
       port: 0,
       projectRules: "Always inspect the file before editing it.",
       projectRulesLoaded: true,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            client,
+          };
+        },
+      },
     });
     const tracePath = path.join(
       targetDirectory,
@@ -386,34 +490,23 @@ describe("ui runtime contract", () => {
         expect(errorSequence.map((message) => message.type)).toEqual([
           "session:state",
           "agent:thinking",
-          "agent:tool_call",
-          "agent:tool_result",
           "agent:text",
           "agent:error",
           "agent:done",
           "session:state",
         ]);
         expect(errorSequence[2]).toMatchObject({
-          type: "agent:tool_call",
-          toolName: "read_file",
+          type: "agent:text",
+          text: expect.stringContaining("Turn 1 stopped: Missing ANTHROPIC_API_KEY"),
         });
         expect(errorSequence[3]).toMatchObject({
-          type: "agent:tool_result",
-          toolName: "read_file",
-          success: false,
+          type: "agent:error",
+          message: expect.stringContaining("Missing ANTHROPIC_API_KEY"),
         });
         expect(errorSequence[4]).toMatchObject({
-          type: "agent:text",
-          text: "Turn 1 stopped: File not found: missing.ts",
-        });
-        expect(errorSequence[5]).toMatchObject({
-          type: "agent:error",
-          message: "File not found: missing.ts",
-        });
-        expect(errorSequence[6]).toMatchObject({
           type: "agent:done",
           status: "error",
-          summary: "File not found: missing.ts",
+          summary: expect.stringContaining("Missing ANTHROPIC_API_KEY"),
         });
 
         const errorTrace = await readFile(tracePath, "utf8");

@@ -21,13 +21,21 @@ interface RunningCli {
   };
 }
 
+const LIVE_RUNTIME_ENV = {
+  ANTHROPIC_API_KEY: "",
+  SHIPYARD_RUNTIME_MODE: "fallback",
+} satisfies Record<string, string>;
+
 async function createTempDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), prefix));
   createdDirectories.push(directory);
   return directory;
 }
 
-function startCli(args: string[]): RunningCli {
+function startCli(
+  args: string[],
+  envOverrides: NodeJS.ProcessEnv = {},
+): RunningCli {
   const child = spawn(
     process.execPath,
     ["--import", "tsx", "./src/bin/shipyard.ts", ...args],
@@ -37,6 +45,7 @@ function startCli(args: string[]): RunningCli {
         ...process.env,
         FORCE_COLOR: "0",
         NO_COLOR: "1",
+        ...envOverrides,
       },
       stdio: "pipe",
     },
@@ -180,7 +189,7 @@ describe("shipyard CLI loop", () => {
     "stays alive across instructions and persists the session after each turn",
     async () => {
       const targetDirectory = await createTempDirectory("shipyard-cli-greenfield-");
-      const runner = startCli(["--target", targetDirectory]);
+      const runner = startCli(["--target", targetDirectory], LIVE_RUNTIME_ENV);
 
       try {
         await waitForText(runner, "Started new session");
@@ -198,6 +207,7 @@ describe("shipyard CLI loop", () => {
           runner,
           'Turn 1 finished in phase "code" via graph runtime.',
         );
+        await waitForText(runner, "Turn 1 stopped: Missing ANTHROPIC_API_KEY");
 
         const firstSnapshot = await waitForSessionState(
           targetDirectory,
@@ -215,6 +225,7 @@ describe("shipyard CLI loop", () => {
           runner,
           'Turn 2 finished in phase "code" via graph runtime.',
         );
+        await waitForText(runner, "Turn 2 stopped: Missing ANTHROPIC_API_KEY");
 
         const secondSnapshot = await waitForSessionState(
           targetDirectory,
@@ -239,7 +250,7 @@ describe("shipyard CLI loop", () => {
     "resumes an existing session and keeps the prior turn count",
     async () => {
       const targetDirectory = await createTempDirectory("shipyard-cli-resume-");
-      const firstRun = startCli(["--target", targetDirectory]);
+      const firstRun = startCli(["--target", targetDirectory], LIVE_RUNTIME_ENV);
       let sessionId = "";
 
       try {
@@ -253,7 +264,7 @@ describe("shipyard CLI loop", () => {
           firstRun,
           'Turn 1 finished in phase "code" via graph runtime.',
         );
-        await waitForText(firstRun, "Observations: Found no files in the target directory.");
+        await waitForText(firstRun, "Turn 1 stopped: Missing ANTHROPIC_API_KEY");
         sendLine(firstRun, "exit");
         await waitForText(firstRun, "Shipyard session closed.");
         await waitForProcessExit(firstRun);
@@ -266,7 +277,7 @@ describe("shipyard CLI loop", () => {
         targetDirectory,
         "--session",
         sessionId,
-      ]);
+      ], LIVE_RUNTIME_ENV);
 
       try {
         await waitForText(resumedRun, `Resumed session ${sessionId} (1 turn)`);
@@ -321,7 +332,7 @@ describe("shipyard CLI loop", () => {
       );
       await writeFile(path.join(targetDirectory, "README.md"), "# Existing app\n", "utf8");
 
-      const runner = startCli(["--target", targetDirectory]);
+      const runner = startCli(["--target", targetDirectory], LIVE_RUNTIME_ENV);
 
       try {
         await waitForText(runner, "Detected existing target.");
