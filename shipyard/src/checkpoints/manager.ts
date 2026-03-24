@@ -13,20 +13,19 @@ export interface CheckpointRecord {
 }
 
 export class CheckpointManager {
-  constructor(private readonly workspaceRoot: string) {}
+  constructor(private readonly targetDirectory: string) {}
 
   async createCheckpoint(
-    targetDirectory: string,
     relativePath: string,
   ): Promise<CheckpointRecord> {
-    const sourcePath = resolveWithinTarget(targetDirectory, relativePath);
+    const sourcePath = resolveWithinTarget(this.targetDirectory, relativePath);
     const current = await readFileTool({
-      targetDirectory,
+      targetDirectory: this.targetDirectory,
       path: relativePath,
     });
     const id = new Date().toISOString().replace(/[:.]/g, "-");
     const checkpointDirectory = path.join(
-      this.workspaceRoot,
+      this.targetDirectory,
       ".shipyard",
       "checkpoints",
     );

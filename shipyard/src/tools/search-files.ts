@@ -104,7 +104,7 @@ export const searchFilesDefinition: ToolDefinition<
   SearchFilesInput,
   SearchMatch[]
 > = {
-  name: "search-files",
+  name: "search_files",
   description: "Search the target directory with ripgrep and return structured matches.",
   invoke: searchFilesTool,
 };

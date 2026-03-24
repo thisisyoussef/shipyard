@@ -1,30 +1,46 @@
-import type { DiscoveryReport } from "../context/discovery.js";
-
 export interface TaskPlan {
+  instruction: string;
   goal: string;
-  steps: string[];
+  targetFilePaths: string[];
+  plannedSteps: string[];
+}
+
+export interface ContextFinding {
+  filePath: string;
+  excerpt: string;
+  relevanceNote: string;
+}
+
+export interface ContextReport {
+  query: string;
+  findings: ContextFinding[];
 }
 
 export interface EditIntent {
-  path: string;
+  filePath: string;
   oldString: string;
   newString: string;
-  expectedHash?: string;
+  reason: string;
 }
 
 export interface VerificationReport {
   command: string;
   exitCode: number | null;
+  passed: boolean;
   stdout: string;
   stderr: string;
-  passed: boolean;
-  timedOut: boolean;
+  summary: string;
 }
 
-export interface ContextEnvelope {
-  targetPath: string;
-  discovery: DiscoveryReport;
-  recentInstructions: string[];
-  availableTools: string[];
-  timestamp: string;
+export interface DiscoveryReport {
+  isGreenfield: boolean;
+  language: string | null;
+  framework: string | null;
+  packageManager: string | null;
+  scripts: Record<string, string>;
+  hasReadme: boolean;
+  hasAgentsMd: boolean;
+  topLevelFiles: string[];
+  topLevelDirectories: string[];
+  projectName: string | null;
 }

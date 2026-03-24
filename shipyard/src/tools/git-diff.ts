@@ -18,7 +18,7 @@ export async function gitDiffTool(input: GitDiffInput) {
 }
 
 export const gitDiffDefinition: ToolDefinition<GitDiffInput> = {
-  name: "git-diff",
+  name: "git_diff",
   description: "Run git diff inside the target directory.",
   invoke: gitDiffTool,
 };

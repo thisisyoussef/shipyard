@@ -23,14 +23,14 @@ describe("discoverTarget", () => {
     const shipPath = "/Users/youss/Development/gauntlet/ship";
     const report = await discoverTarget(shipPath);
 
-    expect(report.isEmpty).toBe(false);
     expect(report.isGreenfield).toBe(false);
-    expect(report.packageJsonExists).toBe(true);
-    expect(report.primaryLanguage).toBe("typescript");
+    expect(report.language).toBe("typescript");
     expect(report.packageManager).toBe("pnpm");
-    expect(report.scripts.length).toBeGreaterThan(0);
+    expect(Object.keys(report.scripts).length).toBeGreaterThan(0);
     expect(report.hasReadme).toBe(true);
-    expect(report.hasAgents).toBe(true);
+    expect(report.hasAgentsMd).toBe(true);
+    expect(report.topLevelFiles).toContain("package.json");
+    expect(report.topLevelDirectories.length).toBeGreaterThan(0);
   });
 
   it("reports an empty folder as greenfield", async () => {
@@ -39,10 +39,15 @@ describe("discoverTarget", () => {
 
     const report = await discoverTarget(emptyDirectory);
 
-    expect(report.isEmpty).toBe(true);
     expect(report.isGreenfield).toBe(true);
-    expect(report.summary).toBe("greenfield project");
-    expect(report.packageJsonExists).toBe(false);
-    expect(report.scripts).toEqual([]);
+    expect(report.language).toBeNull();
+    expect(report.framework).toBeNull();
+    expect(report.packageManager).toBeNull();
+    expect(report.scripts).toEqual({});
+    expect(report.hasReadme).toBe(false);
+    expect(report.hasAgentsMd).toBe(false);
+    expect(report.topLevelFiles).toEqual([]);
+    expect(report.topLevelDirectories).toEqual([]);
+    expect(report.projectName).toBeNull();
   });
 });
