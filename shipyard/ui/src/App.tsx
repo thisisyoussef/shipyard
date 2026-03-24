@@ -14,6 +14,7 @@ import type {
 } from "../../src/ui/contracts.js";
 import { backendToFrontendMessageSchema } from "../../src/ui/contracts.js";
 import { ShipyardWorkbench } from "./ShipyardWorkbench.js";
+import { createSocketManager, type SocketManager } from "./socket-manager.js";
 import {
   applyBackendMessage,
   createInitialWorkbenchState,
@@ -32,8 +33,7 @@ export function App() {
   const [instruction, setInstruction] = useState("");
   const [contextDraft, setContextDraft] = useState("");
   const [traceButtonLabel, setTraceButtonLabel] = useState("Copy trace path");
-  const socketRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<number | null>(null);
+  const socketManagerRef = useRef<SocketManager | null>(null);
   const hasSessionRef = useRef(false);
   const deferredTurns = useDeferredValue(viewState.turns);
   const deferredFileEvents = useDeferredValue(viewState.fileEvents);
@@ -60,33 +60,20 @@ export function App() {
   );
 
   useEffect(() => {
-    let disposed = false;
-
-    const connect = () => {
-      if (disposed) {
-        return;
-      }
-
-      applyTransportState(
-        "connecting",
-        hasSessionRef.current
-          ? "Reconnecting to Shipyard..."
-          : "Connecting to Shipyard...",
-      );
-
-      const socket = new WebSocket(createSocketUrl());
-      socketRef.current = socket;
-
-      socket.addEventListener("open", () => {
+    // Effect Events intentionally stay out of the dependency list so the socket
+    // connection does not restart on every render.
+    const socketManager = createSocketManager({
+      url: createSocketUrl(),
+      hasSessionState: () => hasSessionRef.current,
+      onOpen(socket) {
         const statusMessage: FrontendToBackendMessage = { type: "status" };
         socket.send(JSON.stringify(statusMessage));
-      });
-
-      socket.addEventListener("message", (event) => {
+      },
+      onMessage(rawData) {
         let rawMessage: unknown;
 
         try {
-          rawMessage = JSON.parse(event.data as string);
+          rawMessage = JSON.parse(rawData);
         } catch {
           applyTransportState("error", "Shipyard sent malformed JSON.");
           return;
@@ -100,49 +87,23 @@ export function App() {
         }
 
         applyMessage(parsed.data);
-      });
-
-      socket.addEventListener("error", () => {
-        applyTransportState("error", "Connection error. Waiting to retry...");
-      });
-
-      socket.addEventListener("close", () => {
-        socketRef.current = null;
-
-        if (disposed) {
-          applyTransportState("disconnected", "Shipyard UI disconnected.");
-          return;
-        }
-
-        applyTransportState("connecting", "Reconnecting to Shipyard...");
-        reconnectTimerRef.current = window.setTimeout(connect, 1_500);
-      });
-    };
-
-    connect();
+      },
+      onTransportState: applyTransportState,
+    });
+    socketManagerRef.current = socketManager;
+    socketManager.start();
 
     return () => {
-      disposed = true;
+      socketManager.stop();
 
-      if (reconnectTimerRef.current !== null) {
-        window.clearTimeout(reconnectTimerRef.current);
+      if (socketManagerRef.current === socketManager) {
+        socketManagerRef.current = null;
       }
-
-      socketRef.current?.close();
     };
-  }, [applyMessage, applyTransportState]);
+  }, []);
 
   function sendMessage(message: FrontendToBackendMessage): boolean {
-    if (socketRef.current?.readyState !== WebSocket.OPEN) {
-      applyTransportState(
-        "error",
-        "Cannot send instructions while the browser runtime is disconnected.",
-      );
-      return false;
-    }
-
-    socketRef.current.send(JSON.stringify(message));
-    return true;
+    return socketManagerRef.current?.send(JSON.stringify(message)) ?? false;
   }
 
   function handleInstructionSubmit(event: FormEvent<HTMLFormElement>): void {
