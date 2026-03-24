@@ -8,8 +8,10 @@ runtimes behind those roles.
 
 - `coordinator.ts`: the only write-capable role; owns the task plan and the
   final execution path
-- `explorer.ts`: read-only search and evidence gathering role
+- `explorer.ts`: read-only search role plus the isolated explorer helper that
+  returns `ContextReport`
 - `verifier.ts`: read-only validation role for tests, lint, and structured
+  verification reports; now also exposes the isolated verifier helper runtime
   verification reports; now also exposes the isolated verifier helper runtime
 
 ## Important Constraint
