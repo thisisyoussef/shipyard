@@ -1,12 +1,39 @@
 import { spawn } from "node:child_process";
 
-import type { ToolDefinition } from "./registry.js";
+import {
+  createToolErrorResult,
+  createToolSuccessResult,
+  registerTool,
+  type ToolDefinition,
+  type ToolInputSchema,
+} from "./registry.js";
 import { ToolError } from "./read-file.js";
 
 export interface ListFilesInput {
   targetDirectory: string;
   glob?: string | string[];
 }
+
+const listFilesInputSchema = {
+  type: "object",
+  properties: {
+    glob: {
+      description: "Optional glob patterns to filter the file listing.",
+      anyOf: [
+        {
+          type: "string",
+        },
+        {
+          type: "array",
+          items: {
+            type: "string",
+          },
+        },
+      ],
+    },
+  },
+  additionalProperties: false,
+} satisfies ToolInputSchema;
 
 function normalizeGlobs(glob: string | string[] | undefined): string[] {
   if (!glob) {
@@ -67,8 +94,24 @@ export async function listFilesTool(input: ListFilesInput): Promise<string[]> {
     .sort((left, right) => left.localeCompare(right));
 }
 
-export const listFilesDefinition: ToolDefinition<ListFilesInput, string[]> = {
+export const listFilesDefinition: ToolDefinition<
+  Omit<ListFilesInput, "targetDirectory">
+> = {
   name: "list_files",
   description: "List files within the target directory, optionally filtered by glob.",
-  invoke: listFilesTool,
+  inputSchema: listFilesInputSchema,
+  async execute(input, targetDirectory) {
+    try {
+      const result = await listFilesTool({
+        targetDirectory,
+        ...input,
+      });
+
+      return createToolSuccessResult(result);
+    } catch (error) {
+      return createToolErrorResult(error);
+    }
+  },
 };
+
+registerTool(listFilesDefinition);

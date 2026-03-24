@@ -6,11 +6,21 @@ import type { SessionState } from "./state.js";
 import { createSessionSnapshot, saveSessionState } from "./state.js";
 import { createContextEnvelope } from "../context/envelope.js";
 import { loadProjectRules } from "../context/envelope.js";
-import { createCodePhase, createStubCodeTaskPlan } from "../phases/code/index.js";
-import { createDefaultToolRegistry } from "../tools/registry.js";
+import {
+  createCodePhase,
+  createStubCodeTaskPlan,
+  getCodePhaseToolDefinitions,
+} from "../phases/code/index.js";
+import {
+  ToolError,
+  gitDiffTool,
+  listFilesTool,
+  readFileTool,
+  runCommandTool,
+  searchFilesTool,
+} from "../tools/index.js";
 import type { RunCommandResult } from "../tools/run-command.js";
 import type { SearchMatch } from "../tools/search-files.js";
-import { ToolError } from "../tools/read-file.js";
 import { createLocalTraceLogger } from "../tracing/local-log.js";
 import { getLangSmithConfig } from "../tracing/langsmith.js";
 
@@ -98,13 +108,9 @@ async function printCommandResult(result: RunCommandResult): Promise<void> {
 
 async function captureCurrentGitDiff(
   targetDirectory: string,
-  registry: ReturnType<typeof createDefaultToolRegistry>,
 ): Promise<string | null> {
   try {
-    const result = await registry.execute<
-      { targetDirectory: string; args?: string },
-      RunCommandResult
-    >("git_diff", {
+    const result = await gitDiffTool({
       targetDirectory,
     });
 
@@ -120,7 +126,6 @@ async function captureCurrentGitDiff(
 
 async function buildContextEnvelope(
   state: SessionState,
-  registry: ReturnType<typeof createDefaultToolRegistry>,
   projectRules: string,
   currentInstruction: string,
   injectedContext: string[],
@@ -129,10 +134,7 @@ async function buildContextEnvelope(
   retryCountsByFile: Record<string, number>,
   blockedFiles: string[],
 ): Promise<ContextEnvelope> {
-  const currentGitDiff = await captureCurrentGitDiff(
-    state.targetDirectory,
-    registry,
-  );
+  const currentGitDiff = await captureCurrentGitDiff(state.targetDirectory);
 
   return createContextEnvelope({
     targetDirectory: state.targetDirectory,
@@ -153,7 +155,6 @@ async function buildContextEnvelope(
 export async function runShipyardLoop(
   options: RunShipyardLoopOptions,
 ): Promise<void> {
-  const registry = createDefaultToolRegistry();
   const state = options.sessionState;
   let projectRules = await loadProjectRules(state.targetDirectory);
   const phase = createCodePhase();
@@ -205,7 +206,7 @@ export async function runShipyardLoop(
         } else if (line === "status") {
           printStatus(state);
         } else if (line === "tools") {
-          for (const tool of registry.list()) {
+          for (const tool of getCodePhaseToolDefinitions()) {
             console.log(`${tool.name}: ${tool.description}`);
           }
         } else if (line === "discover") {
@@ -226,10 +227,7 @@ export async function runShipyardLoop(
           break;
         } else if (line.startsWith("read ")) {
           const targetPath = line.slice(5).trim();
-          const result = await registry.execute<
-            { targetDirectory: string; path: string },
-            { hash: string; contents: string }
-          >("read_file", {
+          const result = await readFileTool({
             targetDirectory: state.targetDirectory,
             path: targetPath,
           });
@@ -240,10 +238,7 @@ export async function runShipyardLoop(
           console.log(result.contents);
         } else if (line === "list" || line.startsWith("list ")) {
           const glob = line === "list" ? undefined : line.slice(5).trim();
-          const files = await registry.execute<
-            { targetDirectory: string; glob?: string },
-            string[]
-          >("list_files", {
+          const files = await listFilesTool({
             targetDirectory: state.targetDirectory,
             glob: glob || undefined,
           });
@@ -262,10 +257,7 @@ export async function runShipyardLoop(
           }
         } else if (line.startsWith("search ")) {
           const query = line.slice(7).trim();
-          const matches = await registry.execute<
-            { targetDirectory: string; query: string },
-            SearchMatch[]
-          >("search_files", {
+          const matches = await searchFilesTool({
             targetDirectory: state.targetDirectory,
             query,
           });
@@ -277,10 +269,7 @@ export async function runShipyardLoop(
           await printSearchMatches(matches);
         } else if (line.startsWith("run ")) {
           const command = line.slice(4).trim();
-          const result = await registry.execute<
-            { targetDirectory: string; command: string },
-            RunCommandResult
-          >("run_command", {
+          const result = await runCommandTool({
             targetDirectory: state.targetDirectory,
             command,
           });
@@ -292,10 +281,7 @@ export async function runShipyardLoop(
           await printCommandResult(result);
         } else if (line === "diff" || line.startsWith("diff ")) {
           const args = line === "diff" ? undefined : line.slice(5).trim();
-          const result = await registry.execute<
-            { targetDirectory: string; args?: string },
-            RunCommandResult
-          >("git_diff", {
+          const result = await gitDiffTool({
             targetDirectory: state.targetDirectory,
             args: args || undefined,
           });
@@ -306,7 +292,6 @@ export async function runShipyardLoop(
           state.turnCount += 1;
           const contextEnvelope = await buildContextEnvelope(
             state,
-            registry,
             projectRules,
             line,
             injectedContext,

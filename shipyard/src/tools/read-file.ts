@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { ToolDefinition } from "./registry.js";
+import {
+  createToolErrorResult,
+  createToolSuccessResult,
+  registerTool,
+  type ToolDefinition,
+  type ToolInputSchema,
+} from "./registry.js";
 
 export class ToolError extends Error {}
 
@@ -17,6 +23,18 @@ export interface ReadFileResult {
   contents: string;
   hash: string;
 }
+
+const readFileInputSchema = {
+  type: "object",
+  properties: {
+    path: {
+      type: "string",
+      description: "Path to read, relative to the target directory.",
+    },
+  },
+  required: ["path"],
+  additionalProperties: false,
+} satisfies ToolInputSchema;
 
 function ensureRelativePath(filePath: string): void {
   if (!filePath || path.isAbsolute(filePath)) {
@@ -61,8 +79,26 @@ export async function readFileTool(
   };
 }
 
-export const readFileDefinition: ToolDefinition<ReadFileInput, ReadFileResult> = {
+export const readFileDefinition: ToolDefinition<Omit<ReadFileInput, "targetDirectory">> = {
   name: "read_file",
   description: "Read a file relative to the target directory and return its hash.",
-  invoke: readFileTool,
+  inputSchema: readFileInputSchema,
+  async execute(input, targetDirectory) {
+    try {
+      const result = await readFileTool({
+        targetDirectory,
+        ...input,
+      });
+
+      return createToolSuccessResult({
+        path: result.path,
+        contents: result.contents,
+        hash: result.hash,
+      });
+    } catch (error) {
+      return createToolErrorResult(error);
+    }
+  },
 };
+
+registerTool(readFileDefinition);
