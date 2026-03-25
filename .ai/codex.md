@@ -79,7 +79,7 @@ Not every story requires every skill. Use judgment:
 | On-demand | `optimize`, `fixing-metadata` | Performance and SEO |
 
 All 27 installed skills are now wired. The design phase (`design-phase.md`) is the primary invocation point — it runs between spec and TDD and produces a concrete design brief that the implementer and reviewer read.
-- Story finish: use `.ai/workflows/story-handoff.md`; when the story changes traced AI/runtime behavior, run `.ai/workflows/langsmith-finish-check.md` before the completion gate; unless the user explicitly asks to pause or choose a different merge path, continue through `.ai/workflows/git-finalization.md` automatically after the completion gate, and treat the story as incomplete until it is merged to `main` on GitHub.
+- Story finish: use `.ai/workflows/story-handoff.md`; when a story or spec pack is complete, update the relevant `shipyard/docs/specs/**` files with `Code References` and short `Representative Snippets` (or explicit `N/A`); when the story changes traced AI/runtime behavior, run `.ai/workflows/langsmith-finish-check.md` before the completion gate; unless the user explicitly asks to pause or choose a different merge path, continue through `.ai/workflows/git-finalization.md` automatically after the completion gate, and treat the story as incomplete until it is merged to `main` on GitHub.
 
 ## Route By Task Type
 
