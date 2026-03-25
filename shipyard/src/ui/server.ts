@@ -26,6 +26,11 @@ import {
   isPlanModeInstruction,
   type ExecutePlanningTurnOptions,
 } from "../plans/turn.js";
+import {
+  executeTaskRunnerTurn,
+  isTaskRunnerInstruction,
+  type ExecuteTaskRunnerTurnOptions,
+} from "../plans/task-runner.js";
 import { abortTurn } from "../engine/cancellation.js";
 import type { AgentRuntimeDependencies } from "../engine/graph.js";
 import type { PreviewCapabilityReport, PreviewState } from "../artifacts/types.js";
@@ -86,6 +91,9 @@ export interface StartUiRuntimeServerOptions {
   executePlanTurn?: (
     options: ExecutePlanningTurnOptions,
   ) => Promise<Awaited<ReturnType<typeof executePlanningTurn>>>;
+  executeTaskTurn?: (
+    options: ExecuteTaskRunnerTurnOptions,
+  ) => Promise<Awaited<ReturnType<typeof executeTaskRunnerTurn>>>;
 }
 
 export interface UiRuntimeServer {
@@ -544,6 +552,7 @@ export async function startUiRuntimeServer(
     runtimeDependencies: options.runtimeDependencies,
   });
   const executePlanTurn = options.executePlanTurn ?? executePlanningTurn;
+  const executeTaskTurn = options.executeTaskTurn ?? executeTaskRunnerTurn;
   let projectRulesLoaded = options.projectRulesLoaded;
   let traceLogger = await createLocalTraceLogger(
     sessionState.targetDirectory,
@@ -1047,7 +1056,37 @@ export async function startUiRuntimeServer(
       },
     };
 
-    if (isPlanModeInstruction(instruction)) {
+    if (isTaskRunnerInstruction(instruction)) {
+      const taskTurnResult = await executeTaskTurn({
+        sessionState,
+        runtimeState,
+        instruction,
+        injectedContext,
+        reporter,
+        signal,
+      });
+      await traceLogger.log("instruction.plan", {
+        instruction,
+        phase: taskTurnResult.phaseName,
+        runtimeMode: taskTurnResult.runtimeMode,
+        planningMode: taskTurnResult.planningMode,
+        route: taskTurnResult.route,
+        command: taskTurnResult.command,
+        contextEnvelope: taskTurnResult.contextEnvelope,
+        taskPlan: taskTurnResult.taskPlan,
+        executionSpec: taskTurnResult.executionSpec,
+        taskQueue: taskTurnResult.plan,
+        planId: taskTurnResult.planId,
+        taskId: taskTurnResult.taskId,
+        loadedSpecRefs: taskTurnResult.loadedSpecRefs,
+        taskTransition: taskTurnResult.taskTransition,
+        status: taskTurnResult.status,
+        summary: taskTurnResult.summary,
+        langSmithTrace: taskTurnResult.langSmithTrace,
+        runtimeSurface: "ui",
+      });
+      await saveSessionState(sessionState);
+    } else if (isPlanModeInstruction(instruction)) {
       const planResult = await executePlanTurn({
         sessionState,
         runtimeState,

@@ -3,6 +3,7 @@ import path from "node:path";
 import { nanoid } from "nanoid";
 
 import type {
+  ActiveTaskContext,
   DiscoveryReport,
   LoadedExecutionHandoff,
   TargetProfile,
@@ -29,6 +30,8 @@ export interface SessionState {
   discovery: DiscoveryReport;
   activePhase: SessionPhase;
   targetProfile?: TargetProfile;
+  activePlanId: string | null;
+  activeTask: ActiveTaskContext | null;
   workbenchState: WorkbenchViewState;
 }
 
@@ -53,6 +56,7 @@ export interface ContextEnvelope {
     retryCountsByFile: Record<string, number>;
     blockedFiles: string[];
     latestHandoff: LoadedExecutionHandoff | null;
+    activeTask: ActiveTaskContext | null;
   };
 }
 
@@ -70,6 +74,8 @@ export interface SessionSnapshot {
   discovery: DiscoveryReport;
   activePhase: SessionPhase;
   targetProfile?: TargetProfile;
+  activePlanId: string | null;
+  activeTask: ActiveTaskContext | null;
   workbenchState: WorkbenchViewState;
 }
 
@@ -121,6 +127,8 @@ export function createSessionState(
     discovery,
     activePhase,
     targetProfile: options.targetProfile,
+    activePlanId: null,
+    activeTask: null,
     workbenchState,
   };
 }
@@ -138,6 +146,8 @@ export function createSessionSnapshot(state: SessionState): SessionSnapshot {
     discovery: state.discovery,
     activePhase: state.activePhase,
     targetProfile: state.targetProfile,
+    activePlanId: state.activePlanId,
+    activeTask: state.activeTask,
     workbenchState: state.workbenchState,
   };
 }
@@ -260,6 +270,8 @@ export async function loadSessionState(
     activeHandoffPath: parsed.activeHandoffPath ?? null,
     activePhase,
     targetProfile: parsed.targetProfile,
+    activePlanId: parsed.activePlanId ?? null,
+    activeTask: parsed.activeTask ?? null,
     workbenchState,
   } as SessionState;
 }

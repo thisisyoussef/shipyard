@@ -179,6 +179,7 @@ function createContextEnvelope(): ContextEnvelope {
       retryCountsByFile: {},
       blockedFiles: [],
       latestHandoff: null,
+      activeTask: null,
     },
   };
 }

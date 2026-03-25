@@ -1,10 +1,11 @@
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { z } from "zod";
 
 import type {
   ExecutionSpec,
+  LoadedPlanSpec,
   PersistedTaskQueue,
   PlanTask,
   PlanningMode,
@@ -24,6 +25,11 @@ const executionSpecSchema = z.object({
   risks: z.array(z.string().trim().min(1)),
 });
 
+const loadedPlanSpecSchema = z.object({
+  ref: z.string().trim().min(1),
+  path: z.string().trim().min(1),
+});
+
 export const planTaskStatusSchema = z.enum([
   "pending",
   "in_progress",
@@ -37,6 +43,8 @@ export const planTaskSchema = z.object({
   status: planTaskStatusSchema,
   targetFilePaths: z.array(z.string().trim().min(1)).optional(),
   specRefs: z.array(z.string().trim().min(1)).optional(),
+  summary: z.string().trim().min(1).optional(),
+  updatedAt: z.string().trim().min(1).optional(),
 });
 
 export const persistedTaskQueueSchema = z.object({
@@ -48,6 +56,7 @@ export const persistedTaskQueueSchema = z.object({
   updatedAt: z.string().trim().min(1),
   executionSpec: executionSpecSchema,
   loadedSpecRefs: z.array(z.string().trim().min(1)),
+  loadedSpecs: z.array(loadedPlanSpecSchema).optional(),
   tasks: z.array(planTaskSchema).min(1),
 });
 
@@ -57,6 +66,7 @@ export interface SavePlanTaskQueueOptions {
   executionSpec: ExecutionSpec;
   planningMode: PlanningMode;
   loadedSpecRefs?: string[];
+  loadedSpecs?: LoadedPlanSpec[];
   tasks: PlanTask[];
   createdAt?: string;
 }
@@ -122,7 +132,36 @@ function normalizeTask(
           specRefs: uniqueStrings(task.specRefs),
         }
       : {}),
+    ...(task.summary?.trim()
+      ? {
+          summary: task.summary.trim(),
+        }
+      : {}),
+    ...(task.updatedAt?.trim()
+      ? {
+          updatedAt: task.updatedAt.trim(),
+        }
+      : {}),
   };
+}
+
+function normalizeLoadedSpecs(
+  specs: LoadedPlanSpec[],
+): LoadedPlanSpec[] {
+  const uniqueByKey = new Map<string, LoadedPlanSpec>();
+
+  for (const spec of specs) {
+    const key = `${spec.ref}::${spec.path}`;
+
+    if (!uniqueByKey.has(key)) {
+      uniqueByKey.set(key, {
+        ref: spec.ref,
+        path: spec.path,
+      });
+    }
+  }
+
+  return [...uniqueByKey.values()];
 }
 
 export function derivePlanTasks(options: {
@@ -168,6 +207,11 @@ export async function savePlanTaskQueue(
     updatedAt: createdAt,
     executionSpec: options.executionSpec,
     loadedSpecRefs: uniqueStrings(options.loadedSpecRefs ?? []),
+    ...(options.loadedSpecs?.length
+      ? {
+          loadedSpecs: normalizeLoadedSpecs(options.loadedSpecs),
+        }
+      : {}),
     tasks: options.tasks.map(normalizeTask),
   }) as PersistedTaskQueue;
 
@@ -201,4 +245,63 @@ export async function loadPlanTaskQueue(
   }
 
   return validated.data as PersistedTaskQueue;
+}
+
+export async function writePlanTaskQueue(
+  targetDirectory: string,
+  plan: PersistedTaskQueue,
+): Promise<PersistedTaskQueue> {
+  await ensureShipyardDirectories(targetDirectory);
+
+  const artifact = persistedTaskQueueSchema.parse({
+    ...plan,
+    loadedSpecRefs: uniqueStrings(plan.loadedSpecRefs),
+    ...(plan.loadedSpecs?.length
+      ? {
+          loadedSpecs: normalizeLoadedSpecs(plan.loadedSpecs),
+        }
+      : {}),
+    tasks: plan.tasks.map(normalizeTask),
+  }) as PersistedTaskQueue;
+
+  await writeFile(
+    getPlanFilePath(targetDirectory, artifact.planId),
+    JSON.stringify(artifact, null, 2),
+    "utf8",
+  );
+
+  return artifact;
+}
+
+export async function listPlanTaskQueues(
+  targetDirectory: string,
+): Promise<PersistedTaskQueue[]> {
+  let entries: string[];
+
+  try {
+    entries = await readdir(getPlanDirectory(targetDirectory));
+  } catch {
+    return [];
+  }
+
+  const planIds = entries
+    .filter((entry) => entry.endsWith(".json"))
+    .map((entry) => entry.replace(/\.json$/u, ""))
+    .filter(Boolean);
+
+  const plans = (
+    await Promise.all(
+      planIds.map((planId) => loadPlanTaskQueue(targetDirectory, planId)),
+    )
+  ).filter((plan): plan is PersistedTaskQueue => plan !== null);
+
+  return [...plans].sort((left, right) => {
+    const updatedDelta = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+
+    if (updatedDelta !== 0) {
+      return updatedDelta;
+    }
+
+    return Date.parse(right.createdAt) - Date.parse(left.createdAt);
+  });
 }

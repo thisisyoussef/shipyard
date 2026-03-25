@@ -19,12 +19,19 @@ export type PlanningMode = "lightweight" | "planner";
 
 export type PlanTaskStatus = "pending" | "in_progress" | "done" | "failed";
 
+export interface LoadedPlanSpec {
+  ref: string;
+  path: string;
+}
+
 export interface PlanTask {
   id: string;
   description: string;
   status: PlanTaskStatus;
   targetFilePaths?: string[];
   specRefs?: string[];
+  summary?: string;
+  updatedAt?: string;
 }
 
 export interface PersistedTaskQueue {
@@ -36,6 +43,7 @@ export interface PersistedTaskQueue {
   updatedAt: string;
   executionSpec: ExecutionSpec;
   loadedSpecRefs: string[];
+  loadedSpecs?: LoadedPlanSpec[];
   tasks: PlanTask[];
 }
 
@@ -93,6 +101,21 @@ export interface ExecutionHandoff {
 export interface LoadedExecutionHandoff {
   artifactPath: string;
   handoff: ExecutionHandoff;
+}
+
+export interface ActiveTaskContext {
+  planId: string;
+  taskId: string;
+  title: string;
+  instruction: string;
+  goal: string;
+  checklist: string[];
+  targetFilePaths: string[];
+  specRefs: string[];
+  status: PlanTaskStatus;
+  startedAt: string;
+  updatedAt: string;
+  summary?: string;
 }
 
 export interface ContextFinding {

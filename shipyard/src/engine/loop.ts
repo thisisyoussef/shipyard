@@ -33,6 +33,12 @@ import {
   type ExecutePlanningTurnOptions,
   type PlanningTurnResult,
 } from "../plans/turn.js";
+import {
+  executeTaskRunnerTurn,
+  isTaskRunnerInstruction,
+  type ExecuteTaskRunnerTurnOptions,
+  type TaskRunnerTurnResult,
+} from "../plans/task-runner.js";
 import { abortTurn } from "./cancellation.js";
 import {
   ToolError,
@@ -58,6 +64,9 @@ export interface RunShipyardLoopOptions {
   executePlanTurn?: (
     options: ExecutePlanningTurnOptions,
   ) => Promise<PlanningTurnResult>;
+  executeTaskTurn?: (
+    options: ExecuteTaskRunnerTurnOptions,
+  ) => Promise<TaskRunnerTurnResult>;
   createReadlineInterface?: () => ReturnType<typeof readline.createInterface>;
 }
 
@@ -82,6 +91,8 @@ function printHelp(): void {
   console.log("  run <command>         Run a shell command in the target");
   console.log("  diff [staged] [path]  Run git diff inside the target");
   console.log("  plan: <request>       Save a reviewable task queue without editing code");
+  console.log("  next                  Run the next pending task from the active plan");
+  console.log("  continue              Resume the in-progress task or fall back to the next pending task");
   console.log("  exit | quit           Save the session and quit");
   printDivider();
   console.log("Press Ctrl+C during an active turn to cancel it and keep the session alive.");
@@ -199,6 +210,7 @@ export async function runShipyardLoop(
   const state = options.sessionState;
   const executeTurn = options.executeTurn ?? executeInstructionTurn;
   const executePlanTurn = options.executePlanTurn ?? executePlanningTurn;
+  const executeTaskTurn = options.executeTaskTurn ?? executeTaskRunnerTurn;
   const runtimeState = createInstructionRuntimeState({
     projectRules: await loadProjectRules(state.targetDirectory),
     baseInjectedContext: options.injectedContext ?? [],
@@ -401,7 +413,52 @@ export async function runShipyardLoop(
         } else {
           const turnController = new AbortController();
           activeTurnController = turnController;
-          if (isPlanModeInstruction(line)) {
+          if (isTaskRunnerInstruction(line)) {
+            const taskTurnResult = await executeTaskTurn({
+              sessionState: state,
+              runtimeState,
+              instruction: line,
+              signal: turnController.signal,
+            });
+            activeTurnController = null;
+            const turnStatusLabel = taskTurnResult.status === "success"
+              ? "finished"
+              : taskTurnResult.status === "cancelled"
+                ? "cancelled"
+                : "stopped";
+
+            console.log(
+              `Turn ${state.turnCount} ${turnStatusLabel} in phase "${taskTurnResult.phaseName}" via ${taskTurnResult.runtimeMode} runtime.`,
+            );
+            if (taskTurnResult.taskPlan) {
+              console.log(JSON.stringify(taskTurnResult.taskPlan, null, 2));
+            }
+            printDivider();
+            console.log(taskTurnResult.finalText);
+            if (taskTurnResult.langSmithTrace?.traceUrl) {
+              printDivider();
+              console.log(`LangSmith trace: ${taskTurnResult.langSmithTrace.traceUrl}`);
+            }
+            await traceLogger.log("instruction.plan", {
+              instruction: line,
+              phase: taskTurnResult.phaseName,
+              runtimeMode: taskTurnResult.runtimeMode,
+              planningMode: taskTurnResult.planningMode,
+              route: taskTurnResult.route,
+              command: taskTurnResult.command,
+              contextEnvelope: taskTurnResult.contextEnvelope,
+              taskPlan: taskTurnResult.taskPlan,
+              executionSpec: taskTurnResult.executionSpec,
+              taskQueue: taskTurnResult.plan,
+              planId: taskTurnResult.planId,
+              taskId: taskTurnResult.taskId,
+              loadedSpecRefs: taskTurnResult.loadedSpecRefs,
+              taskTransition: taskTurnResult.taskTransition,
+              status: taskTurnResult.status,
+              summary: taskTurnResult.summary,
+              langSmithTrace: taskTurnResult.langSmithTrace,
+            });
+          } else if (isPlanModeInstruction(line)) {
             const planResult = await executePlanTurn({
               sessionState: state,
               runtimeState,

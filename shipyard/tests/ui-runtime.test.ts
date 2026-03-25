@@ -367,7 +367,12 @@ describe("ui runtime contract", () => {
 
     await Promise.all(
       directories.map((directory) =>
-        rm(directory, { recursive: true, force: true }),
+        rm(directory, {
+          recursive: true,
+          force: true,
+          maxRetries: 6,
+          retryDelay: 50,
+        }),
       ),
     );
   });
