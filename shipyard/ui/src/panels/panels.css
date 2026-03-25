@@ -77,6 +77,8 @@
 
 .composer-textarea-container {
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .composer-textarea {
@@ -84,6 +86,7 @@
   min-height: 56px;
   max-height: 240px;
   padding: var(--space-4);
+  padding-right: calc(var(--space-4) + 120px); /* Room for submit button */
   padding-bottom: calc(var(--space-4) + 28px); /* Room for context badges */
   font-family: var(--font-body);
   font-size: var(--text-base);
@@ -168,25 +171,23 @@
   color: var(--danger-strong);
 }
 
-.composer-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
+/* Keyboard hint below composer */
 
 .composer-submit {
-  padding: 0.75rem 1.5rem;
+  position: absolute;
+  right: var(--space-2);
+  top: var(--space-2);
+  padding: 0.5rem 1rem;
   font-family: var(--font-body);
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
   color: #0a0c0e;
   background: linear-gradient(135deg, #d58c53, #e9a66a);
   border: none;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.2),
-    0 8px 16px rgba(213, 140, 83, 0.25),
+    0 4px 8px rgba(213, 140, 83, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
   cursor: pointer;
   transition:
@@ -219,8 +220,10 @@
 }
 
 .composer-keyboard-hint {
+  display: block;
+  text-align: center;
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
   color: var(--text-faint);
 }
 
@@ -228,23 +231,19 @@
 @media (max-width: 768px) {
   .composer-textarea {
     max-height: 180px;
+    padding-right: calc(var(--space-4) + 100px);
   }
 
-  .composer-actions {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-2);
-  }
-
-  .composer-keyboard-hint {
-    order: -1;
-    text-align: center;
+  .composer-submit {
+    padding: 0.4rem 0.75rem;
+    font-size: var(--text-xs);
   }
 }
 
 @media (max-width: 375px) {
   .composer-textarea {
     max-height: 120px;
+    padding-right: calc(var(--space-4) + 80px);
   }
 
   .composer-keyboard-hint {
@@ -252,7 +251,7 @@
   }
 
   .composer-submit {
-    width: 100%;
+    padding: 0.35rem 0.6rem;
   }
 }
 
