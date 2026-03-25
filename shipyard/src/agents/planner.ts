@@ -16,6 +16,7 @@ import { createTurnCancelledError } from "../engine/cancellation.js";
 
 export const PLANNER_TOOL_NAMES = [
   "read_file",
+  "load_spec",
   "list_files",
   "search_files",
 ] as const;
@@ -43,6 +44,7 @@ You must stay isolated from any coordinator history and reason only from:
 
 Allowed tools:
 - read_file
+- load_spec
 - list_files
 - search_files
 
@@ -76,12 +78,20 @@ export interface PlannerInput {
   discovery: DiscoveryReport;
   targetProfile?: TargetProfile | null;
   contextReport?: ContextReport | null;
+  projectRules?: string | null;
+  injectedContext?: string[];
+  planMode?: boolean;
 }
 
 export interface PlannerRunOptions
   extends Pick<
     RawToolLoopOptions,
-    "client" | "logger" | "maxIterations" | "signal"
+    | "client"
+    | "logger"
+    | "maxIterations"
+    | "signal"
+    | "beforeToolExecution"
+    | "afterToolExecution"
   > {}
 
 function ensureNonBlankInstruction(instruction: string): string {
@@ -243,6 +253,9 @@ function createPlannerContext(input: PlannerInput): string {
       discovery: input.discovery,
       targetProfile: input.targetProfile ?? null,
       contextReport: input.contextReport ?? null,
+      projectRules: input.projectRules ?? null,
+      injectedContext: input.injectedContext ?? [],
+      planMode: input.planMode ?? false,
     },
     null,
     2,
@@ -251,7 +264,15 @@ function createPlannerContext(input: PlannerInput): string {
 
 export function buildPlannerPrompt(input: PlannerInput): string {
   return [
-    "Create an ExecutionSpec for this request.",
+    input.planMode
+      ? "Create an ExecutionSpec for an operator-facing persisted task queue."
+      : "Create an ExecutionSpec for this request.",
+    ...(input.planMode
+      ? [
+          "Deliverables must be ordered, reviewable tasks that fit one instruction cycle each.",
+          "If the request mentions or depends on specs, prefer load_spec before planning.",
+        ]
+      : []),
     "",
     createPlannerContext({
       ...input,
@@ -279,6 +300,8 @@ export async function runPlannerSubagent(
       logger: options.logger,
       maxIterations: options.maxIterations,
       signal: options.signal,
+      beforeToolExecution: options.beforeToolExecution,
+      afterToolExecution: options.afterToolExecution,
     },
   );
 

@@ -14,6 +14,7 @@ below reflect stable subsystem boundaries rather than arbitrary file grouping.
 | [`context/`](./context/README.md) | target discovery and context-envelope assembly | includes target `AGENTS.md` loading |
 | [`engine/`](./engine/README.md) | shared turn execution, session state, graph runtime, and fallback loop | main behavior boundary |
 | [`phases/`](./phases/README.md) | tool bundles, prompts, and phase config | currently centered on the code phase |
+| [`plans/`](./plans/README.md) | planning-only executor and persisted task queues | powers `plan:` without entering write mode |
 | [`tools/`](./tools/README.md) | typed read/write/search/run/git primitives | the model-facing capability layer |
 | [`tracing/`](./tracing/README.md) | local JSONL tracing and LangSmith integration | optional remote trace export |
 | [`ui/`](./ui/README.md) | browser runtime backend and WebSocket contract | separate from the React SPA in `../ui/` |
@@ -37,6 +38,7 @@ flowchart LR
   Bin --> Context
   Bin --> Engine
   Engine --> Phases
+  Engine --> Plans
   Phases --> Tools
   Engine --> Checkpoints
   Engine --> Tracing
@@ -58,7 +60,7 @@ flowchart LR
 ## Cross-Cutting Rules
 
 - Keep terminal mode and browser mode aligned by routing behavior through
-  `engine/turn.ts`.
+  `engine/turn.ts` and `plans/turn.ts`.
 - Prefer adding a new tool over embedding ad hoc filesystem or shell logic
   directly into runtime files.
 - If a change adds a new durable concept, update the nearest local README and
