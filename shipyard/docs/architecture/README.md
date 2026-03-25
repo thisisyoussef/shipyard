@@ -18,6 +18,7 @@ flowchart LR
   Loop["Terminal loop<br/>src/engine/loop.ts"]
   UiServer["UI server<br/>src/ui/server.ts"]
   Spa["React SPA<br/>ui/src/*"]
+  Preview["Preview supervisor<br/>src/preview/*"]
   Turn["Shared turn executor<br/>src/engine/turn.ts"]
   Context["Context layer<br/>src/context/*"]
   Graph["Graph runtime / fallback<br/>src/engine/graph.ts<br/>src/engine/raw-loop.ts"]
@@ -32,6 +33,7 @@ flowchart LR
   CLI --> Loop
   CLI --> UiServer
   UiServer <--> Spa
+  UiServer --> Preview
   Loop --> Turn
   UiServer --> Turn
   Turn --> Context
@@ -104,6 +106,9 @@ flowchart TD
   required environment variables are configured.
 - `src/ui/` is the backend half of browser mode. The React frontend lives under
   `ui/` and speaks to this layer over a typed WebSocket contract.
+- `src/preview/` owns loopback-only preview detection helpers plus the
+  session-scoped supervisor that starts, refreshes, and stops supported local
+  preview processes.
 
 ## Design Rules
 

@@ -25,6 +25,19 @@ const activityToneSchema = z.enum([
 ]);
 const diffKindSchema = z.enum(["meta", "context", "add", "remove"]);
 const fileEventStatusSchema = z.enum(["running", "success", "error", "diff"]);
+const previewCapabilityStatusSchema = z.enum(["available", "unavailable"]);
+const previewKindSchema = z.enum(["dev-server", "watch-build", "static-output"]);
+const previewRunnerSchema = z.enum(["npm", "pnpm", "yarn", "bun"]);
+const previewAutoRefreshSchema = z.enum(["native-hmr", "restart", "none"]);
+const previewStatusSchema = z.enum([
+  "idle",
+  "starting",
+  "running",
+  "refreshing",
+  "error",
+  "exited",
+  "unavailable",
+]);
 
 const nonEmptyTextSchema = z.string().trim().min(1);
 const discoverySchema = z.object({
@@ -38,6 +51,22 @@ const discoverySchema = z.object({
   topLevelFiles: z.array(z.string()),
   topLevelDirectories: z.array(z.string()),
   projectName: z.string().nullable(),
+  previewCapability: z.object({
+    status: previewCapabilityStatusSchema,
+    kind: previewKindSchema.nullable(),
+    runner: previewRunnerSchema.nullable(),
+    scriptName: z.string().nullable(),
+    command: z.string().nullable(),
+    reason: z.string(),
+    autoRefresh: previewAutoRefreshSchema,
+  }),
+});
+export const previewStateSchema = z.object({
+  status: previewStatusSchema,
+  summary: z.string(),
+  url: z.string().nullable(),
+  logTail: z.array(z.string()),
+  lastRestartReason: z.string().nullable(),
 });
 const sessionStateViewModelSchema = z.object({
   sessionId: z.string(),
@@ -111,6 +140,7 @@ export const workbenchStateSchema = z.object({
   nextEventNumber: z.number().int().nonnegative(),
   nextFileEventNumber: z.number().int().nonnegative(),
   contextHistory: z.array(contextReceiptSchema),
+  previewState: previewStateSchema,
 });
 
 export const instructionMessageSchema = z.object({
@@ -198,6 +228,11 @@ export const agentErrorMessageSchema = z.object({
   message: z.string(),
 });
 
+export const previewStateMessageSchema = z.object({
+  type: z.literal("preview:state"),
+  preview: previewStateSchema,
+});
+
 export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   sessionStateMessageSchema,
   agentThinkingMessageSchema,
@@ -207,6 +242,7 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   agentEditMessageSchema,
   agentDoneMessageSchema,
   agentErrorMessageSchema,
+  previewStateMessageSchema,
 ]);
 
 export type BackendToFrontendMessage = z.infer<

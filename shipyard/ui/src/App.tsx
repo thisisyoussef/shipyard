@@ -358,6 +358,7 @@ export function App() {
       sessionState={viewState.sessionState}
       turns={deferredTurns}
       fileEvents={deferredFileEvents}
+      previewState={viewState.previewState}
       contextHistory={deferredContextHistory}
       connectionState={viewState.connectionState}
       agentStatus={viewState.agentStatus}

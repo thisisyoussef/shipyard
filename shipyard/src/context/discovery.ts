@@ -2,6 +2,11 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import type { DiscoveryReport } from "../artifacts/types.js";
+import {
+  createUnavailablePreviewCapability,
+  formatPreviewCommand,
+  resolvePreviewRunner,
+} from "../preview/contracts.js";
 
 interface PackageManifest {
   name?: string;
@@ -25,6 +30,76 @@ function createEmptyDiscoveryReport(): DiscoveryReport {
     topLevelFiles: [],
     topLevelDirectories: [],
     projectName: null,
+    previewCapability: createUnavailablePreviewCapability(
+      "Greenfield target; no supported local preview has been detected yet.",
+    ),
+  };
+}
+
+function inferPreviewCapability(
+  packageManifest: PackageManifest | null,
+  packageManager: string | null,
+): DiscoveryReport["previewCapability"] {
+  if (packageManifest === null) {
+    return createUnavailablePreviewCapability(
+      "No package.json was found, so Shipyard cannot infer a supported local preview command.",
+    );
+  }
+
+  const scripts = packageManifest.scripts ?? {};
+  const dependencies = {
+    ...(packageManifest.dependencies ?? {}),
+    ...(packageManifest.devDependencies ?? {}),
+  };
+
+  if (
+    typeof scripts.dev === "string" &&
+    /\bvite(?:\s|$)/.test(scripts.dev) &&
+    "vite" in dependencies
+  ) {
+    const runner = resolvePreviewRunner(packageManager);
+
+    return {
+      status: "available",
+      kind: "dev-server",
+      runner,
+      scriptName: "dev",
+      command: formatPreviewCommand(runner, "dev"),
+      reason: "Detected a Vite dev script and dependency signal.",
+      autoRefresh: "native-hmr",
+    };
+  }
+
+  return createUnavailablePreviewCapability(
+    "No supported local preview signal was detected for this target.",
+  );
+}
+
+export function normalizeDiscoveryReport(
+  report: Partial<DiscoveryReport> | null | undefined,
+): DiscoveryReport {
+  if (!report) {
+    return createEmptyDiscoveryReport();
+  }
+
+  return {
+    isGreenfield: report.isGreenfield ?? true,
+    language: report.language ?? null,
+    framework: report.framework ?? null,
+    packageManager: report.packageManager ?? null,
+    scripts: { ...(report.scripts ?? {}) },
+    hasReadme: report.hasReadme ?? false,
+    hasAgentsMd: report.hasAgentsMd ?? false,
+    topLevelFiles: [...(report.topLevelFiles ?? [])],
+    topLevelDirectories: [...(report.topLevelDirectories ?? [])],
+    projectName: report.projectName ?? null,
+    previewCapability:
+      report.previewCapability ??
+      createUnavailablePreviewCapability(
+        report.isGreenfield
+          ? "Greenfield target; no supported local preview has been detected yet."
+          : "No supported local preview signal was detected for this target.",
+      ),
   };
 }
 
@@ -213,17 +288,19 @@ export async function discoverTarget(
   }
 
   const packageManifest = await readPackageManifest(targetPath, topLevelFiles);
+  const packageManager = detectPackageManager(topLevelFiles, packageManifest);
 
-  return {
+  return normalizeDiscoveryReport({
     isGreenfield: false,
     language: detectLanguage(topLevelFiles, packageManifest),
     framework: detectFramework(packageManifest),
-    packageManager: detectPackageManager(topLevelFiles, packageManifest),
+    packageManager,
     scripts: { ...(packageManifest?.scripts ?? {}) },
     hasReadme: detectHasReadme(topLevelFiles),
     hasAgentsMd: topLevelFiles.includes("AGENTS.md"),
     topLevelFiles,
     topLevelDirectories,
     projectName: packageManifest?.name ?? null,
-  };
+    previewCapability: inferPreviewCapability(packageManifest, packageManager),
+  });
 }

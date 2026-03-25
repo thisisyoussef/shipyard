@@ -8,6 +8,7 @@ import {
   buildContextEnvelope,
   serializeContextEnvelope,
 } from "../src/context/envelope.js";
+import { createUnavailablePreviewCapability } from "../src/preview/contracts.js";
 
 const createdDirectories: string[] = [];
 
@@ -51,6 +52,9 @@ describe("context envelope", () => {
         topLevelFiles: ["package.json"],
         topLevelDirectories: ["src"],
         projectName: "shipyard",
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
       },
       currentInstruction: "inspect src/app.ts",
       rollingSummary: "Turn 1: inspect README -> completed",
@@ -89,6 +93,9 @@ describe("context envelope", () => {
         topLevelFiles: [],
         topLevelDirectories: [],
         projectName: null,
+        previewCapability: createUnavailablePreviewCapability(
+          "Greenfield target; no supported local preview has been detected yet.",
+        ),
       },
       currentInstruction: "create a README",
       rollingSummary: "",

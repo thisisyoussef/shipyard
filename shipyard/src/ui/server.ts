@@ -23,6 +23,7 @@ import {
 } from "../engine/turn.js";
 import type { AgentRuntimeDependencies } from "../engine/graph.js";
 import { saveSessionState, type SessionState } from "../engine/state.js";
+import { createPreviewSupervisor } from "../preview/supervisor.js";
 import type { BackendToFrontendMessage } from "./contracts.js";
 import {
   parseFrontendMessage,
@@ -516,6 +517,7 @@ export async function startUiRuntimeServer(
   const socketServer = new WebSocketServer({ noServer: true });
   const sockets = new Set<WebSocket>();
   let activeInstruction: Promise<void> | null = null;
+  let previewStarted = false;
   const closed = new Promise<void>((resolve) => {
     httpServer.once("close", () => {
       resolve();
@@ -541,6 +543,29 @@ export async function startUiRuntimeServer(
       [...sockets].map((socket) => sendToSocket(socket, message)),
     );
   };
+  const previewSupervisor = createPreviewSupervisor({
+    targetDirectory: options.sessionState.targetDirectory,
+    capability: options.sessionState.discovery.previewCapability,
+    async onState(previewState) {
+      options.sessionState.workbenchState = applyBackendMessage(
+        options.sessionState.workbenchState,
+        {
+          type: "preview:state",
+          preview: previewState,
+        },
+      );
+
+      await traceLogger.log("preview.state", {
+        sessionId: options.sessionState.sessionId,
+        preview: previewState,
+      });
+      await saveSessionState(options.sessionState);
+      await broadcast({
+        type: "preview:state",
+        preview: previewState,
+      });
+    },
+  });
 
   const sendSessionState = async (socket: WebSocket): Promise<void> => {
     await sendToSocket(
@@ -576,6 +601,10 @@ export async function startUiRuntimeServer(
     let pendingTurnState: TurnStateEvent | null = null;
     const reporter: InstructionTurnReporter = {
       ...baseReporter,
+      async onEdit(event) {
+        await baseReporter.onEdit?.(event);
+        await previewSupervisor.refresh(event.path);
+      },
       async onTurnState(event) {
         if (event.connectionState === "agent-busy") {
           await baseReporter.onTurnState?.(event);
@@ -614,6 +643,11 @@ export async function startUiRuntimeServer(
   socketServer.on("connection", (socket) => {
     sockets.add(socket);
     void sendSessionState(socket);
+
+    if (!previewStarted) {
+      previewStarted = true;
+      void previewSupervisor.start();
+    }
 
     socket.on("close", () => {
       sockets.delete(socket);
@@ -708,6 +742,8 @@ export async function startUiRuntimeServer(
     workspaceDirectory,
     portResolution,
     async close(): Promise<void> {
+      await previewSupervisor.stop();
+
       for (const client of socketServer.clients) {
         client.close(1001, "Shipyard UI shutting down");
       }

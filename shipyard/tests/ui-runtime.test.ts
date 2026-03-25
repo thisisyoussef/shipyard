@@ -17,6 +17,7 @@ import { createSessionState } from "../src/engine/state.js";
 import { formatUiStartupLines, parseArgs } from "../src/bin/shipyard.js";
 import type { BackendToFrontendMessage } from "../src/ui/contracts.js";
 import { startUiRuntimeServer } from "../src/ui/server.js";
+import { scaffoldPreviewableTarget } from "./support/preview-target.js";
 
 const createdDirectories: string[] = [];
 const socketMessageBuffers = new WeakMap<WebSocket, BackendToFrontendMessage[]>();
@@ -712,6 +713,186 @@ describe("ui runtime contract", () => {
         if (socket.readyState === socket.OPEN) {
           socket.close();
         }
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("auto-starts previewable targets and streams refresh state after an edit", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-preview-");
+    await scaffoldPreviewableTarget({
+      targetDirectory,
+      name: "ui-preview-target",
+    });
+    await initializeGitRepository(targetDirectory);
+    await expectRawCommandSuccess(targetDirectory, "git add package.json");
+    await expectRawCommandSuccess(
+      targetDirectory,
+      "git commit -m \"Initial preview target\"",
+    );
+
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-preview-session",
+      targetDirectory,
+      discovery,
+    });
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_read_file_preview",
+            name: "read_file",
+            input: {
+              path: "package.json",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+          {
+            type: "tool_use",
+            id: "toolu_edit_block_preview",
+            name: "edit_block",
+            input: {
+              path: "package.json",
+              old_string: '  "name": "ui-preview-target",',
+              new_string: '  "name": "ui-preview-target-edited",',
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Preview-ready edit complete.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "Always inspect the file before editing it.",
+      projectRulesLoaded: true,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            client,
+          };
+        },
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+      const previewReadyPromise = waitForSocketMessage(
+        socket,
+        (message) =>
+          message.type === "preview:state" &&
+          message.preview.status === "running" &&
+          message.preview.url !== null,
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+
+        const initialState = await initialStatePromise;
+        expect(initialState).toMatchObject({
+          type: "session:state",
+          sessionId: "ui-preview-session",
+          discovery: {
+            previewCapability: {
+              status: "available",
+              kind: "dev-server",
+            },
+          },
+        });
+
+        const previewReady = await previewReadyPromise;
+        expect(previewReady.type).toBe("preview:state");
+
+        if (previewReady.type !== "preview:state") {
+          throw new Error("Expected a preview:state message.");
+        }
+
+        expect(previewReady.preview.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/?$/);
+        expect(previewReady.preview.logTail.join("\n")).toContain("VITE v5.0.8 ready");
+
+        const previewResponse = await fetch(previewReady.preview.url ?? "");
+        expect(previewResponse.ok).toBe(true);
+        await expect(previewResponse.text()).resolves.toContain("Preview Ready");
+
+        const turnMessagesPromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.turnCount === 1 &&
+              message.connectionState === "ready"
+            ),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "rename the package in package.json",
+          }),
+        );
+
+        const turnMessages = await turnMessagesPromise;
+
+        assertRequiredEvents(turnMessages, [
+          "session:state",
+          "agent:thinking",
+          "agent:tool_call",
+          "agent:tool_result",
+          "agent:edit",
+          "preview:state",
+          "agent:text",
+          "agent:done",
+        ]);
+        assertEventOrdering(turnMessages, [
+          "session:state",
+          "agent:thinking",
+          "agent:edit",
+          "preview:state",
+          "agent:text",
+          "agent:done",
+          "session:state",
+        ]);
+
+        const refreshMessages = turnMessages.filter(
+          (
+            message,
+          ): message is Extract<BackendToFrontendMessage, { type: "preview:state" }> =>
+            message.type === "preview:state",
+        );
+
+        expect(
+          refreshMessages.some((message) => message.preview.status === "refreshing"),
+        ).toBe(true);
+        expect(
+          refreshMessages.some((message) =>
+            message.preview.status === "running" &&
+            message.preview.lastRestartReason?.includes("Refresh requested") === true
+          ),
+        ).toBe(true);
+      } finally {
+        socket.close();
       }
     } finally {
       await runtime.close();

@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -49,5 +49,75 @@ describe("discoverTarget", () => {
     expect(report.topLevelFiles).toEqual([]);
     expect(report.topLevelDirectories).toEqual([]);
     expect(report.projectName).toBeNull();
+  });
+
+  it("infers preview capability from a Vite dev script", async () => {
+    const targetDirectory = await mkdtemp(path.join(tmpdir(), "shipyard-previewable-"));
+    createdDirectories.push(targetDirectory);
+    await mkdir(path.join(targetDirectory, "src"), { recursive: true });
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify(
+        {
+          name: "previewable-demo",
+          scripts: {
+            dev: "vite",
+            build: "vite build",
+          },
+          devDependencies: {
+            vite: "^5.0.8",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const report = await discoverTarget(targetDirectory);
+
+    expect(report.previewCapability).toMatchObject({
+      status: "available",
+      kind: "dev-server",
+      runner: "npm",
+      scriptName: "dev",
+      autoRefresh: "native-hmr",
+    });
+    expect(report.previewCapability.command).toContain("npm run dev");
+    expect(report.previewCapability.reason).toContain("Vite");
+  });
+
+  it("marks unsupported targets as preview-unavailable with a reason", async () => {
+    const targetDirectory = await mkdtemp(path.join(tmpdir(), "shipyard-no-preview-"));
+    createdDirectories.push(targetDirectory);
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify(
+        {
+          name: "api-only-demo",
+          scripts: {
+            test: "vitest run",
+          },
+          dependencies: {
+            express: "^5.0.0",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const report = await discoverTarget(targetDirectory);
+
+    expect(report.previewCapability).toMatchObject({
+      status: "unavailable",
+      kind: null,
+      runner: null,
+      scriptName: null,
+      autoRefresh: "none",
+      command: null,
+    });
+    expect(report.previewCapability.reason).toContain("No supported local preview");
   });
 });

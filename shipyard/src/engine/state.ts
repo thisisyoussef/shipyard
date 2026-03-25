@@ -2,6 +2,8 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { DiscoveryReport } from "../artifacts/types.js";
+import { normalizeDiscoveryReport } from "../context/discovery.js";
+import { createPreviewStateFromCapability } from "../preview/contracts.js";
 import {
   createInitialWorkbenchState,
   type WorkbenchViewState,
@@ -57,13 +59,18 @@ export interface SessionSnapshot {
 export interface CreateSessionStateOptions {
   sessionId: string;
   targetDirectory: string;
-  discovery: DiscoveryReport;
+  discovery: Partial<DiscoveryReport> | DiscoveryReport;
 }
 
 export function createSessionState(
   options: CreateSessionStateOptions,
 ): SessionState {
   const now = new Date().toISOString();
+  const discovery = normalizeDiscoveryReport(options.discovery);
+  const workbenchState = createInitialWorkbenchState();
+  workbenchState.previewState = createPreviewStateFromCapability(
+    discovery.previewCapability,
+  );
 
   return {
     sessionId: options.sessionId,
@@ -72,8 +79,8 @@ export function createSessionState(
     lastActiveAt: now,
     turnCount: 0,
     rollingSummary: "",
-    discovery: options.discovery,
-    workbenchState: createInitialWorkbenchState(),
+    discovery,
+    workbenchState,
   };
 }
 
@@ -147,9 +154,18 @@ export async function loadSessionState(
 
   const contents = await readFile(sessionFilePath, "utf8");
   const parsed = JSON.parse(contents) as Partial<SessionState> & Omit<SessionState, "workbenchState">;
+  const discovery = normalizeDiscoveryReport(parsed.discovery);
+  const workbenchState = parsed.workbenchState ?? createInitialWorkbenchState();
+
+  if (!workbenchState.previewState) {
+    workbenchState.previewState = createPreviewStateFromCapability(
+      discovery.previewCapability,
+    );
+  }
 
   return {
     ...parsed,
-    workbenchState: parsed.workbenchState ?? createInitialWorkbenchState(),
+    discovery,
+    workbenchState,
   } as SessionState;
 }

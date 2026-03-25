@@ -33,21 +33,21 @@ keep the visible result fresh after edits land.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Target discovery classifies preview capability from existing
+- [x] AC-1: Target discovery classifies preview capability from existing
   framework and script signals, and records why preview is available or not.
-- [ ] AC-2: When preview is available, the browser runtime starts one
+- [x] AC-2: When preview is available, the browser runtime starts one
   supervised local preview process automatically and surfaces its URL, status,
   and recent log output.
-- [ ] AC-3: Shipyard prefers target-native watch/HMR behavior when present; if
+- [x] AC-3: Shipyard prefers target-native watch/HMR behavior when present; if
   native refresh is unavailable, it triggers the smallest safe fallback such as
   reload, rebuild, or restart after edits.
-- [ ] AC-4: The preview lifecycle is visible and recoverable in the workbench,
+- [x] AC-4: The preview lifecycle is visible and recoverable in the workbench,
   including starting, running, refreshing, exited, unavailable, and error
   states.
-- [ ] AC-5: Port conflicts, missing dependencies, startup failures, and
+- [x] AC-5: Port conflicts, missing dependencies, startup failures, and
   unexpected exits are reported clearly without blocking the rest of the agent
   session.
-- [ ] AC-6: Manual verification covers a previewable browser target and a
+- [x] AC-6: Manual verification covers a previewable browser target and a
   target where preview is not applicable.
 
 ## Edge Cases

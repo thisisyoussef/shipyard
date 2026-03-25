@@ -7,7 +7,6 @@
 
 import {
   useState,
-  type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
   type RefObject,
@@ -23,11 +22,17 @@ import { ComposerPanel } from "./ComposerPanel.js";
 import { ContextPanel } from "./ContextPanel.js";
 import { FilePanel } from "./FilePanel.js";
 import { HeaderStrip } from "./HeaderStrip.js";
-import type { BadgeTone } from "./primitives.js";
+import {
+  Badge,
+  SectionHeader,
+  SurfaceCard,
+  type BadgeTone,
+} from "./primitives.js";
 import { SessionPanel } from "./SessionPanel.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
+  PreviewStateViewModel,
   SessionStateViewModel,
   TurnViewModel,
   WorkbenchConnectionState,
@@ -45,6 +50,7 @@ export interface ShipyardWorkbenchProps {
   sessionState: SessionStateViewModel | null;
   turns: TurnViewModel[];
   fileEvents: FileEventViewModel[];
+  previewState: PreviewStateViewModel;
   contextHistory: ContextReceiptViewModel[];
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
@@ -62,7 +68,6 @@ export interface ShipyardWorkbenchProps {
   onRefreshStatus: () => void;
   onCopyTracePath: () => void;
   traceButtonLabel: string;
-  /* Sidebar state from App */
   leftSidebarOpen: boolean;
   rightSidebarOpen: boolean;
   onToggleLeftSidebar: () => void;
@@ -96,6 +101,26 @@ function getConnectionTone(
   if (state === "agent-busy") return "accent";
   if (state === "error" || state === "disconnected") return "danger";
   return "warning";
+}
+
+function getPreviewTone(status: PreviewStateViewModel["status"]): BadgeTone {
+  if (status === "running") {
+    return "success";
+  }
+
+  if (status === "starting" || status === "refreshing" || status === "idle") {
+    return "accent";
+  }
+
+  if (status === "error" || status === "exited" || status === "unavailable") {
+    return "danger";
+  }
+
+  return "neutral";
+}
+
+function formatPreviewLabel(status: PreviewStateViewModel["status"]): string {
+  return status.replace(/-/g, " ");
 }
 
 function formatWorkspaceLabel(workspaceDirectory: string): string {
@@ -132,7 +157,6 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
       data-left-open={props.leftSidebarOpen}
       data-right-open={props.rightSidebarOpen}
     >
-      {/* ── Header ─────────────────────────────── */}
       <HeaderStrip
         workspaceName={
           props.sessionState
@@ -152,7 +176,6 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         onRefreshStatus={props.onRefreshStatus}
       />
 
-      {/* ── Left sidebar ───────────────────────── */}
       <aside
         className={`shell-sidebar shell-sidebar-left ${props.leftSidebarOpen ? "" : "shell-sidebar-collapsed"}`}
         aria-label="Session and context"
@@ -196,7 +219,6 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         )}
       </aside>
 
-      {/* ── Main content ───────────────────────── */}
       <main className="shell-main" role="main" aria-label="Agent activity">
         <ComposerPanel
           instruction={props.instruction}
@@ -222,9 +244,70 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         />
       </main>
 
-      {/* ── Right sidebar ──────────────────────── */}
       {props.rightSidebarOpen ? (
-        <aside className="shell-sidebar shell-sidebar-right" aria-label="File activity">
+        <aside
+          className="shell-sidebar shell-sidebar-right"
+          aria-label="Preview and file activity"
+        >
+          <SurfaceCard className="panel panel-preview">
+            <SectionHeader
+              kicker="Preview"
+              title="Local preview"
+              meta={
+                <Badge tone={getPreviewTone(props.previewState.status)}>
+                  {formatPreviewLabel(props.previewState.status)}
+                </Badge>
+              }
+            />
+
+            <p className="preview-summary">{props.previewState.summary}</p>
+
+            {props.previewState.url ? (
+              <div className="preview-meta-block">
+                <span className="micro-label">Loopback URL</span>
+                <a
+                  className="preview-link"
+                  href={props.previewState.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {props.previewState.url}
+                </a>
+              </div>
+            ) : null}
+
+            {props.previewState.lastRestartReason ? (
+              <p className="support-copy">{props.previewState.lastRestartReason}</p>
+            ) : null}
+
+            {props.previewState.url ? (
+              <div className="preview-frame-shell">
+                <iframe
+                  className="preview-frame"
+                  title="Local preview surface"
+                  src={props.previewState.url}
+                />
+              </div>
+            ) : (
+              <div className="empty-state compact-empty-state">
+                <p className="empty-heading">{props.previewState.summary}</p>
+                <p className="empty-copy">
+                  Shipyard will only launch supported local previews and will say
+                  why when a target does not qualify.
+                </p>
+              </div>
+            )}
+
+            {props.previewState.logTail.length > 0 ? (
+              <details className="preview-log-shell">
+                <summary>Recent preview logs</summary>
+                <pre className="preview-log-output">
+                  {props.previewState.logTail.join("\n")}
+                </pre>
+              </details>
+            ) : null}
+          </SurfaceCard>
+
           <FilePanel
             visibleFileEvents={visibleFileEvents}
             totalFileEventCount={props.fileEvents.length}
@@ -234,7 +317,6 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         </aside>
       ) : null}
 
-      {/* ── Footer ─────────────────────────────── */}
       <footer className="status-bar" role="contentinfo">
         <div className="status-current" data-state={surfaceState}>
           <span

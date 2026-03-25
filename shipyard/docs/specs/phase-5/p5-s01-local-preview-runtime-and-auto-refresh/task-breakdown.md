@@ -24,21 +24,21 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `discovery infers preview capability from scripts/framework signals`
-  - [ ] `unsupported targets return unavailable with a reason`
+  - [x] `discovery infers preview capability from scripts/framework signals`
+  - [x] `unsupported targets return unavailable with a reason`
 - T002 tests:
-  - [ ] `preview supervisor starts once per session and shuts down cleanly`
-  - [ ] `preview supervisor restarts or surfaces failure without orphaning the process`
+  - [x] `preview supervisor starts once per session and shuts down cleanly`
+  - [x] `preview supervisor restarts or surfaces failure without orphaning the process`
 - T003 tests:
-  - [ ] `ui runtime emits preview state without regressing existing session messages`
-  - [ ] `workbench renders unavailable, healthy, and error preview states`
+  - [x] `ui runtime emits preview state without regressing existing session messages`
+  - [x] `workbench renders unavailable, healthy, and error preview states`
 - T004 tests:
-  - [ ] `preview updates after a Shipyard edit in the Vite target`
-  - [ ] `non-previewable target stays explicit and usable`
+  - [x] `preview updates after a Shipyard edit in the Vite target`
+  - [x] `non-previewable target stays explicit and usable`
 
 ## Completion Criteria
 
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Manual preview verification recorded for supported and unsupported targets
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Manual preview verification recorded for supported and unsupported targets

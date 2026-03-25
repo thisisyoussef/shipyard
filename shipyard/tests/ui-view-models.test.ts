@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createUnavailablePreviewCapability } from "../src/preview/contracts.js";
 import {
   applyBackendMessage,
   createInitialWorkbenchState,
@@ -183,6 +184,9 @@ describe("ui view models", () => {
         topLevelFiles: ["package.json"],
         topLevelDirectories: ["src"],
         projectName: "shipyard",
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
       },
       discoverySummary: "typescript (React) via pnpm",
       projectRulesLoaded: true,
@@ -197,5 +201,65 @@ describe("ui view models", () => {
       text: "Keep the current layout intact.",
     });
     expect(rehydrated.agentStatus).toBe("Recovered session history after reload.");
+  });
+
+  it("fresh ready snapshots replace the initial connecting placeholder", () => {
+    const rehydrated = applyBackendMessage(createInitialWorkbenchState(), {
+      type: "session:state",
+      runtimeMode: "ui",
+      connectionState: "ready",
+      sessionId: "session-ready",
+      targetLabel: "shipyard",
+      targetDirectory: "/tmp/shipyard",
+      workspaceDirectory: "/tmp/shipyard-workspace",
+      turnCount: 0,
+      startedAt: "2026-03-24T12:00:00.000Z",
+      lastActiveAt: "2026-03-24T12:05:00.000Z",
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: [],
+        topLevelDirectories: [],
+        projectName: null,
+        previewCapability: createUnavailablePreviewCapability(
+          "Greenfield target; no supported local preview has been detected yet.",
+        ),
+      },
+      discoverySummary: "greenfield target",
+      projectRulesLoaded: false,
+      workbenchState: createInitialWorkbenchState(),
+    });
+
+    expect(rehydrated.agentStatus).toBe("Ready for the next instruction.");
+  });
+
+  it("stores live preview state updates in the session-backed workbench model", () => {
+    let state = createInitialWorkbenchState();
+
+    state = applyBackendMessage(state, {
+      type: "preview:state",
+      preview: {
+        status: "running",
+        summary: "Local preview is running.",
+        url: "http://127.0.0.1:4173",
+        logTail: [
+          "VITE v5.0.8 ready in 145 ms",
+        ],
+        lastRestartReason: null,
+      },
+    });
+
+    expect(state.previewState).toMatchObject({
+      status: "running",
+      summary: "Local preview is running.",
+      url: "http://127.0.0.1:4173",
+      logTail: ["VITE v5.0.8 ready in 145 ms"],
+      lastRestartReason: null,
+    });
   });
 });

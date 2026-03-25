@@ -517,6 +517,79 @@ pre,
   padding: var(--space-4);
 }
 
+/* ── Preview panel ────────────────────────────── */
+
+.panel-preview {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.preview-summary,
+.preview-link {
+  margin: 0;
+  color: var(--text-body);
+  line-height: var(--leading-relaxed);
+}
+
+.preview-meta-block {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-muted);
+}
+
+.preview-link {
+  color: var(--accent-strong);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.preview-link:hover {
+  text-decoration: underline;
+}
+
+.preview-frame-shell {
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(12, 14, 16, 0.02)),
+    var(--surface-muted);
+  min-height: 18rem;
+}
+
+.preview-frame {
+  display: block;
+  width: 100%;
+  min-height: 18rem;
+  border: 0;
+  background: #ffffff;
+}
+
+.preview-log-shell {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-4);
+}
+
+.preview-log-shell summary {
+  cursor: pointer;
+  color: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.preview-log-output {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-inset);
+  color: var(--text-strong);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
 /* ── Turn list & file event list ─────────────── */
 
 .turn-list,

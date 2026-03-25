@@ -83,9 +83,10 @@
   - UI runtime contract emits preview state without breaking existing session
     messages
 - E2E or smoke tests:
-  - `test-targets/tic-tac-toe` auto-starts a local preview and remains current
-    after an edit
-  - a non-previewable fixture reports `unavailable` clearly
+  - a scaffolded Vite-style target auto-starts a local preview and remains
+    current after an edit
+  - `test-targets/tic-tac-toe` remains the current unavailable baseline and
+    reports `unavailable` clearly
 - Edge-case coverage mapping:
   - port already in use
   - startup failure before URL detection

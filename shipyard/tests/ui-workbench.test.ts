@@ -6,6 +6,7 @@ import { ShipyardWorkbench } from "../ui/src/ShipyardWorkbench.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
+  PreviewStateViewModel,
   SessionStateViewModel,
   TurnViewModel,
 } from "../ui/src/view-models.js";
@@ -33,9 +34,26 @@ const sessionState: SessionStateViewModel = {
     topLevelFiles: ["package.json", "tsconfig.json"],
     topLevelDirectories: ["src", "tests"],
     projectName: "shipyard",
+    previewCapability: {
+      status: "available",
+      kind: "dev-server",
+      runner: "pnpm",
+      scriptName: "dev",
+      command: "pnpm run dev -- --host 127.0.0.1 --port <port>",
+      reason: "Detected a Vite dev script.",
+      autoRefresh: "native-hmr",
+    },
   },
   projectRulesLoaded: true,
   tracePath: "/tmp/shipyard-demo/.shipyard/traces/session-ui-123.jsonl",
+};
+
+const runningPreviewState: PreviewStateViewModel = {
+  status: "running",
+  summary: "Preview is running on loopback.",
+  url: "http://127.0.0.1:4173",
+  logTail: ["VITE v5.0.8 ready in 145 ms"],
+  lastRestartReason: null,
 };
 
 const turns: TurnViewModel[] = [
@@ -132,6 +150,7 @@ function renderWorkbench(overrides?: {
   connectionState?: "connecting" | "ready" | "agent-busy" | "disconnected" | "error";
   agentStatus?: string;
   contextDraft?: string;
+  previewState?: PreviewStateViewModel;
   leftSidebarOpen?: boolean;
   rightSidebarOpen?: boolean;
 }) {
@@ -140,6 +159,7 @@ function renderWorkbench(overrides?: {
       sessionState,
       turns,
       fileEvents,
+      previewState: overrides?.previewState ?? runningPreviewState,
       contextHistory,
       connectionState: overrides?.connectionState ?? "ready",
       agentStatus: overrides?.agentStatus ?? "Ready for the next instruction.",
@@ -166,13 +186,16 @@ function renderWorkbench(overrides?: {
 }
 
 describe("ShipyardWorkbench", () => {
-  it("renders the current session, context, activity, and file sidebars without crashing", () => {
+  it("renders the current session, context, preview, activity, and file sidebars", () => {
     const markup = renderWorkbench();
 
     expect(markup).toContain("Connected to shipyard-workspace");
     expect(markup).toContain("Inject guidance");
     expect(markup).toContain("Cmd/Ctrl+Enter");
     expect(markup).toContain("Project signals");
+    expect(markup).toContain("Local preview");
+    expect(markup).toContain("http://127.0.0.1:4173");
+    expect(markup).toContain("Preview is running on loopback.");
     expect(markup).toContain("/tmp/shipyard-workspace");
     expect(markup).toContain("Latest run");
     expect(markup).toContain("All runs");
@@ -196,5 +219,23 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("Context queued");
     expect(markup).toContain('aria-keyshortcuts="Control+Enter Meta+Enter"');
     expect(markup).toContain('aria-keyshortcuts="Control+Enter Meta+Enter Escape"');
+  });
+
+  it("renders an explicit unavailable preview state instead of guessing", () => {
+    const markup = renderWorkbench({
+      previewState: {
+        status: "unavailable",
+        summary: "Preview unavailable for this target.",
+        url: null,
+        logTail: [],
+        lastRestartReason:
+          "No package.json was found, so Shipyard cannot infer a supported local preview command.",
+      },
+    });
+
+    expect(markup).toContain("Preview unavailable for this target.");
+    expect(markup).toContain(
+      "No package.json was found, so Shipyard cannot infer a supported local preview command.",
+    );
   });
 });
