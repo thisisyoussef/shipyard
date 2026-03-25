@@ -11,7 +11,8 @@ Prove the current product surface in one pass:
 - creating a fresh project target from the browser
 - target profile + project summary visible in the workbench
 - local preview auto-start with a direct `Open preview` link
-- same-session iteration without restarting Shipyard
+- same-session iteration, including mid-turn interruption, without restarting
+  Shipyard
 - chat transcript plus live step playback in the browser workbench
 - building a simple tic-tac-toe app from a greenfield scaffold
 
@@ -57,7 +58,9 @@ Action:
 Narration:
 > Shipyard is a local-first coding agent that can start without a locked-in
 > project, let me choose a target from the browser, and then keep iterating on
-> that project in one long-lived session with a live preview.
+> that project in one long-lived session with a live preview. If I need to stop
+> a bad turn mid-flight, I can interrupt it and keep going without losing the
+> session.
 
 ## Run Of Show
 
@@ -110,7 +113,7 @@ Proof callout:
 - The target summary/header updates after creation and phase switch.
 - The preview panel shows a loopback URL and the direct `Open preview` link.
 
-### 01:15-03:25: Two Live Turns In One Session
+### 01:15-03:35: Live Build + Mid-Turn Redirect In One Session
 
 Action:
 - Submit this first instruction with an empty context box:
@@ -137,51 +140,77 @@ Keep the next change small. Build on the current board instead of rewriting it, 
 - Submit this second instruction in the same browser session:
 
 ```text
-Finish the first playable loop: alternate X and O when squares are clicked, prevent clicking an occupied square, detect a winner or draw, and add a Reset Game button.
+Read the current app and outline the next edits you would make to turn it into a polished playable version with alternating turns, occupied-square protection, win/draw detection, and a Reset Game button. Do not edit files yet.
+```
+
+- As soon as the live steps start updating:
+  - replace the composer text with the follow-up instruction below
+  - click `Cancel turn`
+  - leave the `Stopping current turn` notice on screen until the session
+    returns to ready
+
+- Once cancellation finishes, submit this replacement instruction from the
+  same composer:
+
+```text
+Finish the first playable loop: alternate X and O when squares are clicked, prevent clicking an occupied square, detect a winner or draw, and add a Reset Game button. Keep the change small and tell me exactly which files changed.
 ```
 
 - Optional if the turn is quick:
   - reload the page once to show the session and context receipt rehydrate
   - click `Open preview` again after the second edit to show the updated result
     in a separate tab
+  - point at the cancelled turn followed by the successful follow-up turn in
+    the same workbench session
 
 Narration:
 > This is one long-lived Shipyard session. I’m starting from a fresh scaffold,
-> getting the first visible board on screen, and then layering in the first
-> playable loop without restarting the agent or the app.
+> getting the first visible board on screen, then deliberately starting a
+> broader second request and interrupting it while `Live view` is still
+> streaming. The point is not just that multiple turns work. I can stop the
+> active turn, keep the narrowed replacement draft in the same composer, and
+> submit it as soon as Shipyard returns to ready.
 
 > I’m also injecting operator context at runtime before the second turn. The UI
 > keeps that context visible as a receipt. I can read the conversation in the
 > `Chat` view, then flip to `Live view` to watch the read, edit, and result
-> steps land one by one while the run is still executing.
+> steps land one by one while the run is still executing. After the interrupt,
+> the final follow-up stays surgical: Shipyard finishes the playable loop
+> without rewriting the whole app.
 
 Proof callout:
-- Same session accepts multiple turns without restarting Shipyard.
-- The second turn clearly uses injected context from the sidebar.
+- Same session accepts an interrupted turn and a replacement turn without
+  restarting Shipyard.
+- `Cancel turn` returns the session to ready instead of forcing a restart.
+- The replacement draft stays in the composer while cancellation is happening.
+- The follow-up turn clearly uses injected context from the sidebar.
 - The `Live view` tab shows sequential step updates before the turn is fully
-  complete.
+  complete, including the interrupted run.
 - The file/output sidebars show a narrow edit surface rather than a full-file
   rewrite, including before/after evidence for the edit step.
 - The preview updates live from scaffold to board to playable game, and can
   also be opened directly in its own tab.
 
-### 03:25-03:45: Show Saved Runs And Trace Proof
+### 03:35-03:55: Show Saved Runs And Trace Proof
 
 Action:
 - Open the `Previous runs` panel in the left sidebar.
-- Point at the current run entry and at least one earlier saved run.
+- Point at the current run entry and, if available, at least one earlier saved
+  run.
 - Click the `Open trace` link from the finished turn or selected live step.
 
 Narration:
 > The browser also keeps the session history local to this target, so I can
 > reopen older runs without restarting Shipyard. And for deeper inspection, each
-> completed run can expose its LangSmith trace right from the workbench.
+> completed run can expose its LangSmith trace right from the workbench. The
+> cancelled turn and the successful follow-up are part of the same truthful
+> runtime story, not separate demos stitched together.
 
 Proof callout:
 - Saved runs are visible in the browser for the current target.
 - A completed run exposes a direct trace link without leaving the workbench.
 
-### 03:45-04:00: Close
+### 03:55-04:10: Close
 
 Action:
 - End on the Shipyard workbench with the finished `tic-tac-toe-demo` board
@@ -190,9 +219,9 @@ Action:
 Narration:
 > That is the current Shipyard flow in one pass: start without a target,
 > create a fresh project from the browser, build a real feature in the same
-> session, inspect the run through chat plus live playback, and verify it
-> through the built-in preview without restarting the agent or leaving the local
-> workflow.
+> session, interrupt a bad turn without restarting, inspect the run through
+> chat plus live playback, and verify it through the built-in preview without
+> leaving the local workflow.
 
 ## Backup Path If A Live Turn Misbehaves
 
@@ -201,18 +230,21 @@ checked-in evidence instead of improvising:
 
 - `shipyard/tests/cli-loop.test.ts` for target-manager startup and project
   creation without restarting
-- `shipyard/tests/ui-runtime.test.ts` for browser target switching and preview
-  lifecycle coverage
+- `shipyard/tests/loop-runtime.test.ts` and `shipyard/tests/ui-runtime.test.ts`
+  for terminal/browser interruption coverage plus successful follow-up work in
+  the same session
 - `shipyard/tests/ui-live-view.test.ts` and
   `shipyard/tests/ui-chat-workspace.test.ts` for the new browser chat and
   step-by-step playback surfaces
 - `shipyard/tests/ui-workbench.test.ts` for the visible `Local preview` and
   `Open preview` workbench surface
+- `shipyard/docs/specs/phase-4/p4-s05-operator-interrupts-and-turn-cancellation/feature-spec.md`
+  for the operator-interrupt and cancelled-turn contract
 - `shipyard/docs/specs/phase-target-manager/README.md` for the target-selection
   story scope
 - `shipyard/docs/specs/phase-5/p5-s01-local-preview-runtime-and-auto-refresh/feature-spec.md`
   for the preview-runtime and preview-panel scope
 
 Use that cut only as a fallback. The primary video should still show the live
-browser flow: target selection, preview startup, one visible change, and a
-second turn in the same session.
+browser flow: target selection, preview startup, one visible change, an
+interrupted turn, and a successful redirected follow-up in the same session.
