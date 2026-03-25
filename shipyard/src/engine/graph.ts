@@ -408,7 +408,12 @@ function createRuntimeTraceMetadata(
     phase: state.phaseConfig.name,
     instruction: state.currentInstruction,
     targetDirectory: state.targetDirectory,
-    usedExplorer: Boolean(state.contextReport),
+    usedExplorer: shouldCoordinatorUseExplorer({
+      instruction: state.currentInstruction,
+      contextEnvelope: state.contextEnvelope,
+      taskPlan: state.taskPlan,
+      contextReport: state.contextReport,
+    }),
   };
 }
 

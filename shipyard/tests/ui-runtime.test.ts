@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -28,10 +29,72 @@ interface MockAnthropicClient {
   };
 }
 
+interface RawCommandResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+}
+
 async function createTempDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), prefix));
   createdDirectories.push(directory);
   return directory;
+}
+
+async function runRawCommand(
+  cwd: string,
+  command: string,
+): Promise<RawCommandResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, {
+      cwd,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        FORCE_COLOR: "0",
+        NO_COLOR: "1",
+      },
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (exitCode) => {
+      resolve({
+        stdout,
+        stderr,
+        exitCode,
+      });
+    });
+  });
+}
+
+async function expectRawCommandSuccess(
+  cwd: string,
+  command: string,
+): Promise<void> {
+  const result = await runRawCommand(cwd, command);
+
+  expect(result.exitCode).toBe(0);
+}
+
+async function initializeGitRepository(cwd: string): Promise<void> {
+  await expectRawCommandSuccess(cwd, "git init");
+  await expectRawCommandSuccess(cwd, "git config user.email shipyard@example.com");
+  await expectRawCommandSuccess(cwd, "git config user.name 'Shipyard Tests'");
 }
 
 function createAssistantMessage(options: {
@@ -332,12 +395,27 @@ describe("ui runtime contract", () => {
     }
   });
 
-  it("streams ordered tool activity and reconnects with the current session snapshot", async () => {
+  it("streams ordered tool activity, surfaces file edits, and reconnects with the current session snapshot", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-runtime-");
+    const packageJsonContents = `${JSON.stringify(
+      {
+        name: "ui-bridge-target",
+        version: "1.0.0",
+      },
+      null,
+      2,
+    )}\n`;
+
     await writeFile(
       path.join(targetDirectory, "package.json"),
-      JSON.stringify({ name: "ui-bridge-target" }, null, 2),
+      packageJsonContents,
       "utf8",
+    );
+    await initializeGitRepository(targetDirectory);
+    await expectRawCommandSuccess(targetDirectory, "git add package.json");
+    await expectRawCommandSuccess(
+      targetDirectory,
+      "git commit -m \"Initial UI smoke target\"",
     );
     const discovery = await discoverTarget(targetDirectory);
     const sessionState = createSessionState({
@@ -362,10 +440,12 @@ describe("ui runtime contract", () => {
           },
           {
             type: "tool_use",
-            id: "toolu_list_files",
-            name: "list_files",
+            id: "toolu_edit_block",
+            name: "edit_block",
             input: {
-              path: ".",
+              path: "package.json",
+              old_string: '  "name": "ui-bridge-target",',
+              new_string: '  "name": "ui-bridge-target-smoke",',
             },
             caller: {
               type: "direct",
@@ -379,6 +459,39 @@ describe("ui runtime contract", () => {
           {
             type: "text",
             text: "Inspection complete.",
+            citations: null,
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_run_command",
+            name: "run_command",
+            input: {
+              command: "git diff --stat",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              command: "git diff --stat",
+              exitCode: 0,
+              passed: true,
+              stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
+              stderr: "",
+              summary: "Verification passed.",
+            }),
             citations: null,
           },
         ],
@@ -453,7 +566,7 @@ describe("ui runtime contract", () => {
         socket.send(
           JSON.stringify({
             type: "instruction",
-            text: "inspect package.json",
+            text: "rename the package in package.json",
             injectedContext: ["Use the current scripts as the source of truth."],
           }),
         );
@@ -467,12 +580,14 @@ describe("ui runtime contract", () => {
           "agent:thinking",
           "agent:tool_call",
           "agent:tool_result",
+          "agent:edit",
           "agent:text",
           "agent:done",
         ]);
         assertEventOrdering(turnMessages, [
           "session:state",
           "agent:thinking",
+          "agent:edit",
           "agent:text",
           "agent:done",
           "session:state",
@@ -481,6 +596,7 @@ describe("ui runtime contract", () => {
         // Tool calls must appear before their results (paired by callId below).
         const toolCalls = turnMessages.filter((message) => message.type === "agent:tool_call");
         const toolResults = turnMessages.filter((message) => message.type === "agent:tool_result");
+        const editPreview = turnMessages.find((message) => message.type === "agent:edit");
         expect(toolCalls).toHaveLength(2);
         expect(toolResults).toHaveLength(2);
         expect(toolCalls[0]).toMatchObject({
@@ -490,7 +606,8 @@ describe("ui runtime contract", () => {
         });
         expect(toolCalls[1]).toMatchObject({
           type: "agent:tool_call",
-          toolName: "list_files",
+          toolName: "edit_block",
+          summary: "path: package.json",
         });
         expect(toolResults[0]).toMatchObject({
           type: "agent:tool_result",
@@ -499,16 +616,27 @@ describe("ui runtime contract", () => {
         });
         expect(toolResults[1]).toMatchObject({
           type: "agent:tool_result",
-          toolName: "list_files",
+          toolName: "edit_block",
           success: true,
         });
         expect(toolResults[0]?.callId).toBe(toolCalls[0]?.callId);
         expect(toolResults[1]?.callId).toBe(toolCalls[1]?.callId);
+        expect(editPreview).toMatchObject({
+          type: "agent:edit",
+          path: "package.json",
+          summary: "Current workspace diff preview for package.json",
+          diff: expect.stringContaining("ui-bridge-target-smoke"),
+        });
 
         const updatedTrace = await readFile(tracePath, "utf8");
         expect(updatedTrace).toContain('"event":"instruction.plan"');
         expect(updatedTrace).toContain('"status":"success"');
-        expect(updatedTrace).toContain('"instruction":"inspect package.json"');
+        expect(updatedTrace).toContain(
+          '"instruction":"rename the package in package.json"',
+        );
+        await expect(
+          readFile(path.join(targetDirectory, "package.json"), "utf8"),
+        ).resolves.toContain('"name": "ui-bridge-target-smoke"');
 
         const persistedSession = JSON.parse(
           await readFile(
@@ -525,7 +653,7 @@ describe("ui runtime contract", () => {
         };
         expect(persistedSession.turnCount).toBe(1);
         expect(persistedSession.workbenchState.turns[0]?.instruction).toBe(
-          "inspect package.json",
+          "rename the package in package.json",
         );
 
         const refreshedStatusPromise = waitForSocketMessage(
@@ -566,7 +694,7 @@ describe("ui runtime contract", () => {
           workbenchState: {
             turns: [
               {
-                instruction: "inspect package.json",
+                instruction: "rename the package in package.json",
                 contextPreview: ["Use the current scripts as the source of truth."],
               },
             ],

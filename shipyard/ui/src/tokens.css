@@ -3,6 +3,11 @@
    UIR-S01 · Visual System and Layout Refresh
    ─────────────────────────────────────────────── */
 
+/* Web font imports — IBM Plex Sans (body) and IBM Plex Mono (code).
+   The display font (Iowan Old Style / Palatino) relies on OS serif
+   stack and does not need a web import. */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
+
 :root {
   color-scheme: dark;
 

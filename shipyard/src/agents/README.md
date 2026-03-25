@@ -1,7 +1,7 @@
 # Agents
 
 This folder defines the role contracts that Shipyard reasons about when it
-plans work. As Phase 6 lands, selected files also start to hold isolated helper
+plans work. As Phase 6 lands, selected files also hold isolated helper
 runtimes behind those roles.
 
 ## Files

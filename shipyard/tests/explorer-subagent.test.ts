@@ -321,6 +321,39 @@ describe("explorer subagent", () => {
     ).toThrow(/json|contextreport/i);
   });
 
+  it("accepts valid report JSON wrapped in prose and markdown fences", () => {
+    const result = parseContextReport(
+      [
+        "Perfect! I found the relevant files.",
+        "",
+        "```json",
+        JSON.stringify({
+          query: "find auth files",
+          findings: [
+            {
+              filePath: "src/auth.ts",
+              excerpt: "export async function authenticateUser(token: string) {",
+              relevanceNote: "Defines the authentication entry point.",
+            },
+          ],
+        }, null, 2),
+        "```",
+      ].join("\n"),
+      "find auth files",
+    );
+
+    expect(result).toEqual({
+      query: "find auth files",
+      findings: [
+        {
+          filePath: "src/auth.ts",
+          excerpt: "export async function authenticateUser(token: string) {",
+          relevanceNote: "Defines the authentication entry point.",
+        },
+      ],
+    });
+  });
+
   it("returns an empty findings array when discovery returns no matches", async () => {
     const directory = await createTempProject();
     const client = createMockAnthropicClient([
