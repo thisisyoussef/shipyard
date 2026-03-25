@@ -10,7 +10,7 @@ The current runtime now has two operator modes:
 ## Docs Map
 
 - [`docs/README.md`](./docs/README.md): durable docs hub
-- [`docs/demo/mvp-demo-script.md`](./docs/demo/mvp-demo-script.md): 3-5 minute presenter script for the current MVP
+- [`docs/demo/mvp-demo-script.md`](./docs/demo/mvp-demo-script.md): 3-5 minute presenter script for the current target-manager and preview workflow
 - [`docs/architecture/README.md`](./docs/architecture/README.md): architecture diagrams and runtime flow
 - [`src/README.md`](./src/README.md): source tree guide
 - [`ui/README.md`](./ui/README.md): React frontend guide
