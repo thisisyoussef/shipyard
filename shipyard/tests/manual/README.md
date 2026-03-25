@@ -8,6 +8,7 @@ credentialed, or otherwise unsuitable for the default automated test suite.
 - `phase2-tools-smoke.ts`: exercises the Phase 2 tool surface
 - `phase3-live-loop-smoke.ts`: checks the live raw-loop path
 - `phase4-langsmith-mvp.ts`: validates the LangSmith-backed MVP flow
+- `phase5-local-preview-smoke.ts`: verifies preview auto-start, refresh, and unavailable-state handling
 
 ## SV-S01 Operator Checklist
 

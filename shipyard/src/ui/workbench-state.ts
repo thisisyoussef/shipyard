@@ -1,3 +1,8 @@
+import type { PreviewState } from "../artifacts/types.js";
+import {
+  createIdlePreviewState,
+  createPreviewStateFromCapability,
+} from "../preview/contracts.js";
 import type { BackendToFrontendMessage } from "./contracts.js";
 
 export type WorkbenchConnectionState =
@@ -73,6 +78,8 @@ export interface PendingToolCall {
   toolName: string;
 }
 
+export interface PreviewStateViewModel extends PreviewState {}
+
 export interface WorkbenchViewState {
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
@@ -86,6 +93,7 @@ export interface WorkbenchViewState {
   nextEventNumber: number;
   nextFileEventNumber: number;
   contextHistory: ContextReceiptViewModel[];
+  previewState: PreviewStateViewModel;
 }
 
 export interface PreparedInstructionSubmission {
@@ -292,6 +300,9 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     nextEventNumber: 1,
     nextFileEventNumber: 1,
     contextHistory: [],
+    previewState: createIdlePreviewState(
+      "Waiting for Shipyard to publish preview state.",
+    ),
   };
 }
 
@@ -331,15 +342,22 @@ export function applySessionSnapshot(
   message: Extract<BackendToFrontendMessage, { type: "session:state" }>,
 ): WorkbenchViewState {
   const recoveredState = message.workbenchState ?? state;
+  const previewState = recoveredState.previewState ??
+    createPreviewStateFromCapability(message.discovery.previewCapability);
   const recoveredAfterReload =
     state.sessionState === null && hasRecoveredHistory(recoveredState);
   const nextConnectionState = message.connectionState;
+  const preservedAgentStatus =
+    recoveredState.agentStatus &&
+    recoveredState.agentStatus !== "Connecting to Shipyard..."
+      ? recoveredState.agentStatus
+      : null;
   const nextAgentStatus = recoveredAfterReload
     ? "Recovered session history after reload."
     : nextConnectionState === "agent-busy"
       ? `Turn ${String(message.turnCount)} is in progress.`
       : recoveredState.latestError ??
-        recoveredState.agentStatus ??
+        preservedAgentStatus ??
         "Ready for the next instruction.";
 
   return {
@@ -347,6 +365,7 @@ export function applySessionSnapshot(
     sessionState: createSessionStateViewModel(message),
     connectionState: nextConnectionState,
     agentStatus: nextAgentStatus,
+    previewState,
   };
 }
 
@@ -573,5 +592,11 @@ export function applyBackendMessage(
         }),
       );
     }
+
+    case "preview:state":
+      return {
+        ...state,
+        previewState: message.preview,
+      };
   }
 }

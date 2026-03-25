@@ -32,6 +32,38 @@ export interface VerificationReport {
   summary: string;
 }
 
+export type PreviewCapabilityStatus = "available" | "unavailable";
+export type PreviewKind = "dev-server" | "watch-build" | "static-output";
+export type PreviewRunner = "npm" | "pnpm" | "yarn" | "bun";
+export type PreviewAutoRefreshMode = "native-hmr" | "restart" | "none";
+
+export interface PreviewCapabilityReport {
+  status: PreviewCapabilityStatus;
+  kind: PreviewKind | null;
+  runner: PreviewRunner | null;
+  scriptName: string | null;
+  command: string | null;
+  reason: string;
+  autoRefresh: PreviewAutoRefreshMode;
+}
+
+export type PreviewStatus =
+  | "idle"
+  | "starting"
+  | "running"
+  | "refreshing"
+  | "error"
+  | "exited"
+  | "unavailable";
+
+export interface PreviewState {
+  status: PreviewStatus;
+  summary: string;
+  url: string | null;
+  logTail: string[];
+  lastRestartReason: string | null;
+}
+
 export interface DiscoveryReport {
   isGreenfield: boolean;
   language: string | null;
@@ -43,4 +75,5 @@ export interface DiscoveryReport {
   topLevelFiles: string[];
   topLevelDirectories: string[];
   projectName: string | null;
+  previewCapability: PreviewCapabilityReport;
 }

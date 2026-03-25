@@ -26,7 +26,8 @@ for `SV-S01`.
 | Persistent loop and session resume | `tests/cli-loop.test.ts` proves repeated turns, interleaved `status`, and explicit exit in one process. | `tests/cli-loop.test.ts` also covers restart plus `--session` resume with persisted turn count after a failed turn. |
 | Surgical file editing guardrails | `tests/tooling.test.ts` covers successful unique-anchor edits. | `tests/tooling.test.ts` now also covers repeated edits to one file, stale reads, ambiguous anchors, missing anchors, and large rewrite rejection. |
 | Context injection and rolling history | `tests/context-envelope.test.ts` validates serialized prompt sections and injected context placement. | `tests/turn-runtime.test.ts` exercises multi-turn carry-forward, current-turn context injection, and the eight-line rolling summary bound. |
-| Browser UI operator flow | `tests/ui-runtime.test.ts` covers instruction submission, streamed tool activity, edit previews, and reconnect snapshots. | `tests/ui-runtime.test.ts` also covers error recovery and repeated error-stream runs for stability. |
+| Browser UI operator flow | `tests/ui-runtime.test.ts` covers instruction submission, streamed tool activity, preview auto-start, refresh-state streaming, edit previews, and reconnect snapshots. | `tests/ui-runtime.test.ts` also covers error recovery and repeated error-stream runs for stability. |
+| Preview supervision | `tests/discovery.test.ts` and `tests/preview-supervisor.test.ts` cover preview capability inference plus start, refresh, exit, and startup-failure states. | `tests/ui-runtime.test.ts` verifies preview lifecycle messages remain aligned with the browser session contract. |
 | Trace evidence | `tests/ui-runtime.test.ts` checks local JSONL trace entries for success and failure instructions. | `tests/graph-runtime.test.ts` verifies graph-success and fallback-failure paths both attach LangSmith trace metadata when tracing is enabled. |
 
 ## Manual Smoke Scripts

@@ -21,6 +21,7 @@ import {
   runFallbackRuntime,
 } from "../src/engine/graph.js";
 import { createCodePhase } from "../src/phases/code/index.js";
+import { createUnavailablePreviewCapability } from "../src/preview/contracts.js";
 import type {
   LangSmithTraceReference,
   RunWithLangSmithTraceOptions,
@@ -58,6 +59,9 @@ function createContextEnvelope(): ContextEnvelope {
         topLevelFiles: ["package.json"],
         topLevelDirectories: ["src"],
         projectName: "shipyard",
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
       },
       projectRules: "",
       availableScripts: {
