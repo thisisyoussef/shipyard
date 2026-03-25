@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { SCAFFOLD_TYPES } from "../tools/target-manager/scaffolds.js";
+
 export const runtimeModeSchema = z.enum(["repl", "ui"]);
 export const uiConnectionStateSchema = z.enum([
   "disconnected",
@@ -50,13 +52,7 @@ const previewStatusSchema = z.enum([
   "exited",
   "unavailable",
 ]);
-const scaffoldTypeSchema = z.enum([
-  "react-ts",
-  "express-ts",
-  "python",
-  "go",
-  "empty",
-]);
+const scaffoldTypeSchema = z.enum(SCAFFOLD_TYPES);
 const enrichmentStatusSchema = z.enum([
   "idle",
   "started",

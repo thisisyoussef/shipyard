@@ -3,7 +3,7 @@
 - Pack: Phase 8 Spec-Driven Operator Workflow
 - Estimate: 10-14 hours
 - Date: 2026-03-25
-- Status: In progress
+- Status: In progress (`P8-S01` and `P8-S04` implemented; `P8-S02` to `P8-S03` still planned)
 
 ## Pack Objectives
 
@@ -71,6 +71,16 @@
 - `shipyard/tests/spec-loader.test.ts`: validates the story contract end to
   end.
 
+- `P8-S04`: [`../../src/tools/target-manager/scaffolds.ts`](../../src/tools/target-manager/scaffolds.ts),
+  [`../../src/tools/target-manager/scaffold-materializer.ts`](../../src/tools/target-manager/scaffold-materializer.ts),
+  [`../../src/tools/target-manager/bootstrap-target.ts`](../../src/tools/target-manager/bootstrap-target.ts),
+  [`../../src/phases/code/prompts.ts`](../../src/phases/code/prompts.ts), and
+  [`../../tests/scaffold-bootstrap.test.ts`](../../tests/scaffold-bootstrap.test.ts)
+  add the richer workspace preset, shared empty-target bootstrap path, and
+  regression coverage.
+
+- `P8-S02` to `P8-S03`: N/A in this changeset.
+
 ### Representative Snippets
 
 - `P8-S01` stable-ref shape:
@@ -91,5 +101,16 @@
   ];
   ```
 
-- Remaining stories `P8-S02` through `P8-S04`: implementation evidence is
-  still pending.
+- `P8-S04` default scaffold:
+
+```ts
+const DEFAULT_BOOTSTRAP_SCAFFOLD_TYPE: ScaffoldType = "ts-pnpm-workspace";
+```
+
+- `P8-S04` turn-state refresh after bootstrap:
+
+```ts
+if (toolName === "bootstrap_target" && isBootstrapTargetData(resultData)) {
+  sessionState.discovery = context.result.data.discovery;
+}
+```

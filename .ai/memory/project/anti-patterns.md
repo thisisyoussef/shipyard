@@ -42,3 +42,8 @@ Capture failures so they are not repeated.
 - **Example**: Turning on a Claude bridge for UI implementation or QA but dropping the exact `typeset`/`colorize`/`arrange` or `critique`/`audit` skill contracts from the prompt
 - **Why it failed**: Provider swaps changed the actual design process instead of only changing who executed it.
 - **Prevention rule**: Any Claude UI phase bridge must carry the exact same phase skill chain Codex uses, and later-phase Claude routing must stay behind `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES`.
+
+- **Problem**: Adding a second greenfield scaffolder outside the shared target-manager catalog
+- **Example**: Creating a new bootstrap toolchain that writes its own boilerplate templates instead of reusing `scaffolds.ts`
+- **Why it failed**: Template drift appears immediately between target creation and empty-target bootstrap, and prompt guidance stops matching the actual generator.
+- **Prevention rule**: Extend the shared scaffold catalog once and route both `create_target` and `bootstrap_target` through the same materialization helper.

@@ -30,6 +30,13 @@ Capture repeatable patterns that match how this workspace actually works.
   isolated history, explicit tool allowlist, local Zod validation, and fail-
   closed parsing before coordinator code consumes the result.
 
+## Greenfield Bootstrap Pattern
+
+- Shared scaffold definitions live in `shipyard/src/tools/target-manager/scaffolds.ts`.
+- File creation for scaffolds is centralized in `shipyard/src/tools/target-manager/scaffold-materializer.ts`.
+- New-target creation uses `create_target`; already-selected empty targets use `bootstrap_target`.
+- Code phase should prefer `bootstrap_target` for standard workspace starters instead of many boilerplate `write_file` calls.
+
 ## Testing and Validation
 
 - Tests live in `shipyard/tests/` and use Vitest.

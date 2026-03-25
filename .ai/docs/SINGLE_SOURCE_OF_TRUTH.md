@@ -42,6 +42,7 @@
 - **Relevant traced-story finish gate**: use the LangSmith CLI to review recent traces, runs, and insights before merge, and fix unexpected behavior first
 - **Helper-script status**: some imported workflow docs describe optional repo-owned helpers under `scripts/`; unless those helpers exist in this repo, follow the manual workflow equivalent instead of assuming the commands are wired today.
 - **UI bridge flag**: `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES=1` makes `scripts/run-ui-phase-bridge.mjs` use Claude first for UI implementation, QA, critic, and final polish while preserving a Codex-first fallback when the flag is off.
+- **Greenfield bootstrap baseline**: shared scaffold presets now back both target creation and empty-target bootstrap in code phase; do not add a second scaffolding path when extending greenfield setup.
 
 ---
 

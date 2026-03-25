@@ -14,3 +14,4 @@
 - 2026-03-25: Kept `load_spec` target-relative for its first landing because the repo has no existing configurable contract for workspace-outside-target spec roots.
 - 2026-03-25: Expanded the design bridge context so Claude reads `.ai/agents/claude.md` and `.claude/CLAUDE.md` and follows the same imperative design skill chain Codex uses.
 - 2026-03-25: Added `scripts/run-ui-phase-bridge.mjs` plus the `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES` flag so UI implementation, QA, critic, and final polish can use Claude first without changing the phase skill contracts.
+- 2026-03-25: Added a shared `ts-pnpm-workspace` scaffold preset plus `bootstrap_target`, so both target creation and already-selected empty targets reuse the same greenfield generator instead of repeated `write_file` boilerplate.
