@@ -47,6 +47,7 @@ Notes:
 - Use `--context-path <path>` to include extra files or directories in the prompt.
 - The bridge writes `.ai/state/design-brief/<story-id>/brief.md`.
 - The bridge is Claude-first by default, uses Refero for brainstorming/reference research when configured, and falls back to Codex only when Claude is unavailable or returns an error.
+- The bridge includes `.ai/agents/claude.md` and `.claude/CLAUDE.md` in its context so Claude follows the exact same imperative design skill chain Codex uses for this phase.
 
 After the initial draft is written, continue the full review/refinement loop below rather than treating the first output as final by default.
 

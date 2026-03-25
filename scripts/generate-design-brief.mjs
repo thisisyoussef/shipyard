@@ -24,8 +24,11 @@ const baseContextPaths = [
   "AGENTS.md",
   ".ai/docs/SINGLE_SOURCE_OF_TRUTH.md",
   ".ai/codex.md",
+  ".ai/agents/claude.md",
+  ".claude/CLAUDE.md",
   ".ai/workflows/design-phase.md",
   ".ai/docs/design/DESIGN_PHILOSOPHY_AND_LANGUAGE.md",
+  ".ai/skills/frontend-design.md",
   ".ai/templates/spec/UI_PROMPT_BRIEF_TEMPLATE.md",
   "shipyard/ui/README.md",
   "shipyard/ui/src/README.md",
@@ -33,10 +36,73 @@ const baseContextPaths = [
   "shipyard/ui/src/tokens/index.css",
 ];
 
+const designSkillChain = [
+  {
+    step: "Understand",
+    skills: [
+      ["extract", "catalog reusable patterns, components, and tokens"],
+      ["normalize", "identify design drift and consistency gaps"],
+    ],
+  },
+  {
+    step: "Define",
+    skills: [
+      ["frontend-design", "set the visual direction and avoid generic output"],
+      ["interface-design", "apply tool and dashboard interaction patterns"],
+      ["emil-design-eng", "surface taste, unseen details, and motion judgment"],
+      ["baseline-ui", "keep the direction inside the baseline component standards"],
+    ],
+  },
+  {
+    step: "Compose",
+    skills: [
+      ["clarify", "define user-facing copy, labels, and empty or error states"],
+      ["distill", "remove non-essential structure and reduce noise"],
+      ["typeset", "assign explicit type scale, weights, and spacing"],
+      ["colorize", "apply semantic color decisions and new tones only when needed"],
+      ["arrange", "define grid, spacing, rhythm, and hierarchy"],
+      ["adapt", "define responsive behavior across the required breakpoints"],
+    ],
+  },
+  {
+    step: "Animate",
+    skills: [
+      ["animate", "define entry motion, transitions, and micro-interactions"],
+      ["delight", "add 1-2 small moments of personality when warranted"],
+      ["quieter", "tone down motion if it becomes too loud for Shipyard"],
+    ],
+  },
+  {
+    step: "Harden",
+    skills: [
+      ["harden", "cover overflow, missing data, error, and resilience cases"],
+      ["onboard", "improve first-run and empty states"],
+    ],
+  },
+  {
+    step: "Review",
+    skills: [
+      ["critique", "score the design across the required quality dimensions"],
+      ["normalize", "confirm the brief still matches the system and token names"],
+    ],
+  },
+];
+
+function formatDesignSkillChain() {
+  return designSkillChain
+    .map(({ step, skills }) => [
+      `- ${step}:`,
+      ...skills.map(([skill, purpose]) => `  - ${skill} - ${purpose}`),
+    ].join("\n"))
+    .join("\n");
+}
+
 const claudeSystemPrompt = [
   "You are Shipyard's dedicated design-phase delegate.",
   "Your job is to create implementation-ready UI design briefs for visible UI stories.",
   "You are not writing code or patches in this task.",
+  "You must follow the exact same design-phase skill chain Codex uses for this phase.",
+  "Treat those skills as imperative instructions, not optional inspiration.",
   "Inspect the requested local files, synthesize the strongest design direction that still fits the repo, and return only Markdown.",
   "When Refero MCP is available, use it for design research before you draft the brief.",
   "Study shipped product references first, then decide what Shipyard should borrow, adapt, or avoid.",
@@ -359,6 +425,9 @@ function buildDesignPrompt({
     `Target brief path: ${relativeToRepo(outputPath)}`,
     "",
     "The output must satisfy the contract in `.ai/workflows/design-phase.md` and be concrete enough that a Codex implementer can build from it without inventing major visual decisions.",
+    "Follow the exact same design-phase skill chain Codex uses, as mapped in `.ai/codex.md` and `.ai/agents/claude.md`.",
+    "Treat these skills as imperative, and apply them in the same step order and for the same purposes:",
+    formatDesignSkillChain(),
     referoInstructions,
     "",
     "Required sections:",
@@ -595,6 +664,7 @@ async function main() {
             outputPath: relativeToRepo(outputPath),
             claudeModel,
             codexModel: codexModel || null,
+            designSkillChain,
             contextPaths: contextPaths.map(relativeToRepo),
             referoEnabled: mcpConfig.referoEnabled,
             referoSource: mcpConfig.referoSource,

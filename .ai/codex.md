@@ -38,6 +38,15 @@ When a story touches visible UI, invoke these skills in order:
 - When Refero is configured, the bridge should use it during brainstorming and reference gathering before drafting the brief.
 - Only rely on the Codex-generated brief when the bridge reports a Claude failure or unavailability.
 - The bridge writes `.ai/state/design-brief/<story-id>/brief.md`, which remains the handoff artifact for TDD and UI QA.
+- The design bridge now loads `.ai/agents/claude.md` and `.claude/CLAUDE.md` context so Claude follows the same imperative design skill chain Codex uses.
+
+### Optional UI Phase Bridges
+- Set `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES=1` to make `node scripts/run-ui-phase-bridge.mjs --phase <ui|qa|critic|polish> --story <story-id>` use Claude first for later UI phases.
+- Leave the flag unset to keep those scripted later-phase bridges Codex-first, which makes the rollout reversible without changing prompts or workflow files.
+- `--phase ui` must follow the exact `typeset`, `colorize`, `arrange`, `animate`, `bolder` skill chain.
+- `--phase qa` and `--phase critic` must follow the exact `critique`, `audit`, `fixing-accessibility`, `fixing-motion-performance` skill chain.
+- `--phase polish` must follow the exact `polish`, `overdrive` skill chain.
+- The bridge writes artifacts under `.ai/state/ui-phase-bridge/<story-id>/` so later phases can consume the same handoff trail.
 
 ### Phase 1: Design Direction
 - `.agents/skills/frontend-design/SKILL.md` — set visual direction, avoid AI slop

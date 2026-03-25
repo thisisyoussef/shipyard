@@ -48,6 +48,12 @@ Use the installed skill chain for structured evaluation:
 - `.agents/skills/fixing-accessibility/SKILL.md` — WCAG compliance check
 - `.agents/skills/fixing-motion-performance/SKILL.md` — animation/rendering performance check
 
+If you want a scripted delegate for this phase instead of manual execution, run:
+
+```bash
+node scripts/run-ui-phase-bridge.mjs --phase critic --story <story-id>
+```
+
 Focus on:
 - clarity of system status
 - obviousness of next actions

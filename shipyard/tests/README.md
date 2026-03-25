@@ -13,6 +13,7 @@ The Vitest suite exercises the main runtime boundaries:
 - session-history summaries plus UI event mapping, browser runtime transport,
   and frontend view models
 - tracing and checkpointing behavior
+- harness bridge dry-runs for design and later scripted UI phases
 
 `vitest.config.ts` keeps file-level parallelism off so the integration-style
 tests remain deterministic.

@@ -102,6 +102,12 @@ Then during TDD and validation:
 
 Skills are in `.agents/skills/`. See `.ai/codex.md` for the full mapping.
 
+When the repo uses the scripted UI phase bridges:
+- `node scripts/generate-design-brief.mjs --story <story-id>` remains the design-phase entrypoint and must use the same design skill chain Codex follows.
+- Set `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES=1` to make `node scripts/run-ui-phase-bridge.mjs --phase <ui|qa|critic|polish> --story <story-id>` use Claude first for later UI phases.
+- Keep the flag unset to leave those scripted later-phase bridges Codex-first.
+- The scripted bridges must preserve the exact same phase skill chains from `.ai/codex.md`; they are not allowed to substitute a Claude-specific variant.
+
 ## Compatibility Notes
 
 - Product code lives under `shipyard/`

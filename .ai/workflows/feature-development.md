@@ -95,6 +95,9 @@ Do not assume defaults that have not been recorded.
 - The brief contains: visual direction, component inventory, token selections, layout/type/color/motion decisions, copy direction, accessibility requirements, responsive behavior, edge cases.
 - This brief becomes allowed context for TDD Agent 2 (implementer) and Agent 3 (reviewer).
 - Do not skip this step and invent design decisions during TDD.
+- For later UI phases, use `node scripts/run-ui-phase-bridge.mjs --phase <ui|qa|critic|polish> --story <story-id>` when you want a scripted delegate instead of manual execution.
+- Set `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES=1` to make those later scripted bridges Claude-first; leave it unset to keep them Codex-first.
+- Regardless of provider, those scripted bridges must carry the exact same phase skill chains defined in `.ai/codex.md`.
 
 ### Step 3.5: Establish an Inspectable UI Surface Early
 - For stories that change visible product behavior, establish or extend the minimum inspectable UI surface early in the implementation sequence.
@@ -130,6 +133,7 @@ Do not assume defaults that have not been recorded.
     - `arrange` — layout, spacing, visual rhythm
     - `animate` — entrance, micro-interactions, state transitions
     - `bolder` — amplify visual impact when design feels safe
+  - The scripted delegate for this phase is `node scripts/run-ui-phase-bridge.mjs --phase ui --story <story-id>`
 - Agent 3: review/refactor while keeping the suite green
 - Use `bash scripts/tdd_handoff.sh check ...` for RED/GREEN enforcement
 
@@ -150,9 +154,11 @@ Run the project-specific commands defined during setup and required by the activ
   - `audit` — accessibility, performance, theming, responsive audit
   - `fixing-accessibility` — WCAG 2.2 AA compliance fixes
   - `fixing-motion-performance` — animation perf fixes (compositor-only verification)
+  - The scripted delegate for this phase is `node scripts/run-ui-phase-bridge.mjs --phase qa --story <story-id>`
 - For UI scope on pack-closing or high-impact stories, also run **Phase 4** (Final Polish):
   - `polish` — alignment, spacing, consistency, edge cases
   - `overdrive` — ambitious implementations when appropriate (View Transitions, scroll-driven, etc.)
+  - The scripted delegate for this phase is `node scripts/run-ui-phase-bridge.mjs --phase polish --story <story-id>`
 
 ### Step 9.5: Run the UI QA Critic for Visible Stories
 - If the story changed visible UI behavior, run `.ai/workflows/ui-qa-critic.md`
@@ -160,6 +166,7 @@ Run the project-specific commands defined during setup and required by the activ
 - Check whether primary copy uses user language, whether mutation feedback reflects confirmed outcomes, and whether debug details stay secondary
 - If the critic finds non-blocking improvements, suggest follow-on stories at the tail of the active sequence instead of silently expanding the current story
 - If the story closes a visible pack, update or create the pack-level `user-audit-checklist.md`
+- The scripted delegate for this phase is `node scripts/run-ui-phase-bridge.mjs --phase critic --story <story-id>`
 
 ### Step 9.6: Run the LangSmith Finish Check for Relevant Stories
 - If the story changes traced AI/runtime behavior, run `.ai/workflows/langsmith-finish-check.md`

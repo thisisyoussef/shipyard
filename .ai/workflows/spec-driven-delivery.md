@@ -134,6 +134,7 @@ The design phase:
 - Invokes 19 skills across the steps (see design-phase.md for the full mapping)
 - Produces a design brief at `.ai/state/design-brief/<story-id>/brief.md`
 - The brief becomes allowed context for the TDD pipeline
+- Later UI implementation, QA, critic, and polish passes can be scripted with `node scripts/run-ui-phase-bridge.mjs --phase <ui|qa|critic|polish> --story <story-id>`
 
 The bridge is Claude-first by default, uses Refero-backed research when configured, and only falls back to Codex when Claude is unavailable or errors.
 
