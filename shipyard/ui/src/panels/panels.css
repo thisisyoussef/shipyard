@@ -917,7 +917,15 @@
 .workbench-primary-shell {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: clamp(24rem, calc(100vh - 17rem), 44rem);
+}
+
+.workbench-primary-shell > .chat-workspace,
+.workbench-primary-shell > .live-view-panel {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .workbench-primary-tabs {
@@ -964,6 +972,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  min-height: 0;
   padding: var(--pad-card);
   background: var(--surface-card);
   border: 1px solid var(--border-subtle);
@@ -984,6 +993,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: clamp(18rem, calc(100vh - 25rem), 34rem);
+  overflow-y: auto;
+  padding-right: 0.35rem;
 }
 
 .chat-turn {
@@ -1538,6 +1552,16 @@
 }
 
 @media (max-width: 960px) {
+  .workbench-primary-shell {
+    min-height: auto;
+  }
+
+  .chat-thread {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
   .live-view-layout,
   .live-code-grid,
   .file-preview-pair {

@@ -281,6 +281,12 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("inspect package.json");
     expect(markup).toContain("Open trace");
     expect(markup).toContain('aria-label="Current location"');
+    expect(markup).toContain('class="workbench-operator-grid"');
+    expect(markup).toContain('class="workbench-focus-column"');
+    expect(markup).toContain('class="workbench-support-column"');
+    expect(markup.indexOf("Latest conversation")).toBeLessThan(
+      markup.indexOf("Local preview"),
+    );
   });
 
   it("renders preview status, inline result, and a direct preview link", () => {
