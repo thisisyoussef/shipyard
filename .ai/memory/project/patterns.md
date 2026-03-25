@@ -29,6 +29,10 @@ Capture repeatable patterns that match how this workspace actually works.
 - Local JSONL traces and LangSmith metadata should carry the routing facts
   needed to debug coordinator decisions, including handoff load/emission state
   and reset reason when applicable.
+- Hosted Railway deploys should treat the nested `shipyard/` directory as the
+  app root. App-level `railway.json` commands run from that directory, so they
+  should use plain `pnpm build` / `pnpm start -- --ui` instead of recursing
+  back into `--dir shipyard`.
 
 ## Runtime Artifact Pattern
 

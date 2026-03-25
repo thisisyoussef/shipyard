@@ -154,6 +154,14 @@ if (envTargetsDirectory) {
 }
 ```
 
+- Railway now runs the nested app from its own root instead of hopping one
+  directory too deep:
+
+```json
+"buildCommand": "pnpm install --frozen-lockfile && pnpm build",
+"startCommand": "pnpm start -- --ui"
+```
+
 - Upload receipts become next-turn context instead of raw websocket blobs:
 
 ```ts
