@@ -1,0 +1,103 @@
+/* ───────────────────────────────────────────────
+   Motion Design Tokens
+   UIV2-S01 · Design System Foundation
+
+   Duration tiers, easing curves, spring configs,
+   and enter/exit semantics. All motion is
+   compositor-only (transform, opacity).
+
+   prefers-reduced-motion zeros all durations
+   (also enforced in reset.css as a global catch).
+   ─────────────────────────────────────────────── */
+
+:root {
+  /* ═══════════════════════════════════════════════
+     DURATION TIERS
+     5 named levels from instant to deliberate
+     ═══════════════════════════════════════════════ */
+
+  --duration-instant:    0ms;
+  --duration-fast:       100ms;
+  --duration-normal:     200ms;
+  --duration-slow:       350ms;
+  --duration-deliberate: 500ms;
+
+  /* ═══════════════════════════════════════════════
+     EASING CURVES
+     ═══════════════════════════════════════════════ */
+
+  /* Standard ease-out — deceleration, feels natural */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Ease-in-out — symmetric, good for state transitions */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Spring — slight overshoot, use for playful interactions */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Linear — for progress bars and loading indicators */
+  --ease-linear: linear;
+
+  /* Default alias for backwards compat */
+  --ease-default: var(--ease-out);
+
+  /* ═══════════════════════════════════════════════
+     ENTER / EXIT SEMANTICS
+     Entrance is slower than exit (design principle)
+     ═══════════════════════════════════════════════ */
+
+  --enter-duration: var(--duration-normal);
+  --enter-easing:   var(--ease-out);
+  --exit-duration:  var(--duration-fast);
+  --exit-easing:    var(--ease-in-out);
+
+  /* Stagger increment for sequential panel entrance */
+  --stagger-delay: 75ms;
+
+  /* ═══════════════════════════════════════════════
+     INTERACTION TIMING
+     Per-interaction-type presets
+     ═══════════════════════════════════════════════ */
+
+  /* Button press feedback */
+  --press-duration: var(--duration-fast);
+  --press-scale:    0.97;
+
+  /* Focus ring appearance */
+  --focus-duration: var(--duration-normal);
+
+  /* Sidebar collapse/expand */
+  --collapse-duration: var(--duration-slow);
+  --collapse-easing:   var(--ease-out);
+
+  /* Tooltip / popover */
+  --tooltip-delay:    var(--duration-slow);
+  --tooltip-duration: var(--duration-fast);
+}
+
+/* ═══════════════════════════════════════════════
+   Reduced Motion Override
+   Zeros all duration tokens so components that
+   use them get instant transitions. Also
+   redundantly set via reset.css for safety.
+   ═══════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant:    0ms;
+    --duration-fast:       0ms;
+    --duration-normal:     0ms;
+    --duration-slow:       0ms;
+    --duration-deliberate: 0ms;
+
+    --enter-duration: 0ms;
+    --exit-duration:  0ms;
+
+    --stagger-delay: 0ms;
+    --press-duration: 0ms;
+    --focus-duration: 0ms;
+    --collapse-duration: 0ms;
+    --tooltip-delay: 0ms;
+    --tooltip-duration: 0ms;
+  }
+}

@@ -1,0 +1,124 @@
+/* ───────────────────────────────────────────────
+   Component Design Tokens
+   UIV2-S01 · Design System Foundation
+
+   Indirection layer between primitive tokens and
+   component implementations. Every component
+   references these instead of reaching into
+   primitives directly.
+   ─────────────────────────────────────────────── */
+
+:root {
+  /* ═══════════════════════════════════════════════
+     CARD
+     ═══════════════════════════════════════════════ */
+  --card-bg:      var(--surface-card);
+  --card-bg-hover: var(--surface-card-strong);
+  --card-border:  var(--border-subtle);
+  --card-padding: var(--space-card-padding);
+  --card-radius:  var(--radius-xl);
+  --card-shadow:  var(--elevation-3), var(--shadow-inner);
+  --card-blur:    var(--blur-card);
+
+  /* ═══════════════════════════════════════════════
+     BADGE — per-tone tokens
+     ═══════════════════════════════════════════════ */
+
+  /* Neutral */
+  --badge-neutral-bg:     rgba(255, 255, 255, 0.04);
+  --badge-neutral-text:   var(--text-default);
+  --badge-neutral-border: var(--border-subtle);
+
+  /* Accent */
+  --badge-accent-bg:      var(--accent-soft);
+  --badge-accent-text:    var(--accent-strong);
+  --badge-accent-border:  var(--accent-border);
+
+  /* Success */
+  --badge-success-bg:     var(--success-soft);
+  --badge-success-text:   var(--success-strong);
+  --badge-success-border: var(--border-success);
+
+  /* Danger */
+  --badge-danger-bg:      var(--danger-soft);
+  --badge-danger-text:    var(--danger-strong);
+  --badge-danger-border:  var(--border-danger);
+
+  /* Warning */
+  --badge-warning-bg:     var(--warning-soft);
+  --badge-warning-text:   var(--warning-strong);
+  --badge-warning-border: var(--border-warning);
+
+  /* Badge sizing */
+  --badge-padding-y: 0.42rem;
+  --badge-padding-x: 0.8rem;
+  --badge-radius:    var(--radius-full);
+  --badge-font-size: var(--text-xs);
+  --badge-font-weight: var(--weight-semibold);
+  --badge-min-height: 2rem;
+
+  /* ═══════════════════════════════════════════════
+     INPUT / TEXTAREA
+     ═══════════════════════════════════════════════ */
+  --input-bg:          var(--surface-inset);
+  --input-bg-hover:    rgba(6, 11, 15, 0.82);
+  --input-border:      var(--border-subtle);
+  --input-border-focus: var(--accent-strong);
+  --input-focus-ring:  rgba(213, 140, 83, 0.35);
+  --input-text:        var(--text-strong);
+  --input-placeholder: var(--text-faint);
+  --input-radius:      var(--radius-lg);
+  --input-padding:     var(--space-4);
+  --input-font-size:   var(--text-body);
+  --input-line-height: var(--leading-relaxed);
+
+  /* ═══════════════════════════════════════════════
+     BUTTON — per-variant tokens
+     ═══════════════════════════════════════════════ */
+
+  /* Primary */
+  --btn-primary-bg:      linear-gradient(135deg, var(--accent-strong), #f0b071);
+  --btn-primary-bg-hover: linear-gradient(135deg, #e09560, #f5c088);
+  --btn-primary-text:    var(--text-inverse);
+  --btn-primary-border:  rgba(213, 140, 83, 0.35);
+  --btn-primary-shadow:  0 12px 24px rgba(213, 140, 83, 0.18);
+  --btn-primary-radius:  var(--radius-full);
+  --btn-primary-padding: 0.82rem 1.15rem;
+  --btn-primary-weight:  var(--weight-bold);
+
+  /* Ghost */
+  --btn-ghost-bg:        rgba(255, 255, 255, 0.03);
+  --btn-ghost-bg-hover:  rgba(255, 255, 255, 0.06);
+  --btn-ghost-text:      var(--text-strong);
+  --btn-ghost-border:    var(--border-subtle);
+  --btn-ghost-radius:    var(--radius-full);
+  --btn-ghost-padding:   0.56rem 0.88rem;
+
+  /* Danger */
+  --btn-danger-bg:       var(--danger-soft);
+  --btn-danger-bg-hover: rgba(236, 129, 112, 0.22);
+  --btn-danger-text:     var(--danger-strong);
+  --btn-danger-border:   var(--border-danger);
+  --btn-danger-radius:   var(--radius-full);
+  --btn-danger-padding:  0.56rem 0.88rem;
+
+  /* Shared button */
+  --btn-disabled-opacity: 0.5;
+
+  /* ═══════════════════════════════════════════════
+     STATUS DOT
+     ═══════════════════════════════════════════════ */
+  --status-idle:    var(--text-muted);
+  --status-running: var(--accent-strong);
+  --status-success: var(--success-strong);
+  --status-error:   var(--danger-strong);
+  --status-warning: var(--warning-strong);
+  --status-size:    0.65rem;
+
+  /* ═══════════════════════════════════════════════
+     FOCUS
+     ═══════════════════════════════════════════════ */
+  --focus-ring-color:  rgba(213, 140, 83, 0.7);
+  --focus-ring-width:  2px;
+  --focus-ring-offset: 2px;
+}
