@@ -12,6 +12,7 @@ import { useState } from "react";
 import {
   ChatWorkspace,
   ComposerPanel,
+  type ComposerAttachment,
   ContextPanel,
   FilePanel,
   RunHistoryPanel,
@@ -60,6 +61,7 @@ export interface ShipyardWorkbenchProps {
   instruction: string;
   contextDraft: string;
   composerNotice: ComposerNotice | null;
+  composerAttachments: ComposerAttachment[];
   instructionInputRef: RefObject<HTMLTextAreaElement | null>;
   contextInputRef: RefObject<HTMLTextAreaElement | null>;
   onInstructionChange: (value: string) => void;
@@ -67,8 +69,10 @@ export interface ShipyardWorkbenchProps {
   onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onContextKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onClearContext: () => void;
+  onAttachFiles: (files: File[]) => void;
   onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
   onCancelInstruction: () => void;
+  onRemoveAttachment: (attachmentId: string) => void;
   onRequestSessionResume: (sessionId: string) => void;
   onRequestTargetSwitch: (targetPath: string) => void;
   onRequestTargetCreate: (input: {
@@ -180,6 +184,9 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               textareaRef={props.instructionInputRef}
               agentBusy={props.connectionState === "agent-busy"}
               notice={props.composerNotice}
+              attachments={props.composerAttachments}
+              onAttachFiles={props.onAttachFiles}
+              onRemoveAttachment={props.onRemoveAttachment}
             />
           </div>
         }

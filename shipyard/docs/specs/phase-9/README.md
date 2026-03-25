@@ -3,7 +3,7 @@
 - Pack: Phase 9 Hosted Shipyard and Public Deploy
 - Estimate: 12-18 hours
 - Date: 2026-03-25
-- Status: Planned
+- Status: In Progress
 
 ## Pack Objectives
 
@@ -111,9 +111,34 @@
 
 ### Code References
 
-- N/A. This landing creates and extends the Phase 9 hosted-planning pack only.
+- `P9-S06` is now implemented through
+  `shipyard/src/ui/uploads.ts`,
+  `shipyard/src/ui/server.ts`,
+  `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/engine/state.ts`,
+  `shipyard/ui/src/App.tsx`,
+  `shipyard/ui/src/ShipyardWorkbench.tsx`,
+  `shipyard/ui/src/panels/ComposerPanel.tsx`,
+  and the matching browser/runtime tests.
+- The runtime stores supported text uploads under
+  `target/.shipyard/uploads/<sessionId>/`, persists pending upload receipts in
+  session state, and converts those receipts into bounded next-turn context on
+  submission.
 
 ### Representative Snippets
 
-- N/A. No runtime or UI implementation landed as part of this docs-only
-  planning pass.
+```ts
+const receipts = await storeUploadCandidates({
+  sessionId,
+  targetDirectory: sessionState.targetDirectory,
+  existingReceipts: sessionState.workbenchState.pendingUploads,
+  candidates,
+});
+```
+
+```ts
+const handoff = consumePendingUploadsForInstruction(
+  sessionState.workbenchState,
+  message.injectedContext,
+);
+```

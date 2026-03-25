@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ShipyardWorkbench } from "../ui/src/ShipyardWorkbench.js";
+import type { ComposerAttachment } from "../ui/src/panels/ComposerPanel.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
@@ -228,6 +229,7 @@ function renderWorkbench(overrides?: {
   targetManager?: TargetManagerViewModel;
   leftSidebarOpen?: boolean;
   rightSidebarOpen?: boolean;
+  composerAttachments?: ComposerAttachment[];
 }) {
   return renderToStaticMarkup(
     createElement(ShipyardWorkbench, {
@@ -243,6 +245,7 @@ function renderWorkbench(overrides?: {
       instruction: "",
       contextDraft: overrides?.contextDraft ?? "",
       composerNotice: null,
+      composerAttachments: overrides?.composerAttachments ?? [],
       instructionInputRef: createRef<HTMLTextAreaElement>(),
       contextInputRef: createRef<HTMLTextAreaElement>(),
       onInstructionChange: () => undefined,
@@ -250,8 +253,10 @@ function renderWorkbench(overrides?: {
       onInstructionKeyDown: () => undefined,
       onContextKeyDown: () => undefined,
       onClearContext: () => undefined,
+      onAttachFiles: () => undefined,
       onSubmitInstruction: () => undefined,
       onCancelInstruction: () => undefined,
+      onRemoveAttachment: () => undefined,
       onRequestTargetSwitch: () => undefined,
       onRequestTargetCreate: () => undefined,
       onRequestSessionResume: () => undefined,
@@ -284,6 +289,31 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("inspect package.json");
     expect(markup).toContain("Open trace");
     expect(markup).toContain('aria-label="Current location"');
+  });
+
+  it("renders the attach-files control and pending attachment badges in the composer", () => {
+    const markup = renderWorkbench({
+      composerAttachments: [
+        {
+          id: "upload-1",
+          label: "spec.md",
+          detail: ".shipyard/uploads/session-ui-123/spec-abc123.md",
+          status: "attached",
+        },
+        {
+          id: "upload-2",
+          label: "notes.txt",
+          detail: "Upload failed: unsupported binary content.",
+          status: "rejected",
+          error: "Unsupported binary content.",
+        },
+      ],
+    });
+
+    expect(markup).toContain("Attach files");
+    expect(markup).toContain("spec.md");
+    expect(markup).toContain("notes.txt");
+    expect(markup).toContain("unsupported binary content");
   });
 
   it("renders passive queued enrichment status without enrich buttons", () => {

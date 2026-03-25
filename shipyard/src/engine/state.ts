@@ -13,6 +13,7 @@ import { createInitialPreviewState } from "../preview/contracts.js";
 import { loadTargetProfile } from "../tools/target-manager/profile-io.js";
 import {
   createInitialWorkbenchState,
+  ensureWorkbenchStateDefaults,
   type WorkbenchViewState,
 } from "../ui/workbench-state.js";
 
@@ -176,6 +177,13 @@ export function getPlanDirectory(targetDirectory: string): string {
   return path.join(getShipyardDirectory(targetDirectory), "plans");
 }
 
+export function getUploadDirectory(
+  targetDirectory: string,
+  sessionId: string,
+): string {
+  return path.join(getShipyardDirectory(targetDirectory), "uploads", sessionId);
+}
+
 export function getSessionFilePath(
   targetDirectory: string,
   sessionId: string,
@@ -252,7 +260,9 @@ export async function loadSessionState(
   const parsed = JSON.parse(contents) as Partial<SessionState> &
     Omit<SessionState, "workbenchState">;
   const discovery = normalizeDiscoveryReport(parsed.discovery);
-  const workbenchState = parsed.workbenchState ?? createInitialWorkbenchState();
+  const workbenchState = ensureWorkbenchStateDefaults(
+    parsed.workbenchState ?? createInitialWorkbenchState(),
+  );
   const activePhase = parsed.activePhase ?? "code";
 
   if (!workbenchState.previewState) {

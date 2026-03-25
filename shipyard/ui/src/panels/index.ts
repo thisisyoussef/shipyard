@@ -9,6 +9,7 @@ export {
 } from "./ActivityFeed.js";
 export {
   ComposerPanel,
+  type ComposerAttachment,
   type ComposerNotice,
   type ComposerPanelProps,
   type ComposerState,
