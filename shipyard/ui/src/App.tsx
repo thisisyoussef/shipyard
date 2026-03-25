@@ -1,5 +1,6 @@
 import {
   startTransition,
+  useCallback,
   useDeferredValue,
   useEffect,
   useEffectEvent,
@@ -37,6 +38,25 @@ function createSocketUrl(): string {
   return `${protocol}//${window.location.host}/ws`;
 }
 
+function readSidebarState(key: string, fallback: boolean): boolean {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === "false") return false;
+    if (stored === "true") return true;
+  } catch {
+    /* localStorage unavailable */
+  }
+  return fallback;
+}
+
+function writeSidebarState(key: string, open: boolean): void {
+  try {
+    localStorage.setItem(key, String(open));
+  } catch {
+    /* localStorage unavailable */
+  }
+}
+
 export function App() {
   const [viewState, setViewState] = useState(createInitialWorkbenchState);
   const [instruction, setInstruction] = useState("");
@@ -45,6 +65,12 @@ export function App() {
     null,
   );
   const [traceButtonLabel, setTraceButtonLabel] = useState("Copy trace path");
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(() =>
+    readSidebarState("shipyard:sidebar-left", true),
+  );
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(() =>
+    readSidebarState("shipyard:sidebar-right", true),
+  );
   const socketManagerRef = useRef<SocketManager | null>(null);
   const hasSessionRef = useRef(false);
   const instructionInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -52,6 +78,64 @@ export function App() {
   const deferredTurns = useDeferredValue(viewState.turns);
   const deferredFileEvents = useDeferredValue(viewState.fileEvents);
   const deferredContextHistory = useDeferredValue(viewState.contextHistory);
+
+  /* ── Sidebar toggles ──────────────────────── */
+
+  const toggleLeftSidebar = useCallback(() => {
+    setLeftSidebarOpen((prev) => {
+      const next = !prev;
+      writeSidebarState("shipyard:sidebar-left", next);
+      return next;
+    });
+  }, []);
+
+  const toggleRightSidebar = useCallback(() => {
+    setRightSidebarOpen((prev) => {
+      const next = !prev;
+      writeSidebarState("shipyard:sidebar-right", next);
+      return next;
+    });
+  }, []);
+
+  /* ── Global keyboard shortcuts ────────────── */
+
+  useEffect(() => {
+    function handleGlobalKeyDown(event: globalThis.KeyboardEvent): void {
+      const target = event.target as HTMLElement;
+      const isInput =
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "INPUT" ||
+        target.isContentEditable;
+
+      // Cmd/Ctrl+K — focus composer (works even in inputs)
+      if (event.key === "k" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+        event.preventDefault();
+        instructionInputRef.current?.focus();
+        return;
+      }
+
+      // Don't fire sidebar shortcuts when typing
+      if (isInput) return;
+
+      // Cmd/Ctrl+B — toggle left sidebar
+      if (event.key === "b" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+        event.preventDefault();
+        toggleLeftSidebar();
+        return;
+      }
+
+      // Cmd/Ctrl+Shift+B — toggle right sidebar
+      if (event.key === "b" && (event.metaKey || event.ctrlKey) && event.shiftKey) {
+        event.preventDefault();
+        toggleRightSidebar();
+      }
+    }
+
+    document.addEventListener("keydown", handleGlobalKeyDown);
+    return () => document.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [toggleLeftSidebar, toggleRightSidebar]);
+
+  /* ── WebSocket ────────────────────────────── */
 
   const applyMessage = useEffectEvent((message: BackendToFrontendMessage) => {
     if (message.type === "session:state") {
@@ -67,15 +151,13 @@ export function App() {
     (connectionState: Parameters<typeof setTransportState>[1], status: string) => {
       startTransition(() => {
         setViewState((currentState) =>
-          setTransportState(currentState, connectionState, status)
+          setTransportState(currentState, connectionState, status),
         );
       });
     },
   );
 
   useEffect(() => {
-    // Effect Events intentionally stay out of the dependency list so the socket
-    // connection does not restart on every render.
     const socketManager = createSocketManager({
       url: createSocketUrl(),
       hasSessionState: () => hasSessionRef.current,
@@ -115,6 +197,8 @@ export function App() {
       }
     };
   }, []);
+
+  /* ── Messaging ────────────────────────────── */
 
   function sendMessage(message: FrontendToBackendMessage): boolean {
     return socketManagerRef.current?.send(JSON.stringify(message)) ?? false;
@@ -177,7 +261,7 @@ export function App() {
           currentState,
           submission.instruction,
           submission.injectedContext ?? [],
-        )
+        ),
       );
     });
     setInstruction("");
@@ -232,18 +316,12 @@ export function App() {
 
   function handleInstructionChange(value: string): void {
     setInstruction(value);
-
-    if (composerNotice) {
-      setComposerNotice(null);
-    }
+    if (composerNotice) setComposerNotice(null);
   }
 
   function handleContextChange(value: string): void {
     setContextDraft(value);
-
-    if (composerNotice) {
-      setComposerNotice(null);
-    }
+    if (composerNotice) setComposerNotice(null);
   }
 
   function handleClearContext(): void {
@@ -260,9 +338,7 @@ export function App() {
   function handleCopyTracePath(): void {
     const tracePath = viewState.sessionState?.tracePath;
 
-    if (!tracePath) {
-      return;
-    }
+    if (!tracePath) return;
 
     if (!("clipboard" in navigator)) {
       setTraceButtonLabel("Trace unavailable");
@@ -299,6 +375,10 @@ export function App() {
       onRefreshStatus={() => sendMessage({ type: "status" })}
       onCopyTracePath={handleCopyTracePath}
       traceButtonLabel={traceButtonLabel}
+      leftSidebarOpen={leftSidebarOpen}
+      rightSidebarOpen={rightSidebarOpen}
+      onToggleLeftSidebar={toggleLeftSidebar}
+      onToggleRightSidebar={toggleRightSidebar}
     />
   );
 }

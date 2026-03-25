@@ -1,0 +1,614 @@
+/* ───────────────────────────────────────────────
+   Component Styles — Shipyard UI v2
+   UIV2-S02 through UIV2-S07
+
+   Extracted component styles for Header Strip,
+   Collapsible Shell, Composer, Activity Feed,
+   File Panel, and Motion utilities.
+
+   Imported AFTER styles.css. Uses token system
+   exclusively — no hardcoded values.
+   ─────────────────────────────────────────────── */
+
+
+/* ═══════════════════════════════════════════════
+   HEADER STRIP (UIV2-S02)
+   48px compact header bar
+   ═══════════════════════════════════════════════ */
+
+.header-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--space-12);
+  padding: 0 var(--space-4);
+  background: var(--surface-shell);
+  border-bottom: 1px solid var(--border-subtle);
+  backdrop-filter: var(--blur-shell);
+}
+
+.header-strip-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.header-strip-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.header-strip-logo {
+  width: var(--space-7);
+  height: var(--space-7);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.header-strip-workspace {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.header-strip-target {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.header-strip-divider {
+  width: 1px;
+  height: var(--space-6);
+  background: var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.sidebar-toggle:hover {
+  background: var(--surface-card-strong);
+  color: var(--text-strong);
+}
+
+.sidebar-toggle[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-color: var(--accent-border);
+}
+
+
+/* ═══════════════════════════════════════════════
+   COLLAPSIBLE SHELL (UIV2-S02)
+   CSS Grid layout with named areas
+   ═══════════════════════════════════════════════ */
+
+.shell-layout {
+  display: grid;
+  grid-template-areas:
+    "header header  header"
+    "left   main    right"
+    "footer footer  footer";
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns:
+    minmax(var(--space-12), var(--sidebar-max-left))
+    minmax(0, 1fr)
+    minmax(0, var(--sidebar-max-right));
+  height: 100vh;
+  overflow: hidden;
+}
+
+.shell-layout > [data-area="header"] { grid-area: header; }
+.shell-layout > [data-area="left"]   { grid-area: left; }
+.shell-layout > [data-area="main"]   { grid-area: main; }
+.shell-layout > [data-area="right"]  { grid-area: right; }
+.shell-layout > [data-area="footer"] { grid-area: footer; }
+
+.shell-layout[data-left-open="false"] {
+  grid-template-columns:
+    var(--space-12)
+    minmax(0, 1fr)
+    minmax(0, var(--sidebar-max-right));
+}
+
+.shell-layout[data-right-open="false"] {
+  grid-template-columns:
+    minmax(var(--space-12), var(--sidebar-max-left))
+    minmax(0, 1fr)
+    0;
+}
+
+.shell-layout[data-left-open="false"][data-right-open="false"] {
+  grid-template-columns: var(--space-12) minmax(0, 1fr) 0;
+}
+
+/* Sidebar collapse transition */
+.shell-layout > [data-area="left"],
+.shell-layout > [data-area="right"] {
+  overflow: hidden;
+  transition: width var(--collapse-duration) var(--collapse-easing);
+}
+
+.icon-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: var(--space-12);
+  padding: var(--space-2) 0;
+}
+
+.icon-rail > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.icon-rail > button:hover {
+  background: var(--surface-muted);
+  color: var(--text-strong);
+}
+
+
+/* ═══════════════════════════════════════════════
+   COMPOSER (UIV2-S03)
+   Message input panel with state variants
+   ═══════════════════════════════════════════════ */
+
+.composer {
+  position: relative;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--card-radius);
+  padding: var(--space-3);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.composer[data-state="composing"] {
+  border-color: var(--accent-strong);
+}
+
+.composer[data-state="submitting"] {
+  border-color: var(--accent-strong);
+  animation: composer-pulse var(--duration-deliberate) var(--ease-in-out) infinite alternate;
+}
+
+.composer[data-state="busy"] {
+  opacity: var(--btn-disabled-opacity);
+  pointer-events: none;
+}
+
+@keyframes composer-pulse {
+  from { box-shadow: 0 0 0 0 var(--accent-glow); }
+  to   { box-shadow: 0 0 0 var(--space-1) var(--accent-glow); }
+}
+
+.composer-textarea {
+  display: block;
+  width: 100%;
+  min-height: var(--space-10);
+  max-height: 15rem; /* 240px */
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  color: var(--input-text);
+  font-family: var(--font-body);
+  font-size: var(--input-font-size);
+  line-height: var(--input-line-height);
+  resize: none;
+  overflow-y: auto;
+}
+
+.composer-textarea::placeholder {
+  color: var(--input-placeholder);
+}
+
+.composer-context-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+  padding: 0 var(--space-1) var(--space-2);
+}
+
+.composer-context-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--badge-neutral-text);
+  background: var(--badge-neutral-bg);
+  border: 1px solid var(--badge-neutral-border);
+  border-radius: var(--badge-radius);
+  cursor: default;
+}
+
+.composer-context-badge button {
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.composer-context-badge button:hover {
+  color: var(--text-strong);
+}
+
+.composer-submit {
+  position: absolute;
+  bottom: var(--space-3);
+  right: var(--space-3);
+}
+
+
+/* ═══════════════════════════════════════════════
+   ACTIVITY FEED (UIV2-S04)
+   Turn timeline with tool call rows
+   ═══════════════════════════════════════════════ */
+
+.activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.turn-timeline {
+  position: relative;
+  padding-left: var(--space-6);
+}
+
+.turn-timeline::before {
+  content: "";
+  position: absolute;
+  left: var(--space-1-5);
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-subtle);
+}
+
+.turn-timeline-node {
+  position: absolute;
+  left: calc(var(--space-1-5) - var(--space-1));
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-card-strong);
+  border: 2px solid var(--border-medium);
+}
+
+.tool-call-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.tool-call-row:hover {
+  background: var(--surface-muted);
+}
+
+.tool-call-row[data-status="running"] {
+  background: var(--accent-subtle);
+  box-shadow: var(--elevation-1);
+  animation: tool-pulse var(--duration-deliberate) var(--ease-in-out) infinite alternate;
+}
+
+@keyframes tool-pulse {
+  from { box-shadow: var(--elevation-1), 0 0 0 0 var(--accent-glow); }
+  to   { box-shadow: var(--elevation-1), 0 0 var(--space-2) 0 var(--accent-glow); }
+}
+
+.tool-call-icon {
+  width: var(--space-5);
+  height: var(--space-5);
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.tool-call-expand {
+  display: none;
+  padding: var(--space-3) 0 var(--space-1);
+}
+
+.tool-call-row[aria-expanded="true"] + .tool-call-expand {
+  display: block;
+}
+
+.turn-collapsed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.turn-collapsed:hover {
+  background: var(--surface-muted);
+}
+
+
+/* ═══════════════════════════════════════════════
+   FILE PANEL (UIV2-S05)
+   Sidebar file tree and diff viewer
+   ═══════════════════════════════════════════════ */
+
+.file-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.file-tree {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.file-tree-group {
+  padding: var(--space-1) 0;
+}
+
+.file-tree-group + .file-tree-group {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.file-tree-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1-5) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-small);
+  color: var(--text-default);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.file-tree-item:hover {
+  background: var(--surface-muted);
+}
+
+.file-tree-item::before {
+  content: "";
+  width: var(--status-size);
+  height: var(--status-size);
+  border-radius: var(--radius-full);
+  background: var(--status-idle);
+  flex-shrink: 0;
+}
+
+.file-tree-item[data-status="added"]::before    { background: var(--status-success); }
+.file-tree-item[data-status="modified"]::before  { background: var(--status-warning); }
+.file-tree-item[data-status="deleted"]::before   { background: var(--status-error); }
+
+.diff-viewer {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-small);
+  line-height: var(--leading-relaxed);
+  overflow: auto;
+}
+
+.diff-viewer-line-number {
+  width: 3ch;
+  text-align: right;
+  color: var(--text-faint);
+  padding-right: var(--space-2);
+  user-select: none;
+}
+
+.file-path-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-small);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.file-path-copy:hover {
+  color: var(--text-strong);
+}
+
+.file-path-copy .copy-icon {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.file-path-copy:hover .copy-icon {
+  opacity: 1;
+}
+
+
+/* ═══════════════════════════════════════════════
+   MOTION & STATES (UIV2-S07)
+   Enter transitions, skeletons, press feedback
+   ═══════════════════════════════════════════════ */
+
+/* ── Enter animation ─────────────────────────── */
+
+.motion-enter {
+  animation: motion-enter-kf var(--enter-duration) var(--enter-easing) both;
+}
+
+@keyframes motion-enter-kf {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.motion-enter-stagger-1 { animation-delay: calc(var(--stagger-delay) * 1); }
+.motion-enter-stagger-2 { animation-delay: calc(var(--stagger-delay) * 2); }
+.motion-enter-stagger-3 { animation-delay: calc(var(--stagger-delay) * 3); }
+.motion-enter-stagger-4 { animation-delay: calc(var(--stagger-delay) * 4); }
+.motion-enter-stagger-5 { animation-delay: calc(var(--stagger-delay) * 5); }
+.motion-enter-stagger-6 { animation-delay: calc(var(--stagger-delay) * 6); }
+
+/* ── Skeleton shimmer ────────────────────────── */
+
+.skeleton {
+  background: var(--surface-muted);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  position: relative;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--surface-highlight) 50%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.5s var(--ease-linear) infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+.skeleton-line {
+  height: 1em;
+  border-radius: var(--radius-xs);
+}
+
+.skeleton-block {
+  height: 4em;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Press feedback ──────────────────────────── */
+
+button:active {
+  transform: scale(var(--press-scale));
+  transition: transform var(--press-duration) var(--ease-out);
+}
+
+/* ── Focus ring ──────────────────────────────── */
+
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+  transition: box-shadow var(--focus-duration) var(--ease-out);
+}
+
+/* ── Reduced motion catch-all ────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-enter,
+  .motion-enter-stagger-1,
+  .motion-enter-stagger-2,
+  .motion-enter-stagger-3,
+  .motion-enter-stagger-4,
+  .motion-enter-stagger-5,
+  .motion-enter-stagger-6 {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .skeleton::after {
+    animation: none;
+  }
+
+  .composer[data-state="submitting"] {
+    animation: none;
+  }
+
+  .tool-call-row[data-status="running"] {
+    animation: none;
+  }
+
+  .sidebar-toggle,
+  .tool-call-row,
+  .file-tree-item,
+  .file-path-copy,
+  .composer,
+  .composer-context-badge button,
+  .icon-rail > button {
+    transition: none;
+  }
+
+  button:active {
+    transform: none;
+    transition: none;
+  }
+
+  input:focus-visible,
+  textarea:focus-visible {
+    transition: none;
+  }
+
+  .shell-layout > [data-area="left"],
+  .shell-layout > [data-area="right"] {
+    transition: none;
+  }
+}
