@@ -20,6 +20,7 @@ Then use as needed:
 ## Required Gates
 
 - New task preflight: run `agent-preflight`, publish the brief, and use a fresh `codex/` branch for non-trivial work before edits.
+- If the current worktree is already dirty from another story or agent, move the new work into a clean worktree instead of sharing the dirty tree.
 - Story lookup: use `.ai/workflows/story-lookup.md` when the task needs local/external reconnaissance before implementation.
 - Story sizing: use `.ai/workflows/story-sizing.md` to classify `trivial` vs `standard`.
 - Feature stories: use `.ai/workflows/spec-driven-delivery.md` and `.ai/skills/spec-driven-development.md`.
@@ -97,6 +98,7 @@ Not every story requires every skill. Use judgment:
 
 All 27 installed skills are now wired. The design phase (`design-phase.md`) is the primary invocation point — it runs between spec and TDD and produces a concrete design brief that the implementer and reviewer read.
 - Story finish: use `.ai/workflows/story-handoff.md`; when a story or spec pack is complete, update the relevant `shipyard/docs/specs/**` files with `Code References` and short `Representative Snippets` (or explicit `N/A`); when the story changes traced AI/runtime behavior, run `.ai/workflows/langsmith-finish-check.md` before the completion gate; unless the user explicitly asks to pause or choose a different merge path, continue through `.ai/workflows/git-finalization.md` automatically after the completion gate, and treat the story as incomplete until it is merged to `main` on GitHub.
+- Shared dirty worktrees are not a finish blocker. Preserve unrelated WIP, isolate the story diff in a clean branch/worktree, rerun the required validation there, and continue through finalization unless safe disentangling is impossible.
 
 ## Route By Task Type
 

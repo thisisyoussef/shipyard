@@ -52,6 +52,9 @@ Claude Code should follow the same gates defined in `AGENTS.md` and `.ai/codex.m
 8. **Git finalization** — `.ai/workflows/git-finalization.md` (merge to main)
 9. **Recovery** — `.ai/workflows/finalization-recovery.md` (if finalization fails)
 
+For non-trivial work, use a fresh `codex/` branch/worktree. If the current worktree already has unrelated WIP, move the story into a clean worktree instead of sharing the dirty tree.
+During git finalization, unrelated dirty state is not a valid stop condition: preserve it, isolate the story diff, rerun validation there, and continue through merge unless safe disentangling is impossible.
+
 Additional gates when applicable:
 - `.ai/workflows/user-correction-triage.md` — handle user feedback
 - `.ai/workflows/design-phase.md` — visible UI stories (between spec and TDD)

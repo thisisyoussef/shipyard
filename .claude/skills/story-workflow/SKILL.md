@@ -18,7 +18,7 @@ Execute the Shipyard story lifecycle for the given task.
    - `.ai/memory/project/anti-patterns.md`
    - `.ai/memory/session/active-context.md`
 
-2. Create a fresh branch for this work (use `codex/` prefix or the current worktree).
+2. Create a fresh branch/worktree for this work. If the current worktree already has unrelated in-progress changes, start the story in a separate clean worktree instead of sharing the dirty tree.
 
 ## Phase 2: Story Lookup
 
@@ -72,7 +72,7 @@ Deliver one completion packet with:
 
 Follow `.ai/workflows/git-finalization.md`:
 
-Unless user pauses: commit → push → PR → merge to `main` → cleanup.
+Unless user pauses: if unrelated WIP exists, isolate the story diff in a clean worktree/branch, rerun validation, then commit → push → PR → merge to `main` → cleanup.
 
 ## Validation (Run at Every Phase)
 
