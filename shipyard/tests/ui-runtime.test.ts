@@ -463,6 +463,39 @@ describe("ui runtime contract", () => {
           },
         ],
       }),
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_run_command",
+            name: "run_command",
+            input: {
+              command: "git diff --stat",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              command: "git diff --stat",
+              exitCode: 0,
+              passed: true,
+              stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
+              stderr: "",
+              summary: "Verification passed.",
+            }),
+            citations: null,
+          },
+        ],
+      }),
     ]);
     const runtime = await startUiRuntimeServer({
       sessionState,

@@ -1,0 +1,16 @@
+{
+  "storyId": "p6-s03",
+  "role": "agent2",
+  "status": "completed",
+  "attempts": 1,
+  "implementedFiles": [
+    "shipyard/src/agents/coordinator.ts",
+    "shipyard/src/engine/graph.ts"
+  ],
+  "greenCheck": {
+    "command": "pnpm --dir shipyard test -- tests/graph-runtime.test.ts",
+    "result": "passed",
+    "summary": "Coordinator routing, verifier delegation, and recovery conflict handling are green in the graph-runtime contract."
+  },
+  "notes": []
+}

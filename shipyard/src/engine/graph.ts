@@ -10,8 +10,25 @@ import {
   CheckpointManager,
   type CheckpointManagerLike,
 } from "../checkpoints/manager.js";
-import type { TaskPlan, VerificationReport } from "../artifacts/types.js";
-import { createStubCodeTaskPlan } from "../phases/code/index.js";
+import type {
+  ContextReport,
+  TaskPlan,
+  VerificationReport,
+} from "../artifacts/types.js";
+import {
+  createCoordinatorTaskPlan,
+  createExplorerQuery,
+  createVerificationCommand,
+  shouldCoordinatorUseExplorer,
+} from "../agents/coordinator.js";
+import {
+  runExplorerSubagent as executeExplorerSubagent,
+  type ExplorerRunOptions,
+} from "../agents/explorer.js";
+import {
+  runVerifierSubagent as executeVerifierSubagent,
+  type VerifierRunOptions,
+} from "../agents/verifier.js";
 import type { Phase } from "../phases/phase.js";
 import { readFileTool } from "../tools/read-file.js";
 import { normalizeTargetRelativePath } from "../tools/file-state.js";
@@ -53,6 +70,7 @@ export interface AgentGraphState {
   status: AgentRuntimeStatus;
   finalResult: string | null;
   taskPlan: TaskPlan | null;
+  contextReport: ContextReport | null;
   verificationReport: VerificationReport | null;
   actingIterations: number;
   fallbackMode: boolean;
@@ -74,6 +92,7 @@ export interface CreateAgentGraphStateOptions {
   status?: AgentRuntimeStatus;
   finalResult?: string | null;
   taskPlan?: TaskPlan | null;
+  contextReport?: ContextReport | null;
   verificationReport?: VerificationReport | null;
   actingIterations?: number;
   fallbackMode?: boolean;
@@ -90,10 +109,23 @@ export interface ActingLoopResult {
 }
 
 export interface AgentRuntimeDependencies {
-  createTaskPlan?: (state: AgentGraphState) => TaskPlan | Promise<TaskPlan>;
+  createTaskPlan?: (
+    state: AgentGraphState,
+    contextReport?: ContextReport | null,
+  ) => TaskPlan | Promise<TaskPlan>;
   runActingLoop?: (
     state: AgentGraphState,
   ) => ActingLoopResult | Promise<ActingLoopResult>;
+  runExplorerSubagent?: (
+    query: string,
+    targetDirectory: string,
+    options?: ExplorerRunOptions,
+  ) => ContextReport | Promise<ContextReport>;
+  runVerifierSubagent?: (
+    command: string,
+    targetDirectory: string,
+    options?: VerifierRunOptions,
+  ) => VerificationReport | Promise<VerificationReport>;
   verifyState?: (
     state: AgentGraphState,
   ) => VerificationReport | Promise<VerificationReport>;
@@ -129,6 +161,7 @@ const AgentGraphStateAnnotation = Annotation.Root({
   status: Annotation<AgentRuntimeStatus>(),
   finalResult: Annotation<string | null>(),
   taskPlan: Annotation<TaskPlan | null>(),
+  contextReport: Annotation<ContextReport | null>(),
   verificationReport: Annotation<VerificationReport | null>(),
   actingIterations: Annotation<number>(),
   fallbackMode: Annotation<boolean>(),
@@ -182,6 +215,21 @@ function getRelativeToolPath(input: unknown): string | null {
   return null;
 }
 
+async function createSubagentLoopOptions(
+  state: AgentGraphState,
+  dependencies: AgentRuntimeDependencies,
+): Promise<Pick<RawToolLoopOptions, "client" | "logger" | "maxIterations">> {
+  const rawLoopOptions =
+    await dependencies.createRawLoopOptions?.(state)
+    ?? {};
+
+  return {
+    client: rawLoopOptions.client,
+    logger: rawLoopOptions.logger,
+    maxIterations: rawLoopOptions.maxIterations,
+  };
+}
+
 async function checkpointBeforeEdit(
   context: RawLoopToolHookContext,
   checkpointManager: CheckpointManagerLike,
@@ -202,9 +250,11 @@ async function checkpointBeforeEdit(
 function createDefaultVerificationReport(
   state: AgentGraphState,
 ): VerificationReport {
+  const command = createVerificationCommand(state.contextEnvelope);
+
   if (!state.lastEditedFile) {
     return {
-      command: "phase4.verify.placeholder",
+      command,
       exitCode: 1,
       passed: false,
       stdout: "",
@@ -214,13 +264,68 @@ function createDefaultVerificationReport(
   }
 
   return {
-    command: "phase4.verify.placeholder",
+    command,
     exitCode: 0,
     passed: true,
     stdout: "",
     stderr: "",
     summary: `Verification placeholder passed for ${state.lastEditedFile}.`,
   };
+}
+
+async function maybeExploreContext(
+  state: AgentGraphState,
+  dependencies: AgentRuntimeDependencies,
+): Promise<ContextReport | null> {
+  if (
+    !shouldCoordinatorUseExplorer({
+      instruction: state.currentInstruction,
+      contextEnvelope: state.contextEnvelope,
+      taskPlan: state.taskPlan,
+      contextReport: state.contextReport,
+    })
+  ) {
+    return state.contextReport;
+  }
+
+  const runExplorerSubagent =
+    dependencies.runExplorerSubagent ?? executeExplorerSubagent;
+
+  return runExplorerSubagent(
+    createExplorerQuery(state.currentInstruction),
+    state.targetDirectory,
+    await createSubagentLoopOptions(state, dependencies),
+  );
+}
+
+function createDefaultTaskPlan(
+  state: AgentGraphState,
+  contextReport: ContextReport | null,
+): TaskPlan {
+  return createCoordinatorTaskPlan({
+    instruction: state.currentInstruction,
+    contextEnvelope: state.contextEnvelope,
+    taskPlan: state.taskPlan,
+    contextReport,
+  });
+}
+
+async function defaultVerifyState(
+  state: AgentGraphState,
+  dependencies: AgentRuntimeDependencies,
+): Promise<VerificationReport> {
+  if (!state.lastEditedFile) {
+    return createDefaultVerificationReport(state);
+  }
+
+  const runVerifierSubagent =
+    dependencies.runVerifierSubagent ?? executeVerifierSubagent;
+
+  return runVerifierSubagent(
+    createVerificationCommand(state.contextEnvelope),
+    state.targetDirectory,
+    await createSubagentLoopOptions(state, dependencies),
+  );
 }
 
 async function defaultActingLoop(
@@ -284,6 +389,7 @@ export function createAgentGraphState(
     status: options.status ?? "planning",
     finalResult: options.finalResult ?? null,
     taskPlan: options.taskPlan ?? null,
+    contextReport: options.contextReport ?? null,
     verificationReport: options.verificationReport ?? null,
     actingIterations: options.actingIterations ?? 0,
     fallbackMode: options.fallbackMode ?? false,
@@ -302,6 +408,12 @@ function createRuntimeTraceMetadata(
     phase: state.phaseConfig.name,
     instruction: state.currentInstruction,
     targetDirectory: state.targetDirectory,
+    usedExplorer: shouldCoordinatorUseExplorer({
+      instruction: state.currentInstruction,
+      contextEnvelope: state.contextEnvelope,
+      taskPlan: state.taskPlan,
+      contextReport: state.contextReport,
+    }),
   };
 }
 
@@ -369,12 +481,14 @@ export function createAgentRuntimeNodes(
 
   return {
     async plan(state) {
+      const contextReport = await maybeExploreContext(state, dependencies);
       const taskPlan = await (dependencies.createTaskPlan
-        ? dependencies.createTaskPlan(state)
-        : createStubCodeTaskPlan(state.currentInstruction));
+        ? dependencies.createTaskPlan(state, contextReport)
+        : createDefaultTaskPlan(state, contextReport));
 
       return {
         taskPlan,
+        contextReport,
         status: "acting",
         lastError: null,
         verificationReport: null,
@@ -411,7 +525,7 @@ export function createAgentRuntimeNodes(
     async verify(state) {
       const verificationReport = await (dependencies.verifyState
         ? dependencies.verifyState(state)
-        : createDefaultVerificationReport(state));
+        : defaultVerifyState(state, dependencies));
 
       return {
         verificationReport,

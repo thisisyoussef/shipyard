@@ -7,7 +7,7 @@ runtimes behind those roles.
 ## Files
 
 - `coordinator.ts`: the only write-capable role; owns the task plan and the
-  final execution path
+  final execution path plus delegation heuristics for explorer and verifier
 - `explorer.ts`: read-only search role plus the isolated explorer helper that
   returns `ContextReport`
 - `verifier.ts`: read-only validation role for tests, lint, and structured
