@@ -1,0 +1,12 @@
+/* ───────────────────────────────────────────────
+   Shipyard Design System — Token Index
+   UIV2-S01 · Design System Foundation
+
+   Import order: reset → primitives → components → motion
+   Each file is self-contained within its layer.
+   ─────────────────────────────────────────────── */
+
+@import "./reset.css";
+@import "./primitives.css";
+@import "./components.css";
+@import "./motion.css";

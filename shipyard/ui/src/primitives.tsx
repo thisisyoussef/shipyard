@@ -4,7 +4,7 @@
  * UIR-S01 — Visual System and Layout Refresh
  *
  * These components are the shared building blocks reused across all
- * panels. They consume the visual token system defined in tokens.css
+ * panels. They consume the visual token system defined in tokens/
  * and should not contain layout-specific positioning.
  */
 

@@ -3,24 +3,14 @@
    UIR-S01 · Visual System and Layout Refresh
    ─────────────────────────────────────────────── */
 
-@import "./tokens.css";
+@import "./tokens/index.css";
 
-/* ── Reset ─────────────────────────────────── */
-
-* {
-  box-sizing: border-box;
-}
-
-html {
-  min-height: 100%;
-}
+/* ── Body ──────────────────────────────────── */
 
 body {
-  margin: 0;
-  min-height: 100vh;
   color: var(--text-strong);
   font-family: var(--font-body);
-  font-size: var(--text-base);
+  font-size: var(--text-body);
   line-height: var(--leading-normal);
   background:
     linear-gradient(var(--grid-line) 1px, transparent 1px),
@@ -40,12 +30,6 @@ body::before {
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 20%),
     radial-gradient(circle at 50% 0%, rgba(213, 140, 83, 0.08), transparent 28%);
   opacity: 0.9;
-}
-
-button,
-textarea,
-summary {
-  font: inherit;
 }
 
 /* ── Monospace elements ──────────────────────── */
@@ -1063,8 +1047,8 @@ pre,
 .primary-action:focus-visible,
 .activity-log summary:focus-visible,
 .scope-toggle:focus-visible {
-  outline: 2px solid rgba(213, 140, 83, 0.7);
-  outline-offset: 2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* ── Divider ─────────────────────────────────── */

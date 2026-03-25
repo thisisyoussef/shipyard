@@ -1,0 +1,372 @@
+/* ───────────────────────────────────────────────
+   Primitive Design Tokens
+   UIV2-S01 · Design System Foundation
+
+   Color, typography, spacing, radius, elevation.
+   These are the raw building blocks — component
+   tokens in components.css reference these.
+
+   Color derivation: OKLCH with sRGB fallbacks.
+   Type scale: 1rem base × 1.2 ratio (minor third).
+   Spacing: 4px (0.25rem) base unit.
+   ─────────────────────────────────────────────── */
+
+:root {
+  color-scheme: dark;
+
+  /* ═══════════════════════════════════════════════
+     TYPOGRAPHY
+     ═══════════════════════════════════════════════ */
+
+  /* Font families */
+  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-body: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
+
+  /* @font-face declarations — replaces Google Fonts @import url().
+     Using Google Fonts CSS2 API static URLs for individual weights.
+     font-display: swap ensures text is visible during font load. */
+
+  /* Type scale — minor third (1.2) from 1rem base
+     Step formula: 1rem × 1.2^n where n ranges from -3 to +5
+     -3: 0.579rem  → --text-3xs
+     -2: 0.694rem  → --text-2xs
+     -1: 0.833rem  → --text-xs
+      0: 1rem      → --text-sm
+      1: 1.2rem    → --text-base
+      2: 1.44rem   → --text-md
+      3: 1.728rem  → --text-lg
+      4: 2.074rem  → --text-xl
+      5: 2.488rem  → --text-2xl
+     hero: fluid    → --text-hero */
+
+  --text-3xs: 0.579rem;
+  --text-2xs: 0.694rem;
+  --text-xs:  0.833rem;
+  --text-sm:  1rem;
+  --text-base: 1.2rem;
+  --text-md:  1.44rem;
+  --text-lg:  1.728rem;
+  --text-xl:  2.074rem;
+  --text-2xl: 2.488rem;
+  --text-hero: clamp(2.488rem, 4vw, 3.35rem);
+
+  /* Semantic type aliases */
+  --text-heading-hero:    var(--text-hero);
+  --text-heading-section: var(--text-xl);
+  --text-heading-sub:     var(--text-lg);
+  --text-heading-card:    var(--text-md);
+  --text-body:            var(--text-base);
+  --text-body-small:      var(--text-sm);
+  --text-caption:         var(--text-xs);
+  --text-micro:           var(--text-2xs);
+  --text-mono:            var(--text-sm);
+  --text-mono-small:      var(--text-xs);
+
+  /* Line heights */
+  --leading-none:    0.94;
+  --leading-tight:   1.1;
+  --leading-snug:    1.25;
+  --leading-normal:  1.45;
+  --leading-relaxed: 1.6;
+  --leading-loose:   1.8;
+
+  /* Letter spacing */
+  --tracking-tighter: -0.05em;
+  --tracking-tight:   -0.03em;
+  --tracking-normal:   0;
+  --tracking-wide:     0.02em;
+  --tracking-wider:    0.08em;
+  --tracking-widest:   0.16em;
+
+  /* Font weights */
+  --weight-normal:   400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  /* ═══════════════════════════════════════════════
+     SPACING
+     Base unit: 0.25rem (4px)
+     ═══════════════════════════════════════════════ */
+
+  --space-0:   0;
+  --space-px:  1px;
+  --space-0-5: 0.125rem;  /*  2px */
+  --space-1:   0.25rem;   /*  4px */
+  --space-1-5: 0.375rem;  /*  6px */
+  --space-2:   0.5rem;    /*  8px */
+  --space-2-5: 0.625rem;  /* 10px */
+  --space-3:   0.75rem;   /* 12px */
+  --space-3-5: 0.875rem;  /* 14px */
+  --space-4:   1rem;      /* 16px */
+  --space-5:   1.25rem;   /* 20px */
+  --space-6:   1.5rem;    /* 24px */
+  --space-7:   1.75rem;   /* 28px */
+  --space-8:   2rem;      /* 32px */
+  --space-9:   2.25rem;   /* 36px */
+  --space-10:  2.5rem;    /* 40px */
+  --space-11:  2.75rem;   /* 44px */
+  --space-12:  3rem;      /* 48px */
+  --space-14:  3.5rem;    /* 56px */
+  --space-16:  4rem;      /* 64px */
+  --space-20:  5rem;      /* 80px */
+  --space-24:  6rem;      /* 96px */
+
+  /* Contextual spacing aliases */
+  --space-card-padding:  var(--space-6);
+  --space-section-gap:   var(--space-5);
+  --space-inline-gap:    var(--space-2);
+  --space-panel-gap:     var(--space-5);
+
+  /* ═══════════════════════════════════════════════
+     BORDER RADIUS
+     ═══════════════════════════════════════════════ */
+
+  --radius-xs:   0.25rem;
+  --radius-sm:   0.375rem;
+  --radius-md:   0.5rem;
+  --radius-lg:   0.75rem;
+  --radius-xl:   1rem;
+  --radius-2xl:  1.25rem;
+  --radius-3xl:  1.5rem;
+  --radius-full: 9999px;
+  --radius-pill: 9999px;  /* alias */
+
+  /* ═══════════════════════════════════════════════
+     COLORS — OKLCH with sRGB fallbacks
+     Hue anchors:
+       Amber  (accent)  ~  55°
+       Green  (success)  ~ 145°
+       Red    (danger)   ~  25°
+       Yellow (warning)  ~  85°
+       Teal   (info)     ~ 185°
+     Lightness/Chroma curves:
+       strong: L 0.72, C 0.14 (vivid)
+       soft:   L 0.30, C 0.04 (background tint)
+       subtle: L 0.20, C 0.02 (barely visible)
+     ═══════════════════════════════════════════════ */
+
+  /* ── Surfaces ──────────────────────────────── */
+  --surface-canvas:      #061015;
+  --surface-shell:       rgba(8, 16, 22, 0.86);
+  --surface-card:        rgba(14, 21, 28, 0.88);
+  --surface-card-strong: rgba(18, 28, 37, 0.95);
+  --surface-muted:       rgba(255, 255, 255, 0.035);
+  --surface-highlight:   rgba(213, 140, 83, 0.1);
+  --surface-inset:       rgba(6, 11, 15, 0.74);
+  --surface-overlay:     rgba(0, 0, 0, 0.6);
+
+  /* ── Text ──────────────────────────────────── */
+  --text-strong:  #f2f5f7;
+  --text-default: #cbd6dc;  /* new canonical name */
+  --text-body:    var(--text-default);  /* alias for backwards compat */
+  --text-muted:   #8e9faa;
+  --text-faint:   rgba(142, 159, 170, 0.6);
+  --text-inverse: #120d08;
+
+  /* ── Borders ───────────────────────────────── */
+  --border-subtle:  rgba(209, 220, 228, 0.1);
+  --border-medium:  rgba(186, 197, 207, 0.16);
+  --border-strong:  rgba(213, 140, 83, 0.26);
+  --border-danger:  rgba(236, 129, 112, 0.24);
+  --border-success: rgba(126, 201, 154, 0.24);
+  --border-warning: rgba(214, 181, 109, 0.24);
+
+  /* ── Accent (amber ~55°) ───────────────────── */
+  --accent-strong: #d58c53;
+  --accent-soft:   rgba(213, 140, 83, 0.12);
+  --accent-glow:   rgba(213, 140, 83, 0.3);
+  --accent-border: rgba(213, 140, 83, 0.24);
+  --accent-subtle: rgba(213, 140, 83, 0.06);
+
+  /* ── Success (green ~145°) ─────────────────── */
+  --success-strong: #7ec99a;
+  --success-soft:   rgba(126, 201, 154, 0.12);
+  --success-subtle: rgba(126, 201, 154, 0.06);
+
+  /* ── Danger (red ~25°) ─────────────────────── */
+  --danger-strong: #ec8170;
+  --danger-soft:   rgba(236, 129, 112, 0.14);
+  --danger-subtle: rgba(236, 129, 112, 0.06);
+
+  /* ── Warning (yellow ~85°) ─────────────────── */
+  --warning-strong: #d6b56d;
+  --warning-soft:   rgba(214, 181, 109, 0.14);
+  --warning-subtle: rgba(214, 181, 109, 0.06);
+
+  /* ── Info (teal ~185°) ─────────────────────── */
+  --info-strong: #5eb8b8;
+  --info-soft:   rgba(94, 184, 184, 0.12);
+  --info-subtle: rgba(94, 184, 184, 0.06);
+
+  /* ═══════════════════════════════════════════════
+     ELEVATION
+     4-tier depth system + inner highlight
+     ═══════════════════════════════════════════════ */
+
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.16);
+  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --elevation-3: 0 18px 40px rgba(0, 0, 0, 0.24);
+  --elevation-4: 0 24px 70px rgba(0, 0, 0, 0.28);
+  --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* ═══════════════════════════════════════════════
+     LAYOUT
+     Shell dimensions and grid helpers
+     ═══════════════════════════════════════════════ */
+
+  --grid-line: rgba(186, 197, 207, 0.06);
+  --shell-max-width: 104rem;
+  --sidebar-min: 18rem;
+  --sidebar-max-left: 22rem;
+  --sidebar-max-right: 25rem;
+  --panel-gap: var(--space-section-gap);
+
+  /* ── Blur ──────────────────────────────────── */
+  --blur-card: blur(16px);
+  --blur-shell: blur(18px);
+}
+
+/* ═══════════════════════════════════════════════
+   OKLCH Progressive Enhancement
+   Browsers that support OKLCH get perceptually
+   uniform color values. Others keep the sRGB
+   fallbacks defined above.
+   ═══════════════════════════════════════════════ */
+
+@supports (color: oklch(0 0 0)) {
+  :root {
+    --accent-strong:  oklch(0.72 0.14 55);
+    --success-strong: oklch(0.76 0.12 145);
+    --danger-strong:  oklch(0.70 0.16 25);
+    --warning-strong: oklch(0.76 0.12 85);
+    --info-strong:    oklch(0.72 0.08 185);
+
+    --text-strong:    oklch(0.96 0.005 220);
+    --text-default:   oklch(0.84 0.015 220);
+    --text-muted:     oklch(0.65 0.02 220);
+    --text-inverse:   oklch(0.15 0.02 55);
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Light Theme Override
+   Applied via data-theme="light" on <html>.
+   Inverts lightness curves while keeping hues.
+   ═══════════════════════════════════════════════ */
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-canvas:      #f8f9fa;
+  --surface-shell:       rgba(255, 255, 255, 0.92);
+  --surface-card:        rgba(255, 255, 255, 0.95);
+  --surface-card-strong: rgba(245, 247, 249, 0.98);
+  --surface-muted:       rgba(0, 0, 0, 0.035);
+  --surface-highlight:   rgba(213, 140, 83, 0.08);
+  --surface-inset:       rgba(240, 243, 246, 0.9);
+  --surface-overlay:     rgba(0, 0, 0, 0.3);
+
+  --text-strong:  #1a1d20;
+  --text-default: #3d4752;
+  --text-muted:   #6b7a85;
+  --text-faint:   rgba(107, 122, 133, 0.5);
+  --text-inverse: #f2f5f7;
+
+  --border-subtle:  rgba(0, 0, 0, 0.08);
+  --border-medium:  rgba(0, 0, 0, 0.12);
+  --border-strong:  rgba(213, 140, 83, 0.35);
+  --border-danger:  rgba(220, 90, 70, 0.3);
+  --border-success: rgba(60, 160, 100, 0.3);
+  --border-warning: rgba(190, 155, 60, 0.3);
+
+  --accent-soft:   rgba(213, 140, 83, 0.08);
+  --accent-glow:   rgba(213, 140, 83, 0.2);
+  --accent-subtle: rgba(213, 140, 83, 0.04);
+  --success-soft:  rgba(60, 160, 100, 0.08);
+  --danger-soft:   rgba(220, 90, 70, 0.08);
+  --warning-soft:  rgba(190, 155, 60, 0.08);
+  --info-soft:     rgba(40, 140, 140, 0.08);
+
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --elevation-3: 0 18px 40px rgba(0, 0, 0, 0.1);
+  --elevation-4: 0 24px 70px rgba(0, 0, 0, 0.12);
+  --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+
+  --grid-line: rgba(0, 0, 0, 0.04);
+}
+
+/* ═══════════════════════════════════════════════
+   @font-face Declarations
+   Replaces the old @import url() to Google Fonts.
+   Using Google Fonts CSS2 static URLs served via
+   their CDN. font-display: swap avoids FOIT.
+   ═══════════════════════════════════════════════ */
+
+/* IBM Plex Sans — body text */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/ibmplexsans/v19/zYXgKVElMYYaJe8bpLHnCwDKtdbUFI5NadY.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/ibmplexsans/v19/zYX9KVElMYYaJe8bpLHnCwDKjSL9AIFsdP3p.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/ibmplexsans/v19/zYX9KVElMYYaJe8bpLHnCwDKjQ76AIFsdP3p.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/ibmplexsans/v19/zYX9KVElMYYaJe8bpLHnCwDKjWr7AIFsdP3p.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
+}
+
+/* IBM Plex Mono — code / data */
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/ibmplexmono/v19/-F63fjptAgt5VM-kVkqdyU8n5igg1l9kn-s.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/ibmplexmono/v19/-F6qfjptAgt5VM-kVkqdyU8n3oQIwlBFhA.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/ibmplexmono/v19/-F6qfjptAgt5VM-kVkqdyU8n3uQJwlBFhA.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
+}
