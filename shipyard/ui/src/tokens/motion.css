@@ -1,6 +1,6 @@
 /* ───────────────────────────────────────────────
    Motion Design Tokens
-   UIV2-S01 · Design System Foundation
+   UIV3-S01 · Design System Rebuild
 
    Duration tiers, easing curves, spring configs,
    and enter/exit semantics. All motion is
@@ -16,30 +16,36 @@
      5 named levels from instant to deliberate
      ═══════════════════════════════════════════════ */
 
-  --duration-instant:    0ms;
-  --duration-fast:       100ms;
+  --duration-instant:    80ms;
+  --duration-fast:       120ms;
   --duration-normal:     200ms;
-  --duration-slow:       350ms;
-  --duration-deliberate: 500ms;
+  --duration-slow:       320ms;
+  --duration-slower:     500ms;
 
   /* ═══════════════════════════════════════════════
      EASING CURVES
      ═══════════════════════════════════════════════ */
 
-  /* Standard ease-out — deceleration, feels natural */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Default — general purpose */
+  --ease-default: cubic-bezier(0.25, 0.1, 0.25, 1);
 
-  /* Ease-in-out — symmetric, good for state transitions */
-  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  /* Ease-in — exit animations */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
 
-  /* Spring — slight overshoot, use for playful interactions */
+  /* Ease-out — enter animations, deceleration */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* Ease-in-out — symmetric state transitions */
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Spring — slight overshoot, bouncy micro-interactions */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  /* Linear — for progress bars and loading indicators */
-  --ease-linear: linear;
+  /* Smooth — smooth deceleration for slides */
+  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Default alias for backwards compat */
-  --ease-default: var(--ease-out);
+  /* Linear — progress bars and loading indicators */
+  --ease-linear: linear;
 
   /* ═══════════════════════════════════════════════
      ENTER / EXIT SEMANTICS
@@ -88,7 +94,7 @@
     --duration-fast:       0ms;
     --duration-normal:     0ms;
     --duration-slow:       0ms;
-    --duration-deliberate: 0ms;
+    --duration-slower:     0ms;
 
     --enter-duration: 0ms;
     --exit-duration:  0ms;
@@ -101,3 +107,5 @@
     --tooltip-duration: 0ms;
   }
 }
+
+/* Reduced motion fallback also enforced in reset.css as global catch */

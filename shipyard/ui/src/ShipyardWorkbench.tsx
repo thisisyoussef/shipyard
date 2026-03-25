@@ -1,34 +1,25 @@
 /**
  * Shipyard Workbench — Root composition component.
- *
- * UIV2-S02 through S06: Decomposed from the original 1109-line
- * monolith into focused panel components composed here.
+ * UIV3: Full implementation using shell and panel components.
  */
 
-import {
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-  type RefObject,
-} from "react";
+import type { FormEvent, KeyboardEvent, RefObject } from "react";
+import { useState } from "react";
 
 import {
-  selectVisibleFileEvents,
-  selectVisibleTurns,
-  type ActivityScope,
-} from "./activity-diff.js";
-import { ActivityFeed } from "./ActivityFeed.js";
-import { ComposerPanel } from "./ComposerPanel.js";
-import { ContextPanel } from "./ContextPanel.js";
-import { FilePanel } from "./FilePanel.js";
-import { HeaderStrip } from "./HeaderStrip.js";
+  ActivityFeed,
+  ComposerPanel,
+  ContextPanel,
+  FilePanel,
+  SessionPanel,
+} from "./panels/index.js";
+import type { BadgeTone } from "./primitives.js";
 import {
-  Badge,
-  SectionHeader,
-  SurfaceCard,
-  type BadgeTone,
-} from "./primitives.js";
-import { SessionPanel } from "./SessionPanel.js";
+  HeaderStrip,
+  ShellFooter,
+  ShellSidebar,
+  ShipyardShell,
+} from "./shell/index.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
@@ -74,268 +65,133 @@ export interface ShipyardWorkbenchProps {
   onToggleRightSidebar: () => void;
 }
 
-/* ── Helpers ────────────────────────────────── */
+/* ── Icon components for sidebar rail ──────── */
 
-function formatConnectionLabel(
-  connectionState: WorkbenchConnectionState,
-  hasSession: boolean,
-): string {
-  if (connectionState === "connecting" && hasSession) return "reconnecting";
-  if (connectionState === "ready") return "connected";
-  if (connectionState === "agent-busy") return "working";
-  return connectionState;
+function SessionIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 9h18" />
+    </svg>
+  );
 }
 
-function formatSurfaceState(
-  connectionState: WorkbenchConnectionState,
-  hasSession: boolean,
-): WorkbenchConnectionState | "reconnecting" {
-  if (connectionState === "connecting" && hasSession) return "reconnecting";
-  return connectionState;
+function ContextIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M16 13H8" />
+      <path d="M16 17H8" />
+    </svg>
+  );
 }
 
-function getConnectionTone(
-  state: WorkbenchConnectionState | "reconnecting",
-): BadgeTone {
-  if (state === "ready") return "success";
-  if (state === "agent-busy") return "accent";
-  if (state === "error" || state === "disconnected") return "danger";
-  return "warning";
-}
-
-function getPreviewTone(status: PreviewStateViewModel["status"]): BadgeTone {
-  if (status === "running") {
-    return "success";
-  }
-
-  if (status === "starting" || status === "refreshing" || status === "idle") {
-    return "accent";
-  }
-
-  if (status === "error" || status === "exited" || status === "unavailable") {
-    return "danger";
-  }
-
-  return "neutral";
-}
-
-function formatPreviewLabel(status: PreviewStateViewModel["status"]): string {
-  return status.replace(/-/g, " ");
-}
-
-function formatWorkspaceLabel(workspaceDirectory: string): string {
-  const segments = workspaceDirectory.split("/").filter(Boolean);
-  return segments.at(-1) ?? workspaceDirectory;
-}
-
-/* ── Component ──────────────────────────────── */
+/* ── Main Component ──────────────────────────── */
 
 export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
-  const [activityScope, setActivityScope] = useState<ActivityScope>("latest");
+  const [leftCollapsed, setLeftCollapsed] = useState(!props.leftSidebarOpen);
+  const [rightCollapsed, setRightCollapsed] = useState(!props.rightSidebarOpen);
 
-  const hasSession = props.sessionState !== null;
-  const surfaceState = formatSurfaceState(props.connectionState, hasSession);
-  const connectionLabel = formatConnectionLabel(props.connectionState, hasSession);
-  const connectionTone = getConnectionTone(surfaceState);
+  // Extract workspace/target names from paths
+  const workspaceName = props.sessionState?.workspaceDirectory?.split("/").pop();
+  const targetName = props.sessionState?.targetLabel;
 
-  const visibleTurns = selectVisibleTurns(props.turns, activityScope);
-  const visibleFileEvents = selectVisibleFileEvents(
-    props.fileEvents,
-    visibleTurns,
-    activityScope,
-  );
-  const hiddenTurnCount = Math.max(props.turns.length - visibleTurns.length, 0);
-  const hiddenFileEventCount = Math.max(
-    props.fileEvents.length - visibleFileEvents.length,
-    0,
-  );
+  // Rail items for collapsed sidebar
+  const leftRailItems = [
+    {
+      id: "session",
+      icon: <SessionIcon />,
+      label: "Session",
+      active: true,
+    },
+    {
+      id: "context",
+      icon: <ContextIcon />,
+      label: "Context",
+      active: props.contextDraft.length > 0 || props.contextHistory.length > 0,
+    },
+  ];
+
+  const handleLeftToggle = () => {
+    const newState = !leftCollapsed;
+    setLeftCollapsed(newState);
+    props.onToggleLeftSidebar();
+  };
+
+  const handleRightToggle = () => {
+    const newState = !rightCollapsed;
+    setRightCollapsed(newState);
+    props.onToggleRightSidebar();
+  };
 
   return (
-    <div
-      className="shell-layout"
-      data-state={surfaceState}
-      data-left-open={props.leftSidebarOpen}
-      data-right-open={props.rightSidebarOpen}
+    <ShipyardShell
+      leftCollapsed={leftCollapsed}
+      rightCollapsed={rightCollapsed}
+      onLeftCollapsedChange={setLeftCollapsed}
+      onRightCollapsedChange={setRightCollapsed}
+      header={
+        <HeaderStrip
+          workspaceName={workspaceName}
+          workspacePath={props.sessionState?.workspaceDirectory}
+          targetName={targetName}
+          targetPath={props.sessionState?.targetDirectory}
+          connectionState={props.connectionState}
+          leftSidebarOpen={!leftCollapsed}
+          rightSidebarOpen={!rightCollapsed}
+          onCopyTracePath={props.onCopyTracePath}
+          onRefresh={props.onRefreshStatus}
+          onToggleLeftSidebar={handleLeftToggle}
+          onToggleRightSidebar={handleRightToggle}
+          traceButtonLabel={props.traceButtonLabel}
+        />
+      }
+      leftSidebar={
+        <ShellSidebar collapsed={leftCollapsed} railItems={leftRailItems}>
+          <SessionPanel session={props.sessionState} />
+          <ContextPanel
+            history={props.contextHistory}
+            draft={props.contextDraft}
+            onDraftChange={props.onContextChange}
+            onKeyDown={props.onContextKeyDown}
+            onClear={props.onClearContext}
+            textareaRef={props.contextInputRef}
+          />
+        </ShellSidebar>
+      }
+      rightSidebar={
+        <ShellSidebar collapsed={rightCollapsed} railItems={[]}>
+          <FilePanel fileEvents={props.fileEvents} />
+        </ShellSidebar>
+      }
+      footer={
+        <ShellFooter
+          connectionState={props.connectionState}
+          sessionId={props.sessionState?.sessionId}
+          workspacePath={props.sessionState?.workspaceDirectory}
+          agentStatus={props.agentStatus}
+        />
+      }
     >
-      <HeaderStrip
-        workspaceName={
-          props.sessionState
-            ? formatWorkspaceLabel(props.sessionState.workspaceDirectory)
-            : "Shipyard"
-        }
-        targetPath={props.sessionState?.targetDirectory ?? ""}
-        connectionLabel={connectionLabel}
-        connectionTone={connectionTone}
-        traceButtonLabel={props.traceButtonLabel}
-        hasSession={hasSession}
-        leftSidebarOpen={props.leftSidebarOpen}
-        rightSidebarOpen={props.rightSidebarOpen}
-        onToggleLeftSidebar={props.onToggleLeftSidebar}
-        onToggleRightSidebar={props.onToggleRightSidebar}
-        onCopyTracePath={props.onCopyTracePath}
-        onRefreshStatus={props.onRefreshStatus}
-      />
-
-      <aside
-        className={`shell-sidebar shell-sidebar-left ${props.leftSidebarOpen ? "" : "shell-sidebar-collapsed"}`}
-        aria-label="Session and context"
-      >
-        {props.leftSidebarOpen ? (
-          <>
-            <SessionPanel
-              sessionState={props.sessionState}
-              connectionState={props.connectionState}
-              agentStatus={props.agentStatus}
-              turnCount={props.turns.length}
-            />
-            <ContextPanel
-              contextDraft={props.contextDraft}
-              contextHistory={props.contextHistory}
-              contextInputRef={props.contextInputRef}
-              onContextChange={props.onContextChange}
-              onContextKeyDown={props.onContextKeyDown}
-              onClearContext={props.onClearContext}
-            />
-          </>
-        ) : (
-          <nav className="icon-rail" aria-label="Sidebar navigation">
-            <button
-              type="button"
-              className="icon-rail-btn"
-              aria-label="Session"
-              onClick={props.onToggleLeftSidebar}
-            >
-              S
-            </button>
-            <button
-              type="button"
-              className="icon-rail-btn"
-              aria-label="Context"
-              onClick={props.onToggleLeftSidebar}
-            >
-              C
-            </button>
-          </nav>
-        )}
-      </aside>
-
-      <main className="shell-main" role="main" aria-label="Agent activity">
+      {/* Main content area */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", height: "100%" }}>
+        {/* Composer at top */}
         <ComposerPanel
           instruction={props.instruction}
-          contextDraft={props.contextDraft}
-          connectionState={props.connectionState}
-          composerNotice={
-            props.composerNotice as {
-              tone: BadgeTone;
-              title: string;
-              detail: string;
-            } | null
-          }
-          instructionInputRef={props.instructionInputRef}
           onInstructionChange={props.onInstructionChange}
-          onSubmitInstruction={props.onSubmitInstruction}
-          onInstructionKeyDown={props.onInstructionKeyDown}
+          onSubmit={props.onSubmitInstruction}
+          onKeyDown={props.onInstructionKeyDown}
+          textareaRef={props.instructionInputRef}
+          agentBusy={props.connectionState === "agent-busy"}
+          notice={props.composerNotice}
         />
 
-        <ActivityFeed
-          turns={props.turns}
-          activityScope={activityScope}
-          onToggleScope={setActivityScope}
-        />
-      </main>
-
-      {props.rightSidebarOpen ? (
-        <aside
-          className="shell-sidebar shell-sidebar-right"
-          aria-label="Preview and file activity"
-        >
-          <SurfaceCard className="panel panel-preview">
-            <SectionHeader
-              kicker="Preview"
-              title="Local preview"
-              meta={
-                <Badge tone={getPreviewTone(props.previewState.status)}>
-                  {formatPreviewLabel(props.previewState.status)}
-                </Badge>
-              }
-            />
-
-            <p className="preview-summary">{props.previewState.summary}</p>
-
-            {props.previewState.url ? (
-              <div className="preview-meta-block">
-                <span className="micro-label">Loopback URL</span>
-                <a
-                  className="preview-link"
-                  href={props.previewState.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {props.previewState.url}
-                </a>
-              </div>
-            ) : null}
-
-            {props.previewState.lastRestartReason ? (
-              <p className="support-copy">{props.previewState.lastRestartReason}</p>
-            ) : null}
-
-            {props.previewState.url ? (
-              <div className="preview-frame-shell">
-                <iframe
-                  className="preview-frame"
-                  title="Local preview surface"
-                  src={props.previewState.url}
-                />
-              </div>
-            ) : (
-              <div className="empty-state compact-empty-state">
-                <p className="empty-heading">{props.previewState.summary}</p>
-                <p className="empty-copy">
-                  Shipyard will only launch supported local previews and will say
-                  why when a target does not qualify.
-                </p>
-              </div>
-            )}
-
-            {props.previewState.logTail.length > 0 ? (
-              <details className="preview-log-shell">
-                <summary>Recent preview logs</summary>
-                <pre className="preview-log-output">
-                  {props.previewState.logTail.join("\n")}
-                </pre>
-              </details>
-            ) : null}
-          </SurfaceCard>
-
-          <FilePanel
-            visibleFileEvents={visibleFileEvents}
-            totalFileEventCount={props.fileEvents.length}
-            hiddenFileEventCount={hiddenFileEventCount}
-            activityScope={activityScope}
-          />
-        </aside>
-      ) : null}
-
-      <footer className="status-bar" role="contentinfo">
-        <div className="status-current" data-state={surfaceState}>
-          <span
-            className="status-dot"
-            data-tone={connectionTone}
-            aria-hidden="true"
-          />
-          <div>
-            <span className="micro-label">Current status</span>
-            <strong aria-live="polite">{props.agentStatus}</strong>
-          </div>
+        {/* Activity feed below */}
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          <ActivityFeed turns={props.turns} />
         </div>
-        <div className="status-meta">
-          <span>
-            {props.sessionState?.discoverySummary ?? "No discovery data yet"}
-          </span>
-          <span>{props.sessionState?.tracePath ?? "Trace path pending"}</span>
-        </div>
-      </footer>
-    </div>
+      </div>
+    </ShipyardShell>
   );
 }

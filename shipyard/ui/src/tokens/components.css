@@ -1,6 +1,6 @@
 /* ───────────────────────────────────────────────
    Component Design Tokens
-   UIV2-S01 · Design System Foundation
+   UIV3-S01 · Design System Rebuild
 
    Indirection layer between primitive tokens and
    component implementations. Every component
@@ -10,15 +10,35 @@
 
 :root {
   /* ═══════════════════════════════════════════════
+     SHELL (S02)
+     ═══════════════════════════════════════════════ */
+  --shell-header-h:         48px;
+  --shell-footer-h:         32px;
+  --sidebar-left-w:         220px;
+  --sidebar-left-collapsed-w: 48px;
+  --sidebar-right-w:        280px;
+  --sidebar-right-collapsed-w: 0px;
+  --sidebar-transition:     var(--duration-slow) var(--ease-smooth);
+  --shell-gutter:           var(--space-3);
+
+  /* ═══════════════════════════════════════════════
+     HEADER (S03)
+     ═══════════════════════════════════════════════ */
+  --header-bg:        var(--surface-card-strong);
+  --header-border:    var(--border-subtle);
+  --header-icon-size: 18px;
+  --header-btn-size:  32px;
+
+  /* ═══════════════════════════════════════════════
      CARD
      ═══════════════════════════════════════════════ */
   --card-bg:      var(--surface-card);
   --card-bg-hover: var(--surface-card-strong);
   --card-border:  var(--border-subtle);
-  --card-padding: var(--space-card-padding);
+  --card-padding: var(--pad-card);
   --card-radius:  var(--radius-xl);
   --card-shadow:  var(--elevation-3), var(--shadow-inner);
-  --card-blur:    var(--blur-card);
+  --card-blur:    var(--blur-md);
 
   /* ═══════════════════════════════════════════════
      BADGE — per-tone tokens
