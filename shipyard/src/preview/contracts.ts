@@ -1,5 +1,6 @@
 import type {
   PreviewAutoRefreshMode,
+  DiscoveryReport,
   PreviewCapabilityReport,
   PreviewRunner,
   PreviewState,
@@ -7,6 +8,10 @@ import type {
 
 export const PREVIEW_HOST = "127.0.0.1";
 const PREVIEW_PORT_PLACEHOLDER = "<port>";
+export const STARTER_CANVAS_WAITING_SUMMARY =
+  "Starter canvas will appear here while Shipyard prepares the first previewable app.";
+export const STARTER_CANVAS_RUNNING_SUMMARY =
+  "Starter canvas is ready while Shipyard prepares the first project preview.";
 
 export function createUnavailablePreviewCapability(
   reason: string,
@@ -32,6 +37,10 @@ export function createIdlePreviewState(summary: string): PreviewState {
   };
 }
 
+export function createStarterCanvasIdleState(): PreviewState {
+  return createIdlePreviewState(STARTER_CANVAS_WAITING_SUMMARY);
+}
+
 export function createPreviewStateFromCapability(
   capability: PreviewCapabilityReport,
 ): PreviewState {
@@ -48,6 +57,41 @@ export function createPreviewStateFromCapability(
   return createIdlePreviewState(
     "Preview is available. Shipyard will start it automatically for this browser session.",
   );
+}
+
+export function shouldUseStarterCanvasForScratchTarget(options: {
+  activePhase: "code" | "target-manager";
+  discovery: Pick<
+    DiscoveryReport,
+    "isGreenfield" | "topLevelFiles" | "previewCapability"
+  >;
+}): boolean {
+  if (options.activePhase !== "code") {
+    return false;
+  }
+
+  if (options.discovery.previewCapability.status !== "unavailable") {
+    return false;
+  }
+
+  return (
+    options.discovery.isGreenfield ||
+    !options.discovery.topLevelFiles.includes("package.json")
+  );
+}
+
+export function createInitialPreviewState(options: {
+  activePhase: "code" | "target-manager";
+  discovery: Pick<
+    DiscoveryReport,
+    "isGreenfield" | "topLevelFiles" | "previewCapability"
+  >;
+}): PreviewState {
+  if (shouldUseStarterCanvasForScratchTarget(options)) {
+    return createStarterCanvasIdleState();
+  }
+
+  return createPreviewStateFromCapability(options.discovery.previewCapability);
 }
 
 export function resolvePreviewRunner(

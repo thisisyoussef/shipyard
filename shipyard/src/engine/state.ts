@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 
 import type { DiscoveryReport, TargetProfile } from "../artifacts/types.js";
 import { discoverTarget, normalizeDiscoveryReport } from "../context/discovery.js";
-import { createPreviewStateFromCapability } from "../preview/contracts.js";
+import { createInitialPreviewState } from "../preview/contracts.js";
 import { loadTargetProfile } from "../tools/target-manager/profile-io.js";
 import {
   createInitialWorkbenchState,
@@ -95,9 +95,11 @@ export function createSessionState(
   const now = new Date().toISOString();
   const discovery = normalizeDiscoveryReport(options.discovery);
   const workbenchState = createInitialWorkbenchState();
-  workbenchState.previewState = createPreviewStateFromCapability(
-    discovery.previewCapability,
-  );
+  const activePhase = options.activePhase ?? "code";
+  workbenchState.previewState = createInitialPreviewState({
+    activePhase,
+    discovery,
+  });
 
   return {
     sessionId: options.sessionId,
@@ -109,7 +111,7 @@ export function createSessionState(
     turnCount: 0,
     rollingSummary: "",
     discovery,
-    activePhase: options.activePhase ?? "code",
+    activePhase,
     targetProfile: options.targetProfile,
     workbenchState,
   };
@@ -222,11 +224,13 @@ export async function loadSessionState(
     Omit<SessionState, "workbenchState">;
   const discovery = normalizeDiscoveryReport(parsed.discovery);
   const workbenchState = parsed.workbenchState ?? createInitialWorkbenchState();
+  const activePhase = parsed.activePhase ?? "code";
 
   if (!workbenchState.previewState) {
-    workbenchState.previewState = createPreviewStateFromCapability(
-      discovery.previewCapability,
-    );
+    workbenchState.previewState = createInitialPreviewState({
+      activePhase,
+      discovery,
+    });
   }
 
   return {
@@ -234,7 +238,7 @@ export async function loadSessionState(
     discovery,
     targetsDirectory:
       parsed.targetsDirectory ?? path.dirname(targetDirectory),
-    activePhase: parsed.activePhase ?? "code",
+    activePhase,
     targetProfile: parsed.targetProfile,
     workbenchState,
   } as SessionState;
@@ -341,9 +345,10 @@ export async function switchTarget(
   nextState.lastActiveAt = new Date().toISOString();
 
   if (!nextState.workbenchState.previewState) {
-    nextState.workbenchState.previewState = createPreviewStateFromCapability(
-      discovery.previewCapability,
-    );
+    nextState.workbenchState.previewState = createInitialPreviewState({
+      activePhase: nextState.activePhase,
+      discovery,
+    });
   }
 
   await saveSessionState(nextState);

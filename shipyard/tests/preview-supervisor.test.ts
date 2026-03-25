@@ -119,6 +119,37 @@ describe("preview supervisor", () => {
     expect(exitedState.summary).toContain("stopped");
   });
 
+  it("serves a starter canvas for scratch targets without a preview command", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-preview-scratch-");
+    const discovery = await discoverTarget(targetDirectory);
+    const supervisor = createPreviewSupervisor({
+      targetDirectory,
+      capability: discovery.previewCapability,
+      starterCanvasOnUnavailable: true,
+    });
+
+    try {
+      await supervisor.start();
+
+      const runningState = await waitForState(
+        supervisor,
+        (state) => state.status === "running" && state.url !== null,
+      );
+
+      expect(supervisor.isStarterCanvasActive()).toBe(true);
+      expect(runningState.summary).toContain("Starter canvas");
+      expect(runningState.logTail).toEqual([]);
+
+      const response = await fetch(runningState.url ?? "");
+      expect(response.ok).toBe(true);
+      await expect(response.text()).resolves.toContain(
+        'data-shipyard-starter-canvas="true"',
+      );
+    } finally {
+      await supervisor.stop();
+    }
+  });
+
   it("surfaces startup failures clearly before the preview becomes healthy", async () => {
     const targetDirectory = await createTempDirectory("shipyard-preview-fail-");
     await scaffoldPreviewableTarget({
@@ -147,6 +178,46 @@ describe("preview supervisor", () => {
     expect(failedState.logTail.join("\n")).toContain(
       "Preview boot failed before the server became healthy.",
     );
+  });
+
+  it("falls back to a starter canvas on first-boot preview failures when enabled", async () => {
+    const targetDirectory = await createTempDirectory(
+      "shipyard-preview-fallback-",
+    );
+    await scaffoldPreviewableTarget({
+      targetDirectory,
+      name: "preview-supervisor-fallback",
+      mode: "fail-start",
+    });
+
+    const discovery = await discoverTarget(targetDirectory);
+    const supervisor = createPreviewSupervisor({
+      targetDirectory,
+      capability: discovery.previewCapability,
+      startupTimeoutMs: 2_000,
+      starterCanvasOnStartupFailure: true,
+    });
+
+    try {
+      await supervisor.start();
+
+      const runningState = await waitForState(
+        supervisor,
+        (state) => state.status === "running" && state.url !== null,
+      );
+
+      expect(supervisor.isStarterCanvasActive()).toBe(true);
+      expect(runningState.summary).toContain("Starter canvas");
+      expect(runningState.logTail).toEqual([]);
+
+      const response = await fetch(runningState.url ?? "");
+      expect(response.ok).toBe(true);
+      await expect(response.text()).resolves.toContain(
+        'data-shipyard-starter-canvas="true"',
+      );
+    } finally {
+      await supervisor.stop();
+    }
   });
 
   it("surfaces unexpected exits after a healthy start", async () => {

@@ -1,7 +1,7 @@
 import type { PreviewState } from "../artifacts/types.js";
 import {
+  createInitialPreviewState,
   createIdlePreviewState,
-  createPreviewStateFromCapability,
 } from "../preview/contracts.js";
 import type {
   BackendToFrontendMessage,
@@ -428,7 +428,10 @@ export function applySessionSnapshot(
 ): WorkbenchViewState {
   const recoveredState = message.workbenchState ?? state;
   const previewState = recoveredState.previewState ??
-    createPreviewStateFromCapability(message.discovery.previewCapability);
+    createInitialPreviewState({
+      activePhase: message.activePhase,
+      discovery: message.discovery,
+    });
   const recoveredAfterReload =
     state.sessionState === null && hasRecoveredHistory(recoveredState);
   const nextConnectionState = message.connectionState;

@@ -2,7 +2,12 @@ import {
   spawn,
   type ChildProcessByStdio,
 } from "node:child_process";
-import { createServer } from "node:net";
+import {
+  createServer as createHttpServer,
+  type Server as HttpServer,
+} from "node:http";
+import { createServer as createNetServer } from "node:net";
+import path from "node:path";
 import type { Readable } from "node:stream";
 
 import type {
@@ -11,6 +16,8 @@ import type {
 } from "../artifacts/types.js";
 import {
   PREVIEW_HOST,
+  STARTER_CANVAS_RUNNING_SUMMARY,
+  createStarterCanvasIdleState,
   createPreviewStateFromCapability,
   getPreviewRefreshSummary,
 } from "./contracts.js";
@@ -23,13 +30,16 @@ export interface CreatePreviewSupervisorOptions {
   preferredPort?: number;
   startupTimeoutMs?: number;
   logTailLimit?: number;
+  starterCanvasOnUnavailable?: boolean;
+  starterCanvasOnStartupFailure?: boolean;
 }
 
 export interface PreviewSupervisor {
   getState(): PreviewState;
+  isStarterCanvasActive(): boolean;
   start(): Promise<void>;
   refresh(reason: string): Promise<void>;
-  stop(): Promise<void>;
+  stop(options?: { silent?: boolean }): Promise<void>;
 }
 
 interface SpawnPlan {
@@ -38,8 +48,44 @@ interface SpawnPlan {
 }
 
 const DEFAULT_PREVIEW_PORT = 4173;
+
+/**
+ * Resolves the full path to a package manager binary (npm, yarn, pnpm, bun).
+ * Uses the current Node.js binary's directory to find the runner, ensuring
+ * the spawn works even when PATH doesn't include the nvm/node bin directory.
+ */
+function resolveRunnerPath(runner: string): string {
+  // Get the directory containing the current node binary
+  const nodeBinDir = path.dirname(process.execPath);
+
+  // Construct the full path to the runner
+  // On Windows, binaries have .cmd extension for package managers
+  const extension = process.platform === "win32" ? ".cmd" : "";
+  const fullPath = path.join(nodeBinDir, `${runner}${extension}`);
+
+  return fullPath;
+}
 const DEFAULT_LOG_TAIL_LIMIT = 20;
 const DEFAULT_STARTUP_TIMEOUT_MS = 10_000;
+const MAX_PREVIEW_START_ATTEMPTS = 3;
+const STARTER_CANVAS_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shipyard Starter Canvas</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #f8fafc;
+      }
+    </style>
+  </head>
+  <body data-shipyard-starter-canvas="true"></body>
+</html>
+`;
 
 function isPortInUseError(error: unknown): error is NodeJS.ErrnoException {
   return (
@@ -91,21 +137,24 @@ function createPreviewSpawnPlan(
     "--strictPort",
   ];
 
+  // Resolve the full path to the runner to avoid PATH issues
+  const runnerPath = resolveRunnerPath(capability.runner);
+
   switch (capability.runner) {
     case "yarn":
       return {
-        command: "yarn",
+        command: runnerPath,
         args: [capability.scriptName, ...previewArgs],
       };
     case "bun":
       return {
-        command: "bun",
+        command: runnerPath,
         args: ["run", capability.scriptName, "--", ...previewArgs],
       };
     case "pnpm":
     case "npm":
       return {
-        command: capability.runner,
+        command: runnerPath,
         args: ["run", capability.scriptName, "--", ...previewArgs],
       };
   }
@@ -182,7 +231,7 @@ async function findAvailablePort(
 
     try {
       const port = await new Promise<number>((resolve, reject) => {
-        const server = createServer();
+        const server = createNetServer();
 
         server.once("error", (error) => {
           server.close();
@@ -224,6 +273,19 @@ function createInitialRunningSummary(): string {
   return "Preview is running on loopback.";
 }
 
+async function closeHttpServer(server: HttpServer): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
 export function createPreviewSupervisor(
   options: CreatePreviewSupervisorOptions,
 ): PreviewSupervisor {
@@ -232,7 +294,9 @@ export function createPreviewSupervisor(
   const startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
   const logTailLimit = options.logTailLimit ?? DEFAULT_LOG_TAIL_LIMIT;
 
-  let state = createPreviewStateFromCapability(options.capability);
+  let state = options.starterCanvasOnUnavailable
+    ? createStarterCanvasIdleState()
+    : createPreviewStateFromCapability(options.capability);
   let childProcess: ChildProcessByStdio<null, Readable, Readable> | null = null;
   let startPromise: Promise<void> | null = null;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -240,8 +304,12 @@ export function createPreviewSupervisor(
   let publishChain = Promise.resolve();
   let intentionalStop = false;
   let hasHealthyStart = false;
+  let hasEverStartedRealPreview = false;
+  let startupAttemptCount = 0;
   let previewUrl: string | null = state.url;
   let currentPort: number | null = null;
+  let starterCanvasServer: HttpServer | null = null;
+  let starterCanvasActive = false;
 
   const publishState = async (nextState: PreviewState): Promise<void> => {
     state = nextState;
@@ -269,11 +337,116 @@ export function createPreviewSupervisor(
     startPromise = null;
   };
 
+  const shouldFallbackToStarterCanvas = (): boolean =>
+    options.starterCanvasOnStartupFailure === true && !hasEverStartedRealPreview;
+
+  const canRetryPreviewStartup = (): boolean =>
+    options.capability.status === "available" &&
+    !intentionalStop &&
+    !hasHealthyStart &&
+    startupAttemptCount < MAX_PREVIEW_START_ATTEMPTS;
+
+  const retryPreviewStartup = (): void => {
+    void spawnPreviewProcess().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+
+      void publishState({
+        status: "error",
+        summary: "Local preview failed to start.",
+        url: previewUrl,
+        logTail: clipLogTail([...state.logTail, message], logTailLimit),
+        lastRestartReason: message,
+      }).finally(() => {
+        settleStart();
+      });
+    });
+  };
+
+  const stopStarterCanvasServer = async (): Promise<void> => {
+    if (!starterCanvasServer) {
+      starterCanvasActive = false;
+      return;
+    }
+
+    const server = starterCanvasServer;
+    starterCanvasServer = null;
+    starterCanvasActive = false;
+
+    try {
+      await closeHttpServer(server);
+    } catch (error) {
+      if (
+        !(
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ERR_SERVER_NOT_RUNNING"
+        )
+      ) {
+        throw error;
+      }
+    }
+  };
+
+  const startStarterCanvasServer = async (): Promise<void> => {
+    await stopStarterCanvasServer();
+
+    const server = createHttpServer((_request, response) => {
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+      });
+      response.end(STARTER_CANVAS_HTML);
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const handleError = (error: Error) => {
+        server.off("listening", handleListening);
+        reject(error);
+      };
+      const handleListening = () => {
+        server.off("error", handleError);
+        resolve();
+      };
+
+      server.once("error", handleError);
+      server.once("listening", handleListening);
+      server.listen(0, host);
+    });
+
+    const address = server.address();
+
+    if (!address || typeof address === "string") {
+      await closeHttpServer(server);
+      throw new Error("Starter canvas failed to resolve a loopback port.");
+    }
+
+    currentPort = address.port;
+    previewUrl = `http://${host}:${String(address.port)}/`;
+    hasHealthyStart = false;
+
+    starterCanvasServer = server;
+    starterCanvasActive = true;
+
+    await publishState({
+      status: "running",
+      summary: STARTER_CANVAS_RUNNING_SUMMARY,
+      url: previewUrl,
+      logTail: [],
+      lastRestartReason: null,
+    });
+  };
+
   const markRunning = async (
     summary: string,
     lastRestartReason: string | null,
+    source: "preview" | "starter-canvas" = "preview",
   ): Promise<void> => {
-    hasHealthyStart = true;
+    hasHealthyStart = source === "preview";
+    starterCanvasActive = source === "starter-canvas";
+
+    if (source === "preview") {
+      hasEverStartedRealPreview = true;
+      startupAttemptCount = 0;
+    }
 
     await publishState({
       status: "running",
@@ -344,8 +517,11 @@ export function createPreviewSupervisor(
   };
 
   const spawnPreviewProcess = async (): Promise<void> => {
+    await stopStarterCanvasServer();
+
     const port = await findAvailablePort(host, preferredPort);
     const spawnPlan = createPreviewSpawnPlan(options.capability, host, port);
+    startupAttemptCount += 1;
 
     previewUrl = null;
     currentPort = port;
@@ -377,7 +553,25 @@ export function createPreviewSupervisor(
     attachStream(spawnedProcess.stderr);
 
     spawnedProcess.once("error", (error) => {
+      if (childProcess !== spawnedProcess) {
+        return;
+      }
+
       clearTimers();
+      childProcess = null;
+
+      if (canRetryPreviewStartup()) {
+        retryPreviewStartup();
+        return;
+      }
+
+      if (shouldFallbackToStarterCanvas()) {
+        void startStarterCanvasServer().finally(() => {
+          settleStart();
+        });
+        return;
+      }
+
       void publishState({
         status: "error",
         summary: "Local preview failed to start.",
@@ -392,6 +586,10 @@ export function createPreviewSupervisor(
     });
 
     spawnedProcess.once("close", (exitCode, signal) => {
+      if (childProcess !== spawnedProcess) {
+        return;
+      }
+
       clearTimers();
       childProcess = null;
 
@@ -404,6 +602,18 @@ export function createPreviewSupervisor(
         ? `Preview exited with signal ${signal}.`
         : `Preview exited with code ${String(exitCode ?? 0)}.`;
 
+      if (canRetryPreviewStartup()) {
+        retryPreviewStartup();
+        return;
+      }
+
+      if (!hasHealthyStart && shouldFallbackToStarterCanvas()) {
+        void startStarterCanvasServer().finally(() => {
+          settleStart();
+        });
+        return;
+      }
+
       void updateExitedState(reason);
       settleStart();
     });
@@ -415,21 +625,51 @@ export function createPreviewSupervisor(
 
       const reason = `Preview did not become ready within ${String(startupTimeoutMs)} ms.`;
 
-      void publishState({
-        status: "error",
-        summary: "Local preview failed to start.",
-        url: previewUrl,
-        logTail: state.logTail,
-        lastRestartReason: reason,
-      });
-      settleStart();
+      const stopRunningProcess = async (): Promise<void> => {
+        if (!childProcess) {
+          return;
+        }
 
-      if (childProcess) {
         intentionalStop = true;
-        void terminateProcess(childProcess).finally(() => {
+        const processToStop = childProcess;
+        childProcess = null;
+
+        try {
+          await terminateProcess(processToStop);
+        } finally {
           intentionalStop = false;
+        }
+      };
+
+      if (canRetryPreviewStartup()) {
+        void stopRunningProcess().finally(() => {
+          retryPreviewStartup();
         });
+        return;
       }
+
+      if (shouldFallbackToStarterCanvas()) {
+        void stopRunningProcess()
+          .then(() => startStarterCanvasServer())
+          .finally(() => {
+            settleStart();
+          });
+        return;
+      }
+
+      void stopRunningProcess()
+        .then(() =>
+          publishState({
+            status: "error",
+            summary: "Local preview failed to start.",
+            url: previewUrl,
+            logTail: state.logTail,
+            lastRestartReason: reason,
+          }),
+        )
+        .finally(() => {
+          settleStart();
+        });
     }, startupTimeoutMs);
   };
 
@@ -438,8 +678,19 @@ export function createPreviewSupervisor(
       return state;
     },
 
+    isStarterCanvasActive(): boolean {
+      return starterCanvasActive;
+    },
+
     async start(): Promise<void> {
       if (options.capability.status === "unavailable") {
+        if (starterCanvasServer && state.status === "running") {
+          return;
+        }
+
+        if (options.starterCanvasOnUnavailable) {
+          await startStarterCanvasServer();
+        }
         return;
       }
 
@@ -447,10 +698,15 @@ export function createPreviewSupervisor(
         return startPromise;
       }
 
-      if (childProcess && state.status !== "exited" && state.status !== "error") {
+      if (
+        (childProcess || starterCanvasServer) &&
+        state.status !== "exited" &&
+        state.status !== "error"
+      ) {
         return;
       }
 
+      startupAttemptCount = 0;
       startPromise = (async () => {
         await spawnPreviewProcess();
 
@@ -471,6 +727,7 @@ export function createPreviewSupervisor(
 
     async refresh(reason: string): Promise<void> {
       if (
+        starterCanvasActive ||
         options.capability.status !== "available" ||
         state.status !== "running"
       ) {
@@ -521,11 +778,32 @@ export function createPreviewSupervisor(
       });
     },
 
-    async stop(): Promise<void> {
+    async stop(stopOptions?: { silent?: boolean }): Promise<void> {
       clearTimers();
 
+      if (starterCanvasServer) {
+        await stopStarterCanvasServer();
+
+        if (stopOptions?.silent) {
+          return;
+        }
+
+        await publishState({
+          status: "exited",
+          summary: "Local preview stopped with the session.",
+          url: previewUrl,
+          logTail: state.logTail,
+          lastRestartReason: state.lastRestartReason,
+        });
+        return;
+      }
+
       if (!childProcess) {
-        if (options.capability.status === "unavailable") {
+        if (options.capability.status === "unavailable" && !state.url) {
+          return;
+        }
+
+        if (stopOptions?.silent) {
           return;
         }
 
@@ -547,6 +825,11 @@ export function createPreviewSupervisor(
         await terminateProcess(processToStop);
       } finally {
         intentionalStop = false;
+        startupAttemptCount = 0;
+      }
+
+      if (stopOptions?.silent) {
+        return;
       }
 
       await publishState({

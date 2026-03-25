@@ -1185,7 +1185,7 @@ describe("ui runtime contract", () => {
           type: "session:state",
           targetDirectory,
           discovery: {
-            projectName: "ui-bridge-target",
+            projectName: "ui-bridge-target-smoke",
           },
         });
 
@@ -1205,7 +1205,7 @@ describe("ui runtime contract", () => {
           turnCount: 1,
           targetDirectory,
             discovery: {
-            projectName: "ui-bridge-target",
+            projectName: "ui-bridge-target-smoke",
           },
           workbenchState: {
             turns: [
@@ -1447,6 +1447,226 @@ describe("ui runtime contract", () => {
       await runtime.close();
     }
   }, 20_000);
+
+  it("starts scratch targets on a starter canvas and promotes to a real preview after previewable edits", async () => {
+    const targetDirectory = await createTempDirectory(
+      "shipyard-ui-starter-canvas-",
+    );
+    await initializeGitRepository(targetDirectory);
+
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-starter-canvas-session",
+      targetDirectory,
+      discovery,
+    });
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_read_file_starter_canvas",
+            name: "read_file",
+            input: {
+              path: "package.json",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+          {
+            type: "tool_use",
+            id: "toolu_edit_block_starter_canvas",
+            name: "edit_block",
+            input: {
+              path: "package.json",
+              old_string: '  "name": "ui-starter-preview",',
+              new_string: '  "name": "ui-starter-preview-ready",',
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Starter canvas target updated.",
+            citations: null,
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_run_command_starter_canvas",
+            name: "run_command",
+            input: {
+              command: "git diff --stat",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              command: "git diff --stat",
+              exitCode: 0,
+              passed: true,
+              stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
+              stderr: "",
+              summary: "Verification passed.",
+            }),
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "Always inspect the file before editing it.",
+      projectRulesLoaded: true,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            client,
+          };
+        },
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+      const starterCanvasPromise = waitForSocketMessage(
+        socket,
+        (message) =>
+          message.type === "preview:state" &&
+          message.preview.status === "running" &&
+          message.preview.summary.includes("Starter canvas") &&
+          message.preview.url !== null,
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+
+        const initialState = await initialStatePromise;
+        expect(initialState).toMatchObject({
+          type: "session:state",
+          sessionId: "ui-starter-canvas-session",
+          workbenchState: {
+            previewState: {
+              summary: expect.stringContaining("Starter canvas"),
+            },
+          },
+        });
+
+        const starterCanvas = await starterCanvasPromise;
+        if (starterCanvas.type !== "preview:state") {
+          throw new Error("Expected a preview:state starter canvas message.");
+        }
+
+        const starterCanvasResponse = await fetch(starterCanvas.preview.url ?? "");
+        expect(starterCanvasResponse.ok).toBe(true);
+        await expect(starterCanvasResponse.text()).resolves.toContain(
+          'data-shipyard-starter-canvas="true"',
+        );
+
+        await scaffoldPreviewableTarget({
+          targetDirectory,
+          name: "ui-starter-preview",
+        });
+        await expectRawCommandSuccess(targetDirectory, "git add .");
+        await expectRawCommandSuccess(
+          targetDirectory,
+          "git commit -m \"Scaffold starter canvas preview target\"",
+        );
+
+        const turnMessagesPromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "preview:state" &&
+              message.preview.status === "running" &&
+              message.preview.logTail.join("\n").includes("VITE v5.0.8 ready")
+            ) &&
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.turnCount === 1 &&
+              message.connectionState === "ready"
+            ),
+          15_000,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "rename the package in package.json",
+          }),
+        );
+
+        const turnMessages = await turnMessagesPromise;
+
+        assertRequiredEvents(turnMessages, [
+          "session:state",
+          "agent:thinking",
+          "agent:tool_call",
+          "agent:tool_result",
+          "agent:edit",
+          "preview:state",
+          "agent:text",
+          "agent:done",
+        ]);
+
+        const finalPreview = turnMessages.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "preview:state" }
+          > =>
+            message.type === "preview:state" &&
+            message.preview.status === "running" &&
+            message.preview.logTail.join("\n").includes("VITE v5.0.8 ready"),
+        );
+
+        expect(
+          turnMessages.some(
+            (message) =>
+              message.type === "preview:state" &&
+              message.preview.status === "starting",
+          ),
+        ).toBe(true);
+        expect(finalPreview?.preview.url).toMatch(
+          /^http:\/\/127\.0\.0\.1:\d+\/?$/,
+        );
+
+        const previewResponse = await fetch(finalPreview?.preview.url ?? "");
+        expect(previewResponse.ok).toBe(true);
+        await expect(previewResponse.text()).resolves.toContain("Preview Ready");
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 25_000);
 
   it("emits agent:error for a failed instruction and keeps the socket alive", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-runtime-error-");
