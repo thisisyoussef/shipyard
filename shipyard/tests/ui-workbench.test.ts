@@ -274,8 +274,7 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("SHIPYARD");
     expect(markup).toContain("The active React workspace.");
     expect(markup).toContain("Change target");
-    expect(markup).toContain("Ready");
-    expect(markup).toContain("Activity");
+    expect(markup).toContain("Target profile saved.");
     expect(markup).toContain("activity");
     expect(markup).toContain("Previous runs");
     expect(markup).toContain("fix the failing preview");

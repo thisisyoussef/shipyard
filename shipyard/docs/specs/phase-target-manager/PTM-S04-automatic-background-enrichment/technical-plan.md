@@ -88,6 +88,55 @@
 - Integration: browser switch to a target with an existing profile skips auto-enrichment.
 - Integration: CLI create/switch auto-enriches when a profile is missing.
 
+## Implementation Evidence
+
+- Code references:
+  - `shipyard/src/engine/target-enrichment.ts`: ships the shared planner and
+    runtime capability check used by both CLI and browser orchestration.
+  - `shipyard/src/engine/target-command.ts` and `shipyard/src/engine/loop.ts`:
+    auto-run enrichment after CLI create/switch and tool-selected target
+    changes, while leaving `target enrich` intact for manual recovery.
+  - `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/server.ts`, and
+    `shipyard/src/ui/workbench-state.ts`: add `queued`, background enrichment on
+    browser create/switch/initial sync, stale-run protection, and passive
+    session status text.
+  - `shipyard/src/ui/target-manager.ts`, `shipyard/ui/src/TargetHeader.tsx`,
+    `shipyard/ui/src/EnrichmentIndicator.tsx`, `shipyard/ui/src/App.tsx`, and
+    `shipyard/ui/src/ShipyardWorkbench.tsx`: remove the browser enrichment CTA
+    chain and keep the new split-pane workbench on passive status-only copy.
+  - `shipyard/tests/target-auto-enrichment.test.ts`,
+    `shipyard/tests/ui-runtime.test.ts`, `shipyard/tests/ui-view-models.test.ts`,
+    and `shipyard/tests/ui-workbench.test.ts`: prove the new planner, browser
+    background lifecycle, stale-run guard, and no-button UI contract.
+- Representative snippets:
+
+```ts
+if (
+  !hasAutomaticTargetEnrichmentCapability(
+    runtimeState.targetEnrichmentInvoker,
+  )
+) {
+  await broadcastTargetState({
+    status: "idle",
+    message:
+      "Automatic analysis is unavailable until target enrichment is configured.",
+  });
+  return;
+}
+```
+
+```ts
+if (isStaleEnrichmentRun(runId, options.targetPath)) {
+  return;
+}
+
+sessionState.targetProfile = profile;
+await broadcastTargetState({
+  status: "complete",
+  message: "Target profile saved.",
+});
+```
+
 ## Validation Commands
 ```bash
 pnpm --dir shipyard test
