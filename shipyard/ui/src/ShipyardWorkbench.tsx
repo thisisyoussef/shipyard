@@ -103,10 +103,6 @@ function formatWorkspaceLabel(workspaceDirectory: string): string {
   return segments.at(-1) ?? workspaceDirectory;
 }
 
-function formatScopeLabel(scope: ActivityScope): string {
-  return scope === "latest" ? "Latest run" : "All runs";
-}
-
 /* ── Component ──────────────────────────────── */
 
 export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
@@ -168,9 +164,6 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               connectionState={props.connectionState}
               agentStatus={props.agentStatus}
               turnCount={props.turns.length}
-              fileEventCount={props.fileEvents.length}
-              contextReceiptCount={props.contextHistory.length}
-              latestTurn={props.turns[0] ?? null}
             />
             <ContextPanel
               contextDraft={props.contextDraft}
@@ -224,12 +217,8 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
 
         <ActivityFeed
           turns={props.turns}
-          visibleTurns={visibleTurns}
           activityScope={activityScope}
-          onScopeChange={setActivityScope}
-          hiddenTurnCount={hiddenTurnCount}
-          connectionState={props.connectionState}
-          agentStatus={props.agentStatus}
+          onToggleScope={setActivityScope}
         />
       </main>
 
@@ -237,7 +226,8 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
       {props.rightSidebarOpen ? (
         <aside className="shell-sidebar shell-sidebar-right" aria-label="File activity">
           <FilePanel
-            fileEvents={visibleFileEvents}
+            visibleFileEvents={visibleFileEvents}
+            totalFileEventCount={props.fileEvents.length}
             hiddenFileEventCount={hiddenFileEventCount}
             activityScope={activityScope}
           />

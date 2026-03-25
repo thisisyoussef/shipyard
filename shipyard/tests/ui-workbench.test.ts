@@ -132,6 +132,8 @@ function renderWorkbench(overrides?: {
   connectionState?: "connecting" | "ready" | "agent-busy" | "disconnected" | "error";
   agentStatus?: string;
   contextDraft?: string;
+  leftSidebarOpen?: boolean;
+  rightSidebarOpen?: boolean;
 }) {
   return renderToStaticMarkup(
     createElement(ShipyardWorkbench, {
@@ -155,28 +157,33 @@ function renderWorkbench(overrides?: {
       onRefreshStatus: () => undefined,
       onCopyTracePath: () => undefined,
       traceButtonLabel: "Copy trace path",
+      leftSidebarOpen: overrides?.leftSidebarOpen ?? true,
+      rightSidebarOpen: overrides?.rightSidebarOpen ?? true,
+      onToggleLeftSidebar: () => undefined,
+      onToggleRightSidebar: () => undefined,
     }),
   );
 }
 
 describe("ShipyardWorkbench", () => {
-  it("renders session banner, context receipts, and the latest-run activity view", () => {
+  it("renders the current session, context, activity, and file sidebars without crashing", () => {
     const markup = renderWorkbench();
 
-    expect(markup).toContain('class="surface-card session-banner"');
-    expect(markup).toContain("Last attached context");
+    expect(markup).toContain("Connected to shipyard-workspace");
+    expect(markup).toContain("Inject guidance");
     expect(markup).toContain("Cmd/Ctrl+Enter");
-    expect(markup).toContain("Workspace");
+    expect(markup).toContain("Project signals");
     expect(markup).toContain("/tmp/shipyard-workspace");
     expect(markup).toContain("Latest run");
     expect(markup).toContain("All runs");
-    expect(markup).toContain('class="activity-block"');
+    expect(markup).toContain("Diff-first sidebar");
+    expect(markup).toContain("package.json");
     expect(markup).toContain('class="diff-line-label"');
     expect(markup).toContain(">ADD<");
     expect(markup).not.toContain("legacy hidden turn");
   });
 
-  it("keeps recovery messaging and keyboard affordances visible during errors", () => {
+  it("keeps error-state recovery cues and keyboard affordances visible", () => {
     const markup = renderWorkbench({
       connectionState: "error",
       agentStatus: "Connection error. Waiting to retry...",
@@ -184,8 +191,9 @@ describe("ShipyardWorkbench", () => {
     });
 
     expect(markup).toContain('aria-label="Connection status: error"');
-    expect(markup).toContain("Recovery path");
+    expect(markup).toContain("needs attention");
     expect(markup).toContain("Queued for next turn");
+    expect(markup).toContain("Context queued");
     expect(markup).toContain('aria-keyshortcuts="Control+Enter Meta+Enter"');
     expect(markup).toContain('aria-keyshortcuts="Control+Enter Meta+Enter Escape"');
   });
