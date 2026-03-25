@@ -14,12 +14,13 @@ Context injection, session rehydration, and error handling currently feel utilit
 ## Story Objectives
 
 - Objective 1: Make context injection clearer, with visible confirmation and history.
-- Objective 2: Make session rehydration reliable and obvious after reload.
+- Objective 2: Make session rehydration and saved-run switching reliable and obvious after reload.
 - Objective 3: Improve error and empty-state messaging.
 
 ## User Stories
 
 - As a Shipyard developer, I want confidence that my context was applied and my session is stable across refreshes.
+- As a Shipyard developer, I want to reopen a previous run from the browser UI without restarting Shipyard.
 
 ## Acceptance Criteria
 
@@ -28,6 +29,7 @@ Context injection, session rehydration, and error handling currently feel utilit
 - [ ] AC-3: Error states explain what happened and how to recover.
 - [ ] AC-4: Empty states guide the user to start a run or add context.
 - [ ] AC-5: Keyboard flow supports quick multi-turn usage.
+- [ ] AC-6: Saved runs for the current target are visible in the UI and can be resumed in-place.
 
 ## Edge Cases
 

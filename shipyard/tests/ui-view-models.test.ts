@@ -191,6 +191,21 @@ describe("ui view models", () => {
       },
       discoverySummary: "typescript (React) via pnpm",
       projectRulesLoaded: true,
+      sessionHistory: [
+        {
+          sessionId: "session-restore",
+          targetLabel: "shipyard",
+          targetDirectory: "/tmp/shipyard",
+          activePhase: "code",
+          startedAt: "2026-03-24T12:00:00.000Z",
+          lastActiveAt: "2026-03-24T12:05:00.000Z",
+          turnCount: 1,
+          latestInstruction: "inspect package.json",
+          latestSummary: "Recovered state.",
+          latestStatus: "success",
+          isCurrent: true,
+        },
+      ],
       workbenchState: snapshot,
     });
 
@@ -200,6 +215,11 @@ describe("ui view models", () => {
     });
     expect(rehydrated.contextHistory[0]).toMatchObject({
       text: "Keep the current layout intact.",
+    });
+    expect(rehydrated.sessionHistory[0]).toMatchObject({
+      sessionId: "session-restore",
+      latestInstruction: "inspect package.json",
+      isCurrent: true,
     });
     expect(rehydrated.agentStatus).toBe("Recovered session history after reload.");
   });
@@ -234,6 +254,7 @@ describe("ui view models", () => {
       },
       discoverySummary: "greenfield target",
       projectRulesLoaded: false,
+      sessionHistory: [],
       workbenchState: createInitialWorkbenchState(),
     });
 

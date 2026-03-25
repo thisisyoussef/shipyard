@@ -6,6 +6,7 @@ import { ShipyardWorkbench } from "../ui/src/ShipyardWorkbench.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
+  SessionRunSummaryViewModel,
   PreviewStateViewModel,
   SessionStateViewModel,
   TurnViewModel,
@@ -180,6 +181,35 @@ const contextHistory: ContextReceiptViewModel[] = [
   },
 ];
 
+const sessionHistory: SessionRunSummaryViewModel[] = [
+  {
+    sessionId: "session-ui-123",
+    targetLabel: "shipyard",
+    targetDirectory: "/tmp/shipyard-demo",
+    activePhase: "code",
+    startedAt: "2026-03-24T12:00:00.000Z",
+    lastActiveAt: "2026-03-24T12:05:00.000Z",
+    turnCount: 2,
+    latestInstruction: "inspect package.json",
+    latestSummary: "Read the package manifest and confirmed the scripts.",
+    latestStatus: "success",
+    isCurrent: true,
+  },
+  {
+    sessionId: "session-ui-122",
+    targetLabel: "shipyard",
+    targetDirectory: "/tmp/shipyard-demo",
+    activePhase: "code",
+    startedAt: "2026-03-24T11:30:00.000Z",
+    lastActiveAt: "2026-03-24T11:45:00.000Z",
+    turnCount: 5,
+    latestInstruction: "fix the failing preview",
+    latestSummary: "Preview restarted cleanly.",
+    latestStatus: "success",
+    isCurrent: false,
+  },
+];
+
 function renderWorkbench(overrides?: {
   connectionState?: "connecting" | "ready" | "agent-busy" | "disconnected" | "error";
   agentStatus?: string;
@@ -191,6 +221,7 @@ function renderWorkbench(overrides?: {
   return renderToStaticMarkup(
     createElement(ShipyardWorkbench, {
       sessionState,
+      sessionHistory,
       targetManager,
       turns,
       fileEvents,
@@ -212,6 +243,7 @@ function renderWorkbench(overrides?: {
       onRequestTargetSwitch: () => undefined,
       onRequestTargetCreate: () => undefined,
       onRequestTargetEnrich: () => undefined,
+      onRequestSessionResume: () => undefined,
       onRefreshStatus: () => undefined,
       onCopyTracePath: () => undefined,
       traceButtonLabel: "Copy trace path",
@@ -232,6 +264,11 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("Change target");
     expect(markup).toContain("Enriched");
     expect(markup).toContain("Activity");
+    expect(markup).toContain("Previous runs");
+    expect(markup).toContain("fix the failing preview");
+    expect(markup).toContain("Latest run");
+    expect(markup).toContain("All runs");
+    expect(markup).toContain("Reading package.json");
     expect(markup).toContain('aria-label="Current location"');
   });
 

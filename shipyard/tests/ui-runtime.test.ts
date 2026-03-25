@@ -13,11 +13,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { discoverTarget } from "../src/context/discovery.js";
 import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
-import { createSessionState } from "../src/engine/state.js";
+import { createSessionState, saveSessionState } from "../src/engine/state.js";
 import { formatUiStartupLines, parseArgs } from "../src/bin/shipyard.js";
 import { createUnavailablePreviewCapability } from "../src/preview/contracts.js";
 import type { BackendToFrontendMessage } from "../src/ui/contracts.js";
 import { startUiRuntimeServer } from "../src/ui/server.js";
+import { queueInstructionTurn } from "../ui/src/view-models.js";
 import { scaffoldPreviewableTarget } from "./support/preview-target.js";
 
 const createdDirectories: string[] = [];
@@ -608,6 +609,142 @@ describe("ui runtime contract", () => {
         await expect(
           readFile(path.join(createdTargetDirectory, "README.md"), "utf8"),
         ).resolves.toContain("Created from the browser workbench.");
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("publishes previous runs for the current target and resumes a selected session", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-session-history-");
+    const discovery = await discoverTarget(targetDirectory);
+    const previousSession = createSessionState({
+      sessionId: "ui-session-previous",
+      targetDirectory,
+      discovery,
+    });
+    previousSession.turnCount = 3;
+    previousSession.lastActiveAt = "2026-03-24T18:00:00.000Z";
+    previousSession.workbenchState = queueInstructionTurn(
+      previousSession.workbenchState,
+      "inspect the preview config",
+      ["Use the current preview command as source of truth."],
+    );
+    previousSession.workbenchState.turns[0] = {
+      ...previousSession.workbenchState.turns[0]!,
+      status: "success",
+      summary: "Confirmed the preview command.",
+    };
+    await saveSessionState(previousSession);
+
+    const currentSession = createSessionState({
+      sessionId: "ui-session-current",
+      targetDirectory,
+      discovery,
+    });
+    currentSession.turnCount = 1;
+    currentSession.lastActiveAt = "2026-03-24T18:05:00.000Z";
+    currentSession.workbenchState = queueInstructionTurn(
+      currentSession.workbenchState,
+      "open the session list",
+      [],
+    );
+    currentSession.workbenchState.turns[0] = {
+      ...currentSession.workbenchState.turns[0]!,
+      status: "success",
+      summary: "Current run is visible.",
+    };
+
+    const runtime = await startUiRuntimeServer({
+      sessionState: currentSession,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        const initialState = await initialStatePromise;
+
+        expect(initialState).toMatchObject({
+          type: "session:state",
+          sessionId: "ui-session-current",
+          sessionHistory: [
+            expect.objectContaining({
+              sessionId: "ui-session-current",
+              isCurrent: true,
+            }),
+            expect.objectContaining({
+              sessionId: "ui-session-previous",
+              latestInstruction: "inspect the preview config",
+              latestSummary: "Confirmed the preview command.",
+              isCurrent: false,
+            }),
+          ],
+        });
+
+        const resumeSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.sessionId === "ui-session-previous"
+            ),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "session:resume_request",
+            sessionId: "ui-session-previous",
+          }),
+        );
+
+        const resumeSequence = await resumeSequencePromise;
+        const resumedState = resumeSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "session:state" }
+          > =>
+            message.type === "session:state" &&
+            message.sessionId === "ui-session-previous",
+        );
+
+        expect(resumedState).toMatchObject({
+          type: "session:state",
+          sessionId: "ui-session-previous",
+          turnCount: 3,
+          workbenchState: {
+            turns: [
+              expect.objectContaining({
+                instruction: "inspect the preview config",
+                summary: "Confirmed the preview command.",
+              }),
+            ],
+          },
+        });
+        expect(resumedState?.sessionHistory).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              sessionId: "ui-session-previous",
+              isCurrent: true,
+            }),
+            expect.objectContaining({
+              sessionId: "ui-session-current",
+              isCurrent: false,
+            }),
+          ]),
+        );
       } finally {
         socket.close();
       }
@@ -1473,7 +1610,7 @@ describe("ui runtime contract", () => {
         expect(invalidMessageError).toMatchObject({
           type: "agent:error",
           message:
-            "Invalid client message type: bogus. Expected instruction, cancel, status, target:switch_request, target:create_request, or target:enrich_request.",
+            "Invalid client message type: bogus. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, or target:enrich_request.",
         });
       } finally {
         socket.close();

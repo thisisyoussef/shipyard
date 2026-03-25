@@ -22,6 +22,10 @@ export {
   type FilePanelProps,
 } from "./FilePanel.js";
 export {
+  RunHistoryPanel,
+  type RunHistoryPanelProps,
+} from "./RunHistoryPanel.js";
+export {
   PreviewPanel,
   type PreviewPanelProps,
 } from "./PreviewPanel.js";

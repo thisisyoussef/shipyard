@@ -5,6 +5,7 @@ import {
 } from "../preview/contracts.js";
 import type {
   BackendToFrontendMessage,
+  SessionRunSummary,
   TargetEnrichmentState,
   TargetManagerState,
   TargetSummary,
@@ -92,10 +93,13 @@ export interface TargetEnrichmentStateViewModel extends TargetEnrichmentState {}
 
 export interface TargetManagerViewModel extends TargetManagerState {}
 
+export interface SessionRunSummaryViewModel extends SessionRunSummary {}
+
 export interface WorkbenchViewState {
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
   sessionState: SessionStateViewModel | null;
+  sessionHistory: SessionRunSummaryViewModel[];
   turns: TurnViewModel[];
   fileEvents: FileEventViewModel[];
   activeTurnId: string | null;
@@ -325,6 +329,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     connectionState: "connecting",
     agentStatus: "Connecting to Shipyard...",
     sessionState: null,
+    sessionHistory: [],
     turns: [],
     fileEvents: [],
     activeTurnId: null,
@@ -398,6 +403,7 @@ export function applySessionSnapshot(
   return {
     ...recoveredState,
     sessionState: createSessionStateViewModel(message),
+    sessionHistory: message.sessionHistory,
     connectionState: nextConnectionState,
     agentStatus:
       createTargetManagerAgentStatus(

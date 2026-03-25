@@ -25,6 +25,8 @@ export interface ActivityBlockViewModel {
   id: string;
   kind: "tool" | "note";
   title: string;
+  headline: string;
+  preview: string;
   statusLabel: string;
   tone: BadgeTone;
   metadata: ActivityMetadataItemViewModel[];
@@ -70,6 +72,77 @@ function shortenCallId(callId: string): string {
   return callId.slice(0, 8);
 }
 
+function formatPathLabel(path: string | null): string {
+  return path ?? "the requested file";
+}
+
+function extractCommand(...candidates: Array<string | null | undefined>): string | null {
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    const commandMatch = candidate.match(/command:\s*([^\n]+)/i);
+
+    if (commandMatch?.[1]) {
+      return commandMatch[1].trim();
+    }
+
+    const quotedCommandMatch = candidate.match(/`([^`]+)`/);
+
+    if (quotedCommandMatch?.[1]) {
+      return quotedCommandMatch[1].trim();
+    }
+  }
+
+  return null;
+}
+
+function createToolHeadline(
+  activity: ActivityItemViewModel,
+  path: string | null,
+): string {
+  switch (activity.toolName) {
+    case "read_file":
+      return `Reading ${formatPathLabel(path)}`;
+    case "edit_block":
+      return `Editing ${formatPathLabel(path)}`;
+    case "write_file":
+      return `Writing ${formatPathLabel(path)}`;
+    case "list_files":
+      return path ? `Listing files in ${path}` : "Listing files";
+    case "search_files":
+      return path ? `Searching ${path}` : "Searching the workspace";
+    case "run_command": {
+      const command = extractCommand(activity.detail);
+      return command ? `Running ${command}` : "Running a command";
+    }
+    case "git_diff":
+      return path ? `Checking the diff for ${path}` : "Checking the current diff";
+    default:
+      return path
+        ? `${humanizeToolName(activity.toolName ?? activity.title)} ${path}`
+        : activity.title;
+  }
+}
+
+function createNoteHeadline(activity: ActivityItemViewModel): string {
+  switch (activity.kind) {
+    case "thinking":
+      return "Planning the next step";
+    case "text":
+      return "Sharing the current readout";
+    case "edit":
+      return `Updated ${activity.title}`;
+    case "done":
+      return "Turn complete";
+    case "error":
+      return "Run needs attention";
+    default:
+      return activity.title;
+  }
+}
+
 function createActivityMetadata(
   activity: ActivityItemViewModel,
 ): ActivityMetadataItemViewModel[] {
@@ -107,10 +180,14 @@ function createActivityMetadata(
 function createNoteBlock(
   activity: ActivityItemViewModel,
 ): ActivityBlockViewModel {
+  const headline = createNoteHeadline(activity);
+
   return {
     id: activity.id,
     kind: "note",
     title: activity.title,
+    headline,
+    preview: activity.detail,
     statusLabel:
       activity.kind === "error"
         ? "error"
@@ -137,9 +214,11 @@ function createToolBlock(
   result: ActivityItemViewModel | null,
   linkedError: ActivityItemViewModel | null,
 ): ActivityBlockViewModel {
+  const path = extractPath(start.detail);
   const title = start.toolName
     ? humanizeToolName(start.toolName)
     : start.title;
+  const headline = createToolHeadline(start, path);
   const finalTone = toBadgeTone(result?.tone ?? start.tone);
   const details: ActivityDetailViewModel[] = [
     {
@@ -172,6 +251,8 @@ function createToolBlock(
     id: start.id,
     kind: "tool",
     title,
+    headline,
+    preview: result?.detail ?? linkedError?.detail ?? start.detail,
     statusLabel:
       result === null
         ? "running"

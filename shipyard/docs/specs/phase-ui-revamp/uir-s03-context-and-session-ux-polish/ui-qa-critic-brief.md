@@ -11,23 +11,32 @@
 - `pnpm --dir shipyard typecheck`
 - `pnpm --dir shipyard build`
 - `git diff --check`
-- `SHIPYARD_UI_PORT=3211 pnpm --dir shipyard start -- --target . --ui --session uir-s03-smoke`
-- `curl -I http://127.0.0.1:3211`
+- `SHIPYARD_UI_PORT=3212 pnpm --dir shipyard start -- --target ../test-targets/tic-tac-toe --ui --session critic-current-run`
+- Route and surface: `http://127.0.0.1:3212`, left sidebar session and saved-runs panels
+- Local Playwright screenshot pass against `http://127.0.0.1:3212`
 
 ## What Improved
 
 - Session state is surfaced immediately with a banner that distinguishes restored, reconnecting, steady, and attention-needed modes.
 - Context handling is more trustworthy because queued notes, the last attached context, and recent injections are all visible in the same panel.
+- Saved runs now live in a separate sidebar panel with a direct resume action, so
+  reopening an earlier run no longer requires restarting the Shipyard process.
 - Composer shortcuts and inline notices make it clearer how to submit, recover from empty input, and clear a queued context note without breaking flow.
 - Error and reconnect states now explain the recovery path instead of leaving the operator to infer what happens next.
 
 ## Findings
 
 - No high-severity usability issues found in the local smoke pass.
-- Low severity: the footer trace path is still accurate but visually noisy compared to the rest of the polished chrome.
-- Low severity: some generated turn labels such as `turn-2` still feel a bit mechanical beside the improved session and context copy.
+- Low severity: saved-run cards become tall quickly when the latest instruction
+  wraps across several lines in the narrow sidebar.
+- Low severity: the resume action is clear, but there is no inline hint yet that
+  the action keeps the current Shipyard process alive and only swaps the active
+  session state.
 
 ## Recommendation
 
 - Accept the story as implemented.
-- Use a later polish pass to soften the remaining trace and turn-label affordances once the next UI revamp stories land.
+- Suggested follow-on: add a short helper line or tooltip in the saved-runs
+  panel explaining that resume switches sessions without restarting Shipyard.
+- Suggested follow-on: clamp saved-run titles in the left sidebar while keeping
+  the full text available on hover or focus.

@@ -369,6 +369,30 @@ export function App() {
     }
   }
 
+  function handleSessionResume(sessionId: string): void {
+    const sent = sendMessage({
+      type: "session:resume_request",
+      sessionId,
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Saved run unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before opening a saved run.",
+      });
+      return;
+    }
+
+    queueComposerNotice({
+      tone: "neutral",
+      title: "Opening saved run",
+      detail:
+        "Shipyard is loading the selected session history and switching the browser to that run.",
+    });
+  }
+
   function handleTargetCreate(input: {
     name: string;
     description: string;
@@ -409,6 +433,7 @@ export function App() {
   return (
     <ShipyardWorkbench
       sessionState={viewState.sessionState}
+      sessionHistory={viewState.sessionHistory}
       targetManager={viewState.targetManager}
       turns={deferredTurns}
       fileEvents={deferredFileEvents}
@@ -427,6 +452,7 @@ export function App() {
       onContextKeyDown={handleComposerKeyDown}
       onClearContext={handleClearContext}
       onSubmitInstruction={handleInstructionSubmit}
+      onRequestSessionResume={handleSessionResume}
       onRequestTargetSwitch={handleTargetSwitch}
       onRequestTargetCreate={handleTargetCreate}
       onRequestTargetEnrich={handleTargetEnrich}
