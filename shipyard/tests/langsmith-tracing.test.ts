@@ -176,34 +176,72 @@ describe("LangSmith tracing helpers", () => {
     });
   });
 
-  it("falls back to a partial trace reference when the run URL is not available yet", async () => {
+  it("retries transient run-url misses before surfacing the trace reference", async () => {
     vi.useFakeTimers();
 
-    const client = {
-      getRunUrl: vi.fn(async () => {
-        throw new Error("Failed to fetch /runs/run-123. Received status [404]: Not Found.");
-      }),
-      getProjectUrl: vi.fn(async ({ projectName }: { projectName?: string }) =>
-        `https://smith.langchain.com/projects/${projectName ?? "missing"}`),
-    };
+    try {
+      const client = {
+        getRunUrl: vi.fn()
+          .mockRejectedValueOnce(
+            new Error("Received status [404]: Not Found. Message: {\"detail\":\"Run not found\"}"),
+          )
+          .mockRejectedValueOnce(
+            new Error("Received status [404]: Not Found. Message: {\"detail\":\"Run not found\"}"),
+          )
+          .mockResolvedValue("https://smith.langchain.com/runs/run-123"),
+        getProjectUrl: vi.fn(async ({ projectName }: { projectName?: string }) =>
+          `https://smith.langchain.com/projects/${projectName ?? "missing"}`),
+      };
 
-    const tracePromise = resolveLangSmithTraceReference(
-      client as never,
-      "shipyard",
-      "run-123",
-    );
+      const tracePromise = resolveLangSmithTraceReference(
+        client as never,
+        "shipyard",
+        "run-123",
+      );
 
-    await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(10_000);
 
-    await expect(tracePromise).resolves.toEqual({
-      projectName: "shipyard",
-      runId: "run-123",
-      traceUrl: null,
-      projectUrl: "https://smith.langchain.com/projects/shipyard",
-    });
-    expect(client.getRunUrl).toHaveBeenCalledTimes(3);
-    expect(client.getProjectUrl).toHaveBeenCalledWith({
-      projectName: "shipyard",
-    });
+      await expect(tracePromise).resolves.toEqual({
+        projectName: "shipyard",
+        runId: "run-123",
+        traceUrl: "https://smith.langchain.com/runs/run-123",
+        projectUrl: "https://smith.langchain.com/projects/shipyard",
+      });
+      expect(client.getRunUrl).toHaveBeenCalledTimes(3);
+      expect(client.getProjectUrl).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
+
+  it(
+    "falls back to a partial trace reference when the run URL is not available yet",
+    async () => {
+      const client = {
+        getRunUrl: vi.fn(async () => {
+          throw new Error("Failed to fetch /runs/run-123. Received status [404]: Not Found.");
+        }),
+        getProjectUrl: vi.fn(async ({ projectName }: { projectName?: string }) =>
+          `https://smith.langchain.com/projects/${projectName ?? "missing"}`),
+      };
+
+      await expect(
+        resolveLangSmithTraceReference(
+          client as never,
+          "shipyard",
+          "run-123",
+        ),
+      ).resolves.toEqual({
+        projectName: "shipyard",
+        runId: "run-123",
+        traceUrl: null,
+        projectUrl: "https://smith.langchain.com/projects/shipyard",
+      });
+      expect(client.getRunUrl).toHaveBeenCalledTimes(6);
+      expect(client.getProjectUrl).toHaveBeenCalledWith({
+        projectName: "shipyard",
+      });
+    },
+    15_000,
+  );
 });

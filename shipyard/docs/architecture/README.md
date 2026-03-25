@@ -13,6 +13,10 @@ Both surfaces also own the same turn-scoped cancellation contract: terminal
 `Ctrl+C` and browser `cancel` requests resolve one active turn controller, and
 the shared runtime treats interruption as a first-class `cancelled` outcome.
 
+Phase 9 adds the first hosted baseline for the browser runtime on Railway.
+The hosted start contract lives in
+[`hosted-railway.md`](./hosted-railway.md).
+
 ## System Map
 
 ```mermaid

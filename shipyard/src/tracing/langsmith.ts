@@ -43,8 +43,10 @@ export interface RunWithLangSmithTraceResult<Result> {
   trace: LangSmithTraceReference | null;
 }
 
-const TRACE_LOOKUP_ATTEMPTS = 3;
-const TRACE_LOOKUP_DELAY_MS = 500;
+// LangSmith can acknowledge a finished run before the run URL endpoint is ready.
+// Give the trace lookup a few extra seconds before surfacing a false-negative 404.
+const TRACE_LOOKUP_ATTEMPTS = 6;
+const TRACE_LOOKUP_DELAY_MS = 1_000;
 
 function normalizeEnvValue(value: string | undefined): string | null {
   const trimmed = value?.trim();

@@ -123,3 +123,28 @@ Shipyard now prints both the active workspace path and target path when `--ui`
 starts. If the requested UI port is already occupied by another local Shipyard
 runtime, it will move to the next open port and say which existing session was
 already holding the original port.
+
+## Hosted Railway Baseline
+
+Phase 9 introduces a hosted Railway path for the existing browser runtime.
+
+- Keep the runtime in browser mode: `pnpm --dir shipyard start -- --ui`
+- Set `SHIPYARD_TARGETS_DIR=/app/workspace`
+- Set `SHIPYARD_UI_HOST=0.0.0.0`
+- Let Railway provide `PORT`; Shipyard falls back to it when
+  `SHIPYARD_UI_PORT` is unset
+- Attach a persistent volume at `/app/workspace` and enable
+  `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1` once the mount exists
+- Set `SHIPYARD_ACCESS_TOKEN` if the public workbench should require a shared
+  unlock token
+- Set `VERCEL_TOKEN` to enable the first-class deploy action and the
+  `deploy_target` tool
+- Use `/api/health` for the service health check
+- Point Railway config-as-code at [`railway.json`](./railway.json)
+
+Hosted Phase 9 also adds browser-side reference-file upload and a dedicated
+deploy surface that keeps the hosted Shipyard URL, local preview URL, and
+deployed target-app URL clearly distinct.
+
+See [`docs/architecture/hosted-railway.md`](./docs/architecture/hosted-railway.md)
+for the hosted start contract, persistence behavior, and operator flow.

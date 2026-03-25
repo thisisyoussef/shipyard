@@ -5,6 +5,8 @@ import {
 } from "../preview/contracts.js";
 import type {
   BackendToFrontendMessage,
+  DeploySummary,
+  UploadReceipt,
   SessionRunSummary,
   TargetEnrichmentState,
   TargetManagerState,
@@ -91,16 +93,11 @@ export interface ContextReceiptViewModel {
   turnId: string;
 }
 
-export interface UploadReceiptViewModel {
-  id: string;
-  originalName: string;
-  storedRelativePath: string;
-  sizeBytes: number;
-  mediaType: string;
-  previewText: string;
-  previewSummary: string;
-  uploadedAt: string;
-}
+export interface UploadReceiptViewModel extends UploadReceipt {}
+
+export interface PendingUploadReceiptViewModel extends UploadReceiptViewModel {}
+
+export interface LatestDeployViewModel extends DeploySummary {}
 
 export interface PendingToolCall {
   turnId: string;
@@ -133,6 +130,7 @@ export interface WorkbenchViewState {
   nextFileEventNumber: number;
   contextHistory: ContextReceiptViewModel[];
   pendingUploads: UploadReceiptViewModel[];
+  latestDeploy: LatestDeployViewModel;
   previewState: PreviewStateViewModel;
   targetManager: TargetManagerViewModel | null;
 }
@@ -142,6 +140,24 @@ export interface PreparedInstructionSubmission {
   injectedContext?: string[];
   contextPreview: string[];
   clearedContextDraft: string;
+}
+
+export function createInitialDeploySummary(
+  overrides: Partial<LatestDeployViewModel> = {},
+): LatestDeployViewModel {
+  return {
+    status: "idle",
+    platform: "vercel",
+    available: false,
+    unavailableReason: "Waiting for Shipyard to sync deploy availability.",
+    productionUrl: null,
+    summary: "Waiting for Shipyard to sync deploy availability.",
+    logExcerpt: null,
+    command: null,
+    requestedAt: null,
+    completedAt: null,
+    ...overrides,
+  };
 }
 
 function createTracePath(
@@ -429,6 +445,7 @@ export function ensureWorkbenchStateDefaults(
     },
     contextHistory: [...(state.contextHistory ?? initialState.contextHistory)],
     pendingUploads: [...(state.pendingUploads ?? [])],
+    latestDeploy: state.latestDeploy ?? initialState.latestDeploy,
     previewState: state.previewState ?? initialState.previewState,
     targetManager: state.targetManager ?? initialState.targetManager,
   };
@@ -450,10 +467,42 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     nextFileEventNumber: 1,
     contextHistory: [],
     pendingUploads: [],
+    latestDeploy: createInitialDeploySummary(),
     previewState: createIdlePreviewState(
       "Waiting for Shipyard to publish preview state.",
     ),
     targetManager: null,
+  };
+}
+
+export function addPendingUploads(
+  state: WorkbenchViewState,
+  uploads: PendingUploadReceiptViewModel[],
+): WorkbenchViewState {
+  if (uploads.length === 0) {
+    return state;
+  }
+
+  return appendPendingUploadReceipts(state, uploads);
+}
+
+export function removePendingUpload(
+  state: WorkbenchViewState,
+  uploadId: string,
+): WorkbenchViewState {
+  return removePendingUploadReceipt(state, uploadId);
+}
+
+export function clearPendingUploads(
+  state: WorkbenchViewState,
+): WorkbenchViewState {
+  if (state.pendingUploads.length === 0) {
+    return state;
+  }
+
+  return {
+    ...state,
+    pendingUploads: [],
   };
 }
 
@@ -583,6 +632,7 @@ export function applySessionSnapshot(
       createTargetManagerAgentStatus(
         recoveredState.targetManager ?? state.targetManager,
       ) ?? nextAgentStatus,
+    latestDeploy: recoveredState.latestDeploy,
     previewState,
     targetManager: recoveredState.targetManager ?? state.targetManager ?? null,
   };
@@ -852,6 +902,18 @@ export function applyBackendMessage(
       return {
         ...state,
         previewState: message.preview,
+      };
+
+    case "deploy:state":
+      return {
+        ...state,
+        latestDeploy: message.deploy,
+        latestError:
+          message.deploy.status === "error" ? message.deploy.summary : null,
+        agentStatus:
+          message.deploy.status === "idle" && message.deploy.available
+            ? state.agentStatus
+            : message.deploy.summary,
       };
 
     case "target:state":

@@ -61,6 +61,7 @@ const enrichmentStatusSchema = z.enum([
   "complete",
   "error",
 ]);
+const deployStatusSchema = z.enum(["idle", "deploying", "success", "error"]);
 
 const nonEmptyTextSchema = z.string().trim().min(1);
 const discoverySchema = z.object({
@@ -186,6 +187,18 @@ export const uploadReceiptSchema = z.object({
   previewSummary: z.string(),
   uploadedAt: z.string(),
 });
+export const deploySummarySchema = z.object({
+  status: deployStatusSchema,
+  platform: z.enum(["vercel"]),
+  available: z.boolean(),
+  unavailableReason: z.string().nullable(),
+  productionUrl: z.string().nullable(),
+  summary: z.string(),
+  logExcerpt: z.string().nullable(),
+  command: z.string().nullable(),
+  requestedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+});
 const pendingToolCallSchema = z.object({
   turnId: z.string(),
   fileEventId: z.string().optional(),
@@ -223,6 +236,7 @@ export const workbenchStateSchema = z.object({
   nextFileEventNumber: z.number().int().nonnegative(),
   contextHistory: z.array(contextReceiptSchema),
   pendingUploads: z.array(uploadReceiptSchema).default([]),
+  latestDeploy: deploySummarySchema,
   previewState: previewStateSchema,
   targetManager: targetManagerStateSchema.nullable(),
 });
@@ -271,6 +285,11 @@ export const targetEnrichRequestMessageSchema = z.object({
   userDescription: z.string().trim().optional(),
 });
 
+export const deployRequestMessageSchema = z.object({
+  type: z.literal("deploy:request"),
+  platform: z.enum(["vercel"]).default("vercel"),
+});
+
 export const sessionResumeRequestMessageSchema = z.object({
   type: z.literal("session:resume_request"),
   sessionId: nonEmptyTextSchema,
@@ -284,6 +303,7 @@ export const frontendToBackendMessageSchema = z.discriminatedUnion("type", [
   targetSwitchRequestMessageSchema,
   targetCreateRequestMessageSchema,
   targetEnrichRequestMessageSchema,
+  deployRequestMessageSchema,
 ]);
 
 export type FrontendToBackendMessage = z.infer<
@@ -382,6 +402,11 @@ export const targetEnrichmentProgressMessageSchema = z.object({
   message: z.string(),
 });
 
+export const deployStateMessageSchema = z.object({
+  type: z.literal("deploy:state"),
+  deploy: deploySummarySchema,
+});
+
 export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   sessionStateMessageSchema,
   agentThinkingMessageSchema,
@@ -395,6 +420,7 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   targetStateMessageSchema,
   targetSwitchCompleteMessageSchema,
   targetEnrichmentProgressMessageSchema,
+  deployStateMessageSchema,
 ]);
 
 export type BackendToFrontendMessage = z.infer<
@@ -410,6 +436,7 @@ export type TargetEnrichmentState = z.infer<
   typeof targetEnrichmentStateSchema
 >;
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
+export type DeploySummary = z.infer<typeof deploySummarySchema>;
 export type UploadReceiptsResponse = z.infer<typeof uploadReceiptsResponseSchema>;
 export type UploadDeleteResponse = z.infer<typeof uploadDeleteResponseSchema>;
 export type UploadErrorResponse = z.infer<typeof uploadErrorResponseSchema>;
@@ -448,6 +475,7 @@ export function parseFrontendMessage(
     "target:switch_request",
     "target:create_request",
     "target:enrich_request",
+    "deploy:request",
   ]);
 
   if (hasMessageType(parsed)) {
@@ -458,12 +486,12 @@ export function parseFrontendMessage(
     }
 
     throw new Error(
-      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, or target:enrich_request.`,
+      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, target:enrich_request, or deploy:request.`,
     );
   }
 
   throw new Error(
-    "Invalid client message: expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, or target:enrich_request.",
+    "Invalid client message: expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, target:enrich_request, or deploy:request.",
   );
 }
 

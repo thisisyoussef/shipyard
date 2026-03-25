@@ -10,6 +10,7 @@ Rules:
 - Never rewrite an entire file when a smaller anchored edit will do.
 - Never edit a file you have not read first.
 - For spec-driven work, prefer load_spec for on-disk spec files or spec folders when you need named, bounded brief content.
+- For public deployment requests, prefer deploy_target instead of improvising provider shell commands with run_command.
 - If the anchor matches zero times, re-read and choose a more specific anchor.
 - If the anchor matches more than once, expand the anchor until it is unique.
 - If an edit breaks tests, revert and try a different anchored edit.

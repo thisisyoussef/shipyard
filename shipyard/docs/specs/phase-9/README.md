@@ -3,7 +3,7 @@
 - Pack: Phase 9 Hosted Shipyard and Public Deploy
 - Estimate: 12-18 hours
 - Date: 2026-03-25
-- Status: In Progress
+- Status: Implemented
 
 ## Pack Objectives
 
@@ -111,34 +111,68 @@
 
 ### Code References
 
-- `P9-S06` is now implemented through
-  `shipyard/src/ui/uploads.ts`,
-  `shipyard/src/ui/server.ts`,
-  `shipyard/src/ui/workbench-state.ts`,
-  `shipyard/src/engine/state.ts`,
-  `shipyard/ui/src/App.tsx`,
-  `shipyard/ui/src/ShipyardWorkbench.tsx`,
-  `shipyard/ui/src/panels/ComposerPanel.tsx`,
-  and the matching browser/runtime tests.
-- The runtime stores supported text uploads under
-  `target/.shipyard/uploads/<sessionId>/`, persists pending upload receipts in
-  session state, and converts those receipts into bounded next-turn context on
-  submission.
+- Hosted runtime + Railway contract:
+  - `shipyard/src/bin/shipyard.ts`
+  - `shipyard/src/ui/server.ts`
+  - `shipyard/package.json`
+  - `shipyard/railway.json`
+- Persistent hosted workspace:
+  - `shipyard/src/hosting/workspace.ts`
+  - `shipyard/src/bin/shipyard.ts`
+  - `shipyard/tests/ui-runtime.test.ts`
+- Hosted access gate:
+  - `shipyard/src/ui/access.ts`
+  - `shipyard/src/ui/server.ts`
+  - `shipyard/ui/src/HostedAccessGate.tsx`
+  - `shipyard/tests/ui-access.test.ts`
+- Browser file upload intake:
+  - `shipyard/src/ui/uploads.ts`
+  - `shipyard/src/ui/contracts.ts`
+  - `shipyard/src/ui/workbench-state.ts`
+  - `shipyard/ui/src/panels/ComposerPanel.tsx`
+  - `shipyard/tests/ui-runtime.test.ts`
+- Typed Vercel deploy tool:
+  - `shipyard/src/tools/deploy.ts`
+  - `shipyard/src/tools/run-command.ts`
+  - `shipyard/src/phases/code/prompts.ts`
+  - `shipyard/tests/tooling.test.ts`
+- Deploy UX and public URL surfacing:
+  - `shipyard/src/ui/server.ts`
+  - `shipyard/src/ui/workbench-state.ts`
+  - `shipyard/ui/src/TargetHeader.tsx`
+  - `shipyard/ui/src/panels/PreviewPanel.tsx`
+  - `shipyard/tests/ui-workbench.test.ts`
 
 ### Representative Snippets
 
-```ts
-const receipts = await storeUploadCandidates({
-  sessionId,
-  targetDirectory: sessionState.targetDirectory,
-  existingReceipts: sessionState.workbenchState.pendingUploads,
-  candidates,
-});
-```
+- Hosted workspace resolution and Railway-compatible host binding:
 
 ```ts
-const handoff = consumePendingUploadsForInstruction(
-  sessionState.workbenchState,
-  message.injectedContext,
+const envTargetsDirectory = process.env.SHIPYARD_TARGETS_DIR?.trim();
+if (envTargetsDirectory) {
+  return path.resolve(envTargetsDirectory);
+}
+```
+
+- Upload receipts become next-turn context instead of raw websocket blobs:
+
+```ts
+const uploadInjectedContext = createUploadInjectedContext(
+  sessionState.workbenchState.pendingUploads,
 );
+```
+
+- Deploy completion now persists a recoverable public URL for the active target:
+
+```ts
+summary: `Deploy completed. Public URL: ${data.productionUrl}`,
+productionUrl: data.productionUrl,
+```
+
+- The preview surface now labels hosted Shipyard and deployed target URLs as
+  separate destinations:
+
+```tsx
+<span className="preview-link-label">Hosted Shipyard URL</span>
+<span className="preview-link-label">Deployed target-app URL</span>
 ```

@@ -7,6 +7,8 @@ import type { ComposerAttachment } from "../ui/src/panels/ComposerPanel.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
+  LatestDeployViewModel,
+  PendingUploadReceiptViewModel,
   SessionRunSummaryViewModel,
   PreviewStateViewModel,
   SessionStateViewModel,
@@ -191,6 +193,32 @@ const contextHistory: ContextReceiptViewModel[] = [
   },
 ];
 
+const pendingUploads: PendingUploadReceiptViewModel[] = [
+  {
+    id: "upload-1",
+    originalName: "brief.md",
+    storedRelativePath: ".shipyard/uploads/session-ui-123/brief.md",
+    sizeBytes: 128,
+    mediaType: "text/markdown",
+    previewText: "# Brief",
+    previewSummary: "Markdown preview available.",
+    uploadedAt: "2026-03-24T12:04:30.000Z",
+  },
+];
+
+const latestDeploy: LatestDeployViewModel = {
+  status: "success",
+  platform: "vercel",
+  available: true,
+  unavailableReason: null,
+  productionUrl: "https://shipyard-demo.vercel.app",
+  summary: "Production deploy completed on Vercel.",
+  logExcerpt: "Production: https://shipyard-demo.vercel.app",
+  command: "vercel deploy --prod --yes --token [redacted]",
+  requestedAt: "2026-03-24T12:06:00.000Z",
+  completedAt: "2026-03-24T12:08:00.000Z",
+};
+
 const sessionHistory: SessionRunSummaryViewModel[] = [
   {
     sessionId: "session-ui-123",
@@ -226,6 +254,8 @@ function renderWorkbench(overrides?: {
   contextDraft?: string;
   primaryView?: "chat" | "preview" | "live";
   previewState?: PreviewStateViewModel;
+  latestDeploy?: LatestDeployViewModel;
+  hostedEditorUrl?: string;
   targetManager?: TargetManagerViewModel;
   leftSidebarOpen?: boolean;
   rightSidebarOpen?: boolean;
@@ -239,13 +269,24 @@ function renderWorkbench(overrides?: {
       turns,
       fileEvents,
       previewState: overrides?.previewState ?? runningPreviewState,
+      latestDeploy: overrides?.latestDeploy ?? latestDeploy,
+      hostedEditorUrl:
+        overrides?.hostedEditorUrl ?? "https://shipyard.example.com/workbench",
       contextHistory,
+      pendingUploads,
       connectionState: overrides?.connectionState ?? "ready",
       agentStatus: overrides?.agentStatus ?? "Ready for the next instruction.",
       instruction: "",
       contextDraft: overrides?.contextDraft ?? "",
       composerNotice: null,
-      composerAttachments: overrides?.composerAttachments ?? [],
+      composerAttachments:
+        overrides?.composerAttachments ??
+        pendingUploads.map((receipt) => ({
+          id: receipt.id,
+          label: receipt.originalName,
+          detail: `${receipt.storedRelativePath} · ${receipt.previewSummary}`,
+          status: "attached" as const,
+        })),
       instructionInputRef: createRef<HTMLTextAreaElement>(),
       contextInputRef: createRef<HTMLTextAreaElement>(),
       onInstructionChange: () => undefined,
@@ -256,6 +297,7 @@ function renderWorkbench(overrides?: {
       onAttachFiles: () => undefined,
       onSubmitInstruction: () => undefined,
       onCancelInstruction: () => undefined,
+      onRequestDeploy: () => undefined,
       onRemoveAttachment: () => undefined,
       onRequestTargetSwitch: () => undefined,
       onRequestTargetCreate: () => undefined,
@@ -287,8 +329,49 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("Files");
     expect(markup).toContain("Latest conversation");
     expect(markup).toContain("inspect package.json");
+    expect(markup).toContain("Attach files");
+    expect(markup).toContain("brief.md");
     expect(markup).toContain("Open trace");
     expect(markup).toContain('aria-label="Current location"');
+  });
+
+  it("renders the deploy action and labels hosted, preview, and production URLs distinctly", () => {
+    const markup = renderWorkbench({
+      primaryView: "preview",
+    });
+
+    expect(markup).toContain("Deploy to Vercel");
+    expect(markup).toContain("Hosted Shipyard URL");
+    expect(markup).toContain("https://shipyard.example.com/workbench");
+    expect(markup).toContain("Deployed target-app URL");
+    expect(markup).toContain("https://shipyard-demo.vercel.app");
+    expect(markup).toContain("Open deployed app");
+    expect(markup).toContain(
+      "This preview stays local to the hosted Shipyard workspace until you deploy the target.",
+    );
+  });
+
+  it("keeps deploy disabled with explicit guidance when hosted deploy prerequisites are missing", () => {
+    const markup = renderWorkbench({
+      latestDeploy: {
+        ...latestDeploy,
+        status: "idle",
+        available: false,
+        unavailableReason:
+          "Configure VERCEL_TOKEN on the hosted Shipyard service to enable deploys.",
+        productionUrl: null,
+        summary:
+          "Deploy unavailable until VERCEL_TOKEN is configured on the hosted Shipyard service.",
+        logExcerpt: null,
+        command: null,
+        requestedAt: null,
+        completedAt: null,
+      },
+    });
+
+    expect(markup).toContain("Deploy unavailable until VERCEL_TOKEN is configured");
+    expect(markup).toContain("Configure VERCEL_TOKEN on the hosted Shipyard service");
+    expect(markup).toContain("disabled");
   });
 
   it("renders the attach-files control and pending attachment badges in the composer", () => {

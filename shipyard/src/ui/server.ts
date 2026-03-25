@@ -51,9 +51,19 @@ import { createPreviewSupervisor } from "../preview/supervisor.js";
 import { shouldUseStarterCanvasForScratchTarget } from "../preview/contracts.js";
 import type {
   BackendToFrontendMessage,
+  DeploySummary,
   TargetEnrichmentState,
   TargetManagerState,
 } from "./contracts.js";
+import {
+  createClearedAccessCookie,
+  createGrantedAccessCookie,
+  getUiAccessState,
+  isRequestAuthorized,
+  isValidAccessToken,
+  readAccessTokenFromRequest,
+  redactAccessToken,
+} from "./access.js";
 import {
   parseFrontendMessage,
   serializeBackendMessage,
@@ -64,8 +74,9 @@ import {
 } from "./events.js";
 import {
   applyBackendMessage,
-  consumePendingUploadsForInstruction,
   appendPendingUploadReceipts,
+  consumePendingUploadsForInstruction,
+  createInitialDeploySummary,
   queueInstructionTurn,
   removePendingUploadReceipt,
 } from "./workbench-state.js";
@@ -80,6 +91,15 @@ import {
   storeUploadCandidates,
   UploadValidationError,
 } from "./uploads.js";
+import {
+  deployTargetTool,
+  type DeployInput,
+  type DeployResultData,
+} from "../tools/deploy.js";
+import type {
+  ToolExecutionContext,
+  ToolResult,
+} from "../tools/registry.js";
 
 const CLOSE_ENRICHMENT_DRAIN_TIMEOUT_MS = 100;
 
@@ -101,6 +121,11 @@ export interface StartUiRuntimeServerOptions {
   executePlanTurn?: (
     options: ExecutePlanningTurnOptions,
   ) => Promise<Awaited<ReturnType<typeof executePlanningTurn>>>;
+  executeDeploy?: (
+    input: DeployInput,
+    targetDirectory: string,
+    context?: ToolExecutionContext,
+  ) => Promise<ToolResult>;
   executeTaskTurn?: (
     options: ExecuteTaskRunnerTurnOptions,
   ) => Promise<Awaited<ReturnType<typeof executeTaskRunnerTurn>>>;
@@ -130,11 +155,12 @@ const builtUiIndexPath = path.join(builtUiDirectory, "index.html");
 interface UiHealthResponse {
   ok: true;
   runtimeMode: "ui";
-  sessionId: string;
-  targetLabel: string;
-  targetDirectory: string;
-  workspaceDirectory: string;
-  turnCount: number;
+  accessProtected: boolean;
+  sessionId?: string;
+  targetLabel?: string;
+  targetDirectory?: string;
+  workspaceDirectory?: string;
+  turnCount?: number;
 }
 
 export interface ExistingUiRuntimeInfo {
@@ -154,10 +180,23 @@ export interface UiPortResolution {
 
 function createHealthResponse(
   sessionState: SessionState,
+  options: {
+    accessProtected: boolean;
+    includeRuntimeDetails: boolean;
+  },
 ): UiHealthResponse {
-  return {
+  const baseResponse: UiHealthResponse = {
     ok: true,
     runtimeMode: "ui",
+    accessProtected: options.accessProtected,
+  };
+
+  if (!options.includeRuntimeDetails) {
+    return baseResponse;
+  }
+
+  return {
+    ...baseResponse,
     sessionId: sessionState.sessionId,
     targetLabel: path.basename(sessionState.targetDirectory) || sessionState.targetDirectory,
     targetDirectory: sessionState.targetDirectory,
@@ -258,6 +297,20 @@ function isUiHealthResponse(value: unknown): value is UiHealthResponse {
     isRecord(value) &&
     value.ok === true &&
     value.runtimeMode === "ui" &&
+    typeof value.accessProtected === "boolean"
+  );
+}
+
+function hasUiHealthRuntimeDetails(
+  value: UiHealthResponse,
+): value is UiHealthResponse & {
+  sessionId: string;
+  targetLabel: string;
+  targetDirectory: string;
+  workspaceDirectory: string;
+  turnCount: number;
+} {
+  return (
     typeof value.sessionId === "string" &&
     typeof value.targetLabel === "string" &&
     typeof value.targetDirectory === "string" &&
@@ -311,6 +364,10 @@ async function inspectExistingUiRuntime(
     const payload = await response.json();
 
     if (!isUiHealthResponse(payload)) {
+      return null;
+    }
+
+    if (!hasUiHealthRuntimeDetails(payload)) {
       return null;
     }
 
@@ -465,7 +522,8 @@ function createFallbackUiHtml(sessionState: SessionState): string {
   "status": {},
   "target:switch_request": { "targetPath": "string" },
   "target:create_request": { "name": "string", "description": "string", "scaffoldType": "ts-pnpm-workspace|empty|react-ts|express-ts|python|go?" },
-  "target:enrich_request": { "userDescription": "string?" }
+  "target:enrich_request": { "userDescription": "string?" },
+  "deploy:request": { "platform": "vercel" }
 }</pre>
         </div>
       </section>
@@ -539,12 +597,184 @@ function createErrorMessage(message: string): BackendToFrontendMessage {
   };
 }
 
-function resolveUiPort(portOverride: number | undefined): number {
+function hasVercelToken(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env.VERCEL_TOKEN?.trim());
+}
+
+function getDeployUnavailableReason(
+  sessionState: SessionState,
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  if (sessionState.activePhase !== "code") {
+    return "Select or create a target before deploying to Vercel.";
+  }
+
+  if (!hasVercelToken(env)) {
+    return "Configure VERCEL_TOKEN on the hosted Shipyard service to enable deploys.";
+  }
+
+  return null;
+}
+
+function isDeployResultData(value: unknown): value is DeployResultData {
+  return (
+    isRecord(value) &&
+    value.platform === "vercel" &&
+    typeof value.productionUrl === "string" &&
+    typeof value.command === "string" &&
+    typeof value.logExcerpt === "string" &&
+    (typeof value.exitCode === "number" || value.exitCode === null) &&
+    typeof value.timedOut === "boolean"
+  );
+}
+
+function synchronizeDeploySummary(
+  currentSummary: DeploySummary | undefined,
+  sessionState: SessionState,
+  options: {
+    deploying: boolean;
+    now?: string;
+  },
+): DeploySummary {
+  const baseline = createInitialDeploySummary(currentSummary);
+  const defaultIdleSummary = createInitialDeploySummary().summary;
+  const unavailableReason = options.deploying
+    ? "A deploy is already in progress."
+    : getDeployUnavailableReason(sessionState);
+  const nextSummary: DeploySummary = {
+    ...baseline,
+    available: unavailableReason === null,
+    unavailableReason,
+  };
+
+  if (baseline.status === "deploying" && !options.deploying) {
+    nextSummary.status = "error";
+    nextSummary.summary =
+      "The previous deploy did not finish before Shipyard stopped tracking it. Retry the deploy when ready.";
+    nextSummary.completedAt = baseline.completedAt ?? options.now ?? new Date().toISOString();
+  }
+
+  if (nextSummary.status === "idle") {
+    if (unavailableReason) {
+      nextSummary.summary = unavailableReason;
+    } else if (!baseline.summary.trim() || baseline.summary === defaultIdleSummary) {
+      nextSummary.summary = "Ready to deploy this target to Vercel.";
+    }
+  }
+
+  return nextSummary;
+}
+
+function createDeployingSummary(
+  currentSummary: DeploySummary | undefined,
+  sessionState: SessionState,
+  requestedAt: string,
+): DeploySummary {
+  const baseline = synchronizeDeploySummary(currentSummary, sessionState, {
+    deploying: false,
+    now: requestedAt,
+  });
+
+  return {
+    ...baseline,
+    status: "deploying",
+    available: false,
+    unavailableReason: "A deploy is already in progress.",
+    summary: "Deploying the current target to Vercel.",
+    logExcerpt: null,
+    requestedAt,
+    completedAt: null,
+  };
+}
+
+function createSuccessfulDeploySummary(
+  currentSummary: DeploySummary | undefined,
+  sessionState: SessionState,
+  data: DeployResultData,
+  requestedAt: string,
+  completedAt: string,
+): DeploySummary {
+  const baseline = synchronizeDeploySummary(currentSummary, sessionState, {
+    deploying: false,
+    now: completedAt,
+  });
+
+  return {
+    ...baseline,
+    status: "success",
+    productionUrl: data.productionUrl,
+    summary: `Deploy completed. Public URL: ${data.productionUrl}`,
+    logExcerpt: data.logExcerpt || null,
+    command: data.command || null,
+    requestedAt,
+    completedAt,
+  };
+}
+
+function createFailedDeploySummary(
+  currentSummary: DeploySummary | undefined,
+  sessionState: SessionState,
+  result: ToolResult,
+  requestedAt: string,
+  completedAt: string,
+): DeploySummary {
+  const baseline = synchronizeDeploySummary(currentSummary, sessionState, {
+    deploying: false,
+    now: completedAt,
+  });
+  const data = isDeployResultData(result.data) ? result.data : null;
+  const rawFailureDetail = (data?.logExcerpt || result.error || "").trim();
+  const missingToken =
+    rawFailureDetail.includes("VERCEL_TOKEN is required") ||
+    rawFailureDetail.includes("VERCEL_TOKEN");
+  const timedOut = data?.timedOut === true;
+  let summary = "Deploy failed. Review the provider output excerpt and retry.";
+
+  if (missingToken) {
+    summary =
+      "Deploy unavailable until VERCEL_TOKEN is configured on the hosted Shipyard service.";
+  } else if (timedOut) {
+    summary =
+      "Deploy timed out before Vercel reported a production URL. Retry once the provider is healthy.";
+  } else if (/interrupted|cancelled|canceled/i.test(rawFailureDetail)) {
+    summary = "Deploy cancelled before Vercel reported a production URL.";
+  }
+
+  return {
+    ...baseline,
+    status: "error",
+    available: missingToken ? false : baseline.available,
+    unavailableReason: missingToken
+      ? "Configure VERCEL_TOKEN on the hosted Shipyard service to enable deploys."
+      : baseline.unavailableReason,
+    summary,
+    logExcerpt: rawFailureDetail || null,
+    command: data?.command ?? baseline.command,
+    requestedAt,
+    completedAt,
+  };
+}
+
+export function resolveUiHost(hostOverride?: string): string {
+  if (hostOverride?.trim()) {
+    return hostOverride.trim();
+  }
+
+  const envHost = process.env.SHIPYARD_UI_HOST?.trim();
+
+  if (envHost) {
+    return envHost;
+  }
+
+  return "127.0.0.1";
+}
+
+export function resolveUiPort(portOverride: number | undefined): number {
   if (portOverride !== undefined) {
     return portOverride;
   }
 
-  const envPort = process.env.SHIPYARD_UI_PORT;
+  const envPort = process.env.SHIPYARD_UI_PORT ?? process.env.PORT;
 
   if (!envPort) {
     return 3210;
@@ -640,7 +870,7 @@ async function resolveUiPortBinding(
 export async function startUiRuntimeServer(
   options: StartUiRuntimeServerOptions,
 ): Promise<UiRuntimeServer> {
-  const host = options.host ?? "127.0.0.1";
+  const host = resolveUiHost(options.host);
   const sessionState = options.sessionState;
   const fallbackHtml = createFallbackUiHtml(sessionState);
   const runtimeState = createInstructionRuntimeState({
@@ -651,6 +881,7 @@ export async function startUiRuntimeServer(
     runtimeDependencies: options.runtimeDependencies,
   });
   const executePlanTurn = options.executePlanTurn ?? executePlanningTurn;
+  const executeDeploy = options.executeDeploy ?? deployTargetTool;
   const executeTaskTurn = options.executeTaskTurn ?? executeTaskRunnerTurn;
   let projectRulesLoaded = options.projectRulesLoaded;
   let traceLogger = await createLocalTraceLogger(
@@ -659,6 +890,13 @@ export async function startUiRuntimeServer(
   );
   let targetManagerState = await buildTargetManagerState(sessionState);
   sessionState.workbenchState.targetManager = targetManagerState;
+  sessionState.workbenchState.latestDeploy = synchronizeDeploySummary(
+    sessionState.workbenchState.latestDeploy,
+    sessionState,
+    {
+      deploying: false,
+    },
+  );
   await traceLogger.log("session.start", {
     sessionId: sessionState.sessionId,
     targetDirectory: sessionState.targetDirectory,
@@ -671,12 +909,108 @@ export async function startUiRuntimeServer(
     async (request: IncomingMessage, response: ServerResponse) => {
       const requestLocation = new URL(
         request.url ?? "/",
-        `http://${host}`,
+        `http://${request.headers.host ?? `${host}:${String(options.port ?? 3210)}`}`,
       );
       const requestPath = requestLocation.pathname;
+      const accessState = getUiAccessState(request);
 
       if (requestPath === "/api/health") {
-        sendJson(response, 200, createHealthResponse(sessionState));
+        sendJson(
+          response,
+          200,
+          createHealthResponse(sessionState, {
+            accessProtected: accessState.required,
+            includeRuntimeDetails:
+              accessState.authenticated || !accessState.required,
+          }),
+        );
+        return;
+      }
+
+      if (requestPath === "/api/access") {
+        if (request.method === "GET") {
+          response.writeHead(200, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(JSON.stringify(accessState));
+          return;
+        }
+
+        if (request.method === "POST") {
+          if (!accessState.required) {
+            response.writeHead(200, {
+              "cache-control": "no-store",
+              "content-type": "application/json; charset=utf-8",
+            });
+            response.end(
+              JSON.stringify({
+                required: false,
+                authenticated: true,
+              }),
+            );
+            return;
+          }
+
+          try {
+            const providedToken = await readAccessTokenFromRequest(request);
+
+            if (!isValidAccessToken(providedToken)) {
+              response.writeHead(401, {
+                "cache-control": "no-store",
+                "content-type": "application/json; charset=utf-8",
+                "set-cookie": createClearedAccessCookie(request),
+              });
+              response.end(
+                JSON.stringify({
+                  required: true,
+                  authenticated: false,
+                  message:
+                    "Invalid access token. Enter the shared token to continue.",
+                }),
+              );
+              return;
+            }
+
+            response.writeHead(200, {
+              "cache-control": "no-store",
+              "content-type": "application/json; charset=utf-8",
+              "set-cookie": createGrantedAccessCookie(request),
+            });
+            response.end(
+              JSON.stringify({
+                required: true,
+                authenticated: true,
+              }),
+            );
+            return;
+          } catch (error) {
+            const errorMessage = redactAccessToken(
+              error instanceof Error
+                ? error.message
+                : "Invalid access token payload.",
+            );
+            response.writeHead(400, {
+              "cache-control": "no-store",
+              "content-type": "application/json; charset=utf-8",
+              "set-cookie": createClearedAccessCookie(request),
+            });
+            response.end(
+              JSON.stringify({
+                required: true,
+                authenticated: false,
+                message: errorMessage,
+              }),
+            );
+            return;
+          }
+        }
+
+        response.writeHead(405, {
+          allow: "GET, POST",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ error: "Method not allowed." }));
         return;
       }
 
@@ -697,6 +1031,9 @@ export async function startUiRuntimeServer(
   const sockets = new Set<WebSocket>();
   let activeInstruction: Promise<void> | null = null;
   let activeInstructionController: AbortController | null = null;
+  let activeDeploy: Promise<void> | null = null;
+  let activeDeployController: AbortController | null = null;
+  let deployInFlight = false;
   let previewStarted = false;
   let isClosing = false;
   let enrichmentRunSequence = 0;
@@ -714,7 +1051,7 @@ export async function startUiRuntimeServer(
   });
 
   const connectionState = (): "ready" | "agent-busy" =>
-    activeInstruction === null ? "ready" : "agent-busy";
+    activeInstruction === null && !deployInFlight ? "ready" : "agent-busy";
 
   const sendToSocket = async (
     socket: WebSocket,
@@ -742,6 +1079,18 @@ export async function startUiRuntimeServer(
         : applyBackendMessage(sessionState.workbenchState, message);
 
     await broadcast(message);
+  };
+
+  const syncLatestDeploy = (): DeploySummary => {
+    const nextDeploy = synchronizeDeploySummary(
+      sessionState.workbenchState.latestDeploy,
+      sessionState,
+      {
+        deploying: deployInFlight,
+      },
+    );
+    sessionState.workbenchState.latestDeploy = nextDeploy;
+    return nextDeploy;
   };
 
   const currentEnrichmentState = (): TargetEnrichmentState =>
@@ -795,6 +1144,7 @@ export async function startUiRuntimeServer(
 
   const sendSessionState = async (socket: WebSocket): Promise<void> => {
     await syncTargetManagerState();
+    syncLatestDeploy();
     const sessionHistory = await listSessionRunSummaries(
       sessionState.targetDirectory,
       sessionState.sessionId,
@@ -813,6 +1163,7 @@ export async function startUiRuntimeServer(
 
   const broadcastSessionState = async (): Promise<void> => {
     await syncTargetManagerState();
+    syncLatestDeploy();
     const sessionHistory = await listSessionRunSummaries(
       sessionState.targetDirectory,
       sessionState.sessionId,
@@ -827,6 +1178,17 @@ export async function startUiRuntimeServer(
       }),
     );
     await saveSessionState(sessionState);
+  };
+
+  const broadcastDeployState = async (
+    deploy: DeploySummary = syncLatestDeploy(),
+  ): Promise<DeploySummary> => {
+    await broadcastBrowserMessage({
+      type: "deploy:state",
+      deploy,
+    });
+    await saveSessionState(sessionState);
+    return deploy;
   };
 
   const logUploadTrace = async (
@@ -1322,6 +1684,13 @@ export async function startUiRuntimeServer(
     enrichmentState: TargetEnrichmentState = IDLE_TARGET_ENRICHMENT_STATE,
   ): Promise<TargetManagerState> => {
     Object.assign(sessionState, nextState);
+    sessionState.workbenchState.latestDeploy = synchronizeDeploySummary(
+      sessionState.workbenchState.latestDeploy,
+      sessionState,
+      {
+        deploying: false,
+      },
+    );
     await applySessionSwitchToRuntime(sessionState, runtimeState);
     projectRulesLoaded = Boolean(runtimeState.projectRules);
     traceLogger = await createLocalTraceLogger(
@@ -1499,6 +1868,106 @@ export async function startUiRuntimeServer(
     }
   };
 
+  const runBrowserDeploy = async (
+    input: DeployInput,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const requestedAt = new Date().toISOString();
+    const callId = `deploy-${Date.now().toString(36)}`;
+
+    sessionState.turnCount += 1;
+    sessionState.lastActiveAt = requestedAt;
+    sessionState.workbenchState = queueInstructionTurn(
+      sessionState.workbenchState,
+      "Deploy current target to Vercel",
+      [],
+    );
+    sessionState.workbenchState.latestDeploy = createDeployingSummary(
+      sessionState.workbenchState.latestDeploy,
+      sessionState,
+      requestedAt,
+    );
+    await saveSessionState(sessionState);
+    await broadcastSessionState();
+    await broadcastDeployState(sessionState.workbenchState.latestDeploy);
+    await broadcastBrowserMessage({
+      type: "agent:tool_call",
+      callId,
+      toolName: "deploy_target",
+      summary: "Deploying current target to Vercel.",
+    });
+    await saveSessionState(sessionState);
+
+    let result: ToolResult;
+
+    try {
+      result = await executeDeploy(input, sessionState.targetDirectory, { signal });
+    } catch (error) {
+      result = {
+        success: false,
+        output: "",
+        error: error instanceof Error ? error.message : "Deploy failed.",
+      };
+    }
+
+    const completedAt = new Date().toISOString();
+    const deployResultData = isDeployResultData(result.data) ? result.data : null;
+    const validSuccess = result.success && deployResultData !== null;
+    const deploySummary = validSuccess
+      ? createSuccessfulDeploySummary(
+          sessionState.workbenchState.latestDeploy,
+          sessionState,
+          deployResultData,
+          requestedAt,
+          completedAt,
+        )
+      : createFailedDeploySummary(
+          sessionState.workbenchState.latestDeploy,
+          sessionState,
+          result,
+          requestedAt,
+          completedAt,
+        );
+    const turnStatus =
+      signal?.aborted ||
+        /interrupted|cancelled|canceled/i.test(result.error ?? "")
+        ? "cancelled"
+        : validSuccess
+          ? "success"
+          : "error";
+
+    sessionState.lastActiveAt = completedAt;
+    sessionState.workbenchState.latestDeploy = deploySummary;
+    await traceLogger.log("deploy.browser", {
+      sessionId: sessionState.sessionId,
+      targetDirectory: sessionState.targetDirectory,
+      platform: input.platform,
+      status: deploySummary.status,
+      summary: deploySummary.summary,
+      productionUrl: deploySummary.productionUrl,
+      runtimeMode: "ui",
+    });
+    await broadcastDeployState(deploySummary);
+    await broadcastBrowserMessage({
+      type: "agent:tool_result",
+      callId,
+      toolName: "deploy_target",
+      success: validSuccess,
+      summary: deploySummary.summary,
+      detail: validSuccess
+        ? result.output
+        : result.error ?? "Deploy failed.",
+      command: deploySummary.command ?? undefined,
+    });
+    await broadcastBrowserMessage({
+      type: "agent:done",
+      status: turnStatus,
+      summary: deploySummary.summary,
+      langSmithTrace: null,
+    });
+    await saveSessionState(sessionState);
+  };
+
   socketServer.on("connection", (socket) => {
     sockets.add(socket);
     void (async () => {
@@ -1545,22 +2014,24 @@ export async function startUiRuntimeServer(
             await sendTargetState(socket);
             break;
           case "cancel":
-            if (activeInstructionController === null) {
+            if (activeInstructionController === null && activeDeployController === null) {
               sessionState.workbenchState = {
                 ...sessionState.workbenchState,
                 latestError: null,
-                agentStatus: "No active browser-driven turn is running.",
+                agentStatus: "No active browser-driven turn or deploy is running.",
               };
               await broadcastSessionState();
               break;
             }
 
-            if (activeInstructionController.signal.aborted) {
+            if ((activeInstructionController ?? activeDeployController)?.signal.aborted) {
               sessionState.workbenchState = {
                 ...sessionState.workbenchState,
                 latestError: null,
                 agentStatus:
-                  "Cancellation already requested. Waiting for the active turn to stop.",
+                  activeInstructionController
+                    ? "Cancellation already requested. Waiting for the active turn to stop."
+                    : "Cancellation already requested. Waiting for the active deploy to stop.",
               };
               await broadcastSessionState();
               break;
@@ -1570,17 +2041,24 @@ export async function startUiRuntimeServer(
               ...sessionState.workbenchState,
               latestError: null,
               agentStatus:
-                "Cancellation requested. Waiting for the active turn to stop.",
+                activeInstructionController
+                  ? "Cancellation requested. Waiting for the active turn to stop."
+                  : "Cancellation requested. Waiting for the active deploy to stop.",
             };
             await broadcastSessionState();
-            abortTurn(activeInstructionController);
+            abortTurn(
+              activeInstructionController ?? activeDeployController as AbortController,
+              activeInstructionController
+                ? undefined
+                : "Operator interrupted the active deploy.",
+            );
             break;
           case "session:resume_request": {
-            if (activeInstruction !== null) {
+            if (activeInstruction !== null || deployInFlight) {
               await sendToSocket(
                 socket,
                 createErrorMessage(
-                  "Finish the current browser instruction before opening another saved run.",
+                  "Finish the current browser action before opening another saved run.",
                 ),
               );
               break;
@@ -1621,11 +2099,11 @@ export async function startUiRuntimeServer(
             break;
           }
           case "target:switch_request": {
-            if (activeInstruction !== null) {
+            if (activeInstruction !== null || deployInFlight) {
               await sendToSocket(
                 socket,
                 createErrorMessage(
-                  "Finish the current browser instruction before switching targets.",
+                  "Finish the current browser action before switching targets.",
                 ),
               );
               break;
@@ -1665,11 +2143,11 @@ export async function startUiRuntimeServer(
             break;
           }
           case "target:create_request": {
-            if (activeInstruction !== null) {
+            if (activeInstruction !== null || deployInFlight) {
               await sendToSocket(
                 socket,
                 createErrorMessage(
-                  "Finish the current browser instruction before creating a target.",
+                  "Finish the current browser action before creating a target.",
                 ),
               );
               break;
@@ -1716,11 +2194,11 @@ export async function startUiRuntimeServer(
             break;
           }
           case "target:enrich_request": {
-            if (activeInstruction !== null) {
+            if (activeInstruction !== null || deployInFlight) {
               await sendToSocket(
                 socket,
                 createErrorMessage(
-                  "Finish the current browser instruction before enriching a target.",
+                  "Finish the current browser action before enriching a target.",
                 ),
               );
               break;
@@ -1762,12 +2240,74 @@ export async function startUiRuntimeServer(
             }
             break;
           }
-          case "instruction":
-            if (activeInstruction !== null) {
+          case "deploy:request": {
+            if (activeInstruction !== null || deployInFlight) {
               await sendToSocket(
                 socket,
                 createErrorMessage(
-                  "A browser instruction is already in progress for this session.",
+                  deployInFlight
+                    ? "A deploy is already in progress for this session."
+                    : "Finish the current browser instruction before starting a deploy.",
+                ),
+              );
+              break;
+            }
+
+            if (sessionState.activePhase !== "code") {
+              await sendToSocket(
+                socket,
+                createErrorMessage(
+                  "Select or create a target before deploying.",
+                ),
+              );
+              break;
+            }
+
+            const deployUnavailableReason = getDeployUnavailableReason(sessionState);
+
+            if (deployUnavailableReason) {
+              sessionState.workbenchState.latestDeploy = synchronizeDeploySummary(
+                sessionState.workbenchState.latestDeploy,
+                sessionState,
+                {
+                  deploying: false,
+                },
+              );
+              await broadcastDeployState(sessionState.workbenchState.latestDeploy);
+              await sendToSocket(socket, createErrorMessage(deployUnavailableReason));
+              break;
+            }
+
+            const deployController = new AbortController();
+            activeDeployController = deployController;
+            deployInFlight = true;
+            activeDeploy = runBrowserDeploy(
+              {
+                platform: message.platform,
+              },
+              deployController.signal,
+            );
+
+            try {
+              await activeDeploy;
+            } finally {
+              activeDeploy = null;
+              activeDeployController = null;
+              deployInFlight = false;
+              syncLatestDeploy();
+              await saveSessionState(sessionState);
+              await broadcastSessionState();
+            }
+            break;
+          }
+          case "instruction":
+            if (activeInstruction !== null || deployInFlight) {
+              await sendToSocket(
+                socket,
+                createErrorMessage(
+                  deployInFlight
+                    ? "A deploy is already in progress for this session."
+                    : "A browser instruction is already in progress for this session.",
                 ),
               );
               break;
@@ -1824,7 +2364,18 @@ export async function startUiRuntimeServer(
   });
 
   httpServer.on("upgrade", (request, socket, head) => {
-    if (request.url !== "/ws") {
+    const upgradeUrl = new URL(
+      request.url ?? "/",
+      `http://${request.headers.host ?? `${host}:${String(options.port ?? 3210)}`}`,
+    );
+
+    if (upgradeUrl.pathname !== "/ws") {
+      socket.destroy();
+      return;
+    }
+
+    if (!isRequestAuthorized(request)) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       socket.destroy();
       return;
     }

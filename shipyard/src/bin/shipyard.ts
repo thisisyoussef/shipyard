@@ -16,6 +16,7 @@ import {
   createTargetManagerInjectedContext,
 } from "../engine/runtime-context.js";
 import { runShipyardLoop } from "../engine/loop.js";
+import { hasHostedWorkspaceContract, prepareHostedWorkspace } from "../hosting/workspace.js";
 import type { InstructionRuntimeMode } from "../engine/turn.js";
 import {
   createSessionState,
@@ -112,12 +113,30 @@ function didSpecifyOption(argv: string[], flag: string): boolean {
   return normalizeArgv(argv).includes(flag);
 }
 
-function resolveTargetsDirectory(
+function resolveTargetsDirectoryFromEnv(): string | null {
+  const configuredTargetsDirectory = process.env.SHIPYARD_TARGETS_DIR?.trim();
+
+  if (!configuredTargetsDirectory) {
+    return null;
+  }
+
+  return path.resolve(process.cwd(), configuredTargetsDirectory);
+}
+
+export function resolveTargetsDirectory(
   argv: string[],
   options: CliOptions,
 ): string {
   if (options.targetPath && !didSpecifyOption(argv, "--targets-dir")) {
     return path.dirname(path.resolve(process.cwd(), options.targetPath));
+  }
+
+  if (!didSpecifyOption(argv, "--targets-dir")) {
+    const envTargetsDirectory = resolveTargetsDirectoryFromEnv();
+
+    if (envTargetsDirectory) {
+      return envTargetsDirectory;
+    }
   }
 
   return path.resolve(process.cwd(), options.targetsDir);
@@ -170,6 +189,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   let projectRules = "";
   let injectedContext: string[] = [];
   let projectRulesLoaded = false;
+
+  if (hasHostedWorkspaceContract()) {
+    await prepareHostedWorkspace(resolvedTargetsDirectory);
+  }
 
   if (options.targetPath) {
     const resolvedTargetPath = path.resolve(process.cwd(), options.targetPath);

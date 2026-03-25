@@ -196,6 +196,13 @@
   gap: var(--space-2);
 }
 
+.target-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .target-primary-action,
 .target-inline-action,
 .target-close {
@@ -232,6 +239,31 @@
 .target-close:hover {
   border-color: var(--accent-border);
   background: rgba(255, 255, 255, 0.06);
+}
+
+.target-primary-action:disabled,
+.target-inline-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  border-color: var(--border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-muted);
+}
+
+.target-primary-action:disabled:hover,
+.target-inline-action:disabled:hover {
+  transform: none;
+  border-color: var(--border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.target-action-hint {
+  margin: 0;
+  max-width: 22rem;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
 }
 
 .target-enrichment-pill {

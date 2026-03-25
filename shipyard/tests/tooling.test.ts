@@ -20,6 +20,7 @@ import {
 import {
   ToolError,
   clearTrackedReadHashes,
+  deployTargetTool,
   editBlockTool as editBlock,
   getTrackedReadHash,
   listFilesTool as listFiles,
@@ -29,6 +30,7 @@ import {
   searchFilesTool as searchFiles,
   writeFileTool as writeTargetFile,
 } from "../src/tools/index.js";
+import type { DeployInput } from "../src/tools/deploy.js";
 import { readFileDefinition } from "../src/tools/read-file.js";
 
 const createdDirectories: string[] = [];
@@ -620,6 +622,187 @@ describe("search and command tools", () => {
     }, 50).unref();
 
     await expect(pendingResult).rejects.toThrow(/interrupted|cancelled|aborted/i);
+  });
+
+  it("deploy_target parses a successful Vercel production URL into structured output", async () => {
+    const directory = await createTempProject();
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess() {
+          return {
+            command: "vercel deploy --prod --yes --token [redacted]",
+            cwd: directory,
+            stdout: "https://shipyard-demo.vercel.app\n",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false,
+            signal: null,
+            timeoutMs: 600_000,
+            combinedOutput: "https://shipyard-demo.vercel.app\n",
+            truncated: false,
+          };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        platform: "vercel",
+        productionUrl: "https://shipyard-demo.vercel.app",
+      },
+    });
+    expect(result.output).toContain("Production URL: https://shipyard-demo.vercel.app");
+  });
+
+  it("deploy_target returns an actionable error when VERCEL_TOKEN is missing", async () => {
+    const directory = await createTempProject();
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {},
+        vercelBinaryPath: "vercel",
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("VERCEL_TOKEN is required");
+  });
+
+  it("deploy_target rejects unsupported platforms", async () => {
+    const directory = await createTempProject();
+    const result = await deployTargetTool(
+      {
+        platform: "railway",
+      } as unknown as DeployInput,
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+        },
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Unsupported deploy platform");
+  });
+
+  it("deploy_target reports timeouts with bounded redacted logs", async () => {
+    const directory = await createTempProject();
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess() {
+          return {
+            command: "vercel deploy --prod --yes --token [redacted]",
+            cwd: directory,
+            stdout: "",
+            stderr: "Build logs are still streaming...",
+            exitCode: null,
+            timedOut: true,
+            signal: "SIGTERM",
+            timeoutMs: 600_000,
+            combinedOutput: "Build logs are still streaming...",
+            truncated: false,
+          };
+        },
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Timed out after 600 seconds.");
+    expect(result.error).toContain("Build logs are still streaming...");
+  });
+
+  it("deploy_target redacts provider secrets from failure output", async () => {
+    const directory = await createTempProject();
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess() {
+          return {
+            command: "vercel deploy --prod --yes --token [redacted]",
+            cwd: directory,
+            stdout: "",
+            stderr: "Deploy failed for token phase-nine-secret",
+            exitCode: 1,
+            timedOut: false,
+            signal: null,
+            timeoutMs: 600_000,
+            combinedOutput: "Deploy failed for token phase-nine-secret",
+            truncated: false,
+          };
+        },
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).not.toContain("phase-nine-secret");
+    expect(result.error).toContain("[redacted]");
+  });
+
+  it("deploy_target reports a missing bundled CLI clearly", async () => {
+    const directory = await createTempProject();
+    const missingCliError = Object.assign(
+      new Error("spawn vercel ENOENT"),
+      {
+        code: "ENOENT",
+      },
+    );
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess() {
+          throw missingCliError;
+        },
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Vercel CLI is unavailable");
   });
 
   it("git_diff reports a non-git directory clearly", async () => {
