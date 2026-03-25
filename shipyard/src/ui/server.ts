@@ -21,6 +21,11 @@ import {
   type InstructionTurnReporter,
   type TurnStateEvent,
 } from "../engine/turn.js";
+import {
+  executePlanningTurn,
+  isPlanModeInstruction,
+  type ExecutePlanningTurnOptions,
+} from "../plans/turn.js";
 import { abortTurn } from "../engine/cancellation.js";
 import type { AgentRuntimeDependencies } from "../engine/graph.js";
 import type { PreviewCapabilityReport, PreviewState } from "../artifacts/types.js";
@@ -78,6 +83,9 @@ export interface StartUiRuntimeServerOptions {
   }>;
   runtimeMode?: InstructionRuntimeMode;
   runtimeDependencies?: AgentRuntimeDependencies;
+  executePlanTurn?: (
+    options: ExecutePlanningTurnOptions,
+  ) => Promise<Awaited<ReturnType<typeof executePlanningTurn>>>;
 }
 
 export interface UiRuntimeServer {
@@ -535,6 +543,7 @@ export async function startUiRuntimeServer(
     runtimeMode: options.runtimeMode,
     runtimeDependencies: options.runtimeDependencies,
   });
+  const executePlanTurn = options.executePlanTurn ?? executePlanningTurn;
   let projectRulesLoaded = options.projectRulesLoaded;
   let traceLogger = await createLocalTraceLogger(
     sessionState.targetDirectory,
@@ -1038,47 +1047,74 @@ export async function startUiRuntimeServer(
       },
     };
 
-    const turnResult = await executeInstructionTurn({
-      sessionState,
-      runtimeState,
-      instruction,
-      injectedContext,
-      reporter,
-      signal,
-    });
-    await traceLogger.log("instruction.plan", {
-      instruction,
-      phase: turnResult.phaseName,
-      runtimeMode: turnResult.runtimeMode,
-      planningMode: turnResult.planningMode,
-      contextEnvelope: turnResult.contextEnvelope,
-      taskPlan: turnResult.taskPlan,
-      executionSpec: turnResult.executionSpec,
-      status: turnResult.status,
-      summary: turnResult.summary,
-      langSmithTrace: turnResult.langSmithTrace,
-      handoff: turnResult.handoff,
-      runtimeSurface: "ui",
-    });
-    await saveSessionState(sessionState);
-
-    if (turnResult.selectedTargetPath) {
-      const nextState = await switchTarget(sessionState, turnResult.selectedTargetPath);
-      const nextTargetManagerState = await applySwitchedSessionState(
-        nextState,
-        "tool:select_target",
-        IDLE_TARGET_ENRICHMENT_STATE,
-      );
-      await broadcastTargetSwitchComplete(
-        true,
-        `Switched to ${nextTargetManagerState.currentTarget.name}.`,
-        nextTargetManagerState,
-      );
-      await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
-      await maybeAutoEnrichBrowserTarget({
-        reason: "tool:select_target",
+    if (isPlanModeInstruction(instruction)) {
+      const planResult = await executePlanTurn({
+        sessionState,
+        runtimeState,
+        instruction,
+        injectedContext,
+        reporter,
+        signal,
       });
-      await broadcastSessionState();
+      await traceLogger.log("instruction.plan", {
+        instruction,
+        phase: planResult.phaseName,
+        runtimeMode: planResult.runtimeMode,
+        planningMode: planResult.planningMode,
+        route: "planning-only",
+        contextEnvelope: planResult.contextEnvelope,
+        executionSpec: planResult.executionSpec,
+        taskQueue: planResult.plan,
+        loadedSpecRefs: planResult.loadedSpecRefs,
+        status: planResult.status,
+        summary: planResult.summary,
+        langSmithTrace: planResult.langSmithTrace,
+        runtimeSurface: "ui",
+      });
+      await saveSessionState(sessionState);
+    } else {
+      const turnResult = await executeInstructionTurn({
+        sessionState,
+        runtimeState,
+        instruction,
+        injectedContext,
+        reporter,
+        signal,
+      });
+      await traceLogger.log("instruction.plan", {
+        instruction,
+        phase: turnResult.phaseName,
+        runtimeMode: turnResult.runtimeMode,
+        planningMode: turnResult.planningMode,
+        contextEnvelope: turnResult.contextEnvelope,
+        taskPlan: turnResult.taskPlan,
+        executionSpec: turnResult.executionSpec,
+        status: turnResult.status,
+        summary: turnResult.summary,
+        langSmithTrace: turnResult.langSmithTrace,
+        handoff: turnResult.handoff,
+        runtimeSurface: "ui",
+      });
+      await saveSessionState(sessionState);
+
+      if (turnResult.selectedTargetPath) {
+        const nextState = await switchTarget(sessionState, turnResult.selectedTargetPath);
+        const nextTargetManagerState = await applySwitchedSessionState(
+          nextState,
+          "tool:select_target",
+          IDLE_TARGET_ENRICHMENT_STATE,
+        );
+        await broadcastTargetSwitchComplete(
+          true,
+          `Switched to ${nextTargetManagerState.currentTarget.name}.`,
+          nextTargetManagerState,
+        );
+        await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
+        await maybeAutoEnrichBrowserTarget({
+          reason: "tool:select_target",
+        });
+        await broadcastSessionState();
+      }
     }
 
     if (pendingTurnState) {

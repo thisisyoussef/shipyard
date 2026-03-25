@@ -43,6 +43,12 @@ import {
   toTurnCancelledError,
 } from "./cancellation.js";
 import {
+  createCancelledTurnText,
+  createExecutionTurnSummary,
+  truncateText,
+  updateRollingSummary,
+} from "./turn-summary.js";
+import {
   saveSessionState,
   type ContextEnvelope,
   type SessionState,
@@ -160,37 +166,6 @@ function rememberRecent(
   while (values.length > limit) {
     values.shift();
   }
-}
-
-function truncateText(value: string, limit = 240): string {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return "";
-  }
-
-  if (trimmed.length <= limit) {
-    return trimmed;
-  }
-
-  return `${trimmed.slice(0, limit - 1)}…`;
-}
-
-function updateRollingSummary(
-  currentSummary: string,
-  turnCount: number,
-  instruction: string,
-  summary: string,
-): string {
-  const nextLine = `Turn ${turnCount}: ${instruction} -> ${truncateText(summary, 120)}`;
-  const nextSummary = currentSummary
-    ? `${currentSummary}\n${nextLine}`
-    : nextLine;
-
-  return nextSummary
-    .split("\n")
-    .slice(-8)
-    .join("\n");
 }
 
 function summarizeGitDiff(result: RunCommandResult): string {
@@ -544,28 +519,6 @@ function createEmptyTurnHandoffState(): InstructionTurnHandoffState {
     emitted: null,
   };
 }
-
-function createTurnSummary(
-  turnCount: number,
-  runtimeMode: InstructionRuntimeMode,
-  finalStateStatus: "done" | "failed" | "cancelled",
-  finalText: string,
-): string {
-  const statusLabel = finalStateStatus === "failed"
-    ? "failed"
-    : finalStateStatus === "cancelled"
-      ? "cancelled"
-      : "completed";
-  return `Turn ${turnCount} ${statusLabel} via ${runtimeMode}: ${truncateText(finalText, 140)}`;
-}
-
-function createCancelledTurnText(
-  turnCount: number,
-  reason: string,
-): string {
-  return `Turn ${String(turnCount)} cancelled: ${reason}`;
-}
-
 function createRuntimeDependencies(
   sessionState: SessionState,
   runtimeState: InstructionRuntimeState,
@@ -801,7 +754,7 @@ export async function executeInstructionTurn(
       : finalState.status === "cancelled"
         ? "cancelled"
         : "done";
-    const summary = createTurnSummary(
+    const summary = createExecutionTurnSummary(
       state.turnCount,
       runtimeState.runtimeMode,
       finalStateStatus,
@@ -977,7 +930,7 @@ export async function executeInstructionTurn(
         state.turnCount,
         cancellationReason,
       );
-      const summary = createTurnSummary(
+      const summary = createExecutionTurnSummary(
         state.turnCount,
         runtimeState.runtimeMode,
         "cancelled",
@@ -1025,7 +978,7 @@ export async function executeInstructionTurn(
 
     const message = error instanceof Error ? error.message : String(error);
     const finalText = `Turn ${String(state.turnCount)} stopped: ${message}`;
-    const summary = createTurnSummary(
+    const summary = createExecutionTurnSummary(
       state.turnCount,
       runtimeState.runtimeMode,
       "failed",

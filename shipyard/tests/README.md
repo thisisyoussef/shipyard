@@ -10,6 +10,7 @@ The Vitest suite exercises the main runtime boundaries:
 - discovery and context envelope shaping
 - tool registration and tool execution contracts
 - graph runtime and shared turn execution
+- plan-mode routing plus persisted task-queue artifacts
 - session-history summaries plus UI event mapping, browser runtime transport,
   and frontend view models
 - tracing and checkpointing behavior
@@ -35,6 +36,9 @@ for `SV-S01`.
 
 `tests/session-history.test.ts` is the focused unit suite for persisted saved-run
 ordering and per-run preview metadata.
+
+`tests/plan-mode.test.ts` is the focused unit suite for `plan:` routing,
+persisted queue validation, spec-ref capture, and plan artifact storage.
 
 ## Manual Smoke Scripts
 

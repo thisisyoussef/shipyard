@@ -12,6 +12,10 @@ import type {
   ExecuteInstructionTurnOptions,
   InstructionTurnResult,
 } from "../src/engine/turn.js";
+import type {
+  ExecutePlanningTurnOptions,
+  PlanningTurnResult,
+} from "../src/plans/turn.js";
 
 const createdDirectories: string[] = [];
 
@@ -150,6 +154,92 @@ class FakeReadline extends EventEmitter implements AsyncIterable<string> {
   }
 }
 
+function createPlanningTurnResult(
+  options: Partial<PlanningTurnResult> & Pick<PlanningTurnResult, "finalText" | "status">,
+): PlanningTurnResult {
+  return {
+    phaseName: "code",
+    runtimeMode: "graph",
+    planningMode: "planner",
+    contextEnvelope: {
+      stable: {
+        discovery: {
+          isGreenfield: true,
+          language: null,
+          framework: null,
+          packageManager: null,
+          scripts: {},
+          hasReadme: false,
+          hasAgentsMd: false,
+          topLevelFiles: [],
+          topLevelDirectories: [],
+          projectName: null,
+          previewCapability: createUnavailablePreviewCapability(
+            "No supported local preview signal was detected for this target.",
+          ),
+        },
+        projectRules: "",
+        availableScripts: {},
+      },
+      task: {
+        currentInstruction: "test instruction",
+        injectedContext: [],
+        targetFilePaths: [],
+      },
+      runtime: {
+        recentToolOutputs: [],
+        recentErrors: [],
+        currentGitDiff: null,
+      },
+      session: {
+        rollingSummary: "",
+        retryCountsByFile: {},
+        blockedFiles: [],
+        latestHandoff: null,
+      },
+    },
+    executionSpec: {
+      instruction: "Plan the queue",
+      goal: "Persist a task queue",
+      deliverables: ["Persist the queue"],
+      acceptanceCriteria: ["Queue survives restarts"],
+      verificationIntent: ["Run plan mode tests"],
+      targetFilePaths: ["src/plans/store.ts"],
+      risks: [],
+    },
+    loadedSpecRefs: [],
+    plan: {
+      planId: "plan-test",
+      instruction: "Plan the queue",
+      goal: "Persist a task queue",
+      planningMode: "planner",
+      createdAt: "2026-03-25T18:00:00.000Z",
+      updatedAt: "2026-03-25T18:00:00.000Z",
+      executionSpec: {
+        instruction: "Plan the queue",
+        goal: "Persist a task queue",
+        deliverables: ["Persist the queue"],
+        acceptanceCriteria: ["Queue survives restarts"],
+        verificationIntent: ["Run plan mode tests"],
+        targetFilePaths: ["src/plans/store.ts"],
+        risks: [],
+      },
+      loadedSpecRefs: [],
+      tasks: [
+        {
+          id: "task-1",
+          description: "Persist the queue",
+          status: "pending",
+          targetFilePaths: ["src/plans/store.ts"],
+        },
+      ],
+    },
+    summary: options.finalText,
+    langSmithTrace: null,
+    ...options,
+  };
+}
+
 describe("terminal loop interrupts", () => {
   afterEach(async () => {
     await Promise.all(
@@ -253,6 +343,75 @@ describe("terminal loop interrupts", () => {
       "Interrupt requested. Waiting for Shipyard to stop the current turn...",
     );
     expect(logSpy.mock.calls.flat()).toContain("Turn 2 completed.");
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("routes plan-prefixed instructions through the planning-only executor", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-loop-plan-");
+    const sessionState = createSessionState({
+      sessionId: "loop-plan-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: [],
+        topLevelDirectories: [],
+        projectName: null,
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
+      },
+    });
+    const fakeReadline = new FakeReadline();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const executeTurn = vi.fn(async (): Promise<InstructionTurnResult> => {
+      throw new Error("Normal instruction executor should not run for plan mode.");
+    });
+    const executePlanTurn = vi.fn(
+      async (
+        options: ExecutePlanningTurnOptions,
+      ): Promise<PlanningTurnResult> => {
+        options.sessionState.turnCount += 1;
+
+        return createPlanningTurnResult({
+          finalText: `Saved plan for: ${options.instruction}`,
+          status: "success",
+        });
+      },
+    );
+
+    const loopPromise = runShipyardLoop({
+      sessionState,
+      executeTurn,
+      executePlanTurn,
+      createReadlineInterface: () =>
+        fakeReadline as unknown as ReturnType<typeof import("node:readline").createInterface>,
+    });
+
+    fakeReadline.pushLine("plan: break this feature into reviewable tasks");
+    await vi.waitFor(() => {
+      expect(executePlanTurn).toHaveBeenCalledTimes(1);
+    });
+
+    fakeReadline.pushLine("exit");
+    await loopPromise;
+
+    expect(executeTurn).not.toHaveBeenCalled();
+    expect(executePlanTurn.mock.calls[0]?.[0].instruction).toBe(
+      "plan: break this feature into reviewable tasks",
+    );
+    expect(logSpy.mock.calls.flat()).toContain(
+      'Turn 1 planned in phase "code" via graph runtime.',
+    );
+    expect(logSpy.mock.calls.flat()).toContain(
+      "Saved plan for: plan: break this feature into reviewable tasks",
+    );
     expect(errorSpy).not.toHaveBeenCalled();
   });
 

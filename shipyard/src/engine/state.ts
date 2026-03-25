@@ -162,6 +162,10 @@ export function getArtifactDirectory(targetDirectory: string): string {
   return path.join(getShipyardDirectory(targetDirectory), "artifacts");
 }
 
+export function getPlanDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "plans");
+}
+
 export function getSessionFilePath(
   targetDirectory: string,
   sessionId: string,
@@ -206,6 +210,7 @@ export async function ensureShipyardDirectories(
   await mkdir(getSessionDirectory(targetDirectory), { recursive: true });
   await mkdir(getCheckpointDirectory(targetDirectory), { recursive: true });
   await mkdir(getTraceDirectory(targetDirectory), { recursive: true });
+  await mkdir(getPlanDirectory(targetDirectory), { recursive: true });
   await mkdir(getArtifactDirectory(targetDirectory), { recursive: true });
 }
 

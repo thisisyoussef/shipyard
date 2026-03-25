@@ -3,7 +3,7 @@
 - Pack: Phase 8 Spec-Driven Operator Workflow
 - Estimate: 10-14 hours
 - Date: 2026-03-25
-- Status: In progress (`P8-S01` and `P8-S04` implemented; `P8-S02` to `P8-S03` still planned)
+- Status: In progress (`P8-S01`, `P8-S02`, and `P8-S04` implemented; `P8-S03` still planned)
 
 ## Pack Objectives
 
@@ -79,7 +79,18 @@
   add the richer workspace preset, shared empty-target bootstrap path, and
   regression coverage.
 
-- `P8-S02` to `P8-S03`: N/A in this changeset.
+- `shipyard/src/plans/store.ts`, `shipyard/src/plans/turn.ts`, and
+  `shipyard/src/engine/state.ts`: `P8-S02` add the typed persisted task queue,
+  `.shipyard/plans/` storage helpers, and the planning-only executor.
+- `shipyard/src/engine/loop.ts`, `shipyard/src/ui/server.ts`, and
+  `shipyard/src/agents/planner.ts`: `P8-S02` route `plan:` through the
+  planning-only path in both operator surfaces and let the planner use
+  `load_spec`.
+- `shipyard/tests/plan-mode.test.ts` and `shipyard/tests/loop-runtime.test.ts`:
+  validate persisted queue storage, spec-ref capture, and terminal routing for
+  `plan:`.
+
+- `P8-S03`: N/A in this changeset.
 
 ### Representative Snippets
 
@@ -112,5 +123,29 @@ const DEFAULT_BOOTSTRAP_SCAFFOLD_TYPE: ScaffoldType = "ts-pnpm-workspace";
 ```ts
 if (toolName === "bootstrap_target" && isBootstrapTargetData(resultData)) {
   sessionState.discovery = context.result.data.discovery;
+}
+```
+
+- `P8-S02` task queue storage:
+
+```ts
+export function getPlanFilePath(
+  targetDirectory: string,
+  planId: string,
+): string {
+  return path.join(getPlanDirectory(targetDirectory), `${planId}.json`);
+}
+```
+
+- `P8-S02` planning-only routing:
+
+```ts
+if (isPlanModeInstruction(line)) {
+  const planResult = await executePlanTurn({
+    sessionState: state,
+    runtimeState,
+    instruction: line,
+    signal: turnController.signal,
+  });
 }
 ```

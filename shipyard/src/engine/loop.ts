@@ -27,6 +27,12 @@ import {
   type InstructionRuntimeMode,
   type InstructionTurnResult,
 } from "./turn.js";
+import {
+  executePlanningTurn,
+  isPlanModeInstruction,
+  type ExecutePlanningTurnOptions,
+  type PlanningTurnResult,
+} from "../plans/turn.js";
 import { abortTurn } from "./cancellation.js";
 import {
   ToolError,
@@ -49,6 +55,9 @@ export interface RunShipyardLoopOptions {
   executeTurn?: (
     options: ExecuteInstructionTurnOptions,
   ) => Promise<InstructionTurnResult>;
+  executePlanTurn?: (
+    options: ExecutePlanningTurnOptions,
+  ) => Promise<PlanningTurnResult>;
   createReadlineInterface?: () => ReturnType<typeof readline.createInterface>;
 }
 
@@ -72,6 +81,7 @@ function printHelp(): void {
   console.log("  search <pattern>      Search the target with ripgrep");
   console.log("  run <command>         Run a shell command in the target");
   console.log("  diff [staged] [path]  Run git diff inside the target");
+  console.log("  plan: <request>       Save a reviewable task queue without editing code");
   console.log("  exit | quit           Save the session and quit");
   printDivider();
   console.log("Press Ctrl+C during an active turn to cancel it and keep the session alive.");
@@ -188,6 +198,7 @@ export async function runShipyardLoop(
 ): Promise<void> {
   const state = options.sessionState;
   const executeTurn = options.executeTurn ?? executeInstructionTurn;
+  const executePlanTurn = options.executePlanTurn ?? executePlanningTurn;
   const runtimeState = createInstructionRuntimeState({
     projectRules: await loadProjectRules(state.targetDirectory),
     baseInjectedContext: options.injectedContext ?? [],
@@ -390,58 +401,97 @@ export async function runShipyardLoop(
         } else {
           const turnController = new AbortController();
           activeTurnController = turnController;
-          const turnResult = await executeTurn({
-            sessionState: state,
-            runtimeState,
-            instruction: line,
-            signal: turnController.signal,
-          });
-          activeTurnController = null;
-          const turnStatusLabel = turnResult.status === "success"
-            ? "finished"
-            : turnResult.status === "cancelled"
-              ? "cancelled"
-              : "stopped";
+          if (isPlanModeInstruction(line)) {
+            const planResult = await executePlanTurn({
+              sessionState: state,
+              runtimeState,
+              instruction: line,
+              signal: turnController.signal,
+            });
+            activeTurnController = null;
+            const turnStatusLabel = planResult.status === "success"
+              ? "planned"
+              : planResult.status === "cancelled"
+                ? "cancelled"
+                : "stopped";
 
-          console.log(
-            `Turn ${state.turnCount} ${turnStatusLabel} in phase "${turnResult.phaseName}" via ${turnResult.runtimeMode} runtime.`,
-          );
-          console.log(JSON.stringify(turnResult.taskPlan, null, 2));
-          printDivider();
-          console.log(turnResult.finalText);
-          if (turnResult.langSmithTrace?.traceUrl) {
-            printDivider();
-            console.log(`LangSmith trace: ${turnResult.langSmithTrace.traceUrl}`);
-          }
-          await traceLogger.log("instruction.plan", {
-            instruction: line,
-            phase: turnResult.phaseName,
-            runtimeMode: turnResult.runtimeMode,
-            planningMode: turnResult.planningMode,
-            contextEnvelope: turnResult.contextEnvelope,
-            taskPlan: turnResult.taskPlan,
-            executionSpec: turnResult.executionSpec,
-            status: turnResult.status,
-            summary: turnResult.summary,
-            langSmithTrace: turnResult.langSmithTrace,
-            handoff: turnResult.handoff,
-          });
-
-          if (turnResult.selectedTargetPath) {
-            const nextState = await switchTarget(state, turnResult.selectedTargetPath);
-            await applySwitchedSessionState(nextState, "tool:select_target");
-            await maybeAutoEnrichTarget(
-              {
-                rl,
-                state,
-                runtimeState,
-              },
-              state,
-            );
-            printDivider();
             console.log(
-              `Target selected. Shipyard switched to ${state.targetDirectory} and entered phase "${state.activePhase}".`,
+              `Turn ${state.turnCount} ${turnStatusLabel} in phase "${planResult.phaseName}" via ${planResult.runtimeMode} runtime.`,
             );
+            printDivider();
+            console.log(planResult.finalText);
+            if (planResult.langSmithTrace?.traceUrl) {
+              printDivider();
+              console.log(`LangSmith trace: ${planResult.langSmithTrace.traceUrl}`);
+            }
+            await traceLogger.log("instruction.plan", {
+              instruction: line,
+              phase: planResult.phaseName,
+              runtimeMode: planResult.runtimeMode,
+              planningMode: planResult.planningMode,
+              route: "planning-only",
+              contextEnvelope: planResult.contextEnvelope,
+              executionSpec: planResult.executionSpec,
+              taskQueue: planResult.plan,
+              loadedSpecRefs: planResult.loadedSpecRefs,
+              status: planResult.status,
+              summary: planResult.summary,
+              langSmithTrace: planResult.langSmithTrace,
+            });
+          } else {
+            const turnResult = await executeTurn({
+              sessionState: state,
+              runtimeState,
+              instruction: line,
+              signal: turnController.signal,
+            });
+            activeTurnController = null;
+            const turnStatusLabel = turnResult.status === "success"
+              ? "finished"
+              : turnResult.status === "cancelled"
+                ? "cancelled"
+                : "stopped";
+
+            console.log(
+              `Turn ${state.turnCount} ${turnStatusLabel} in phase "${turnResult.phaseName}" via ${turnResult.runtimeMode} runtime.`,
+            );
+            console.log(JSON.stringify(turnResult.taskPlan, null, 2));
+            printDivider();
+            console.log(turnResult.finalText);
+            if (turnResult.langSmithTrace?.traceUrl) {
+              printDivider();
+              console.log(`LangSmith trace: ${turnResult.langSmithTrace.traceUrl}`);
+            }
+            await traceLogger.log("instruction.plan", {
+              instruction: line,
+              phase: turnResult.phaseName,
+              runtimeMode: turnResult.runtimeMode,
+              planningMode: turnResult.planningMode,
+              contextEnvelope: turnResult.contextEnvelope,
+              taskPlan: turnResult.taskPlan,
+              executionSpec: turnResult.executionSpec,
+              status: turnResult.status,
+              summary: turnResult.summary,
+              langSmithTrace: turnResult.langSmithTrace,
+              handoff: turnResult.handoff,
+            });
+
+            if (turnResult.selectedTargetPath) {
+              const nextState = await switchTarget(state, turnResult.selectedTargetPath);
+              await applySwitchedSessionState(nextState, "tool:select_target");
+              await maybeAutoEnrichTarget(
+                {
+                  rl,
+                  state,
+                  runtimeState,
+                },
+                state,
+              );
+              printDivider();
+              console.log(
+                `Target selected. Shipyard switched to ${state.targetDirectory} and entered phase "${state.activePhase}".`,
+              );
+            }
           }
         }
       } catch (error) {

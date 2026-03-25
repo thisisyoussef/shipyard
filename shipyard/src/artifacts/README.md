@@ -8,6 +8,8 @@ This folder holds small shared types that move between runtime layers.
 - `ExecutionSpec`: the richer planner artifact for broad or non-trivial work
 - `EvaluationPlan`: the richer verifier artifact for ordered command-backed
   checks with required/optional policy
+- `PersistedTaskQueue`: the durable operator-facing plan artifact saved under
+  `.shipyard/plans/`
 - `ContextReport` and `ContextFinding`: structured evidence returned from
   exploratory work
 - `EditIntent`: a typed description of a surgical file change
