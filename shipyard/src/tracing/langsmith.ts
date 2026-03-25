@@ -31,6 +31,9 @@ export interface RunWithLangSmithTraceOptions<
   metadata?: Record<string, unknown>;
   client?: Client;
   env?: NodeJS.ProcessEnv;
+  getResultMetadata?: (
+    result: Result,
+  ) => Record<string, unknown> | null | undefined;
   fn: (...args: Args) => Promise<Result> | Result;
   args: Args;
 }
@@ -176,13 +179,47 @@ export async function runWithLangSmithTrace<
   const client = options.client ?? createLangSmithClient(options.env);
   const projectName = options.projectName ?? config.project;
   let runId: string | null = null;
-  const tracedFunction = traceable(options.fn, {
+  let activeRunTree:
+    | {
+        extra?: {
+          metadata?: Record<string, unknown>;
+        };
+      }
+    | undefined;
+  let resultMetadata: Record<string, unknown> | null = null;
+  const tracedFunction = traceable(async (...args: Args) => {
+    const result = await options.fn(...args);
+
+    try {
+      resultMetadata = options.getResultMetadata?.(result) ?? null;
+    } catch {
+      resultMetadata = null;
+    }
+
+    return result;
+  }, {
     name: options.name,
     run_type: options.runType ?? "chain",
     project_name: projectName ?? undefined,
     tags: options.tags,
     metadata: options.metadata,
     client,
+    on_start(runTree) {
+      activeRunTree = runTree;
+    },
+    processOutputs(outputs) {
+      if (activeRunTree && resultMetadata) {
+        activeRunTree.extra = {
+          ...activeRunTree.extra,
+          metadata: {
+            ...(activeRunTree.extra?.metadata ?? {}),
+            ...resultMetadata,
+          },
+        };
+      }
+
+      return outputs;
+    },
     on_end(runTree) {
       runId = runTree.id;
     },
@@ -195,4 +232,28 @@ export async function runWithLangSmithTrace<
     result,
     trace: await resolveLangSmithTraceReference(client, projectName, runId),
   };
+}
+
+export async function updateLangSmithTraceMetadata(
+  trace: LangSmithTraceReference | null,
+  metadata: Record<string, unknown>,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  const config = getLangSmithConfig(env);
+
+  if (!config.enabled || !trace?.runId) {
+    return;
+  }
+
+  try {
+    const client = createLangSmithClient(env);
+
+    await client.updateRun(trace.runId, {
+      extra: {
+        metadata,
+      },
+    });
+  } catch {
+    // Observability updates must never fail the runtime path.
+  }
 }

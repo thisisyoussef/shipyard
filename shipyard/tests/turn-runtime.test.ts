@@ -11,10 +11,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
 import { createSessionState } from "../src/engine/state.js";
+import * as graphRuntime from "../src/engine/graph.js";
+import { createCodePhase } from "../src/phases/code/index.js";
 import {
   createInstructionRuntimeState,
   executeInstructionTurn,
 } from "../src/engine/turn.js";
+import * as langsmith from "../src/tracing/langsmith.js";
 
 const createdDirectories: string[] = [];
 
@@ -570,5 +573,169 @@ describe("instruction runtime handoff", () => {
         process.env.ANTHROPIC_API_KEY = previousApiKey;
       }
     }
+  });
+
+  it("returns harness-route metadata and prepares the final LangSmith turn metadata", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-turn-route-");
+    const sessionState = createSessionState({
+      sessionId: "turn-route-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: false,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: ["src"],
+        projectName: "turn-route-target",
+      },
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+    });
+    const outerTrace = {
+      projectName: "shipyard",
+      runId: "trace-turn-123",
+      traceUrl: "https://smith.langchain.com/runs/trace-turn-123",
+      projectUrl: "https://smith.langchain.com/projects/shipyard",
+    };
+    let capturedTraceMetadata: Record<string, unknown> | null = null;
+
+    vi.spyOn(langsmith, "runWithLangSmithTrace").mockImplementation(
+      async (traceOptions: any) => {
+        const result = await traceOptions.fn(...traceOptions.args);
+        capturedTraceMetadata = traceOptions.getResultMetadata?.(result) ?? null;
+
+        return {
+          result,
+          trace: outerTrace,
+        };
+      },
+    );
+
+    vi.spyOn(graphRuntime, "runAgentRuntime").mockResolvedValue(
+      graphRuntime.createAgentGraphState({
+        sessionId: "turn-route-session",
+        instruction: "Polish the main screen",
+        contextEnvelope: {
+          stable: {
+            discovery: sessionState.discovery,
+            projectRules: "",
+            availableScripts: sessionState.discovery.scripts,
+          },
+          task: {
+            currentInstruction: "Polish the main screen",
+            injectedContext: [],
+            targetFilePaths: ["src/app.tsx"],
+          },
+          runtime: {
+            recentToolOutputs: [],
+            recentErrors: [],
+            currentGitDiff: null,
+          },
+          session: {
+            rollingSummary: "",
+            retryCountsByFile: {},
+            blockedFiles: [],
+            latestHandoff: null,
+            activeTask: null,
+          },
+        },
+        previewState: sessionState.workbenchState.previewState,
+        targetDirectory,
+        phaseConfig: createCodePhase(),
+        planningMode: "planner",
+        executionSpec: {
+          instruction: "Polish the main screen",
+          goal: "Polish the main screen without widening scope.",
+          deliverables: ["Refine src/app.tsx."],
+          acceptanceCriteria: ["The main screen matches the request."],
+          verificationIntent: ["Run the verification checks."],
+          targetFilePaths: ["src/app.tsx"],
+          risks: [],
+        },
+        taskPlan: {
+          instruction: "Polish the main screen",
+          goal: "Polish the main screen without widening scope.",
+          targetFilePaths: ["src/app.tsx"],
+          plannedSteps: [
+            "Read the relevant files before editing.",
+            "Refine the main screen.",
+            "Verify the result after the edit.",
+          ],
+        },
+        harnessRoute: {
+          selectedPath: "planner-backed",
+          usedExplorer: true,
+          usedPlanner: true,
+          usedVerifier: true,
+          verificationMode: "command+browser",
+          verificationCheckCount: 2,
+          usedBrowserEvaluator: true,
+          browserEvaluationStatus: "passed",
+          handoffLoaded: false,
+          handoffEmitted: false,
+          handoffReason: null,
+          firstHardFailure: null,
+        },
+        actingIterations: 5,
+        lastEditedFile: "src/app.tsx",
+        finalResult: "Polished the main screen.",
+        status: "done",
+        verificationReport: {
+          command: "pnpm test",
+          exitCode: 0,
+          passed: true,
+          stdout: "",
+          stderr: "",
+          summary: "Verification passed.",
+          evaluationPlan: {
+            summary: "Run the verification checks.",
+            checks: [
+              {
+                id: "check-1",
+                label: "Run pnpm test",
+                kind: "command",
+                command: "pnpm test",
+                required: true,
+              },
+            ],
+          },
+          checks: [],
+          firstHardFailure: null,
+          browserEvaluationReport: null,
+        },
+      }),
+    );
+
+    const result = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "Polish the main screen",
+    });
+
+    expect(result.handoff.emitted?.handoff.resetReason.kind).toBe("iteration-threshold");
+    expect(result.harnessRoute).toMatchObject({
+      selectedPath: "planner-backed",
+      verificationMode: "command+browser",
+      usedBrowserEvaluator: true,
+      handoffEmitted: true,
+      handoffReason: "iteration-threshold",
+    });
+    expect(result.langSmithTrace).toEqual(outerTrace);
+    expect(capturedTraceMetadata).toEqual(
+      expect.objectContaining({
+        selectedPath: "planner-backed",
+        verificationMode: "command+browser",
+        usedBrowserEvaluator: true,
+        handoffEmitted: true,
+        handoffReason: "iteration-threshold",
+      }),
+    );
   });
 });

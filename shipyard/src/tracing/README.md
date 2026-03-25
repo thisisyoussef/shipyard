@@ -16,6 +16,9 @@ when credentials are configured.
   variables are present.
 - Runtime code should pass structured metadata into tracing helpers instead of
   formatting opaque strings as late as possible.
+- Final LangSmith metadata should be attached before the trace wrapper patches
+  the run; late `updateRun` calls are not reliable once payload ingestion has
+  already finished.
 - Long-run reset stories should record structured handoff facts in both local
   logs and remote metadata, not bury them in free-form summary text.
 - Trace URL lookup is best-effort. If LangSmith has not indexed the run URL
@@ -26,8 +29,14 @@ when credentials are configured.
 
 - Local `instruction.plan` JSONL events can include a `handoff` payload with
   loaded, emitted, and load-error state.
+- Local `instruction.plan` JSONL events now also include a `harnessRoute`
+  payload with the selected lightweight vs planner-backed path, verifier mode,
+  browser-evaluator usage, and reset reason.
 - LangSmith trace metadata currently records `handoffLoaded`, `handoffPath`,
-  and `handoffReason` so reset routing is visible without opening raw prompts.
+  `handoffReason`, `selectedPath`, `verificationMode`, and browser-evaluator
+  usage so routing is visible without opening raw prompts.
+- Turn-level LangSmith traces now return the root turn run reference, while the
+  nested runtime trace continues to capture graph-specific details underneath it.
 
 ## Operational Verification
 

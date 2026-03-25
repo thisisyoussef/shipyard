@@ -524,6 +524,7 @@ export async function runShipyardLoop(
               phase: turnResult.phaseName,
               runtimeMode: turnResult.runtimeMode,
               planningMode: turnResult.planningMode,
+              harnessRoute: turnResult.harnessRoute,
               contextEnvelope: turnResult.contextEnvelope,
               taskPlan: turnResult.taskPlan,
               executionSpec: turnResult.executionSpec,

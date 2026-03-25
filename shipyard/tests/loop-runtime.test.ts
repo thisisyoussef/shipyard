@@ -84,6 +84,20 @@ function createTurnResult(
     summary: options.finalText,
     selectedTargetPath: null,
     langSmithTrace: null,
+    harnessRoute: {
+      selectedPath: "lightweight",
+      usedExplorer: false,
+      usedPlanner: false,
+      usedVerifier: false,
+      verificationMode: "none",
+      verificationCheckCount: 0,
+      usedBrowserEvaluator: false,
+      browserEvaluationStatus: "not_run",
+      handoffLoaded: false,
+      handoffEmitted: false,
+      handoffReason: null,
+      firstHardFailure: null,
+    },
     handoff: {
       loaded: null,
       loadError: null,
@@ -449,6 +463,20 @@ describe("terminal loop interrupts", () => {
       createTurnResult({
         status: "success",
         finalText: "Turn 1 completed with a handoff.",
+        harnessRoute: {
+          selectedPath: "planner-backed",
+          usedExplorer: true,
+          usedPlanner: true,
+          usedVerifier: true,
+          verificationMode: "command+browser",
+          verificationCheckCount: 2,
+          usedBrowserEvaluator: true,
+          browserEvaluationStatus: "passed",
+          handoffLoaded: false,
+          handoffEmitted: true,
+          handoffReason: "iteration-threshold",
+          firstHardFailure: null,
+        },
         handoff: {
           loaded: null,
           loadError: null,
@@ -524,6 +552,9 @@ describe("terminal loop interrupts", () => {
 
     expect(traceContents).toContain('"event":"instruction.plan"');
     expect(traceContents).toContain('"handoff"');
+    expect(traceContents).toContain('"harnessRoute"');
+    expect(traceContents).toContain('"verificationMode":"command+browser"');
+    expect(traceContents).toContain('"usedBrowserEvaluator":true');
     expect(traceContents).toContain(
       '".shipyard/artifacts/loop-handoff-session/turn-1.handoff.json"',
     );
