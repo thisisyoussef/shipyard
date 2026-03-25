@@ -81,6 +81,7 @@ export interface ShipyardWorkbenchProps {
   traceButtonLabel: string;
   leftSidebarOpen: boolean;
   rightSidebarOpen: boolean;
+  initialPrimaryView?: "chat" | "preview" | "live";
   onToggleLeftSidebar: () => void;
   onToggleRightSidebar: () => void;
 }
@@ -114,7 +115,9 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
   const [targetCreationOpen, setTargetCreationOpen] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(!props.leftSidebarOpen);
   const [rightCollapsed, setRightCollapsed] = useState(!props.rightSidebarOpen);
-  const [primaryView, setPrimaryView] = useState<"chat" | "live">("chat");
+  const [primaryView, setPrimaryView] = useState<"chat" | "preview" | "live">(
+    props.initialPrimaryView ?? "chat",
+  );
 
   const workspaceName = props.sessionState?.workspaceDirectory?.split("/").pop();
   const activePhase = props.sessionState?.activePhase ?? "target-manager";
@@ -216,59 +219,62 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             />
           ) : null}
 
-          <div className="workbench-operator-grid">
-            <div className="workbench-focus-column">
-              <ComposerPanel
-                instruction={props.instruction}
-                onInstructionChange={props.onInstructionChange}
-                onSubmit={props.onSubmitInstruction}
-                onCancel={props.onCancelInstruction}
-                onKeyDown={props.onInstructionKeyDown}
-                textareaRef={props.instructionInputRef}
-                agentBusy={props.connectionState === "agent-busy"}
-                notice={props.composerNotice}
-              />
+          <ComposerPanel
+            instruction={props.instruction}
+            onInstructionChange={props.onInstructionChange}
+            onSubmit={props.onSubmitInstruction}
+            onCancel={props.onCancelInstruction}
+            onKeyDown={props.onInstructionKeyDown}
+            textareaRef={props.instructionInputRef}
+            agentBusy={props.connectionState === "agent-busy"}
+            notice={props.composerNotice}
+          />
 
-              <div className="workbench-primary-shell">
-                <div
-                  className="workbench-primary-tabs"
-                  role="tablist"
-                  aria-label="Primary workspace view"
-                >
-                  <button
-                    type="button"
-                    className="workbench-primary-tab"
-                    data-active={primaryView === "chat"}
-                    aria-selected={primaryView === "chat"}
-                    onClick={() => setPrimaryView("chat")}
-                  >
-                    Chat
-                  </button>
-                  <button
-                    type="button"
-                    className="workbench-primary-tab"
-                    data-active={primaryView === "live"}
-                    aria-selected={primaryView === "live"}
-                    onClick={() => setPrimaryView("live")}
-                  >
-                    Live view
-                  </button>
-                </div>
-
-                {primaryView === "chat" ? (
-                  <ChatWorkspace turns={props.turns} />
-                ) : (
-                  <LiveViewPanel
-                    turns={props.turns}
-                    tracePath={props.sessionState?.tracePath ?? null}
-                  />
-                )}
-              </div>
+          <div className="workbench-primary-shell">
+            <div
+              className="workbench-primary-tabs"
+              role="tablist"
+              aria-label="Primary workspace view"
+            >
+              <button
+                type="button"
+                className="workbench-primary-tab"
+                data-active={primaryView === "chat"}
+                aria-selected={primaryView === "chat"}
+                onClick={() => setPrimaryView("chat")}
+              >
+                Chat
+              </button>
+              <button
+                type="button"
+                className="workbench-primary-tab"
+                data-active={primaryView === "preview"}
+                aria-selected={primaryView === "preview"}
+                onClick={() => setPrimaryView("preview")}
+              >
+                Local preview
+              </button>
+              <button
+                type="button"
+                className="workbench-primary-tab"
+                data-active={primaryView === "live"}
+                aria-selected={primaryView === "live"}
+                onClick={() => setPrimaryView("live")}
+              >
+                Live view
+              </button>
             </div>
 
-            <div className="workbench-support-column">
+            {primaryView === "chat" ? (
+              <ChatWorkspace turns={props.turns} />
+            ) : primaryView === "preview" ? (
               <PreviewPanel preview={props.previewState} />
-            </div>
+            ) : (
+              <LiveViewPanel
+                turns={props.turns}
+                tracePath={props.sessionState?.tracePath ?? null}
+              />
+            )}
           </div>
         </div>
       </ShipyardShell>

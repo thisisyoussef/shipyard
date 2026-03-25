@@ -106,7 +106,9 @@ The pre-2 developer UI uses:
 - the same persisted Shipyard session and engine state used by terminal mode
 - a live event bridge that streams thinking, tool calls, tool results, immediate edit previews, trace metadata, errors, and session snapshots over one WebSocket session
 - browser-visible context injection receipts and reload-safe session rehydration for the active `--ui` session
-- a two-surface center workspace: `Chat` for the conversation transcript and `Live view` for step-by-step playback of the current or saved run
+- a three-tab center workspace: `Chat` for the conversation transcript,
+  `Local preview` for the live target result, and `Live view` for step-by-step
+  playback of the current or saved run
 
 The backend half of this mode lives in `src/ui/`. The frontend shell lives in
 `ui/`. Both are documented in the local README files for those directories.

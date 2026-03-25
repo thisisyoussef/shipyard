@@ -923,7 +923,8 @@
 }
 
 .workbench-primary-shell > .chat-workspace,
-.workbench-primary-shell > .live-view-panel {
+.workbench-primary-shell > .live-view-panel,
+.workbench-primary-shell > .preview-panel {
   flex: 1 1 auto;
   min-height: 0;
 }
