@@ -11,6 +11,7 @@ import { CODE_PHASE_SYSTEM_PROMPT } from "./prompts.js";
 
 export const CODE_PHASE_TOOL_NAMES = [
   "read_file",
+  "load_spec",
   "write_file",
   "edit_block",
   "list_files",
