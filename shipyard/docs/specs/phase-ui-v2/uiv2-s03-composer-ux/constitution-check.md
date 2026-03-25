@@ -1,0 +1,6 @@
+# Constitution Check
+
+- [x] New modules respect SRP and dependency direction. `ComposerPanel.tsx` owns only instruction input and submission UX. `useAutoResize` and `useInstructionHistory` are single-purpose hooks with no external dependencies beyond React. The component depends on the token system (S01) and shell slot system (S02) but not on activity feed, diff viewer, or other content components.
+- [x] Testing strategy covers the change. Both hooks have dedicated unit tests covering edge cases (max-height capping, history overflow, draft preservation). Integration tests verify keyboard shortcuts, state transitions, and form submission. Skill-based validation covers design quality, animation, and polish.
+- [x] Backwards compatibility respected. The extraction from ShipyardWorkbench preserves the existing callback interface (`onInstructionChange`, `onSubmitInstruction`, `onContextChange`). The composer continues to receive the same data from App.tsx via props. New features (auto-resize, history, state machine) are additive — they do not change the data contract.
+- [x] New dependency justified and risk-assessed. No new runtime dependencies. Auto-resize uses native DOM `scrollHeight`. History uses a ref-backed array. Keyboard shortcuts use native `KeyboardEvent`. All patterns are standard React + DOM with no library overhead.

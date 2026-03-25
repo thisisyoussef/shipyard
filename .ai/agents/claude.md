@@ -29,6 +29,17 @@ Claude should follow the same gates defined in `.ai/codex.md` and `AGENTS.md`:
 - `.ai/workflows/ui-qa-critic.md` for visible UI stories
 - `.ai/workflows/ai-architecture-change.md` for harness and orchestrator changes
 
+## UI Skill Chain
+
+When a story touches visible UI, Claude should follow the same skill chain defined in `.ai/codex.md`:
+
+1. **Design Direction**: `frontend-design`, `emil-design-eng`, design philosophy, `baseline-ui`
+2. **Build & Refine**: `typeset`, `colorize`, `arrange`, `animate`, `bolder`
+3. **Quality Gate**: `critique`, `audit`, `fixing-accessibility`, `fixing-motion-performance`, `ui-qa-critic`
+4. **Final Polish**: `polish`, `overdrive` (when ambitious)
+
+Skills are in `.agents/skills/`. Not every story requires every skill — see codex.md for guidance.
+
 ## Compatibility Notes
 
 - Product code lives under `shipyard/`.

@@ -42,15 +42,23 @@ Prefer browser-visible evidence over code-only reasoning.
 
 Review the visible UI with neutral, evidence-oriented wording.
 
+Use the installed skill chain for structured evaluation:
+- `.agents/skills/critique/SKILL.md` — visual hierarchy, information architecture, emotional resonance, discoverability, composition, typography, color, states, microcopy, anti-patterns
+- `.agents/skills/audit/SKILL.md` — accessibility, performance, theming, responsive, anti-pattern audit
+- `.agents/skills/fixing-accessibility/SKILL.md` — WCAG compliance check
+- `.agents/skills/fixing-motion-performance/SKILL.md` — animation/rendering performance check
+
 Focus on:
 - clarity of system status
 - obviousness of next actions
 - whether primary user-facing copy uses user language instead of transport, endpoint, thread, or implementation jargon
 - whether success, pending, and failure feedback matches confirmed mutation outcomes instead of optimistic local assumptions
 - whether diagnostic or debug details stay behind progressive disclosure instead of dominating the main surface
-- layout, hierarchy, scanability, and modest visual polish
+- layout, hierarchy, scanability, and visual polish (use critique + audit skills for structured scoring)
 - error visibility and recovery
 - friction in the core task flow
+- accessibility compliance (WCAG 2.2 AA minimum)
+- animation performance (compositor-only transforms, reduced-motion support)
 
 Do not turn this into an open-ended redesign exercise.
 

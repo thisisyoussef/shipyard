@@ -7,6 +7,7 @@ Reference:
 - `.ai/docs/design/DESIGN_PHILOSOPHY_AND_LANGUAGE.md`
 - `.ai/skills/frontend-design.md`
 - `.ai/templates/spec/UI_PROMPT_BRIEF_TEMPLATE.md`
+- UI skill chain: see `.ai/codex.md` → "UI Skill Chain" section
 
 ---
 
@@ -53,7 +54,7 @@ If UI is in scope, explicitly map feature intent to:
 - design beliefs,
 - design principles,
 - existing design decisions precedent.
-Then apply `.ai/skills/frontend-design.md` to translate desired mood into concrete:
+Then apply the UI skill chain (Phase 1: Design Direction from `.ai/codex.md`) to translate desired mood into concrete:
 - typography roles,
 - spacing/layout strategy,
 - semantic color/material rules,
