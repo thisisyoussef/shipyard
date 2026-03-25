@@ -21,6 +21,8 @@ The current runtime now has two operator modes:
 ## Current Capabilities
 
 - persistent per-target sessions stored under `target/.shipyard/`
+- browser workbench saved-run history with one-click resume for the current target
+- grouped activity playback with `Latest run` / `All runs` filtering and human-language step summaries
 - target discovery for existing or greenfield repositories
 - a shared instruction executor used by both terminal and browser mode
 - typed read, write, edit, list, search, command, and git-diff tools

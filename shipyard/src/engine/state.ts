@@ -66,6 +66,20 @@ export interface SessionSnapshot {
   workbenchState: WorkbenchViewState;
 }
 
+export interface SessionRunSummary {
+  sessionId: string;
+  targetLabel: string;
+  targetDirectory: string;
+  activePhase: SessionPhase;
+  startedAt: string;
+  lastActiveAt: string;
+  turnCount: number;
+  latestInstruction: string | null;
+  latestSummary: string | null;
+  latestStatus: "working" | "success" | "error" | "idle" | null;
+  isCurrent: boolean;
+}
+
 export interface CreateSessionStateOptions {
   sessionId: string;
   targetDirectory: string;
@@ -138,6 +152,37 @@ export function getSessionFilePath(
   sessionId: string,
 ): string {
   return path.join(getSessionDirectory(targetDirectory), `${sessionId}.json`);
+}
+
+function createTargetLabel(state: SessionState): string {
+  const projectName = state.discovery.projectName?.trim();
+
+  if (projectName) {
+    return projectName;
+  }
+
+  return path.basename(state.targetDirectory) || state.targetDirectory;
+}
+
+function createSessionRunSummary(
+  state: SessionState,
+  currentSessionId: string | null,
+): SessionRunSummary {
+  const latestTurn = state.workbenchState.turns[0];
+
+  return {
+    sessionId: state.sessionId,
+    targetLabel: createTargetLabel(state),
+    targetDirectory: state.targetDirectory,
+    activePhase: state.activePhase,
+    startedAt: state.startedAt,
+    lastActiveAt: state.lastActiveAt,
+    turnCount: state.turnCount,
+    latestInstruction: latestTurn?.instruction ?? null,
+    latestSummary: latestTurn?.summary ?? null,
+    latestStatus: latestTurn?.status ?? null,
+    isCurrent: currentSessionId === state.sessionId,
+  };
 }
 
 export async function ensureShipyardDirectories(
@@ -224,6 +269,36 @@ export async function loadLatestSessionState(
   return [...sessions].sort((left, right) =>
     Date.parse(right.lastActiveAt) - Date.parse(left.lastActiveAt)
   )[0] ?? null;
+}
+
+export async function listSessionRunSummaries(
+  targetDirectory: string,
+  currentSessionId: string | null = null,
+): Promise<SessionRunSummary[]> {
+  let entries: string[];
+
+  try {
+    entries = await readdir(getSessionDirectory(targetDirectory));
+  } catch {
+    return [];
+  }
+
+  const sessionIds = entries
+    .filter((entry) => entry.endsWith(".json"))
+    .map((entry) => entry.replace(/\.json$/u, ""))
+    .filter(Boolean);
+
+  const sessions = (
+    await Promise.all(
+      sessionIds.map((sessionId) => loadSessionState(targetDirectory, sessionId)),
+    )
+  ).filter((session): session is SessionState => session !== null);
+
+  return [...sessions]
+    .sort((left, right) =>
+      Date.parse(right.lastActiveAt) - Date.parse(left.lastActiveAt)
+    )
+    .map((session) => createSessionRunSummary(session, currentSessionId));
 }
 
 export async function switchTarget(

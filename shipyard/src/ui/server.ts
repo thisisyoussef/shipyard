@@ -23,6 +23,8 @@ import {
 } from "../engine/turn.js";
 import type { AgentRuntimeDependencies } from "../engine/graph.js";
 import {
+  listSessionRunSummaries,
+  loadSessionState,
   saveSessionState,
   switchTarget,
   type SessionState,
@@ -215,6 +217,7 @@ function createFallbackUiHtml(sessionState: SessionState): string {
     sessionState,
     connectionState: "ready",
     projectRulesLoaded: false,
+    sessionHistory: [],
     workspaceDirectory,
   });
 
@@ -626,12 +629,17 @@ export async function startUiRuntimeServer(
 
   const sendSessionState = async (socket: WebSocket): Promise<void> => {
     await syncTargetManagerState();
+    const sessionHistory = await listSessionRunSummaries(
+      sessionState.targetDirectory,
+      sessionState.sessionId,
+    );
     await sendToSocket(
       socket,
       createSessionStateMessage({
         sessionState,
         connectionState: connectionState(),
         projectRulesLoaded,
+        sessionHistory,
         workspaceDirectory,
       }),
     );
@@ -639,11 +647,16 @@ export async function startUiRuntimeServer(
 
   const broadcastSessionState = async (): Promise<void> => {
     await syncTargetManagerState();
+    const sessionHistory = await listSessionRunSummaries(
+      sessionState.targetDirectory,
+      sessionState.sessionId,
+    );
     await broadcastBrowserMessage(
       createSessionStateMessage({
         sessionState,
         connectionState: connectionState(),
         projectRulesLoaded,
+        sessionHistory,
         workspaceDirectory,
       }),
     );
@@ -736,6 +749,12 @@ export async function startUiRuntimeServer(
     const baseReporter = createUiInstructionReporter({
       send: broadcastBrowserMessage,
       projectRulesLoaded,
+      sessionHistory(nextSessionState) {
+        return listSessionRunSummaries(
+          nextSessionState.targetDirectory,
+          nextSessionState.sessionId,
+        );
+      },
       workspaceDirectory,
     });
     let pendingTurnState: TurnStateEvent | null = null;
@@ -832,6 +851,47 @@ export async function startUiRuntimeServer(
               ),
             );
             break;
+          case "session:resume_request": {
+            if (activeInstruction !== null) {
+              await sendToSocket(
+                socket,
+                createErrorMessage(
+                  "Finish the current browser instruction before opening another saved run.",
+                ),
+              );
+              break;
+            }
+
+            const resumedSession = await loadSessionState(
+              sessionState.targetDirectory,
+              message.sessionId,
+            );
+
+            if (resumedSession === null) {
+              await sendToSocket(
+                socket,
+                createErrorMessage(
+                  `Saved run ${message.sessionId} was not found for the current target.`,
+                ),
+              );
+              break;
+            }
+
+            const nextTargetManagerState = await applySwitchedSessionState(
+              resumedSession,
+              `browser:resume:${message.sessionId}`,
+            );
+            await traceLogger.log("session.resume", {
+              sessionId: sessionState.sessionId,
+              targetDirectory: sessionState.targetDirectory,
+              phase: sessionState.activePhase,
+              resumedSessionId: message.sessionId,
+              runtimeMode: "ui",
+            });
+            await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
+            await broadcastSessionState();
+            break;
+          }
           case "target:switch_request": {
             if (activeInstruction !== null) {
               await sendToSocket(

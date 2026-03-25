@@ -7,23 +7,41 @@ import type {
   ToolResultEvent,
   TurnStateEvent,
 } from "../engine/turn.js";
-import type { BackendToFrontendMessage } from "./contracts.js";
+import type {
+  BackendToFrontendMessage,
+  SessionRunSummary,
+} from "./contracts.js";
 import { applySessionSnapshot } from "./workbench-state.js";
 
 interface CreateSessionStateMessageOptions {
   connectionState: TurnStateEvent["connectionState"];
   sessionState: TurnStateEvent["sessionState"];
   projectRulesLoaded: boolean;
+  sessionHistory: SessionRunSummary[];
   workspaceDirectory: string;
 }
 
 export interface CreateUiInstructionReporterOptions {
   send: (message: BackendToFrontendMessage) => Promise<void> | void;
   projectRulesLoaded: boolean;
+  sessionHistory:
+    | SessionRunSummary[]
+    | ((
+        sessionState: TurnStateEvent["sessionState"],
+      ) => Promise<SessionRunSummary[]> | SessionRunSummary[]);
   workspaceDirectory: string;
 }
 
-function createTargetLabel(targetDirectory: string): string {
+function createTargetLabel(
+  targetDirectory: string,
+  discovery: DiscoveryReport,
+): string {
+  const projectName = discovery.projectName?.trim();
+
+  if (projectName) {
+    return projectName;
+  }
+
   const parts = targetDirectory.split("/").filter(Boolean);
   return parts.at(-1) ?? targetDirectory;
 }
@@ -50,7 +68,10 @@ export function createSessionStateMessage(
     runtimeMode: "ui",
     connectionState: options.connectionState,
     sessionId: options.sessionState.sessionId,
-    targetLabel: createTargetLabel(options.sessionState.targetDirectory),
+    targetLabel: createTargetLabel(
+      options.sessionState.targetDirectory,
+      options.sessionState.discovery,
+    ),
     targetDirectory: options.sessionState.targetDirectory,
     activePhase: options.sessionState.activePhase,
     workspaceDirectory: options.workspaceDirectory,
@@ -60,6 +81,7 @@ export function createSessionStateMessage(
     discovery: options.sessionState.discovery,
     discoverySummary: createDiscoverySummary(options.sessionState.discovery),
     projectRulesLoaded: options.projectRulesLoaded,
+    sessionHistory: options.sessionHistory,
   } as const;
   const syncedWorkbenchState = applySessionSnapshot(
     options.sessionState.workbenchState,
@@ -120,11 +142,16 @@ export function createUiInstructionReporter(
 ): InstructionTurnReporter {
   return {
     async onTurnState(event) {
+      const sessionHistory =
+        typeof options.sessionHistory === "function"
+          ? await options.sessionHistory(event.sessionState)
+          : options.sessionHistory;
       await options.send(
         createSessionStateMessage({
           sessionState: event.sessionState,
           connectionState: event.connectionState,
           projectRulesLoaded: options.projectRulesLoaded,
+          sessionHistory,
           workspaceDirectory: options.workspaceDirectory,
         }),
       );

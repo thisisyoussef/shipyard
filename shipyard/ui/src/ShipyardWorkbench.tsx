@@ -11,6 +11,7 @@ import {
   ComposerPanel,
   ContextPanel,
   FilePanel,
+  RunHistoryPanel,
   SessionPanel,
 } from "./panels/index.js";
 import type { BadgeTone } from "./primitives.js";
@@ -27,6 +28,7 @@ import type {
   ContextReceiptViewModel,
   FileEventViewModel,
   PreviewStateViewModel,
+  SessionRunSummaryViewModel,
   SessionStateViewModel,
   TargetManagerViewModel,
   TurnViewModel,
@@ -43,6 +45,7 @@ interface ComposerNotice {
 
 export interface ShipyardWorkbenchProps {
   sessionState: SessionStateViewModel | null;
+  sessionHistory: SessionRunSummaryViewModel[];
   targetManager: TargetManagerViewModel | null;
   turns: TurnViewModel[];
   fileEvents: FileEventViewModel[];
@@ -61,6 +64,7 @@ export interface ShipyardWorkbenchProps {
   onContextKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onClearContext: () => void;
   onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
+  onRequestSessionResume: (sessionId: string) => void;
   onRequestTargetSwitch: (targetPath: string) => void;
   onRequestTargetCreate: (input: {
     name: string;
@@ -167,6 +171,11 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         leftSidebar={
           <ShellSidebar collapsed={leftCollapsed} railItems={leftRailItems}>
             <SessionPanel session={props.sessionState} />
+            <RunHistoryPanel
+              runs={props.sessionHistory}
+              currentSessionId={props.sessionState?.sessionId ?? null}
+              onResumeSession={props.onRequestSessionResume}
+            />
             <ContextPanel
               history={props.contextHistory}
               draft={props.contextDraft}

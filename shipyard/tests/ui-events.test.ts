@@ -37,6 +37,21 @@ describe("ui event helpers", () => {
       connectionState: "agent-busy",
       projectRulesLoaded: true,
       workspaceDirectory: "/tmp/shipyard-workspace",
+      sessionHistory: [
+        {
+          sessionId: "session-123",
+          targetLabel: "shipyard-demo",
+          targetDirectory: "/tmp/shipyard-demo",
+          activePhase: "code",
+          startedAt: "2026-03-24T12:00:00.000Z",
+          lastActiveAt: "2026-03-24T12:05:00.000Z",
+          turnCount: 1,
+          latestInstruction: "inspect package.json",
+          latestSummary: "Read the package manifest.",
+          latestStatus: "success",
+          isCurrent: true,
+        },
+      ],
     });
 
     expect(message).toMatchObject({
@@ -48,6 +63,14 @@ describe("ui event helpers", () => {
       workspaceDirectory: "/tmp/shipyard-workspace",
       discoverySummary: "typescript (React) via pnpm",
       projectRulesLoaded: true,
+      sessionHistory: [
+        {
+          sessionId: "session-123",
+          latestInstruction: "inspect package.json",
+          latestStatus: "success",
+          isCurrent: true,
+        },
+      ],
       discovery: {
         projectName: "shipyard-demo",
         framework: "React",
@@ -79,6 +102,7 @@ describe("ui event helpers", () => {
       },
       projectRulesLoaded: false,
       workspaceDirectory: "/tmp/shipyard-workspace",
+      sessionHistory: [],
     });
 
     await reporter.onTurnState?.({
@@ -137,6 +161,18 @@ describe("ui event helpers", () => {
   });
 
   it("validates the target manager websocket contracts", () => {
+    expect(
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "session:resume_request",
+          sessionId: "session-previous",
+        }),
+      ),
+    ).toEqual({
+      type: "session:resume_request",
+      sessionId: "session-previous",
+    });
+
     expect(
       parseFrontendMessage(
         JSON.stringify({

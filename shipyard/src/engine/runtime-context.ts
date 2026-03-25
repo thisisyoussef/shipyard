@@ -22,10 +22,17 @@ export async function applySessionSwitchToRuntime(
   sessionState: SessionState,
   runtimeState: InstructionRuntimeState,
 ): Promise<void> {
-  runtimeState.projectRules = await loadProjectRules(sessionState.targetDirectory);
-  runtimeState.baseInjectedContext = createProjectRulesInjectedContext(
-    runtimeState.projectRules,
-  );
+  if (sessionState.activePhase === "target-manager") {
+    runtimeState.projectRules = "";
+    runtimeState.baseInjectedContext = createTargetManagerInjectedContext(
+      sessionState.targetsDirectory,
+    );
+  } else {
+    runtimeState.projectRules = await loadProjectRules(sessionState.targetDirectory);
+    runtimeState.baseInjectedContext = createProjectRulesInjectedContext(
+      runtimeState.projectRules,
+    );
+  }
   runtimeState.recentToolOutputs = [];
   runtimeState.recentErrors = [];
   runtimeState.retryCountsByFile = {};

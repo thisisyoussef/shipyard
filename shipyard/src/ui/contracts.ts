@@ -96,6 +96,19 @@ const sessionStateViewModelSchema = z.object({
   projectRulesLoaded: z.boolean(),
   tracePath: z.string(),
 });
+export const sessionRunSummarySchema = z.object({
+  sessionId: z.string(),
+  targetLabel: z.string(),
+  targetDirectory: z.string(),
+  activePhase: z.enum(["code", "target-manager"]),
+  startedAt: z.string(),
+  lastActiveAt: z.string(),
+  turnCount: z.number().int().nonnegative(),
+  latestInstruction: z.string().nullable(),
+  latestSummary: z.string().nullable(),
+  latestStatus: turnStatusSchema.nullable(),
+  isCurrent: z.boolean(),
+});
 const activityItemSchema = z.object({
   id: z.string(),
   kind: activityKindSchema,
@@ -163,6 +176,7 @@ export const workbenchStateSchema = z.object({
   connectionState: uiConnectionStateSchema,
   agentStatus: z.string(),
   sessionState: sessionStateViewModelSchema.nullable(),
+  sessionHistory: z.array(sessionRunSummarySchema),
   turns: z.array(turnViewModelSchema),
   fileEvents: z.array(fileEventSchema),
   activeTurnId: z.string().nullable(),
@@ -208,10 +222,16 @@ export const targetEnrichRequestMessageSchema = z.object({
   userDescription: z.string().trim().optional(),
 });
 
+export const sessionResumeRequestMessageSchema = z.object({
+  type: z.literal("session:resume_request"),
+  sessionId: nonEmptyTextSchema,
+});
+
 export const frontendToBackendMessageSchema = z.discriminatedUnion("type", [
   instructionMessageSchema,
   cancelMessageSchema,
   statusMessageSchema,
+  sessionResumeRequestMessageSchema,
   targetSwitchRequestMessageSchema,
   targetCreateRequestMessageSchema,
   targetEnrichRequestMessageSchema,
@@ -236,6 +256,7 @@ export const sessionStateMessageSchema = z.object({
   discovery: discoverySchema,
   discoverySummary: z.string(),
   projectRulesLoaded: z.boolean(),
+  sessionHistory: z.array(sessionRunSummarySchema),
   workbenchState: workbenchStateSchema,
 });
 
@@ -323,6 +344,7 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
 export type BackendToFrontendMessage = z.infer<
   typeof backendToFrontendMessageSchema
 >;
+export type SessionRunSummary = z.infer<typeof sessionRunSummarySchema>;
 export type TargetManagerState = z.infer<typeof targetManagerStateSchema>;
 export type TargetSummary = z.infer<typeof targetSummarySchema>;
 export type TargetEnrichmentState = z.infer<
@@ -359,6 +381,7 @@ export function parseFrontendMessage(
     "instruction",
     "cancel",
     "status",
+    "session:resume_request",
     "target:switch_request",
     "target:create_request",
     "target:enrich_request",
@@ -372,12 +395,12 @@ export function parseFrontendMessage(
     }
 
     throw new Error(
-      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, target:switch_request, target:create_request, or target:enrich_request.`,
+      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, or target:enrich_request.`,
     );
   }
 
   throw new Error(
-    "Invalid client message: expected instruction, cancel, status, target:switch_request, target:create_request, or target:enrich_request.",
+    "Invalid client message: expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, or target:enrich_request.",
   );
 }
 
