@@ -390,6 +390,20 @@ describe("ui view models", () => {
     });
     state = applyBackendMessage(state, {
       type: "target:enrichment_progress",
+      status: "queued",
+      message: "Analyzing this target in the background.",
+    });
+
+    expect(state.targetManager).toMatchObject({
+      enrichmentStatus: {
+        status: "queued",
+        message: "Analyzing this target in the background.",
+      },
+    });
+    expect(state.agentStatus).toBe("Analyzing this target in the background.");
+
+    state = applyBackendMessage(state, {
+      type: "target:enrichment_progress",
       status: "in-progress",
       message: "Analyzing project structure.",
     });

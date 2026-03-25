@@ -13,7 +13,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { discoverTarget } from "../src/context/discovery.js";
 import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
-import { createSessionState, saveSessionState } from "../src/engine/state.js";
+import {
+  createSessionState,
+  ensureShipyardDirectories,
+  saveSessionState,
+} from "../src/engine/state.js";
 import { formatUiStartupLines, parseArgs } from "../src/bin/shipyard.js";
 import { createUnavailablePreviewCapability } from "../src/preview/contracts.js";
 import type { BackendToFrontendMessage } from "../src/ui/contracts.js";
@@ -495,6 +499,25 @@ describe("ui runtime contract", () => {
       port: 0,
       projectRules: "",
       projectRulesLoaded: false,
+      targetEnrichmentInvoker: async (prompt) => ({
+        text: JSON.stringify({
+          name: prompt.includes("beta-app") ? "beta-app" : "alpha-app",
+          description: prompt.includes("beta-app")
+            ? "Auto-enriched beta target."
+            : "Auto-enriched alpha target.",
+          purpose: "Verify browser auto-enrichment after switching targets.",
+          stack: ["TypeScript"],
+          architecture: "Single package workspace",
+          keyPatterns: ["target-manager state"],
+          complexity: "small",
+          suggestedAgentsRules: "# AGENTS.md\nKeep changes focused.",
+          suggestedScripts: {
+            test: "vitest run",
+          },
+          taskSuggestions: ["Add a README"],
+        }),
+        model: "test-model",
+      }),
     });
 
     try {
@@ -540,9 +563,9 @@ describe("ui runtime contract", () => {
           socket,
           (messages) =>
             messages.some((message) =>
-              message.type === "session:state" &&
-              message.activePhase === "code" &&
-              message.targetDirectory === betaTargetDirectory
+              message.type === "target:state" &&
+              message.state.currentTarget.path === betaTargetDirectory &&
+              message.state.currentTarget.hasProfile
             ),
         );
         socket.send(
@@ -561,6 +584,28 @@ describe("ui runtime contract", () => {
             { type: "target:switch_complete" }
           > => message.type === "target:switch_complete",
         );
+        const switchCompleteIndex = switchSequence.findIndex(
+          (message) => message.type === "target:switch_complete",
+        );
+        const firstEnrichmentIndex = switchSequence.findIndex(
+          (message) => message.type === "target:enrichment_progress",
+        );
+        const progressStatuses = switchSequence.flatMap((message) =>
+          message.type === "target:enrichment_progress"
+            ? [message.status]
+            : []
+        );
+        const enrichedTargetState = switchSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "target:state" }
+          > =>
+            message.type === "target:state" &&
+            message.state.currentTarget.path === betaTargetDirectory &&
+            message.state.currentTarget.hasProfile,
+        );
 
         expect(switchComplete).toMatchObject({
           type: "target:switch_complete",
@@ -572,6 +617,21 @@ describe("ui runtime contract", () => {
             },
           },
         });
+        expect(switchCompleteIndex).toBeGreaterThanOrEqual(0);
+        expect(firstEnrichmentIndex).toBeGreaterThan(switchCompleteIndex);
+        expect(progressStatuses).toEqual(
+          expect.arrayContaining(["started", "in-progress", "complete"]),
+        );
+        expect(enrichedTargetState).toMatchObject({
+          type: "target:state",
+          state: {
+            currentTarget: {
+              path: betaTargetDirectory,
+              hasProfile: true,
+              description: "Auto-enriched beta target.",
+            },
+          },
+        });
         expect(
           switchSequence.some((message) =>
             message.type === "session:state" &&
@@ -579,6 +639,9 @@ describe("ui runtime contract", () => {
             message.targetDirectory === betaTargetDirectory
           ),
         ).toBe(true);
+        await expect(
+          readFile(path.join(betaTargetDirectory, ".shipyard", "profile.json"), "utf8"),
+        ).resolves.toContain("Auto-enriched beta target.");
       } finally {
         socket.close();
       }
@@ -587,7 +650,7 @@ describe("ui runtime contract", () => {
     }
   });
 
-  it("creates a new target from the browser and switches the session into code mode", async () => {
+  it("creates a new target from the browser, auto-enriches it, and switches the session into code mode", async () => {
     const targetsDirectory = await createTempDirectory(
       "shipyard-ui-create-target-",
     );
@@ -604,6 +667,23 @@ describe("ui runtime contract", () => {
       port: 0,
       projectRules: "",
       projectRulesLoaded: false,
+      targetEnrichmentInvoker: async () => ({
+        text: JSON.stringify({
+          name: "gamma-app",
+          description: "Auto-enriched gamma target.",
+          purpose: "Verify browser auto-enrichment after creating a target.",
+          stack: ["TypeScript", "React"],
+          architecture: "Single package workspace",
+          keyPatterns: ["target-manager state"],
+          complexity: "small",
+          suggestedAgentsRules: "# AGENTS.md\nKeep changes focused.",
+          suggestedScripts: {
+            test: "vitest run",
+          },
+          taskSuggestions: ["Add a README"],
+        }),
+        model: "test-model",
+      }),
     });
 
     try {
@@ -621,9 +701,9 @@ describe("ui runtime contract", () => {
           socket,
           (messages) =>
             messages.some((message) =>
-              message.type === "session:state" &&
-              message.activePhase === "code" &&
-              message.targetDirectory === createdTargetDirectory
+              message.type === "target:state" &&
+              message.state.currentTarget.path === createdTargetDirectory &&
+              message.state.currentTarget.hasProfile
             ),
         );
         socket.send(
@@ -644,6 +724,28 @@ describe("ui runtime contract", () => {
             { type: "target:switch_complete" }
           > => message.type === "target:switch_complete",
         );
+        const switchCompleteIndex = createSequence.findIndex(
+          (message) => message.type === "target:switch_complete",
+        );
+        const firstEnrichmentIndex = createSequence.findIndex(
+          (message) => message.type === "target:enrichment_progress",
+        );
+        const progressStatuses = createSequence.flatMap((message) =>
+          message.type === "target:enrichment_progress"
+            ? [message.status]
+            : []
+        );
+        const enrichedTargetState = createSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "target:state" }
+          > =>
+            message.type === "target:state" &&
+            message.state.currentTarget.path === createdTargetDirectory &&
+            message.state.currentTarget.hasProfile,
+        );
 
         expect(switchComplete).toMatchObject({
           type: "target:switch_complete",
@@ -655,9 +757,27 @@ describe("ui runtime contract", () => {
             },
           },
         });
+        expect(switchCompleteIndex).toBeGreaterThanOrEqual(0);
+        expect(firstEnrichmentIndex).toBeGreaterThan(switchCompleteIndex);
+        expect(progressStatuses).toEqual(
+          expect.arrayContaining(["started", "in-progress", "complete"]),
+        );
+        expect(enrichedTargetState).toMatchObject({
+          type: "target:state",
+          state: {
+            currentTarget: {
+              path: createdTargetDirectory,
+              hasProfile: true,
+              description: "Auto-enriched gamma target.",
+            },
+          },
+        });
         await expect(
           readFile(path.join(createdTargetDirectory, "README.md"), "utf8"),
         ).resolves.toContain("Created from the browser workbench.");
+        await expect(
+          readFile(path.join(createdTargetDirectory, ".shipyard", "profile.json"), "utf8"),
+        ).resolves.toContain("Auto-enriched gamma target.");
       } finally {
         socket.close();
       }
@@ -809,6 +929,43 @@ describe("ui runtime contract", () => {
       JSON.stringify({ name: "browser-enrich-target" }, null, 2),
       "utf8",
     );
+    const existingProfile = {
+      name: "browser-enrich-target",
+      description: "Existing target profile.",
+      purpose: "Skip initial auto-enrichment so the manual browser path stays testable.",
+      stack: ["TypeScript"],
+      architecture: "Single package workspace",
+      keyPatterns: ["target-manager state"],
+      complexity: "small" as const,
+      suggestedAgentsRules: "# AGENTS.md\nKeep changes focused.",
+      suggestedScripts: {
+        test: "vitest run",
+      },
+      taskSuggestions: ["Add a README"],
+      enrichedAt: "2026-03-25T00:00:00.000Z",
+      enrichmentModel: "test-model",
+      discoverySnapshot: {
+        isGreenfield: false,
+        language: "javascript",
+        framework: null,
+        packageManager: "npm",
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: [],
+        projectName: "browser-enrich-target",
+        previewCapability: createUnavailablePreviewCapability(
+          "No preview available.",
+        ),
+      },
+    };
+    await ensureShipyardDirectories(targetDirectory);
+    await writeFile(
+      path.join(targetDirectory, ".shipyard", "profile.json"),
+      JSON.stringify(existingProfile, null, 2),
+      "utf8",
+    );
     const discovery = await discoverTarget(targetDirectory);
     const runtime = await startUiRuntimeServer({
       sessionState: createSessionState({
@@ -817,6 +974,7 @@ describe("ui runtime contract", () => {
         targetsDirectory: path.dirname(targetDirectory),
         activePhase: "code",
         discovery,
+        targetProfile: existingProfile,
       }),
       host: "127.0.0.1",
       port: 0,
@@ -899,6 +1057,221 @@ describe("ui runtime contract", () => {
         await expect(
           readFile(path.join(targetDirectory, ".shipyard", "profile.json"), "utf8"),
         ).resolves.toContain("AI summary for browser enrichment.");
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("auto-enriches an already-selected target when the browser first connects", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-initial-enrich-");
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify({ name: "initial-enrich-target" }, null, 2),
+      "utf8",
+    );
+    const discovery = await discoverTarget(targetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-initial-enrich-session",
+        targetDirectory,
+        targetsDirectory: path.dirname(targetDirectory),
+        activePhase: "code",
+        discovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      targetEnrichmentInvoker: async () => ({
+        text: JSON.stringify({
+          name: "initial-enrich-target",
+          description: "Auto-enriched on initial browser sync.",
+          purpose: "Verify initial browser auto-enrichment.",
+          stack: ["TypeScript"],
+          architecture: "Single package workspace",
+          keyPatterns: ["target-manager state"],
+          complexity: "small",
+          suggestedAgentsRules: "# AGENTS.md\nKeep changes focused.",
+          suggestedScripts: {
+            test: "vitest run",
+          },
+          taskSuggestions: ["Add a README"],
+        }),
+        model: "test-model",
+      }),
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+
+      try {
+        await waitForSocketOpen(socket);
+
+        const enrichmentSequence = await collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "target:state" &&
+              message.state.currentTarget.path === targetDirectory &&
+              message.state.currentTarget.hasProfile
+            ),
+        );
+        const progressStatuses = enrichmentSequence.flatMap((message) =>
+          message.type === "target:enrichment_progress"
+            ? [message.status]
+            : []
+        );
+
+        expect(progressStatuses).toEqual(
+          expect.arrayContaining(["started", "in-progress", "complete"]),
+        );
+        expect(
+          enrichmentSequence.some((message) =>
+            message.type === "target:state" &&
+            message.state.currentTarget.path === targetDirectory &&
+            message.state.currentTarget.description ===
+              "Auto-enriched on initial browser sync."
+          ),
+        ).toBe(true);
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("does not let a stale background enrichment overwrite the newly active target", async () => {
+    const targetsDirectory = await createTempDirectory("shipyard-ui-stale-guard-");
+    const alphaTargetDirectory = path.join(targetsDirectory, "alpha-app");
+    const betaTargetDirectory = path.join(targetsDirectory, "beta-app");
+    await mkdir(alphaTargetDirectory, { recursive: true });
+    await mkdir(betaTargetDirectory, { recursive: true });
+    await writeFile(
+      path.join(alphaTargetDirectory, "package.json"),
+      JSON.stringify({ name: "alpha-app" }, null, 2),
+      "utf8",
+    );
+    await writeFile(
+      path.join(betaTargetDirectory, "package.json"),
+      JSON.stringify({ name: "beta-app" }, null, 2),
+      "utf8",
+    );
+
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-stale-guard-session",
+        targetDirectory: targetsDirectory,
+        targetsDirectory,
+        activePhase: "target-manager",
+        discovery: createTargetManagerDiscovery(targetsDirectory),
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      targetEnrichmentInvoker: async (prompt) => {
+        if (prompt.includes("alpha-app")) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 200);
+          });
+
+          return {
+            text: JSON.stringify({
+              name: "alpha-app",
+              description: "Alpha target profile.",
+              purpose: "Verify stale background updates do not win.",
+              stack: ["TypeScript"],
+              architecture: "Single package workspace",
+              keyPatterns: ["target-manager state"],
+              complexity: "small",
+              suggestedAgentsRules: "# AGENTS.md\nKeep changes focused.",
+              suggestedScripts: {
+                test: "vitest run",
+              },
+              taskSuggestions: ["Add a README"],
+            }),
+            model: "test-model",
+          };
+        }
+
+        await new Promise((resolve) => {
+          setTimeout(resolve, 20);
+        });
+
+        return {
+          text: JSON.stringify({
+            name: "beta-app",
+            description: "Beta target profile.",
+            purpose: "Verify stale background updates do not win.",
+            stack: ["TypeScript"],
+            architecture: "Single package workspace",
+            keyPatterns: ["target-manager state"],
+            complexity: "small",
+            suggestedAgentsRules: "# AGENTS.md\nKeep changes focused.",
+            suggestedScripts: {
+              test: "vitest run",
+            },
+            taskSuggestions: ["Add a README"],
+          }),
+          model: "test-model",
+        };
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const messages = getSocketMessages(socket);
+
+      try {
+        await waitForSocketOpen(socket);
+        await waitForSocketMessage(
+          socket,
+          (message) => message.type === "target:state",
+        );
+
+        socket.send(
+          JSON.stringify({
+            type: "target:switch_request",
+            targetPath: alphaTargetDirectory,
+          }),
+        );
+        await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "target:switch_complete" &&
+            message.state.currentTarget.path === alphaTargetDirectory,
+        );
+
+        socket.send(
+          JSON.stringify({
+            type: "target:switch_request",
+            targetPath: betaTargetDirectory,
+          }),
+        );
+        await collectMessagesUntil(
+          socket,
+          (sequence) =>
+            sequence.some((message) =>
+              message.type === "target:state" &&
+              message.state.currentTarget.path === betaTargetDirectory &&
+              message.state.currentTarget.description === "Beta target profile."
+            ),
+        );
+        await new Promise((resolve) => {
+          setTimeout(resolve, 250);
+        });
+
+        expect(
+          messages.some((message) =>
+            message.type === "target:state" &&
+            message.state.currentTarget.path === betaTargetDirectory &&
+            message.state.currentTarget.description === "Alpha target profile."
+          ),
+        ).toBe(false);
       } finally {
         socket.close();
       }

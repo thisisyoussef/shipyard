@@ -55,6 +55,7 @@ const previewStatusSchema = z.enum([
 const scaffoldTypeSchema = z.enum(SCAFFOLD_TYPES);
 const enrichmentStatusSchema = z.enum([
   "idle",
+  "queued",
   "started",
   "in-progress",
   "complete",
@@ -354,7 +355,7 @@ export const targetSwitchCompleteMessageSchema = z.object({
 
 export const targetEnrichmentProgressMessageSchema = z.object({
   type: z.literal("target:enrichment_progress"),
-  status: z.enum(["started", "in-progress", "complete", "error"]),
+  status: enrichmentStatusSchema,
   message: z.string(),
 });
 

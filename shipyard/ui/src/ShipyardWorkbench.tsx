@@ -76,7 +76,6 @@ export interface ShipyardWorkbenchProps {
     description: string;
     scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
   }) => void;
-  onRequestTargetEnrich: () => void;
   onRefreshStatus: () => void;
   onCopyTracePath: () => void;
   traceButtonLabel: string;
@@ -163,7 +162,6 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
                 activePhase={activePhase}
                 targetManager={props.targetManager}
                 onOpenSwitcher={() => setTargetSwitcherOpen(true)}
-                onRequestEnrichment={props.onRequestTargetEnrich}
               />
             ) : null}
 

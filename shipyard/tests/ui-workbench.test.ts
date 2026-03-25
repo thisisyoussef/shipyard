@@ -9,6 +9,7 @@ import type {
   SessionRunSummaryViewModel,
   PreviewStateViewModel,
   SessionStateViewModel,
+  TargetManagerViewModel,
   TurnViewModel,
 } from "../ui/src/view-models.js";
 
@@ -50,7 +51,7 @@ const sessionState: SessionStateViewModel = {
   tracePath: "/tmp/shipyard-demo/.shipyard/traces/session-ui-123.jsonl",
 };
 
-const targetManager = {
+const targetManager: TargetManagerViewModel = {
   currentTarget: {
     path: "/tmp/shipyard-demo",
     name: "shipyard",
@@ -224,6 +225,7 @@ function renderWorkbench(overrides?: {
   contextDraft?: string;
   primaryView?: "chat" | "preview" | "live";
   previewState?: PreviewStateViewModel;
+  targetManager?: TargetManagerViewModel;
   leftSidebarOpen?: boolean;
   rightSidebarOpen?: boolean;
 }) {
@@ -231,7 +233,7 @@ function renderWorkbench(overrides?: {
     createElement(ShipyardWorkbench, {
       sessionState,
       sessionHistory,
-      targetManager,
+      targetManager: overrides?.targetManager ?? targetManager,
       turns,
       fileEvents,
       previewState: overrides?.previewState ?? runningPreviewState,
@@ -252,7 +254,6 @@ function renderWorkbench(overrides?: {
       onCancelInstruction: () => undefined,
       onRequestTargetSwitch: () => undefined,
       onRequestTargetCreate: () => undefined,
-      onRequestTargetEnrich: () => undefined,
       onRequestSessionResume: () => undefined,
       onRefreshStatus: () => undefined,
       onCopyTracePath: () => undefined,
@@ -273,7 +274,8 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("SHIPYARD");
     expect(markup).toContain("The active React workspace.");
     expect(markup).toContain("Change target");
-    expect(markup).toContain("Enriched");
+    expect(markup).toContain("Ready");
+    expect(markup).toContain("Activity");
     expect(markup).toContain("activity");
     expect(markup).toContain("Previous runs");
     expect(markup).toContain("fix the failing preview");
@@ -283,6 +285,27 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("inspect package.json");
     expect(markup).toContain("Open trace");
     expect(markup).toContain('aria-label="Current location"');
+  });
+
+  it("renders passive queued enrichment status without enrich buttons", () => {
+    const markup = renderWorkbench({
+      targetManager: {
+        ...targetManager,
+        currentTarget: {
+          ...targetManager.currentTarget,
+          description: null,
+          hasProfile: false,
+        },
+        enrichmentStatus: {
+          status: "queued",
+          message: "Analyzing this target in the background.",
+        },
+      },
+    });
+
+    expect(markup).toContain("Analyzing this target in the background.");
+    expect(markup).not.toContain("Enrich target");
+    expect(markup).not.toContain("Retry enrichment");
   });
 
   it("renders preview status, inline result, and a direct preview link", () => {
@@ -308,7 +331,7 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("Connected to shipyard-workspace");
     expect(markup).toContain("The active React workspace.");
     expect(markup).toContain("Change target");
-    expect(markup).toContain("Enriched");
+    expect(markup).toContain("Ready");
     expect(markup).toContain("Inject guidance");
     expect(markup).toContain("Cmd/Ctrl+Enter");
     expect(markup).toContain("Project signals");
