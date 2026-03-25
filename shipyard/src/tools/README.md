@@ -5,6 +5,7 @@ This folder contains the model-facing capability surface for Shipyard.
 ## Current Tools
 
 - `read-file.ts`
+- `load-spec.ts`
 - `write-file.ts`
 - `edit-block.ts`
 - `list-files.ts`

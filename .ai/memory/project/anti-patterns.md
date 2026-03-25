@@ -32,3 +32,8 @@ Capture failures so they are not repeated.
 - **Prevention rule**: Reserve planner mode for broad non-trivial code-phase
   work, and keep lightweight execution as the default for narrow or non-code
   turns.
+
+- **Problem**: Stuffing raw spec bodies into rolling summaries or ad hoc prompt prose
+- **Example**: Copying long `feature-spec.md` contents into `rollingSummary` or relying on manual paste-only context for spec-driven stories
+- **Why it failed**: Prompt state becomes noisy, unstable, and hard for later plan/task flows to reference reliably.
+- **Prevention rule**: Use named, bounded spec-loading paths and keep `rollingSummary` compact.

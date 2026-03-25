@@ -47,3 +47,10 @@ Record durable workspace decisions here.
 - **Consequences**: Planner output becomes reusable by later evaluation and plan
   mode stories, and route metadata must clearly distinguish planner-backed vs
   lightweight runs.
+
+- **ADR-ID**: ADR-0005
+- **Date**: 2026-03-25
+- **Context**: Phase 8 needs spec-driven planning without depending on pasted context or overloading generic file reads.
+- **Decision**: Add a dedicated read-only `load_spec` tool that returns named, bounded spec documents instead of folding raw spec loading into `read_file` or `rollingSummary`.
+- **Alternatives Considered**: Reuse `read_file` alone; tell operators to keep pasting briefs manually.
+- **Consequences**: Spec-driven stories can reuse stable `spec:` refs and bounded tool output, while later plan/task stories can build on that contract without inventing another spec-loading path.
