@@ -55,7 +55,9 @@ export function TargetHeader(props: TargetHeaderProps) {
               </Badge>
             ) : null}
           </div>
-          <p>{description}</p>
+          <p className="target-header-description" title={description}>
+            {description}
+          </p>
         </div>
         <span className="target-header-hint">
           {props.targetManager.availableTargets.length} targets available

@@ -216,53 +216,59 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             />
           ) : null}
 
-          <ComposerPanel
-            instruction={props.instruction}
-            onInstructionChange={props.onInstructionChange}
-            onSubmit={props.onSubmitInstruction}
-            onCancel={props.onCancelInstruction}
-            onKeyDown={props.onInstructionKeyDown}
-            textareaRef={props.instructionInputRef}
-            agentBusy={props.connectionState === "agent-busy"}
-            notice={props.composerNotice}
-          />
+          <div className="workbench-operator-grid">
+            <div className="workbench-focus-column">
+              <ComposerPanel
+                instruction={props.instruction}
+                onInstructionChange={props.onInstructionChange}
+                onSubmit={props.onSubmitInstruction}
+                onCancel={props.onCancelInstruction}
+                onKeyDown={props.onInstructionKeyDown}
+                textareaRef={props.instructionInputRef}
+                agentBusy={props.connectionState === "agent-busy"}
+                notice={props.composerNotice}
+              />
 
-          <PreviewPanel preview={props.previewState} />
+              <div className="workbench-primary-shell">
+                <div
+                  className="workbench-primary-tabs"
+                  role="tablist"
+                  aria-label="Primary workspace view"
+                >
+                  <button
+                    type="button"
+                    className="workbench-primary-tab"
+                    data-active={primaryView === "chat"}
+                    aria-selected={primaryView === "chat"}
+                    onClick={() => setPrimaryView("chat")}
+                  >
+                    Chat
+                  </button>
+                  <button
+                    type="button"
+                    className="workbench-primary-tab"
+                    data-active={primaryView === "live"}
+                    aria-selected={primaryView === "live"}
+                    onClick={() => setPrimaryView("live")}
+                  >
+                    Live view
+                  </button>
+                </div>
 
-          <div className="workbench-primary-shell">
-            <div
-              className="workbench-primary-tabs"
-              role="tablist"
-              aria-label="Primary workspace view"
-            >
-              <button
-                type="button"
-                className="workbench-primary-tab"
-                data-active={primaryView === "chat"}
-                aria-selected={primaryView === "chat"}
-                onClick={() => setPrimaryView("chat")}
-              >
-                Chat
-              </button>
-              <button
-                type="button"
-                className="workbench-primary-tab"
-                data-active={primaryView === "live"}
-                aria-selected={primaryView === "live"}
-                onClick={() => setPrimaryView("live")}
-              >
-                Live view
-              </button>
+                {primaryView === "chat" ? (
+                  <ChatWorkspace turns={props.turns} />
+                ) : (
+                  <LiveViewPanel
+                    turns={props.turns}
+                    tracePath={props.sessionState?.tracePath ?? null}
+                  />
+                )}
+              </div>
             </div>
 
-            {primaryView === "chat" ? (
-              <ChatWorkspace turns={props.turns} />
-            ) : (
-              <LiveViewPanel
-                turns={props.turns}
-                tracePath={props.sessionState?.tracePath ?? null}
-              />
-            )}
+            <div className="workbench-support-column">
+              <PreviewPanel preview={props.previewState} />
+            </div>
           </div>
         </div>
       </ShipyardShell>

@@ -87,3 +87,56 @@ flip to a simpler chat-first view for conversational iteration.
   retrospective diff.
 - The browser UI supports both conversation-first usage and evidence-first
   usage in the same session.
+
+## Implementation Evidence
+
+- `shipyard/ui/src/ShipyardWorkbench.tsx`: the normal desktop workbench now
+  uses a focus/support grid so the composer plus `Chat`/`Live view` stay in the
+  primary column while local preview moves to a support column.
+
+  ```tsx
+  <div className="workbench-operator-grid">
+    <div className="workbench-focus-column">
+      <ComposerPanel ... />
+      <div className="workbench-primary-shell">...</div>
+    </div>
+    <div className="workbench-support-column">
+      <PreviewPanel preview={props.previewState} />
+    </div>
+  </div>
+  ```
+
+- `shipyard/ui/src/components.css`: the target summary card is compacted so the
+  project description does not crowd the chat surface in normal view.
+
+  ```css
+  .target-header-description {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 2;
+  }
+  ```
+
+- `shipyard/ui/src/panels/panels.css` and `shipyard/ui/src/styles.css`: the
+  center workspace keeps a bounded desktop height while the preview frame is
+  shortened in the support column so both surfaces remain visible together.
+
+  ```css
+  .workbench-primary-shell {
+    min-height: clamp(24rem, calc(100vh - 17rem), 44rem);
+  }
+
+  .workbench-support-column .preview-frame-shell {
+    height: clamp(15rem, 34vh, 22rem);
+  }
+  ```
+
+- `shipyard/tests/ui-workbench.test.ts`: the render test now asserts the new
+  layout scaffold and keeps `Latest conversation` ahead of `Local preview` in
+  the rendered workbench markup.
+
+  ```ts
+  expect(markup.indexOf("Latest conversation")).toBeLessThan(
+    markup.indexOf("Local preview"),
+  );
+  ```
