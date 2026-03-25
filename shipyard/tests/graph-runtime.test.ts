@@ -228,9 +228,19 @@ describe("Phase 4 graph runtime contract", () => {
       ],
     };
     const runExplorerSubagent = vi.fn(async () => contextReport);
+    const runPlannerSubagent = vi.fn(async () => ({
+      instruction: "Fix the auth flow",
+      goal: "Repair the auth flow without widening scope.",
+      deliverables: ["Update the auth entry point."],
+      acceptanceCriteria: ["Authentication succeeds for valid credentials."],
+      verificationIntent: ["Run the auth-focused tests."],
+      targetFilePaths: ["src/auth.ts"],
+      risks: ["Regression risk in authentication state handling."],
+    }));
     const nodes = createAgentRuntimeNodes({
       dependencies: {
         runExplorerSubagent,
+        runPlannerSubagent,
       },
     });
     const state = createAgentGraphState({
@@ -247,22 +257,32 @@ describe("Phase 4 graph runtime contract", () => {
       | undefined;
 
     expect(runExplorerSubagent).toHaveBeenCalledTimes(1);
+    expect(runPlannerSubagent).toHaveBeenCalledTimes(1);
     expect(explorerCall?.[0]).toContain("Fix the auth flow");
     expect(explorerCall?.[1]).toBe("/tmp/shipyard-graph");
     expect(update.contextReport).toEqual(contextReport);
+    expect(update.executionSpec).toEqual(
+      expect.objectContaining({
+        goal: "Repair the auth flow without widening scope.",
+        targetFilePaths: ["src/auth.ts"],
+      }),
+    );
     expect(update.taskPlan).toEqual(
       expect.objectContaining({
         targetFilePaths: ["src/auth.ts"],
       }),
     );
+    expect(update.planningMode).toBe("planner");
     expect(update.status).toBe("acting");
   });
 
-  it("plan node skips explorer when the instruction already names an exact path", async () => {
+  it("plan node skips explorer and planner when the instruction already names an exact path", async () => {
     const runExplorerSubagent = vi.fn();
+    const runPlannerSubagent = vi.fn();
     const nodes = createAgentRuntimeNodes({
       dependencies: {
         runExplorerSubagent,
+        runPlannerSubagent,
       },
     });
     const state = createAgentGraphState({
@@ -276,12 +296,20 @@ describe("Phase 4 graph runtime contract", () => {
     const update = await nodes.plan(state);
 
     expect(runExplorerSubagent).not.toHaveBeenCalled();
+    expect(runPlannerSubagent).not.toHaveBeenCalled();
     expect(update.contextReport).toBeNull();
+    expect(update.executionSpec).toEqual(
+      expect.objectContaining({
+        instruction: "Update src/app.ts to rename the counter export.",
+        targetFilePaths: ["src/app.ts"],
+      }),
+    );
     expect(update.taskPlan).toEqual(
       expect.objectContaining({
         targetFilePaths: ["src/app.ts"],
       }),
     );
+    expect(update.planningMode).toBe("lightweight");
   });
 
   it("plan node converts explorer cancellation into a cancelled update", async () => {
@@ -393,8 +421,11 @@ describe("Phase 4 graph runtime contract", () => {
 
   it("verify node delegates post-edit checks to the verifier helper", async () => {
     const runVerifierSubagent = vi.fn(
-      async (command: string) => ({
-        command,
+      async (input: string | {
+        summary: string;
+        checks: Array<{ command: string }>;
+      }) => ({
+        command: typeof input === "string" ? input : input.checks[0]?.command ?? "",
         exitCode: 0,
         passed: true,
         stdout: "",
@@ -422,7 +453,18 @@ describe("Phase 4 graph runtime contract", () => {
       | undefined;
 
     expect(runVerifierSubagent).toHaveBeenCalledTimes(1);
-    expect(verifierCall?.[0]).toBe("pnpm test");
+    expect(verifierCall?.[0]).toEqual({
+      summary: "Run the verification command.",
+      checks: [
+        {
+          id: "check-1",
+          label: "Run pnpm test",
+          kind: "command",
+          command: "pnpm test",
+          required: true,
+        },
+      ],
+    });
     expect(verifierCall?.[1]).toBe("/tmp/shipyard-graph");
     expect(update.verificationReport).toEqual({
       command: "pnpm test",
@@ -565,8 +607,11 @@ describe("Phase 4 graph runtime contract", () => {
       didEdit: true,
       lastEditedFile: "src/app.ts",
     }));
-    const runVerifierSubagent = vi.fn(async (command: string) => ({
-      command,
+    const runVerifierSubagent = vi.fn(async (input: string | {
+      summary: string;
+      checks: Array<{ command: string }>;
+    }) => ({
+      command: typeof input === "string" ? input : input.checks[0]?.command ?? "",
       exitCode: 1,
       passed: false,
       stdout: "",
@@ -589,6 +634,15 @@ describe("Phase 4 graph runtime contract", () => {
         maxRecoveriesPerFile: 1,
         dependencies: {
           runExplorerSubagent,
+          runPlannerSubagent: async () => ({
+            instruction: "Fix the auth flow",
+            goal: "Repair the auth flow without widening scope.",
+            deliverables: ["Inspect the suspected auth surface."],
+            acceptanceCriteria: ["The auth flow matches the request."],
+            verificationIntent: ["Run the auth-focused tests."],
+            targetFilePaths: ["src/guessed.ts"],
+            risks: ["Explorer may have guessed the wrong file."],
+          }),
           runActingLoop,
           runVerifierSubagent,
           createCheckpointManager: () => checkpointManager,
@@ -675,6 +729,15 @@ describe("Phase 4 graph runtime contract", () => {
     }), {
       dependencies: {
         runExplorerSubagent,
+        runPlannerSubagent: async () => ({
+          instruction: "Fix the auth flow",
+          goal: "Repair the auth flow without widening scope.",
+          deliverables: ["Update the auth entry point."],
+          acceptanceCriteria: ["Authentication succeeds for valid credentials."],
+          verificationIntent: ["Run the auth-focused tests."],
+          targetFilePaths: ["src/auth.ts"],
+          risks: ["Regression risk in authentication state handling."],
+        }),
         runActingLoop: async () => ({
           finalText: "Inspection complete without edits.",
           messageHistory: [],
@@ -696,11 +759,72 @@ describe("Phase 4 graph runtime contract", () => {
     );
   });
 
-  it("records loaded handoff resume metadata when tracing is enabled", async () => {
+  it("marks graph trace metadata as using the planner for broad instructions", async () => {
     const trace = {
       projectName: "shipyard",
       runId: "graph-run-789",
       traceUrl: "https://smith.langchain.com/runs/graph-run-789",
+      projectUrl: "https://smith.langchain.com/projects/shipyard",
+    } satisfies LangSmithTraceReference;
+    const contextEnvelope = createContextEnvelope();
+
+    contextEnvelope.task.currentInstruction = "Fix the auth flow";
+    contextEnvelope.task.targetFilePaths = [];
+
+    mockLangSmithTrace(trace);
+
+    const finalState = await runAgentRuntime(createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Fix the auth flow",
+      contextEnvelope,
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+    }), {
+      dependencies: {
+        runExplorerSubagent: async () => ({
+          query: "Fix the auth flow",
+          findings: [
+            {
+              filePath: "src/auth.ts",
+              excerpt: "export async function authenticate() {}",
+              relevanceNote: "Auth entry point.",
+            },
+          ],
+        }),
+        runPlannerSubagent: async () => ({
+          instruction: "Fix the auth flow",
+          goal: "Repair the auth flow without widening scope.",
+          deliverables: ["Update the auth entry point."],
+          acceptanceCriteria: ["Authentication succeeds for valid credentials."],
+          verificationIntent: ["Run the auth-focused tests."],
+          targetFilePaths: ["src/auth.ts"],
+          risks: ["Regression risk in authentication state handling."],
+        }),
+        runActingLoop: async () => ({
+          finalText: "Inspection complete without edits.",
+          messageHistory: [],
+          iterations: 1,
+          didEdit: false,
+          lastEditedFile: null,
+        }),
+      },
+    });
+
+    expect(finalState.status).toBe("done");
+    expect(langsmith.runWithLangSmithTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          usedPlanner: true,
+        }),
+      }),
+    );
+  });
+
+  it("records loaded handoff resume metadata when tracing is enabled", async () => {
+    const trace = {
+      projectName: "shipyard",
+      runId: "graph-run-790",
+      traceUrl: "https://smith.langchain.com/runs/graph-run-790",
       projectUrl: "https://smith.langchain.com/projects/shipyard",
     } satisfies LangSmithTraceReference;
     const contextEnvelope = createContextEnvelope();
@@ -754,9 +878,9 @@ describe("Phase 4 graph runtime contract", () => {
 
     mockLangSmithTrace(trace);
 
-    await runAgentRuntime(createAgentGraphState({
+    const finalState = await runAgentRuntime(createAgentGraphState({
       sessionId: "session-123",
-      instruction: "Continue the dashboard shell work.",
+      instruction: "Continue src/app.ts",
       contextEnvelope,
       targetDirectory: "/tmp/shipyard-graph",
       phaseConfig: createCodePhase(),
@@ -772,6 +896,7 @@ describe("Phase 4 graph runtime contract", () => {
       },
     });
 
+    expect(finalState.status).toBe("done");
     expect(langsmith.runWithLangSmithTrace).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({

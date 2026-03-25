@@ -3,6 +3,10 @@ import readline from "node:readline";
 import { saveSessionState, switchTarget, type SessionState } from "./state.js";
 import type { InstructionRuntimeState } from "./turn.js";
 import {
+  hasAutomaticTargetEnrichmentCapability,
+  planAutomaticEnrichment,
+} from "./target-enrichment.js";
+import {
   createTargetTool,
   enrichTargetTool,
   SCAFFOLD_TYPES,
@@ -19,6 +23,11 @@ export interface HandleTargetCommandOptions {
 
 export interface HandleTargetCommandResult {
   nextState?: SessionState;
+}
+
+interface TargetEnrichmentExecutionOptions {
+  trigger: "automatic" | "manual";
+  userDescription?: string;
 }
 
 function writeLine(
@@ -136,6 +145,7 @@ async function handleTargetSwitch(
 
   const nextState = await switchTarget(options.state, selectedTarget.path);
   writeLine(options, `Switched to ${selectedTarget.name}.`);
+  await maybeAutoEnrichTarget(options, nextState);
   return {
     nextState,
   };
@@ -171,9 +181,94 @@ async function handleTargetCreate(
   });
   const nextState = await switchTarget(options.state, createdTarget.path);
   writeLine(options, `Created and selected ${name}.`);
+  await maybeAutoEnrichTarget(options, nextState, {
+    creationDescription: description,
+  });
   return {
     nextState,
   };
+}
+
+async function runTargetEnrichment(
+  options: HandleTargetCommandOptions,
+  state: SessionState,
+  execution: TargetEnrichmentExecutionOptions,
+): Promise<void> {
+  writeLine(
+    options,
+    execution.trigger === "automatic"
+      ? "Starting automatic target enrichment."
+      : "Starting manual target enrichment.",
+  );
+
+  const targetProfile = await enrichTargetTool(
+    {
+      targetPath: state.targetDirectory,
+      userDescription: execution.userDescription,
+    },
+    {
+      invokeModel: options.runtimeState.targetEnrichmentInvoker,
+      onProgress(event) {
+        writeLine(options, event.message);
+      },
+    },
+  );
+  state.targetProfile = targetProfile;
+  await saveSessionState(state);
+  writeLine(options, `Enriched target: ${targetProfile.description}`);
+}
+
+export async function maybeAutoEnrichTarget(
+  options: HandleTargetCommandOptions,
+  state: SessionState,
+  context: {
+    creationDescription?: string;
+  } = {},
+): Promise<void> {
+  if (!hasSelectedCodeTarget(state)) {
+    return;
+  }
+
+  if (
+    !hasAutomaticTargetEnrichmentCapability(
+      options.runtimeState.targetEnrichmentInvoker,
+    )
+  ) {
+    return;
+  }
+
+  const plan = planAutomaticEnrichment({
+    discovery: state.discovery,
+    targetProfile: state.targetProfile,
+    creationDescription: context.creationDescription,
+  });
+
+  if (plan.kind === "skip-existing-profile") {
+    return;
+  }
+
+  if (plan.kind === "needs-description") {
+    const userDescription = await prompt(
+      options.rl,
+      "Describe this greenfield target: ",
+    );
+
+    if (!userDescription) {
+      writeLine(options, plan.message);
+      return;
+    }
+
+    await runTargetEnrichment(options, state, {
+      trigger: "automatic",
+      userDescription,
+    });
+    return;
+  }
+
+  await runTargetEnrichment(options, state, {
+    trigger: "automatic",
+    userDescription: plan.userDescription,
+  });
 }
 
 async function handleTargetEnrich(
@@ -197,21 +292,10 @@ async function handleTargetEnrich(
     );
   }
 
-  const targetProfile = await enrichTargetTool(
-    {
-      targetPath: options.state.targetDirectory,
-      userDescription,
-    },
-    {
-      invokeModel: options.runtimeState.targetEnrichmentInvoker,
-      onProgress(event) {
-        writeLine(options, event.message);
-      },
-    },
-  );
-  options.state.targetProfile = targetProfile;
-  await saveSessionState(options.state);
-  writeLine(options, `Enriched target: ${targetProfile.description}`);
+  await runTargetEnrichment(options, options.state, {
+    trigger: "manual",
+    userDescription,
+  });
 }
 
 async function handleTargetProfile(

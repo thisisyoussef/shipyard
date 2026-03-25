@@ -24,6 +24,15 @@ Capture failures so they are not repeated.
 - **Why it failed**: Current context becomes noisy and harder to trust.
 - **Prevention rule**: Move only durable truths into project memory and keep session notes concise.
 
+- **Problem**: Sending every instruction through the heavy planner path
+- **Example**: Running planner mode for target-manager actions, greenfield
+  bootstrap turns, or exact-path inspection/edit requests.
+- **Why it failed**: It adds avoidable model hops, complicates cancellation
+  flows, and makes narrow tasks more brittle without improving the result.
+- **Prevention rule**: Reserve planner mode for broad non-trivial code-phase
+  work, and keep lightweight execution as the default for narrow or non-code
+  turns.
+
 - **Problem**: Stuffing raw spec bodies into rolling summaries or ad hoc prompt prose
 - **Example**: Copying long `feature-spec.md` contents into `rollingSummary` or relying on manual paste-only context for spec-driven stories
 - **Why it failed**: Prompt state becomes noisy, unstable, and hard for later plan/task flows to reference reliably.
@@ -33,3 +42,13 @@ Capture failures so they are not repeated.
 - **Example**: Carrying recovery-heavy turn state in free-form summary lines instead of persisting a typed handoff artifact under `.shipyard/artifacts/`
 - **Why it failed**: Resume behavior becomes lossy, hard to validate, and nearly impossible to inspect in traces when something goes wrong.
 - **Prevention rule**: Persist typed handoff artifacts, keep only the active artifact path in session state, and inject structured handoff context on resume.
+
+- **Problem**: Routing Claude into later UI phases without preserving the Codex skill chain
+- **Example**: Turning on a Claude bridge for UI implementation or QA but dropping the exact `typeset`/`colorize`/`arrange` or `critique`/`audit` skill contracts from the prompt
+- **Why it failed**: Provider swaps changed the actual design process instead of only changing who executed it.
+- **Prevention rule**: Any Claude UI phase bridge must carry the exact same phase skill chain Codex uses, and later-phase Claude routing must stay behind `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES`.
+
+- **Problem**: Adding a second greenfield scaffolder outside the shared target-manager catalog
+- **Example**: Creating a new bootstrap toolchain that writes its own boilerplate templates instead of reusing `scaffolds.ts`
+- **Why it failed**: Template drift appears immediately between target creation and empty-target bootstrap, and prompt guidance stops matching the actual generator.
+- **Prevention rule**: Extend the shared scaffold catalog once and route both `create_target` and `bootstrap_target` through the same materialization helper.

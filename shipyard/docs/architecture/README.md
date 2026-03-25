@@ -110,8 +110,10 @@ flowchart TD
   runtime, coordinator routing, fallback raw loop, per-turn cancellation,
   session persistence, and threshold-based handoff emission/resume.
 - `src/agents/` holds the coordinator-only write boundary plus isolated helper
-  runtimes such as the explorer and verifier helpers plus the coordinator's
-  path-detection and verification-command heuristics.
+  runtimes such as the explorer, planner, and verifier helpers plus the
+  coordinator's path-detection, planning, and verification-command heuristics.
+- `src/artifacts/` holds the typed runtime contracts, including the lightweight
+  `TaskPlan` plus the richer planner-facing `ExecutionSpec`.
 - `src/tools/` exposes the bounded file/search/command primitives available to
   the code phase.
 - `src/checkpoints/` snapshots files before `edit_block` writes so recovery can

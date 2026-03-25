@@ -25,6 +25,7 @@ The current runtime now has two operator modes:
 - chat-first browser workbench with a Lovable-style transcript view for multi-turn iteration
 - stepwise live-run playback that shows tool progress, sequential edits, before/after previews, and trace links while the run is still in flight
 - target discovery for existing or greenfield repositories
+- shared scaffold presets for new targets plus one-shot bootstrap of already-selected empty targets
 - a shared instruction executor used by both terminal and browser mode
 - active-turn interruption via `Ctrl+C` in the terminal REPL and `Cancel turn`
   in the browser workbench

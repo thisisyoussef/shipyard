@@ -33,6 +33,8 @@ function createTurnResult(
       targetFilePaths: [],
       plannedSteps: [],
     },
+    executionSpec: null,
+    planningMode: "lightweight",
     contextEnvelope: {
       stable: {
         discovery: {

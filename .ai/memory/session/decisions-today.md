@@ -9,7 +9,11 @@
 - 2026-03-24: Disabled Vitest file-level parallelism by default because the CLI and local-runtime integration suites are deterministic in-band but flaky when the repo test gate runs files concurrently.
 - 2026-03-24: Made the design-phase default Claude-first via `scripts/generate-design-brief.mjs`, with Codex fallback only when Claude is unavailable or errors.
 - 2026-03-24: Added Refero-aware UI brainstorming so the Claude design bridge researches real-product references before drafting design briefs when Refero is configured.
+- 2026-03-25: Added the Phase 7 `ExecutionSpec` planner contract as a read-only helper agent, with lightweight fallback specs for exact-path, greenfield, and target-manager turns so planner overhead stays opt-in.
 - 2026-03-25: Landed `P8-S01` with a dedicated read-only `load_spec` tool instead of overloading `read_file`, so later Phase 8 planning stories can reference stable `spec:` identifiers.
 - 2026-03-25: Kept `load_spec` target-relative for its first landing because the repo has no existing configurable contract for workspace-outside-target spec roots.
 - 2026-03-25: Landed `P7-S04` by persisting typed `ExecutionHandoff` artifacts under `.shipyard/artifacts/<sessionId>/`, recording only `activeHandoffPath` in session state, and injecting `latestHandoff` back into the context envelope on resumed turns.
 - 2026-03-25: Kept the first handoff payload anchored to the shipped `TaskPlan` plus latest verification outcome so long-run reset routing can ship on `main` without depending on the stale `P7-S01` planner branch.
+- 2026-03-25: Expanded the design bridge context so Claude reads `.ai/agents/claude.md` and `.claude/CLAUDE.md` and follows the same imperative design skill chain Codex uses.
+- 2026-03-25: Added `scripts/run-ui-phase-bridge.mjs` plus the `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES` flag so UI implementation, QA, critic, and final polish can use Claude first without changing the phase skill contracts.
+- 2026-03-25: Added a shared `ts-pnpm-workspace` scaffold preset plus `bootstrap_target`, so both target creation and already-selected empty targets reuse the same greenfield generator instead of repeated `write_file` boilerplate.

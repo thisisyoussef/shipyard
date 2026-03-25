@@ -36,12 +36,40 @@ Record durable workspace decisions here.
 
 - **ADR-ID**: ADR-0004
 - **Date**: 2026-03-25
+- **Context**: Broad Shipyard instructions need more structure than the
+  lightweight `TaskPlan`, but the runtime still needs to stay fast for
+  exact-path and other narrow work.
+- **Decision**: Add a read-only planner helper that emits a typed
+  `ExecutionSpec` for broad code-phase instructions, while keeping a lightweight
+  fallback spec for trivial, greenfield, and target-manager paths.
+- **Alternatives Considered**: Keep stretching `TaskPlan`; make planner mode the
+  default for every instruction.
+- **Consequences**: Planner output becomes reusable by later evaluation and plan
+  mode stories, and route metadata must clearly distinguish planner-backed vs
+  lightweight runs.
+
+- **ADR-ID**: ADR-0005
+- **Date**: 2026-03-25
 - **Context**: Phase 8 needs spec-driven planning without depending on pasted context or overloading generic file reads.
 - **Decision**: Add a dedicated read-only `load_spec` tool that returns named, bounded spec documents instead of folding raw spec loading into `read_file` or `rollingSummary`.
 - **Alternatives Considered**: Reuse `read_file` alone; tell operators to keep pasting briefs manually.
 - **Consequences**: Spec-driven stories can reuse stable `spec:` refs and bounded tool output, while later plan/task stories can build on that contract without inventing another spec-loading path.
 
-- **ADR-ID**: ADR-0005
+- **ADR-ID**: ADR-0006
+- **Date**: 2026-03-25
+- **Context**: The harness already used a Claude-first bridge for design briefs, but later UI implementation and QA phases had no equivalent scripted delegate and no reversible switch for trying Claude there.
+- **Decision**: Add a flag-gated `scripts/run-ui-phase-bridge.mjs` entrypoint for UI implementation, QA, critic, and final polish. The flag only changes provider routing; the phase prompts must preserve the exact Codex skill chain for each phase.
+- **Alternatives Considered**: Keep later phases manual only; make all later UI phases Claude-first unconditionally; define a separate Claude-only skill chain.
+- **Consequences**: The repo can trial Claude in later UI phases without changing the workflow contract, and turning the flag off returns those scripted bridges to a Codex-first path.
+
+- **ADR-ID**: ADR-0007
+- **Date**: 2026-03-25
+- **Context**: Shipyard needed richer greenfield bootstrap without duplicating scaffold logic between target creation and code-phase empty-target setup.
+- **Decision**: Keep the scaffold catalog in `shipyard/src/tools/target-manager/scaffolds.ts` as the single source of truth, and route both `create_target` and `bootstrap_target` through one shared materialization helper.
+- **Alternatives Considered**: Add a second project-scaffolder tool; keep relying on repeated `write_file` calls for boilerplate.
+- **Consequences**: New presets must be added once and reused across both flows, and code-phase guidance should prefer the shared bootstrap tool for standard workspace starters.
+
+- **ADR-ID**: ADR-0008
 - **Date**: 2026-03-25
 - **Context**: Long-running or recovery-heavy turns need more durable resume state than an eight-line rolling summary, but the richer planner artifact is not yet merged on `main`.
 - **Decision**: Persist typed `ExecutionHandoff` artifacts under `shipyard/.shipyard/artifacts/<sessionId>/` and keep only the active artifact path in session state, with the first landing anchored to the current `TaskPlan` plus latest verification outcome.

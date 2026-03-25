@@ -11,7 +11,10 @@ import {
 import {
   applySessionSwitchToRuntime,
 } from "./runtime-context.js";
-import { handleTargetCommand } from "./target-command.js";
+import {
+  handleTargetCommand,
+  maybeAutoEnrichTarget,
+} from "./target-command.js";
 import { loadProjectRules } from "../context/envelope.js";
 import {
   getCodePhaseToolDefinitions,
@@ -414,8 +417,10 @@ export async function runShipyardLoop(
             instruction: line,
             phase: turnResult.phaseName,
             runtimeMode: turnResult.runtimeMode,
+            planningMode: turnResult.planningMode,
             contextEnvelope: turnResult.contextEnvelope,
             taskPlan: turnResult.taskPlan,
+            executionSpec: turnResult.executionSpec,
             status: turnResult.status,
             summary: turnResult.summary,
             langSmithTrace: turnResult.langSmithTrace,
@@ -425,6 +430,14 @@ export async function runShipyardLoop(
           if (turnResult.selectedTargetPath) {
             const nextState = await switchTarget(state, turnResult.selectedTargetPath);
             await applySwitchedSessionState(nextState, "tool:select_target");
+            await maybeAutoEnrichTarget(
+              {
+                rl,
+                state,
+                runtimeState,
+              },
+              state,
+            );
             printDivider();
             console.log(
               `Target selected. Shipyard switched to ${state.targetDirectory} and entered phase "${state.activePhase}".`,

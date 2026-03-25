@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { SCAFFOLD_TYPES } from "../tools/target-manager/scaffolds.js";
+
 export const runtimeModeSchema = z.enum(["repl", "ui"]);
 export const uiConnectionStateSchema = z.enum([
   "disconnected",
@@ -50,15 +52,10 @@ const previewStatusSchema = z.enum([
   "exited",
   "unavailable",
 ]);
-const scaffoldTypeSchema = z.enum([
-  "react-ts",
-  "express-ts",
-  "python",
-  "go",
-  "empty",
-]);
+const scaffoldTypeSchema = z.enum(SCAFFOLD_TYPES);
 const enrichmentStatusSchema = z.enum([
   "idle",
+  "queued",
   "started",
   "in-progress",
   "complete",
@@ -358,7 +355,7 @@ export const targetSwitchCompleteMessageSchema = z.object({
 
 export const targetEnrichmentProgressMessageSchema = z.object({
   type: z.literal("target:enrichment_progress"),
-  status: z.enum(["started", "in-progress", "complete", "error"]),
+  status: enrichmentStatusSchema,
   message: z.string(),
 });
 

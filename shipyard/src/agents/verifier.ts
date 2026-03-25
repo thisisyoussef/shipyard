@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-import type { VerificationReport } from "../artifacts/types.js";
+import type {
+  EvaluationCheck,
+  EvaluationPlan,
+  VerificationCheckResult,
+  VerificationHardFailure,
+  VerificationReport,
+} from "../artifacts/types.js";
 import {
   runRawToolLoopDetailed,
   type RawLoopLogger,
@@ -10,6 +16,7 @@ import {
 import { createTurnCancelledError } from "../engine/cancellation.js";
 
 export const VERIFIER_TOOL_NAMES = ["run_command"] as const;
+const MAX_EVALUATION_CHECKS = 5;
 
 const verificationReportSchema = z.object({
   command: z.string().trim().min(1),
@@ -18,6 +25,40 @@ const verificationReportSchema = z.object({
   stdout: z.string(),
   stderr: z.string(),
   summary: z.string().trim().min(1),
+});
+
+const evaluationCheckSchema = z.object({
+  id: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  kind: z.literal("command"),
+  command: z.string().trim().min(1),
+  required: z.boolean(),
+});
+
+const evaluationPlanSchema = z.object({
+  summary: z.string().trim().min(1),
+  checks: z.array(evaluationCheckSchema).min(1).max(MAX_EVALUATION_CHECKS),
+}).superRefine((plan, context) => {
+  if (!plan.checks.some((check) => check.required)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Evaluation plan must include at least one required check.",
+    });
+  }
+
+  const seenIds = new Set<string>();
+
+  for (const check of plan.checks) {
+    if (seenIds.has(check.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Evaluation check ids must be unique. Duplicate id: ${check.id}`,
+      });
+      continue;
+    }
+
+    seenIds.add(check.id);
+  }
 });
 
 const verifierToolNameSet = new Set<string>(VERIFIER_TOOL_NAMES);
@@ -72,6 +113,44 @@ function ensureNonBlankCommand(command: string): string {
   }
 
   return trimmed;
+}
+
+export function createSingleCommandEvaluationPlan(
+  command: string,
+): EvaluationPlan {
+  const normalizedCommand = ensureNonBlankCommand(command);
+
+  return {
+    summary: "Run the verification command.",
+    checks: [
+      {
+        id: "check-1",
+        label: `Run ${normalizedCommand}`,
+        kind: "command",
+        command: normalizedCommand,
+        required: true,
+      },
+    ],
+  };
+}
+
+export function normalizeEvaluationPlan(
+  input: string | EvaluationPlan,
+): EvaluationPlan {
+  if (typeof input === "string") {
+    return createSingleCommandEvaluationPlan(input);
+  }
+
+  const validated = evaluationPlanSchema.safeParse(input);
+
+  if (!validated.success) {
+    throw new Error("Verifier evaluation plan is invalid.");
+  }
+
+  return {
+    summary: validated.data.summary,
+    checks: validated.data.checks.map((check) => ({ ...check })),
+  };
 }
 
 function isVerifierToolName(toolName: string): boolean {
@@ -214,6 +293,54 @@ function throwIfUnauthorizedToolWasRequested(
 }
 
 export async function runVerifierSubagent(
+  input: string | EvaluationPlan,
+  targetDirectory: string,
+  options: VerifierRunOptions = {},
+): Promise<VerificationReport> {
+  const evaluationPlan = normalizeEvaluationPlan(input);
+  const checks: VerificationCheckResult[] = [];
+  let firstHardFailure: VerificationHardFailure | null = null;
+
+  for (const check of evaluationPlan.checks) {
+    if (firstHardFailure) {
+      checks.push(createSkippedCheckResult(check, firstHardFailure.label));
+      continue;
+    }
+
+    const report = await runSingleVerificationCommand(
+      check.command,
+      targetDirectory,
+      options,
+    );
+    const result = toEvaluationCheckResult(check, report);
+
+    checks.push(result);
+
+    if (check.required && result.status === "failed") {
+      firstHardFailure = {
+        checkId: result.checkId,
+        label: result.label,
+        command: result.command,
+      };
+    }
+  }
+
+  const anchorResult = selectPrimaryCheckResult(checks, firstHardFailure);
+
+  return {
+    command: anchorResult?.command ?? evaluationPlan.checks[0]?.command ?? "",
+    exitCode: anchorResult?.exitCode ?? null,
+    passed: firstHardFailure === null,
+    stdout: anchorResult?.stdout ?? "",
+    stderr: anchorResult?.stderr ?? "",
+    summary: createEvaluationSummary(evaluationPlan, checks, firstHardFailure),
+    evaluationPlan,
+    checks,
+    firstHardFailure,
+  };
+}
+
+async function runSingleVerificationCommand(
   command: string,
   targetDirectory: string,
   options: VerifierRunOptions = {},
@@ -239,6 +366,93 @@ export async function runVerifierSubagent(
   throwIfUnauthorizedToolWasRequested(result.toolExecutions);
 
   return parseVerificationReport(result.finalText, normalizedCommand);
+}
+
+function toEvaluationCheckResult(
+  check: EvaluationCheck,
+  report: VerificationReport,
+): VerificationCheckResult {
+  return {
+    checkId: check.id,
+    label: check.label,
+    kind: check.kind,
+    command: check.command,
+    required: check.required,
+    status: report.passed ? "passed" : "failed",
+    exitCode: report.exitCode,
+    stdout: report.stdout,
+    stderr: report.stderr,
+    summary: report.summary,
+  };
+}
+
+function createSkippedCheckResult(
+  check: EvaluationCheck,
+  blockingLabel: string,
+): VerificationCheckResult {
+  return {
+    checkId: check.id,
+    label: check.label,
+    kind: check.kind,
+    command: check.command,
+    required: check.required,
+    status: "skipped",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    summary: `Skipped after required check "${blockingLabel}" failed.`,
+  };
+}
+
+function selectPrimaryCheckResult(
+  checks: VerificationCheckResult[],
+  firstHardFailure: VerificationHardFailure | null,
+): VerificationCheckResult | null {
+  if (firstHardFailure) {
+    return checks.find((check) => check.checkId === firstHardFailure.checkId)
+      ?? null;
+  }
+
+  const passedRequiredChecks = checks.filter((check) =>
+    check.required && check.status === "passed"
+  );
+
+  if (passedRequiredChecks.length > 0) {
+    return passedRequiredChecks.at(-1) ?? null;
+  }
+
+  return checks.find((check) => check.status !== "skipped") ?? null;
+}
+
+function createEvaluationSummary(
+  evaluationPlan: EvaluationPlan,
+  checks: VerificationCheckResult[],
+  firstHardFailure: VerificationHardFailure | null,
+): string {
+  if (checks.length === 1 && checks[0]?.status !== "skipped") {
+    return checks[0]?.summary ?? "Verification completed.";
+  }
+
+  if (firstHardFailure) {
+    const failedCheck = checks.find((check) =>
+      check.checkId === firstHardFailure.checkId
+    );
+
+    return failedCheck
+      ? `Required check "${firstHardFailure.label}" failed: ${failedCheck.summary}`
+      : `Required check "${firstHardFailure.label}" failed.`;
+  }
+
+  const failedOptionalChecks = checks.filter((check) =>
+    !check.required && check.status === "failed"
+  );
+
+  if (failedOptionalChecks.length > 0) {
+    const labels = failedOptionalChecks.map((check) => check.label).join(", ");
+    return `Required checks passed; optional checks failed: ${labels}.`;
+  }
+
+  return `All ${String(evaluationPlan.checks.length)} evaluation checks passed.`;
 }
 
 export const verifierAgent = {

@@ -179,10 +179,12 @@ more context.
 ## Multi-Agent Design (MVP)
 
 The shipped runtime still uses a single writing coordinator, and the graph
-runtime now routes broad discovery requests through the explorer helper and
-post-edit checks through the verifier helper. `src/agents/coordinator.ts` owns
-the task plan, every write, the delegation heuristics, and the final merge of
-evidence. `src/agents/explorer.ts` defines the read-only discovery role, and
+runtime now routes broad discovery requests through the explorer helper, broad
+non-trivial planning requests through the planner helper, and post-edit checks
+through the verifier helper. `src/agents/coordinator.ts` owns the task plan,
+every write, the delegation heuristics, and the final merge of evidence.
+`src/agents/explorer.ts` defines the read-only discovery role,
+`src/agents/planner.ts` emits the typed `ExecutionSpec` artifact, and
 `src/agents/verifier.ts` exposes the isolated verification helper runtime.
 
 ```mermaid
@@ -190,8 +192,10 @@ flowchart LR
   Operator["Operator instruction"]
   Coordinator["Coordinator"]
   Explorer["Explorer subagent"]
+  Planner["Planner subagent"]
   Verifier["Verifier subagent"]
   ContextReport["ContextReport"]
+  ExecutionSpec["ExecutionSpec"]
   VerificationReport["VerificationReport"]
   Tools["Typed tools"]
   Target["Target repository"]
@@ -200,6 +204,9 @@ flowchart LR
   Coordinator -->|broad discovery request| Explorer
   Explorer -->|read-only findings| ContextReport
   ContextReport --> Coordinator
+  Coordinator -->|broad planning request| Planner
+  Planner -->|typed planning artifact| ExecutionSpec
+  ExecutionSpec --> Coordinator
   Coordinator -->|writes and planning| Tools
   Tools --> Target
   Coordinator -->|post-edit checks| Verifier
@@ -213,8 +220,13 @@ flowchart LR
   and remains the phase-6 design rule.
 - Broad instructions without known target paths can trigger the explorer, while
   exact-path or greenfield instructions can skip that extra hop.
+- Broad non-trivial code-phase instructions can also trigger the planner, while
+  exact-path, target-manager, and clearly lightweight requests stay on the
+  existing lightweight path.
 - The explorer starts from fresh history, uses only `read_file`, `list_files`,
   and `search_files`, and returns a `ContextReport`.
+- The planner starts from fresh history, uses only `read_file`, `list_files`,
+  and `search_files`, and returns an `ExecutionSpec`.
 - The verifier starts from fresh history, uses only `run_command`, and
   returns a `VerificationReport`.
 - The coordinator decides when to spawn those helpers, how much of their output
@@ -224,6 +236,7 @@ flowchart LR
 
 - Communication is report-based, not chat-history-based.
 - Explorer output is shaped as `ContextFinding[]` inside a `ContextReport`.
+- Planner output is shaped as a typed `ExecutionSpec`.
 - Verifier output is shaped as a typed `VerificationReport`.
 - The coordinator summarizes those reports into its own planning state instead
   of copying raw logs or raw search hits wholesale.
@@ -233,6 +246,8 @@ flowchart LR
 The phase-6 plan keeps merge authority centralized:
 
 - discovery evidence narrows file selection and plan steps
+- planning evidence makes goals, deliverables, acceptance criteria, and risks
+  explicit before edits
 - verification evidence decides whether edits are accepted, recovered, or
   blocked
 - if exploration and verification disagree, verification wins because it is

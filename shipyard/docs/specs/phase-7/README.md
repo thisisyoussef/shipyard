@@ -52,10 +52,102 @@
 
 ## Implementation Evidence
 
-### Code References
+### P7-S01
+
+#### Code References
+
+- `shipyard/src/artifacts/types.ts`: adds the shared `ExecutionSpec` and
+  `PlanningMode` contracts that later Phase 7 stories can reuse.
+- `shipyard/src/agents/planner.ts` and `shipyard/src/agents/coordinator.ts`:
+  add the read-only planner helper, schema validation, lightweight fallback
+  specs, and planner opt-in heuristics.
+- `shipyard/src/engine/graph.ts`, `shipyard/src/engine/turn.ts`,
+  `shipyard/src/engine/loop.ts`, and `shipyard/src/ui/server.ts`: carry
+  planner artifacts through the runtime and attach planner metadata to local and
+  LangSmith trace surfaces.
+- `shipyard/tests/planner-subagent.test.ts`, `shipyard/tests/graph-runtime.test.ts`,
+  `shipyard/tests/turn-runtime.test.ts`, `shipyard/tests/loop-runtime.test.ts`,
+  and `shipyard/tests/ui-runtime.test.ts`: verify planner isolation, graph
+  routing, lightweight-path preservation, and cancellation/follow-up behavior.
+
+#### Representative Snippets
+
+```ts
+export interface ExecutionSpec {
+  instruction: string;
+  goal: string;
+  deliverables: string[];
+  acceptanceCriteria: string[];
+  verificationIntent: string[];
+  targetFilePaths: string[];
+  risks: string[];
+}
+```
+
+```ts
+usedPlanner: shouldCoordinatorUsePlanner({
+  instruction: state.currentInstruction,
+  contextEnvelope: state.contextEnvelope,
+  taskPlan: state.taskPlan,
+  executionSpec: state.executionSpec,
+  contextReport: state.contextReport,
+}),
+```
+
+### P7-S02
+
+#### Code References
+
+- `shipyard/src/artifacts/types.ts`: adds `EvaluationPlan`,
+  `VerificationCheckResult`, `VerificationHardFailure`, and the richer
+  `VerificationReport` fields used by the multi-check verifier.
+- `shipyard/src/agents/verifier.ts`: validates evaluation plans, normalizes
+  legacy single-command input into a one-check plan, executes ordered
+  command-backed checks, and reports the first required hard failure.
+- `shipyard/src/agents/coordinator.ts` and `shipyard/src/engine/graph.ts`:
+  derive the default verification plan from context plus
+  `ExecutionSpec.verificationIntent` and route the verify node through the new
+  contract.
+- `shipyard/tests/verifier-subagent.test.ts` and
+  `shipyard/tests/graph-runtime.test.ts`: verify plan validation,
+  backward-compatible single-check normalization, ordered results,
+  required-check fail-fast behavior, optional-check handling, and graph
+  integration.
+
+#### Representative Snippets
+
+```ts
+export interface VerificationCheckResult {
+  checkId: string;
+  label: string;
+  kind: "command";
+  command: string;
+  required: boolean;
+  status: VerificationCheckStatus;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  summary: string;
+}
+```
+
+```ts
+return runVerifierSubagent(
+  createVerificationPlan({
+    contextEnvelope: state.contextEnvelope,
+    executionSpec: state.executionSpec,
+  }),
+  state.targetDirectory,
+  await createSubagentLoopOptions(state, dependencies, signal),
+);
+```
+
+### P7-S04
+
+#### Code References
 
 - `shipyard/src/artifacts/types.ts` and `shipyard/src/artifacts/handoff.ts`:
-  `P7-S04` adds the typed `ExecutionHandoff` contract, threshold evaluation,
+  add the typed `ExecutionHandoff` contract, threshold evaluation,
   malformed-artifact rejection, and target-local save/load helpers under
   `.shipyard/artifacts/<sessionId>/`.
 - `shipyard/src/engine/state.ts`, `shipyard/src/context/envelope.ts`, and
@@ -75,29 +167,25 @@
   `shipyard/tests/loop-runtime.test.ts`: cover persistence, threshold gating,
   malformed fallback, prompt injection, and observability.
 
-### Representative Snippets
+#### Representative Snippets
 
-- `P7-S04` threshold-gated reset routing:
+```ts
+if (options.actingIterations >= thresholds.actingIterations) {
+  return {
+    shouldPersist: true,
+    kind: "iteration-threshold",
+    summary:
+      `Shipyard used ${String(options.actingIterations)} acting ${label}, so the next turn should resume from a persisted handoff instead of continuing the same long-running loop.`,
+    thresholds,
+    metrics,
+  };
+}
+```
 
-  ```ts
-  if (options.actingIterations >= thresholds.actingIterations) {
-    return {
-      shouldPersist: true,
-      kind: "iteration-threshold",
-      summary:
-        `Shipyard used ${String(options.actingIterations)} acting ${label}, so the next turn should resume from a persisted handoff instead of continuing the same long-running loop.`,
-      thresholds,
-      metrics,
-    };
-  }
-  ```
+```ts
+await writeFile(tempPath, `${JSON.stringify(handoff, null, 2)}\n`, "utf8");
+await rename(tempPath, absolutePath);
+```
 
-- `P7-S04` atomic handoff persistence:
-
-  ```ts
-  await writeFile(tempPath, `${JSON.stringify(handoff, null, 2)}\n`, "utf8");
-  await rename(tempPath, absolutePath);
-  ```
-
-- Remaining stories `P7-S01`, `P7-S02`, `P7-S03`, and `P7-S05`: implementation
-  evidence is still pending on `main`.
+- Remaining stories `P7-S03` and `P7-S05`: implementation evidence is still
+  pending on `main`.

@@ -3,7 +3,7 @@
 - Pack: Target Manager
 - Estimate: 5-7 hours
 - Date: 2026-03-24
-- Status: Planned
+- Status: Implemented
 
 ## Pack Objectives
 
@@ -52,8 +52,69 @@
 
 ### Code References
 
-- N/A. This landing updates the target-manager planning pack only and adds a new follow-on story folder for future implementation.
+- [`../../../src/tools/target-manager/create-target.ts`](../../../src/tools/target-manager/create-target.ts),
+  [`../../../src/tools/target-manager/list-targets.ts`](../../../src/tools/target-manager/list-targets.ts),
+  [`../../../src/tools/target-manager/select-target.ts`](../../../src/tools/target-manager/select-target.ts),
+  [`../../../src/tools/target-manager/enrich-target.ts`](../../../src/tools/target-manager/enrich-target.ts),
+  and [`../../../src/tools/target-manager/profile-io.ts`](../../../src/tools/target-manager/profile-io.ts):
+  implement the target-manager tool surface, lightweight scaffold presets, and
+  persisted `TargetProfile` storage under `.shipyard/profile.json`.
+- [`../../../src/bin/shipyard.ts`](../../../src/bin/shipyard.ts),
+  [`../../../src/engine/state.ts`](../../../src/engine/state.ts),
+  [`../../../src/engine/target-command.ts`](../../../src/engine/target-command.ts),
+  [`../../../src/engine/loop.ts`](../../../src/engine/loop.ts), and
+  [`../../../src/engine/target-enrichment.ts`](../../../src/engine/target-enrichment.ts):
+  make `--target` optional, preserve target-bound sessions, add CLI target
+  switching, and automatically enrich unprofiled targets when context exists.
+- [`../../../src/ui/contracts.ts`](../../../src/ui/contracts.ts),
+  [`../../../src/ui/server.ts`](../../../src/ui/server.ts),
+  [`../../../src/ui/target-manager.ts`](../../../src/ui/target-manager.ts), and
+  [`../../../src/ui/workbench-state.ts`](../../../src/ui/workbench-state.ts):
+  ship the browser target manager state, create/switch events, recovery on
+  reload, passive background enrichment, and stale-run protection.
+- [`../../../ui/src/TargetHeader.tsx`](../../../ui/src/TargetHeader.tsx),
+  [`../../../ui/src/TargetSwitcher.tsx`](../../../ui/src/TargetSwitcher.tsx),
+  [`../../../ui/src/TargetCreationDialog.tsx`](../../../ui/src/TargetCreationDialog.tsx),
+  [`../../../ui/src/EnrichmentIndicator.tsx`](../../../ui/src/EnrichmentIndicator.tsx),
+  and [`../../../ui/src/ShipyardWorkbench.tsx`](../../../ui/src/ShipyardWorkbench.tsx):
+  surface the active target, switcher, creation dialog, and passive enrichment
+  status on the current split-pane workbench UI.
+- [`../../../tests/target-manager.test.ts`](../../../tests/target-manager.test.ts),
+  [`../../../tests/target-auto-enrichment.test.ts`](../../../tests/target-auto-enrichment.test.ts),
+  [`../../../tests/ui-runtime.test.ts`](../../../tests/ui-runtime.test.ts), and
+  [`../../../tests/ui-workbench.test.ts`](../../../tests/ui-workbench.test.ts):
+  cover the tool contracts, CLI/browser switching, background auto-enrichment,
+  reload recovery, and no-button UI expectations.
 
 ### Representative Snippets
 
-- N/A. No runtime or UI implementation landed as part of this docs-only planning pass.
+```ts
+if (options.targetPath) {
+  resolvedTargetPath = options.targetPath;
+  discovery = await discoverTarget(resolvedTargetPath);
+  targetProfile = await loadTargetProfile(resolvedTargetPath);
+} else {
+  resolvedTargetPath = resolvedTargetsDirectory;
+  discovery = createTargetManagerDiscovery(resolvedTargetsDirectory);
+}
+```
+
+```ts
+const plan = planAutomaticEnrichment({
+  discovery: sessionState.discovery,
+  targetProfile: sessionState.targetProfile,
+  creationDescription: options.creationDescription,
+});
+
+if (plan.kind === "skip-existing-profile") {
+  return;
+}
+```
+
+```tsx
+<TargetHeader
+  activePhase={activePhase}
+  targetManager={props.targetManager}
+  onOpenSwitcher={() => setTargetSwitcherOpen(true)}
+/>
+```

@@ -2,7 +2,7 @@
 
 **Last Updated**: 2026-03-25
 **Current Phase**: Day 1 foundation
-**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, with Phase 7 long-run handoff and Phase 8 spec-loading now established on `main`
+**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, richer runtime artifacts, and the spec-driven operator workflow
 **Project Status**: Active
 **Canonical App Directory**: `shipyard/`
 **Canonical Harness Directory**: `.ai/`
@@ -13,7 +13,7 @@
 
 ### Active Task
 
-- **Title**: Continue the next Phase 7 or Phase 8 story from the shipped spec-loading and handoff foundation
+- **Title**: Land drafted runtime workflow increments without breaking the lightweight path or the helper-harness split
 - **Status**: Ready for the next story
 - **Owner**: Codex
 
@@ -21,7 +21,7 @@
 
 1. Keep the harness aligned with the actual repo shape: `.ai/` beside `shipyard/`.
 2. Continue building the persistent CLI loop, typed tools, and tracing inside `shipyard/`.
-3. Build the next Phase 7 or Phase 8 story on the shipped `load_spec` and durable handoff foundation instead of reintroducing ad hoc prompt memory.
+3. Advance the drafted Phase 7 and Phase 8 packs incrementally on the shipped planner, handoff, and spec-loading foundations while keeping tests, docs, and runtime artifacts in sync.
 
 ---
 
@@ -41,6 +41,8 @@
 - **Finalization docs sweep**: before merging, update relevant docs/architecture diagrams (or explicitly record `N/A`)
 - **Relevant traced-story finish gate**: use the LangSmith CLI to review recent traces, runs, and insights before merge, and fix unexpected behavior first
 - **Helper-script status**: some imported workflow docs describe optional repo-owned helpers under `scripts/`; unless those helpers exist in this repo, follow the manual workflow equivalent instead of assuming the commands are wired today.
+- **UI bridge flag**: `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES=1` makes `scripts/run-ui-phase-bridge.mjs` use Claude first for UI implementation, QA, critic, and final polish while preserving a Codex-first fallback when the flag is off.
+- **Greenfield bootstrap baseline**: shared scaffold presets now back both target creation and empty-target bootstrap in code phase; do not add a second scaffolding path when extending greenfield setup.
 
 ---
 

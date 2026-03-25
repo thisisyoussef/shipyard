@@ -32,6 +32,10 @@ import {
   switchTarget,
   type SessionState,
 } from "../engine/state.js";
+import {
+  hasAutomaticTargetEnrichmentCapability,
+  planAutomaticEnrichment,
+} from "../engine/target-enrichment.js";
 import { applySessionSwitchToRuntime } from "../engine/runtime-context.js";
 import { createPreviewSupervisor } from "../preview/supervisor.js";
 import { shouldUseStarterCanvasForScratchTarget } from "../preview/contracts.js";
@@ -56,6 +60,8 @@ import { createLocalTraceLogger } from "../tracing/local-log.js";
 import { buildTargetManagerState, IDLE_TARGET_ENRICHMENT_STATE } from "./target-manager.js";
 import { createTargetTool } from "../tools/target-manager/create-target.js";
 import { enrichTargetTool } from "../tools/target-manager/enrich-target.js";
+
+const CLOSE_ENRICHMENT_DRAIN_TIMEOUT_MS = 100;
 
 export interface StartUiRuntimeServerOptions {
   sessionState: SessionState;
@@ -343,7 +349,7 @@ function createFallbackUiHtml(sessionState: SessionState): string {
   "cancel": { "requestId": "string?" },
   "status": {},
   "target:switch_request": { "targetPath": "string" },
-  "target:create_request": { "name": "string", "description": "string", "scaffoldType": "empty|react-ts|express-ts|python|go?" },
+  "target:create_request": { "name": "string", "description": "string", "scaffoldType": "ts-pnpm-workspace|empty|react-ts|express-ts|python|go?" },
   "target:enrich_request": { "userDescription": "string?" }
 }</pre>
         </div>
@@ -568,6 +574,15 @@ export async function startUiRuntimeServer(
   let activeInstruction: Promise<void> | null = null;
   let activeInstructionController: AbortController | null = null;
   let previewStarted = false;
+  let isClosing = false;
+  let enrichmentRunSequence = 0;
+  let activeEnrichmentRun:
+    | {
+        runId: number;
+        targetPath: string;
+      }
+    | null = null;
+  const pendingEnrichmentTasks = new Set<Promise<void>>();
   const closed = new Promise<void>((resolve) => {
     httpServer.once("close", () => {
       resolve();
@@ -725,7 +740,7 @@ export async function startUiRuntimeServer(
   };
 
   const broadcastEnrichmentProgress = async (
-    status: "started" | "in-progress" | "complete" | "error",
+    status: "queued" | "started" | "in-progress" | "complete" | "error",
     message: string,
   ): Promise<void> => {
     await broadcastBrowserMessage({
@@ -734,6 +749,202 @@ export async function startUiRuntimeServer(
       message,
     });
     await saveSessionState(sessionState);
+  };
+
+  const logTargetEnrichment = async (
+    event: {
+      targetPath: string;
+      trigger: "automatic" | "manual";
+      status: string;
+      message: string;
+      reason: string;
+    },
+  ): Promise<void> => {
+    await traceLogger.log("target.enrichment", {
+      sessionId: sessionState.sessionId,
+      targetDirectory: event.targetPath,
+      trigger: event.trigger,
+      status: event.status,
+      message: event.message,
+      reason: event.reason,
+      runtimeMode: "ui",
+    });
+  };
+
+  const isStaleEnrichmentRun = (
+    runId: number,
+    targetPath: string,
+  ): boolean =>
+    isClosing ||
+    activeEnrichmentRun?.runId !== runId ||
+    activeEnrichmentRun.targetPath !== targetPath ||
+    sessionState.activePhase !== "code" ||
+    sessionState.targetDirectory !== targetPath;
+
+  const runBrowserTargetEnrichment = async (
+    options: {
+      targetPath: string;
+      trigger: "automatic" | "manual";
+      userDescription?: string;
+      reason: string;
+    },
+  ): Promise<void> => {
+    const runId = ++enrichmentRunSequence;
+    activeEnrichmentRun = {
+      runId,
+      targetPath: options.targetPath,
+    };
+
+    try {
+      const profile = await enrichTargetTool(
+        {
+          targetPath: options.targetPath,
+          userDescription: options.userDescription,
+        },
+        {
+          invokeModel: runtimeState.targetEnrichmentInvoker,
+          shouldCancel: () => isStaleEnrichmentRun(runId, options.targetPath),
+          async onProgress(event) {
+            if (isStaleEnrichmentRun(runId, options.targetPath)) {
+              return;
+            }
+
+            await broadcastEnrichmentProgress(event.status, event.message);
+          },
+        },
+      );
+
+      if (isStaleEnrichmentRun(runId, options.targetPath)) {
+        return;
+      }
+
+      sessionState.targetProfile = profile;
+      await broadcastTargetState({
+        status: "complete",
+        message: "Target profile saved.",
+      });
+      await broadcastSessionState();
+      await logTargetEnrichment({
+        targetPath: options.targetPath,
+        trigger: options.trigger,
+        status: "complete",
+        message: "Target profile saved.",
+        reason: options.reason,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : "Target enrichment failed.";
+
+      if (isStaleEnrichmentRun(runId, options.targetPath)) {
+        return;
+      }
+
+      await broadcastTargetState({
+        status: "error",
+        message: errorMessage,
+      });
+      await broadcastSessionState();
+      await logTargetEnrichment({
+        targetPath: options.targetPath,
+        trigger: options.trigger,
+        status: "error",
+        message: errorMessage,
+        reason: options.reason,
+      });
+    } finally {
+      if (activeEnrichmentRun?.runId === runId) {
+        activeEnrichmentRun = null;
+      }
+    }
+  };
+
+  const startBrowserTargetEnrichment = (
+    options: Parameters<typeof runBrowserTargetEnrichment>[0],
+  ): void => {
+    const task = runBrowserTargetEnrichment(options);
+    pendingEnrichmentTasks.add(task);
+    void task.finally(() => {
+      pendingEnrichmentTasks.delete(task);
+    });
+  };
+
+  const maybeAutoEnrichBrowserTarget = async (
+    options: {
+      creationDescription?: string;
+      reason: string;
+    },
+  ): Promise<void> => {
+    if (sessionState.activePhase !== "code") {
+      return;
+    }
+
+    const targetPath = sessionState.targetDirectory;
+
+    if (activeEnrichmentRun?.targetPath === targetPath) {
+      return;
+    }
+
+    const plan = planAutomaticEnrichment({
+      discovery: sessionState.discovery,
+      targetProfile: sessionState.targetProfile,
+      creationDescription: options.creationDescription,
+    });
+
+    if (plan.kind === "skip-existing-profile") {
+      return;
+    }
+
+    if (
+      !hasAutomaticTargetEnrichmentCapability(
+        runtimeState.targetEnrichmentInvoker,
+      )
+    ) {
+      await broadcastTargetState({
+        status: "idle",
+        message:
+          "Automatic analysis is unavailable until target enrichment is configured.",
+      });
+      await logTargetEnrichment({
+        targetPath,
+        trigger: "automatic",
+        status: "skipped",
+        message:
+          "Automatic analysis is unavailable until target enrichment is configured.",
+        reason: options.reason,
+      });
+      return;
+    }
+
+    if (plan.kind === "needs-description") {
+      await broadcastTargetState({
+        status: "idle",
+        message: plan.message,
+      });
+      await logTargetEnrichment({
+        targetPath,
+        trigger: "automatic",
+        status: "needs-context",
+        message: plan.message,
+        reason: options.reason,
+      });
+      return;
+    }
+
+    await broadcastEnrichmentProgress("queued", plan.queuedMessage);
+    await logTargetEnrichment({
+      targetPath,
+      trigger: "automatic",
+      status: "queued",
+      message: plan.queuedMessage,
+      reason: options.reason,
+    });
+    startBrowserTargetEnrichment({
+      targetPath,
+      trigger: "automatic",
+      userDescription: plan.userDescription,
+      reason: options.reason,
+    });
   };
 
   const restartPreviewSupervisor = async (
@@ -753,6 +964,7 @@ export async function startUiRuntimeServer(
   const applySwitchedSessionState = async (
     nextState: SessionState,
     reason: string,
+    enrichmentState: TargetEnrichmentState = IDLE_TARGET_ENRICHMENT_STATE,
   ): Promise<TargetManagerState> => {
     Object.assign(sessionState, nextState);
     await applySessionSwitchToRuntime(sessionState, runtimeState);
@@ -769,7 +981,7 @@ export async function startUiRuntimeServer(
       runtimeMode: "ui",
     });
     await restartPreviewSupervisor({ silent: true });
-    return syncTargetManagerState();
+    return syncTargetManagerState(enrichmentState);
   };
 
   const runBrowserInstruction = async (
@@ -838,8 +1050,10 @@ export async function startUiRuntimeServer(
       instruction,
       phase: turnResult.phaseName,
       runtimeMode: turnResult.runtimeMode,
+      planningMode: turnResult.planningMode,
       contextEnvelope: turnResult.contextEnvelope,
       taskPlan: turnResult.taskPlan,
+      executionSpec: turnResult.executionSpec,
       status: turnResult.status,
       summary: turnResult.summary,
       langSmithTrace: turnResult.langSmithTrace,
@@ -853,6 +1067,7 @@ export async function startUiRuntimeServer(
       const nextTargetManagerState = await applySwitchedSessionState(
         nextState,
         "tool:select_target",
+        IDLE_TARGET_ENRICHMENT_STATE,
       );
       await broadcastTargetSwitchComplete(
         true,
@@ -860,6 +1075,10 @@ export async function startUiRuntimeServer(
         nextTargetManagerState,
       );
       await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
+      await maybeAutoEnrichBrowserTarget({
+        reason: "tool:select_target",
+      });
+      await broadcastSessionState();
     }
 
     if (pendingTurnState) {
@@ -872,6 +1091,12 @@ export async function startUiRuntimeServer(
     void (async () => {
       await sendSessionState(socket);
       await sendTargetState(socket);
+
+      if (sockets.size === 1) {
+        await maybeAutoEnrichBrowserTarget({
+          reason: "browser:initial-sync",
+        });
+      }
     })();
 
     if (!previewStarted) {
@@ -955,6 +1180,7 @@ export async function startUiRuntimeServer(
             const nextTargetManagerState = await applySwitchedSessionState(
               resumedSession,
               `browser:resume:${message.sessionId}`,
+              IDLE_TARGET_ENRICHMENT_STATE,
             );
             await traceLogger.log("session.resume", {
               sessionId: sessionState.sessionId,
@@ -965,6 +1191,9 @@ export async function startUiRuntimeServer(
             });
             await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
             await broadcastSessionState();
+            await maybeAutoEnrichBrowserTarget({
+              reason: `browser:resume:${message.sessionId}`,
+            });
             break;
           }
           case "target:switch_request": {
@@ -986,6 +1215,7 @@ export async function startUiRuntimeServer(
               const nextTargetManagerState = await applySwitchedSessionState(
                 nextState,
                 `browser:switch:${message.targetPath}`,
+                IDLE_TARGET_ENRICHMENT_STATE,
               );
               await broadcastTargetSwitchComplete(
                 true,
@@ -994,6 +1224,9 @@ export async function startUiRuntimeServer(
               );
               await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
               await broadcastSessionState();
+              await maybeAutoEnrichBrowserTarget({
+                reason: `browser:switch:${message.targetPath}`,
+              });
             } catch (error) {
               const errorMessage = error instanceof Error
                 ? error.message
@@ -1032,6 +1265,7 @@ export async function startUiRuntimeServer(
               const nextTargetManagerState = await applySwitchedSessionState(
                 nextState,
                 `browser:create:${createdTarget.path}`,
+                IDLE_TARGET_ENRICHMENT_STATE,
               );
               await broadcastTargetSwitchComplete(
                 true,
@@ -1040,6 +1274,10 @@ export async function startUiRuntimeServer(
               );
               await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
               await broadcastSessionState();
+              await maybeAutoEnrichBrowserTarget({
+                creationDescription: message.description,
+                reason: `browser:create:${createdTarget.path}`,
+              });
             } catch (error) {
               const errorMessage = error instanceof Error
                 ? error.message
@@ -1075,27 +1313,19 @@ export async function startUiRuntimeServer(
             }
 
             try {
-              const profile = await enrichTargetTool(
-                {
-                  targetPath: sessionState.targetDirectory,
-                  userDescription: message.userDescription,
-                },
-                {
-                  invokeModel: runtimeState.targetEnrichmentInvoker,
-                  async onProgress(event) {
-                    await broadcastEnrichmentProgress(
-                      event.status,
-                      event.message,
-                    );
-                  },
-                },
-              );
-              sessionState.targetProfile = profile;
-              await broadcastTargetState({
-                status: "complete",
-                message: "Target profile saved.",
+              await logTargetEnrichment({
+                targetPath: sessionState.targetDirectory,
+                trigger: "manual",
+                status: "queued",
+                message: "Manual target analysis requested.",
+                reason: "browser:manual-request",
               });
-              await broadcastSessionState();
+              startBrowserTargetEnrichment({
+                targetPath: sessionState.targetDirectory,
+                trigger: "manual",
+                userDescription: message.userDescription,
+                reason: "browser:manual-request",
+              });
             } catch (error) {
               const errorMessage = error instanceof Error
                 ? error.message
@@ -1180,6 +1410,18 @@ export async function startUiRuntimeServer(
     workspaceDirectory,
     portResolution,
     async close(): Promise<void> {
+      isClosing = true;
+      activeEnrichmentRun = null;
+
+      if (pendingEnrichmentTasks.size > 0) {
+        await Promise.race([
+          Promise.allSettled([...pendingEnrichmentTasks]),
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, CLOSE_ENRICHMENT_DRAIN_TIMEOUT_MS);
+          }),
+        ]);
+      }
+
       if (activeInstructionController !== null) {
         abortTurn(activeInstructionController);
       }

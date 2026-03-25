@@ -228,7 +228,11 @@ function createTargetManagerAgentStatus(
 
   const { currentTarget, enrichmentStatus } = targetManager;
 
-  if (enrichmentStatus.status === "started" || enrichmentStatus.status === "in-progress") {
+  if (
+    enrichmentStatus.status === "queued" ||
+    enrichmentStatus.status === "started" ||
+    enrichmentStatus.status === "in-progress"
+  ) {
     return enrichmentStatus.message ?? `Enriching ${currentTarget.name}...`;
   }
 

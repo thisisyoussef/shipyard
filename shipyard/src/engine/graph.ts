@@ -12,19 +12,30 @@ import {
 } from "../checkpoints/manager.js";
 import type {
   ContextReport,
+  EvaluationPlan,
+  ExecutionSpec,
+  PlanningMode,
   TaskPlan,
+  TargetProfile,
   VerificationReport,
 } from "../artifacts/types.js";
 import {
   createCoordinatorTaskPlan,
+  createLightweightExecutionSpec,
   createExplorerQuery,
-  createVerificationCommand,
+  createVerificationPlan,
   shouldCoordinatorUseExplorer,
+  shouldCoordinatorUsePlanner,
 } from "../agents/coordinator.js";
 import {
   runExplorerSubagent as executeExplorerSubagent,
   type ExplorerRunOptions,
 } from "../agents/explorer.js";
+import {
+  runPlannerSubagent as executePlannerSubagent,
+  type PlannerInput,
+  type PlannerRunOptions,
+} from "../agents/planner.js";
 import {
   runVerifierSubagent as executeVerifierSubagent,
   type VerifierRunOptions,
@@ -66,6 +77,7 @@ export interface AgentGraphState {
   messageHistory: MessageParam[];
   currentInstruction: string;
   contextEnvelope: ContextEnvelope;
+  targetProfile: TargetProfile | null;
   targetDirectory: string;
   phaseConfig: Phase;
   fileHashes: FileHashMap;
@@ -75,6 +87,8 @@ export interface AgentGraphState {
   status: AgentRuntimeStatus;
   finalResult: string | null;
   taskPlan: TaskPlan | null;
+  executionSpec: ExecutionSpec | null;
+  planningMode: PlanningMode;
   contextReport: ContextReport | null;
   verificationReport: VerificationReport | null;
   actingIterations: number;
@@ -87,6 +101,7 @@ export interface CreateAgentGraphStateOptions {
   sessionId?: string;
   instruction: string;
   contextEnvelope: ContextEnvelope;
+  targetProfile?: TargetProfile | null;
   targetDirectory: string;
   phaseConfig: Phase;
   messageHistory?: MessageParam[];
@@ -97,6 +112,8 @@ export interface CreateAgentGraphStateOptions {
   status?: AgentRuntimeStatus;
   finalResult?: string | null;
   taskPlan?: TaskPlan | null;
+  executionSpec?: ExecutionSpec | null;
+  planningMode?: PlanningMode;
   contextReport?: ContextReport | null;
   verificationReport?: VerificationReport | null;
   actingIterations?: number;
@@ -127,8 +144,13 @@ export interface AgentRuntimeDependencies {
     targetDirectory: string,
     options?: ExplorerRunOptions,
   ) => ContextReport | Promise<ContextReport>;
+  runPlannerSubagent?: (
+    input: PlannerInput,
+    targetDirectory: string,
+    options?: PlannerRunOptions,
+  ) => ExecutionSpec | Promise<ExecutionSpec>;
   runVerifierSubagent?: (
-    command: string,
+    input: string | EvaluationPlan,
     targetDirectory: string,
     options?: VerifierRunOptions,
   ) => VerificationReport | Promise<VerificationReport>;
@@ -159,6 +181,7 @@ const AgentGraphStateAnnotation = Annotation.Root({
   messageHistory: Annotation<MessageParam[]>(),
   currentInstruction: Annotation<string>(),
   contextEnvelope: Annotation<ContextEnvelope>(),
+  targetProfile: Annotation<TargetProfile | null>(),
   targetDirectory: Annotation<string>(),
   phaseConfig: Annotation<Phase>(),
   fileHashes: Annotation<FileHashMap>(),
@@ -168,6 +191,8 @@ const AgentGraphStateAnnotation = Annotation.Root({
   status: Annotation<AgentRuntimeStatus>(),
   finalResult: Annotation<string | null>(),
   taskPlan: Annotation<TaskPlan | null>(),
+  executionSpec: Annotation<ExecutionSpec | null>(),
+  planningMode: Annotation<PlanningMode>(),
   contextReport: Annotation<ContextReport | null>(),
   verificationReport: Annotation<VerificationReport | null>(),
   actingIterations: Annotation<number>(),
@@ -261,7 +286,11 @@ async function checkpointBeforeEdit(
 function createDefaultVerificationReport(
   state: AgentGraphState,
 ): VerificationReport {
-  const command = createVerificationCommand(state.contextEnvelope);
+  const evaluationPlan = createVerificationPlan({
+    contextEnvelope: state.contextEnvelope,
+    executionSpec: state.executionSpec,
+  });
+  const command = evaluationPlan.checks[0]?.command ?? "";
 
   if (!state.lastEditedFile) {
     return {
@@ -271,6 +300,9 @@ function createDefaultVerificationReport(
       stdout: "",
       stderr: "No edited file available for verification.",
       summary: "Verification failed because no edited file was recorded.",
+      evaluationPlan,
+      checks: [],
+      firstHardFailure: null,
     };
   }
 
@@ -281,6 +313,9 @@ function createDefaultVerificationReport(
     stdout: "",
     stderr: "",
     summary: `Verification placeholder passed for ${state.lastEditedFile}.`,
+    evaluationPlan,
+    checks: [],
+    firstHardFailure: null,
   };
 }
 
@@ -294,6 +329,7 @@ async function maybeExploreContext(
       instruction: state.currentInstruction,
       contextEnvelope: state.contextEnvelope,
       taskPlan: state.taskPlan,
+      executionSpec: state.executionSpec,
       contextReport: state.contextReport,
     })
   ) {
@@ -310,14 +346,87 @@ async function maybeExploreContext(
   );
 }
 
+async function maybePlanExecutionSpec(
+  state: AgentGraphState,
+  contextReport: ContextReport | null,
+  dependencies: AgentRuntimeDependencies,
+  signal?: AbortSignal,
+): Promise<{
+  executionSpec: ExecutionSpec;
+  planningMode: PlanningMode;
+}> {
+  if (state.executionSpec) {
+    return {
+      executionSpec: state.executionSpec,
+      planningMode: state.planningMode,
+    };
+  }
+
+  if (
+    state.phaseConfig.name !== "code"
+    || state.contextEnvelope.stable.discovery.isGreenfield
+  ) {
+    return {
+      executionSpec: createLightweightExecutionSpec({
+        instruction: state.currentInstruction,
+        contextEnvelope: state.contextEnvelope,
+        taskPlan: state.taskPlan,
+        executionSpec: state.executionSpec,
+        contextReport,
+      }),
+      planningMode: "lightweight",
+    };
+  }
+
+  if (
+    !shouldCoordinatorUsePlanner({
+      instruction: state.currentInstruction,
+      contextEnvelope: state.contextEnvelope,
+      taskPlan: state.taskPlan,
+      executionSpec: state.executionSpec,
+      contextReport,
+    })
+  ) {
+    return {
+      executionSpec: createLightweightExecutionSpec({
+        instruction: state.currentInstruction,
+        contextEnvelope: state.contextEnvelope,
+        taskPlan: state.taskPlan,
+        executionSpec: state.executionSpec,
+        contextReport,
+      }),
+      planningMode: "lightweight",
+    };
+  }
+
+  const runPlannerSubagent =
+    dependencies.runPlannerSubagent ?? executePlannerSubagent;
+
+  return {
+    executionSpec: await runPlannerSubagent(
+      {
+        instruction: state.currentInstruction,
+        discovery: state.contextEnvelope.stable.discovery,
+        targetProfile: state.targetProfile,
+        contextReport,
+      },
+      state.targetDirectory,
+      await createSubagentLoopOptions(state, dependencies, signal),
+    ),
+    planningMode: "planner",
+  };
+}
+
 function createDefaultTaskPlan(
   state: AgentGraphState,
+  executionSpec: ExecutionSpec,
   contextReport: ContextReport | null,
 ): TaskPlan {
   return createCoordinatorTaskPlan({
     instruction: state.currentInstruction,
     contextEnvelope: state.contextEnvelope,
     taskPlan: state.taskPlan,
+    executionSpec,
     contextReport,
   });
 }
@@ -335,7 +444,10 @@ async function defaultVerifyState(
     dependencies.runVerifierSubagent ?? executeVerifierSubagent;
 
   return runVerifierSubagent(
-    createVerificationCommand(state.contextEnvelope),
+    createVerificationPlan({
+      contextEnvelope: state.contextEnvelope,
+      executionSpec: state.executionSpec,
+    }),
     state.targetDirectory,
     await createSubagentLoopOptions(state, dependencies, signal),
   );
@@ -396,6 +508,7 @@ export function createAgentGraphState(
       "instruction",
     ),
     contextEnvelope: options.contextEnvelope,
+    targetProfile: options.targetProfile ?? null,
     targetDirectory: options.targetDirectory,
     phaseConfig: options.phaseConfig,
     fileHashes: { ...(options.fileHashes ?? {}) },
@@ -405,6 +518,8 @@ export function createAgentGraphState(
     status: options.status ?? "planning",
     finalResult: options.finalResult ?? null,
     taskPlan: options.taskPlan ?? null,
+    executionSpec: options.executionSpec ?? null,
+    planningMode: options.planningMode ?? "lightweight",
     contextReport: options.contextReport ?? null,
     verificationReport: options.verificationReport ?? null,
     actingIterations: options.actingIterations ?? 0,
@@ -430,6 +545,14 @@ function createRuntimeTraceMetadata(
       instruction: state.currentInstruction,
       contextEnvelope: state.contextEnvelope,
       taskPlan: state.taskPlan,
+      executionSpec: state.executionSpec,
+      contextReport: state.contextReport,
+    }),
+    usedPlanner: shouldCoordinatorUsePlanner({
+      instruction: state.currentInstruction,
+      contextEnvelope: state.contextEnvelope,
+      taskPlan: state.taskPlan,
+      executionSpec: state.executionSpec,
       contextReport: state.contextReport,
     }),
     handoffLoaded: latestHandoff !== null,
@@ -572,9 +695,31 @@ export function createAgentRuntimeNodes(
           return cancelledAfterExplore;
         }
 
+        const planningArtifacts = await maybePlanExecutionSpec(
+          state,
+          contextReport,
+          dependencies,
+          signal,
+        );
+        const cancelledAfterExecutionSpec = createCancellationUpdate(signal);
+
+        if (cancelledAfterExecutionSpec) {
+          return cancelledAfterExecutionSpec;
+        }
+
         const taskPlan = await (dependencies.createTaskPlan
-          ? dependencies.createTaskPlan(state, contextReport)
-          : createDefaultTaskPlan(state, contextReport));
+          ? dependencies.createTaskPlan(
+              applyStateUpdate(state, {
+                executionSpec: planningArtifacts.executionSpec,
+                planningMode: planningArtifacts.planningMode,
+              }),
+              contextReport,
+            )
+          : createDefaultTaskPlan(
+              state,
+              planningArtifacts.executionSpec,
+              contextReport,
+            ));
         const cancelledAfterPlan = createCancellationUpdate(signal);
 
         if (cancelledAfterPlan) {
@@ -583,6 +728,8 @@ export function createAgentRuntimeNodes(
 
         return {
           taskPlan,
+          executionSpec: planningArtifacts.executionSpec,
+          planningMode: planningArtifacts.planningMode,
           contextReport,
           status: "acting",
           lastError: null,

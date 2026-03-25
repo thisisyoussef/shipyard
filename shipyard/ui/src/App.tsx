@@ -444,21 +444,6 @@ export function App() {
     }
   }
 
-  function handleTargetEnrich(): void {
-    const sent = sendMessage({
-      type: "target:enrich_request",
-    });
-
-    if (!sent) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Enrichment unavailable",
-        detail:
-          "The browser runtime is disconnected. Reconnect before enriching the current target.",
-      });
-    }
-  }
-
   return (
     <ShipyardWorkbench
       sessionState={viewState.sessionState}
@@ -485,7 +470,6 @@ export function App() {
       onRequestSessionResume={handleSessionResume}
       onRequestTargetSwitch={handleTargetSwitch}
       onRequestTargetCreate={handleTargetCreate}
-      onRequestTargetEnrich={handleTargetEnrich}
       onRefreshStatus={() => sendMessage({ type: "status" })}
       onCopyTracePath={handleCopyTracePath}
       traceButtonLabel={traceButtonLabel}

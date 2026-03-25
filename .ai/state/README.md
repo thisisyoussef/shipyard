@@ -7,6 +7,7 @@ state.
 
 - `flight-board.json`: lightweight state snapshot for ongoing work
 - `tdd-handoff/README.md`: handoff support for TDD workflow coordination
+- `ui-phase-bridge/`: summary artifacts emitted by the scripted UI implementation, QA, critic, and polish bridges
 
 ## Boundary
 

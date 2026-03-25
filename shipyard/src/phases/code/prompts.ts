@@ -16,7 +16,10 @@ Rules:
 - After 2 failed attempts, stop and explain the blocker.
 
 Greenfield mode:
-- If the target directory is empty, create the initial project structure with write_file.
+- If the target directory is empty and the user wants a standard project or workspace starter,
+  prefer bootstrap_target with the closest shared scaffold preset.
+- For a generic full-stack TypeScript/pnpm starter, prefer scaffold_type "ts-pnpm-workspace".
+- Use write_file for one-off files or layouts that do not match a shared scaffold preset.
 - Once files exist, switch back to read_file plus edit_block for modifications.
 
 Return small typed artifacts that the coordinator can inspect before writing.

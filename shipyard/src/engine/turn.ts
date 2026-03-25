@@ -9,7 +9,10 @@ import {
   saveExecutionHandoff,
 } from "../artifacts/handoff.js";
 import type {
+  DiscoveryReport,
+  ExecutionSpec,
   LoadedExecutionHandoff,
+  PlanningMode,
   TargetProfile,
   TaskPlan,
 } from "../artifacts/types.js";
@@ -127,6 +130,8 @@ export interface InstructionTurnResult {
   phaseName: string;
   runtimeMode: InstructionRuntimeMode;
   taskPlan: TaskPlan;
+  executionSpec: ExecutionSpec | null;
+  planningMode: PlanningMode;
   contextEnvelope: ContextEnvelope;
   status: "success" | "error" | "cancelled";
   summary: string;
@@ -342,6 +347,49 @@ function isWriteFilePreviewData(value: unknown): value is WriteFilePreviewData {
   );
 }
 
+function isBootstrapTargetData(
+  value: unknown,
+): value is {
+  scaffoldType: string;
+  createdFiles: string[];
+  discovery: DiscoveryReport;
+} {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as {
+    scaffoldType?: unknown;
+    createdFiles?: unknown;
+    discovery?: unknown;
+  };
+  const discovery = candidate.discovery as {
+    isGreenfield?: unknown;
+    topLevelFiles?: unknown;
+  } | null;
+
+  return (
+    typeof candidate.scaffoldType === "string" &&
+    Array.isArray(candidate.createdFiles) &&
+    candidate.createdFiles.every((item) => typeof item === "string") &&
+    typeof discovery === "object" &&
+    discovery !== null &&
+    typeof discovery.isGreenfield === "boolean" &&
+    Array.isArray(discovery.topLevelFiles)
+  );
+}
+
+function createBootstrapPreview(createdFiles: string[]): string {
+  const previewLines = createdFiles.slice(0, 12);
+  const preview = previewLines.join("\n");
+
+  if (createdFiles.length > previewLines.length) {
+    return `${preview}\n...`;
+  }
+
+  return preview || "(no files)";
+}
+
 function createImmediateEditDiff(options: {
   path: string;
   beforePreview?: string | null;
@@ -402,6 +450,25 @@ function createImmediateEditEvent(
       beforePreview: null,
       afterPreview: resultData.afterPreview,
       addedLines: resultData.totalLines,
+      removedLines: 0,
+    };
+  }
+
+  if (toolName === "bootstrap_target" && isBootstrapTargetData(resultData)) {
+    const afterPreview = createBootstrapPreview(resultData.createdFiles);
+
+    return {
+      path: `bootstrap:${resultData.scaffoldType}`,
+      summary:
+        `Bootstrapped ${String(resultData.createdFiles.length)} files ` +
+        `with ${resultData.scaffoldType}`,
+      diff: createImmediateEditDiff({
+        path: `bootstrap:${resultData.scaffoldType}`,
+        afterPreview,
+      }),
+      beforePreview: null,
+      afterPreview,
+      addedLines: resultData.createdFiles.length,
       removedLines: 0,
     };
   }
@@ -587,6 +654,14 @@ function createRuntimeDependencies(
           ) {
             sessionState.targetProfile = context.result.data;
           }
+
+          if (
+            context.result.success &&
+            context.toolUse.name === "bootstrap_target" &&
+            isBootstrapTargetData(context.result.data)
+          ) {
+            sessionState.discovery = context.result.data.discovery;
+          }
         },
       };
     },
@@ -681,6 +756,7 @@ export async function executeInstructionTurn(
     sessionId: state.sessionId,
     instruction: options.instruction,
     contextEnvelope,
+    targetProfile: state.targetProfile ?? null,
     targetDirectory: state.targetDirectory,
     phaseConfig: {
       ...phase,
@@ -716,6 +792,8 @@ export async function executeInstructionTurn(
         "Verify the result after the edit.",
       ],
     };
+    const executionSpec = finalState.executionSpec ?? null;
+    const planningMode = finalState.planningMode;
     const finalText = finalState.finalResult
       ?? "Shipyard finished without a final response.";
     const finalStateStatus = finalState.status === "failed"
@@ -812,6 +890,8 @@ export async function executeInstructionTurn(
         phaseName: phase.name,
         runtimeMode: runtimeState.runtimeMode,
         taskPlan,
+        executionSpec,
+        planningMode,
         contextEnvelope,
         status: "cancelled",
         summary: cancellationReason,
@@ -846,6 +926,8 @@ export async function executeInstructionTurn(
         phaseName: phase.name,
         runtimeMode: runtimeState.runtimeMode,
         taskPlan,
+        executionSpec,
+        planningMode,
         contextEnvelope,
         status: "error",
         summary: errorMessage,
@@ -876,6 +958,8 @@ export async function executeInstructionTurn(
       phaseName: phase.name,
       runtimeMode: runtimeState.runtimeMode,
       taskPlan,
+      executionSpec,
+      planningMode,
       contextEnvelope,
       status: "success",
       summary,
@@ -923,6 +1007,8 @@ export async function executeInstructionTurn(
           targetFilePaths,
           plannedSteps: [],
         },
+        executionSpec: null,
+        planningMode: "lightweight",
         contextEnvelope,
         status: "cancelled",
         summary: cancellationReason,
@@ -972,6 +1058,8 @@ export async function executeInstructionTurn(
         targetFilePaths,
         plannedSteps: [],
       },
+      executionSpec: null,
+      planningMode: "lightweight",
       contextEnvelope,
       status: "error",
       summary: message,
