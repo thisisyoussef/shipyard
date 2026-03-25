@@ -26,6 +26,14 @@ export {
   type RunHistoryPanelProps,
 } from "./RunHistoryPanel.js";
 export {
+  PreviewPanel,
+  type PreviewPanelProps,
+} from "./PreviewPanel.js";
+export {
+  OutputPanel,
+  type OutputPanelProps,
+} from "./OutputPanel.js";
+export {
   SessionPanel,
   type SessionPanelProps,
 } from "./SessionPanel.js";

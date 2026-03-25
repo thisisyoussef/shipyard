@@ -12,6 +12,8 @@ import {
   ContextPanel,
   FilePanel,
   RunHistoryPanel,
+  PreviewPanel,
+  OutputPanel,
   SessionPanel,
 } from "./panels/index.js";
 import type { BadgeTone } from "./primitives.js";
@@ -189,6 +191,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         rightSidebar={
           <ShellSidebar collapsed={rightCollapsed} railItems={[]}>
             <FilePanel fileEvents={props.fileEvents} />
+            <OutputPanel turns={props.turns} />
           </ShellSidebar>
         }
         footer={
@@ -219,6 +222,8 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             agentBusy={props.connectionState === "agent-busy"}
             notice={props.composerNotice}
           />
+
+          <PreviewPanel preview={props.previewState} />
 
           <div className="workbench-main-activity">
             <ActivityFeed turns={props.turns} />

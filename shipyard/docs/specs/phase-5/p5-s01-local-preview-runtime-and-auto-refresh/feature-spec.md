@@ -97,3 +97,80 @@ keep the visible result fresh after edits land.
 - The workbench makes preview health and failure modes obvious.
 - Preview remains current after edits without repeated manual restarts when the
   target supports a local refresh path.
+
+## Code References
+
+- [`../../../../src/context/discovery.ts`](../../../../src/context/discovery.ts):
+  infers preview capability, captures the resolved command, and keeps
+  unsupported targets explicit instead of guessing.
+- [`../../../../src/ui/server.ts`](../../../../src/ui/server.ts): creates the
+  session-scoped preview supervisor, persists `preview:state`, and broadcasts
+  lifecycle updates to the browser workbench.
+- [`../../../../ui/src/ShipyardWorkbench.tsx`](../../../../ui/src/ShipyardWorkbench.tsx):
+  mounts the preview surface in the UIV3 main stack so it stays visible beside
+  composer and activity.
+- [`../../../../ui/src/panels/PreviewPanel.tsx`](../../../../ui/src/panels/PreviewPanel.tsx):
+  renders preview status, the direct navigation link, the inline iframe for
+  running previews, and explicit unavailable/error notes.
+- [`../../../../ui/src/panels/panels.css`](../../../../ui/src/panels/panels.css):
+  styles the preview card and direct-link treatment using the shared workbench
+  token system.
+- [`../../../../tests/ui-workbench.test.ts`](../../../../tests/ui-workbench.test.ts),
+  [`../../../../tests/ui-runtime.test.ts`](../../../../tests/ui-runtime.test.ts),
+  and [`../../../../tests/manual/phase5-local-preview-smoke.ts`](../../../../tests/manual/phase5-local-preview-smoke.ts):
+  cover the running/unavailable UI states, runtime preview streaming, and direct
+  URL loading during manual smoke verification.
+
+## Representative Snippets
+
+```ts
+if (
+  typeof scripts.dev === "string" &&
+  /\bvite(?:\s|$)/.test(scripts.dev) &&
+  "vite" in dependencies
+) {
+  const runner = resolvePreviewRunner(packageManager);
+
+  return {
+    status: "available",
+    kind: "dev-server",
+    runner,
+    scriptName: "dev",
+    command: formatPreviewCommand(runner, "dev"),
+    reason: "Detected a Vite dev script and dependency signal.",
+    autoRefresh: "native-hmr",
+  };
+}
+```
+
+```ts
+const createPreviewBridge = () =>
+  createPreviewSupervisor({
+    targetDirectory: sessionState.targetDirectory,
+    capability: sessionState.discovery.previewCapability,
+    async onState(previewState) {
+      sessionState.workbenchState = applyBackendMessage(
+        sessionState.workbenchState,
+        { type: "preview:state", preview: previewState },
+      );
+      await broadcast({ type: "preview:state", preview: previewState });
+    },
+  });
+```
+
+```tsx
+<div className="preview-link-row">
+  <div className="preview-link-copy">
+    <span className="preview-link-label">Direct link</span>
+    <code className="preview-url">{preview.url}</code>
+  </div>
+  <a
+    className="target-inline-action preview-open-link"
+    href={preview.url ?? undefined}
+    target="_blank"
+    rel="noreferrer"
+  >
+    Open preview
+  </a>
+</div>
+```
