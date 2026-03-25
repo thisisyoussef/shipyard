@@ -48,180 +48,144 @@ recording if you do not want to resume an earlier run. Use a fresh target name
 if you are recording more than once and do not want to delete the old demo
 directory.
 
-## Hook
+## Script
 
-### 00:00-00:15
+1. Cold open and frame the story
+[Open on the repo root with `test-targets/` visible]
 
-Action:
-- Start on the repo root with `test-targets/` visible.
+"What if a local coding agent could start with no locked-in target, create the
+project from the browser, build the first visible feature, and still let me
+interrupt a bad turn mid-flight without losing the session? That is the whole
+story of this Shipyard demo."
 
-Narration:
-> Shipyard is a local-first coding agent that can start without a locked-in
-> project, let me choose a target from the browser, and then keep iterating on
-> that project in one long-lived session with a live preview. If I need to stop
-> a bad turn mid-flight, I can interrupt it and keep going without losing the
-> session.
+"I’m not going to tour every panel one by one. I’m going to follow one demo
+target from creation to visible preview, then through an interrupted live turn,
+and finally to the saved-run and trace surfaces that prove the session stayed
+truthful."
 
-## Run Of Show
-
-### 00:15-00:45: Launch Into Target Manager Mode
-
-Action:
-- Start the UI runtime from the repo root without `--target`:
+2. Start in target-manager mode
+[Run the UI without `--target`]
 
 ```bash
 SHIPYARD_UI_PORT=3211 pnpm --dir shipyard start -- --targets-dir ../test-targets --ui --session current-demo-ui
 ```
 
-- Open the printed browser URL.
-- Leave the terminal visible long enough to show that Shipyard started in
-  target-manager mode.
+[Open the printed browser URL]
 
-Narration:
-> I’m not preloading a target here. Shipyard starts in target-manager mode,
-> points at the local `test-targets` directory, and gives me a browser-first
-> way to pick what I want to work on.
+"I’m starting without `--target` on purpose. Shipyard comes up in
+target-manager mode, points at the local `test-targets` directory, and gives me
+a browser-first way to choose what I want to build."
 
-Proof callout:
-- No `--target` was required at startup.
-- The terminal shows target-manager mode and the active targets directory.
-- The browser is connected to the same live session.
+"That matters because the session is not hard-coded to one repo before the demo
+even begins. The operator chooses the project from inside the workbench."
 
-### 00:45-01:15: Create The Demo Target
+3. Create the demo target
+[In the browser, click `Browse targets`, then `New Target`]
+[Fill the dialog]
+- Name: `tic-tac-toe-demo`
+- Description: `Build a browser-based tic-tac-toe game from scratch.`
+- Scaffold type: `React + TypeScript`
+[Click `Create target`]
+[Wait for the preview panel to reach `Running`]
+[Click `Open preview` once, then return to the workbench]
 
-Action:
-- In the browser, click `Browse targets`, then `New Target`.
-- Fill the dialog with:
-  - Name: `tic-tac-toe-demo`
-  - Description: `Build a browser-based tic-tac-toe game from scratch.`
-  - Scaffold type: `React + TypeScript`
-- Click `Create target`.
-- Pause on the target header and wait for the preview panel to reach
-  `Running`.
-- Click `Open preview` once to show the direct navigation path, then return to
-  the main workbench tab.
+"For this story I’m creating a fresh `tic-tac-toe-demo` target inside the
+browser. Shipyard scaffolds the React + TypeScript project, switches into code
+phase, and brings up the local preview automatically."
 
-Narration:
-> For the demo I’m creating a fresh `tic-tac-toe-demo` target from inside the
-> browser. Shipyard scaffolds a new React + TypeScript project, switches it into
-> code phase, starts the local preview automatically, and gives me both an
-> inline preview and a direct URL I can open in another tab.
+"Now I have visible ground truth. The target exists, the preview is live, and I
+can verify every change on camera."
 
-Proof callout:
-- The new target is created from the browser rather than pre-created in the
-  terminal.
-- The target summary/header updates after creation and phase switch.
-- The preview panel shows a loopback URL and the direct `Open preview` link.
-
-### 01:15-03:35: Live Build + Mid-Turn Redirect In One Session
-
-Action:
-- Submit this first instruction with an empty context box:
+4. Land the first visible result
+[Submit the first instruction]
 
 ```text
 Turn this starter React app into a simple 3x3 tic-tac-toe board. Show a heading, a status line that starts with "Current player: X", and nine clickable squares laid out in a grid. Keep the first version self-contained in src/App.tsx and a small src/App.css file if needed.
 ```
 
-- After the first turn finishes, point at:
-  - the `Chat` tab
-  - the `Live view` tab
-  - the file/output sidebars
-  - the preview panel refreshing
+[After the turn finishes, point at the preview panel, `Chat`, `Live view`, and
+the file/output sidebars]
 
-- Then paste this into the left context panel:
+"The first turn turns a blank scaffold into a visible 3x3 board. What matters
+here is not just that Shipyard answered a prompt. The preview shows the result
+in the app itself, Chat shows the conversation, Live view shows the step-by-step
+execution, and the sidebars show which files changed."
+
+5. Set up the interrupt story
+[Paste this into the left context panel]
 
 ```text
 Keep the next change small. Build on the current board instead of rewriting it, and tell me exactly which files changed.
 ```
 
-- Switch to `Live view` before sending the second instruction so the step
-  timeline is visible while the run is active.
-
-- Submit this second instruction in the same browser session:
+[Switch to `Live view`]
+[Submit the broader second instruction]
 
 ```text
 Read the current app and outline the next edits you would make to turn it into a polished playable version with alternating turns, occupied-square protection, win/draw detection, and a Reset Game button. Do not edit files yet.
 ```
 
-- As soon as the live steps start updating:
-  - replace the composer text with the follow-up instruction below
-  - click `Cancel turn`
-  - leave the `Stopping current turn` notice on screen until the session
-    returns to ready
+"Now I’m going to show the operator-control part of the story. I inject one
+piece of context to keep the change small, then I start a broader second
+request on purpose so we can interrupt it while the session is still live."
 
-- Once cancellation finishes, submit this replacement instruction from the
-  same composer:
+6. Interrupt the in-flight turn
+[As soon as the live steps start updating, replace the composer text with the
+follow-up instruction below]
+[Click `Cancel turn`]
+[Leave the `Stopping current turn` notice visible until the session returns to
+ready]
+
+"This is the key moment. Shipyard is already working, but I can still stop the
+active turn from the same composer. The session does not die, the workbench
+returns to ready, and the replacement draft stays in place instead of
+disappearing."
+
+"That is the difference between a one-shot agent and a real operator surface. I
+can change course mid-run without throwing away the session."
+
+7. Send the redirected follow-up and show the result
+[Once cancellation finishes, submit the replacement instruction from the same
+composer]
 
 ```text
 Finish the first playable loop: alternate X and O when squares are clicked, prevent clicking an occupied square, detect a winner or draw, and add a Reset Game button. Keep the change small and tell me exactly which files changed.
 ```
 
-- Optional if the turn is quick:
-  - reload the page once to show the session and context receipt rehydrate
-  - click `Open preview` again after the second edit to show the updated result
-    in a separate tab
-  - point at the cancelled turn followed by the successful follow-up turn in
-    the same workbench session
+[Point at the updated preview and the file/output sidebars]
+[Optional if the turn is quick: reload once to show session rehydration, or
+click `Open preview` again in a separate tab]
 
-Narration:
-> This is one long-lived Shipyard session. I’m starting from a fresh scaffold,
-> getting the first visible board on screen, then deliberately starting a
-> broader second request and interrupting it while `Live view` is still
-> streaming. The point is not just that multiple turns work. I can stop the
-> active turn, keep the narrowed replacement draft in the same composer, and
-> submit it as soon as Shipyard returns to ready.
+"Now I send the narrower follow-up in the same session. The playable loop lands,
+the preview updates, and the file/output evidence stays surgical instead of
+looking like a full rewrite."
 
-> I’m also injecting operator context at runtime before the second turn. The UI
-> keeps that context visible as a receipt. I can read the conversation in the
-> `Chat` view, then flip to `Live view` to watch the read, edit, and result
-> steps land one by one while the run is still executing. After the interrupt,
-> the final follow-up stays surgical: Shipyard finishes the playable loop
-> without rewriting the whole app.
+"If I want to narrate the run, I can read the conversation in Chat. If I want
+to inspect the execution path, I can stay on Live view. The important part is
+that both surfaces stay truthful even across the cancelled turn."
 
-Proof callout:
-- Same session accepts an interrupted turn and a replacement turn without
-  restarting Shipyard.
-- `Cancel turn` returns the session to ready instead of forcing a restart.
-- The replacement draft stays in the composer while cancellation is happening.
-- The follow-up turn clearly uses injected context from the sidebar.
-- The `Live view` tab shows sequential step updates before the turn is fully
-  complete, including the interrupted run.
-- The file/output sidebars show a narrow edit surface rather than a full-file
-  rewrite, including before/after evidence for the edit step.
-- The preview updates live from scaffold to board to playable game, and can
-  also be opened directly in its own tab.
+8. Show saved runs and trace proof
+[Open the `Previous runs` panel in the left sidebar]
+[Point at the current run entry and, if available, an earlier saved run]
+[Click the `Open trace` link from the finished turn or selected live step]
 
-### 03:35-03:55: Show Saved Runs And Trace Proof
+"Now I widen out from the current page to the saved-run surface. Shipyard keeps
+the session history local to this target, and the trace link gives me the exact
+run behind what I just watched."
 
-Action:
-- Open the `Previous runs` panel in the left sidebar.
-- Point at the current run entry and, if available, at least one earlier saved
-  run.
-- Click the `Open trace` link from the finished turn or selected live step.
+"The cancelled turn and the successful follow-up are part of the same real
+runtime story, not separate demos stitched together."
 
-Narration:
-> The browser also keeps the session history local to this target, so I can
-> reopen older runs without restarting Shipyard. And for deeper inspection, each
-> completed run can expose its LangSmith trace right from the workbench. The
-> cancelled turn and the successful follow-up are part of the same truthful
-> runtime story, not separate demos stitched together.
+9. Wrap up
+[Stay on the updated board or the run history view]
 
-Proof callout:
-- Saved runs are visible in the browser for the current target.
-- A completed run exposes a direct trace link without leaving the workbench.
+"So that’s the full story: Shipyard starts without a locked-in target, creates
+the project from the browser, shows visible progress in the preview, lets me
+interrupt bad work without restarting, and leaves behind a truthful session
+history and trace."
 
-### 03:55-04:10: Close
-
-Action:
-- End on the Shipyard workbench with the finished `tic-tac-toe-demo` board
-  visible.
-
-Narration:
-> That is the current Shipyard flow in one pass: start without a target,
-> create a fresh project from the browser, build a real feature in the same
-> session, interrupt a bad turn without restarting, inspect the run through
-> chat plus live playback, and verify it through the built-in preview without
-> leaving the local workflow.
+"This is not a one-off trick. It is the same local-first system working across
+target selection, live execution, interruption, and inspection."
 
 ## Backup Path If A Live Turn Misbehaves
 
