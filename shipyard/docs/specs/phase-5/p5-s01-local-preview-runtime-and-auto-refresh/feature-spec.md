@@ -103,9 +103,20 @@ keep the visible result fresh after edits land.
 - [`../../../../src/context/discovery.ts`](../../../../src/context/discovery.ts):
   infers preview capability, captures the resolved command, and keeps
   unsupported targets explicit instead of guessing.
+- [`../../../../src/preview/contracts.ts`](../../../../src/preview/contracts.ts):
+  decides when scratch targets should begin from the starter-canvas path and
+  seeds the initial preview state accordingly.
+- [`../../../../src/engine/state.ts`](../../../../src/engine/state.ts):
+  persists the starter-canvas-aware preview state into new or resumed browser
+  sessions so scratch targets do not flash failure details on connect.
+- [`../../../../src/preview/supervisor.ts`](../../../../src/preview/supervisor.ts):
+  falls back to a loopback starter canvas for scratch targets or first-boot
+  preview failures, while preserving the existing real-preview lifecycle once a
+  healthy target-native preview is available.
 - [`../../../../src/ui/server.ts`](../../../../src/ui/server.ts): creates the
-  session-scoped preview supervisor, persists `preview:state`, and broadcasts
-  lifecycle updates to the browser workbench.
+  session-scoped preview supervisor, persists `preview:state`, re-runs
+  discovery after edit events, and promotes the session from starter canvas to
+  a real preview when the target becomes previewable.
 - [`../../../../ui/src/ShipyardWorkbench.tsx`](../../../../ui/src/ShipyardWorkbench.tsx):
   mounts the preview surface in the UIV3 main stack so it stays visible beside
   composer and activity.
@@ -115,32 +126,20 @@ keep the visible result fresh after edits land.
 - [`../../../../ui/src/panels/panels.css`](../../../../ui/src/panels/panels.css):
   styles the preview card and direct-link treatment using the shared workbench
   token system.
-- [`../../../../tests/ui-workbench.test.ts`](../../../../tests/ui-workbench.test.ts),
-  [`../../../../tests/ui-runtime.test.ts`](../../../../tests/ui-runtime.test.ts),
-  and [`../../../../tests/manual/phase5-local-preview-smoke.ts`](../../../../tests/manual/phase5-local-preview-smoke.ts):
-  cover the running/unavailable UI states, runtime preview streaming, and direct
-  URL loading during manual smoke verification.
+- [`../../../../tests/preview-supervisor.test.ts`](../../../../tests/preview-supervisor.test.ts)
+  and [`../../../../tests/ui-runtime.test.ts`](../../../../tests/ui-runtime.test.ts):
+  cover starter-canvas fallback, first-boot preview failures, scratch-target
+  promotion into a real preview, and the existing running/unavailable UI
+  states.
 
 ## Representative Snippets
 
 ```ts
-if (
-  typeof scripts.dev === "string" &&
-  /\bvite(?:\s|$)/.test(scripts.dev) &&
-  "vite" in dependencies
-) {
-  const runner = resolvePreviewRunner(packageManager);
-
-  return {
-    status: "available",
-    kind: "dev-server",
-    runner,
-    scriptName: "dev",
-    command: formatPreviewCommand(runner, "dev"),
-    reason: "Detected a Vite dev script and dependency signal.",
-    autoRefresh: "native-hmr",
-  };
+if (shouldUseStarterCanvasForScratchTarget(options)) {
+  return createStarterCanvasIdleState();
 }
+
+return createPreviewStateFromCapability(options.discovery.previewCapability);
 ```
 
 ```ts
@@ -148,29 +147,32 @@ const createPreviewBridge = () =>
   createPreviewSupervisor({
     targetDirectory: sessionState.targetDirectory,
     capability: sessionState.discovery.previewCapability,
-    async onState(previewState) {
-      sessionState.workbenchState = applyBackendMessage(
-        sessionState.workbenchState,
-        { type: "preview:state", preview: previewState },
-      );
-      await broadcast({ type: "preview:state", preview: previewState });
-    },
+    starterCanvasOnUnavailable: shouldUseStarterCanvasForScratchTarget({
+      activePhase: sessionState.activePhase,
+      discovery: sessionState.discovery,
+    }),
+    starterCanvasOnStartupFailure: sessionState.activePhase === "code",
+    onState: publishPreviewState,
   });
 ```
 
-```tsx
-<div className="preview-link-row">
-  <div className="preview-link-copy">
-    <span className="preview-link-label">Direct link</span>
-    <code className="preview-url">{preview.url}</code>
-  </div>
-  <a
-    className="target-inline-action preview-open-link"
-    href={preview.url ?? undefined}
-    target="_blank"
-    rel="noreferrer"
-  >
-    Open preview
-  </a>
-</div>
+```ts
+const nextDiscovery = await discoverTarget(sessionState.targetDirectory);
+const previewCapabilityChanged = !hasSamePreviewCapability(
+  previousPreviewCapability,
+  nextDiscovery.previewCapability,
+);
+
+sessionState.discovery = nextDiscovery;
+
+if (
+  previewCapabilityChanged ||
+  (
+    nextDiscovery.previewCapability.status === "available" &&
+    previewSupervisor.isStarterCanvasActive()
+  )
+) {
+  await restartPreviewSupervisor({ silent: true });
+  return;
+}
 ```

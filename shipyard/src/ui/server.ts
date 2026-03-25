@@ -23,6 +23,8 @@ import {
 } from "../engine/turn.js";
 import { abortTurn } from "../engine/cancellation.js";
 import type { AgentRuntimeDependencies } from "../engine/graph.js";
+import type { PreviewCapabilityReport, PreviewState } from "../artifacts/types.js";
+import { discoverTarget } from "../context/discovery.js";
 import {
   listSessionRunSummaries,
   loadSessionState,
@@ -32,6 +34,7 @@ import {
 } from "../engine/state.js";
 import { applySessionSwitchToRuntime } from "../engine/runtime-context.js";
 import { createPreviewSupervisor } from "../preview/supervisor.js";
+import { shouldUseStarterCanvasForScratchTarget } from "../preview/contracts.js";
 import type {
   BackendToFrontendMessage,
   TargetEnrichmentState,
@@ -155,6 +158,21 @@ function isPortInUseError(error: unknown): error is NodeJS.ErrnoException {
     error instanceof Error &&
     "code" in error &&
     error.code === "EADDRINUSE"
+  );
+}
+
+function hasSamePreviewCapability(
+  left: PreviewCapabilityReport,
+  right: PreviewCapabilityReport,
+): boolean {
+  return (
+    left.status === right.status &&
+    left.kind === right.kind &&
+    left.runner === right.runner &&
+    left.scriptName === right.scriptName &&
+    left.command === right.command &&
+    left.reason === right.reason &&
+    left.autoRefresh === right.autoRefresh
   );
 }
 
@@ -602,29 +620,36 @@ export async function startUiRuntimeServer(
     return targetManagerState;
   };
 
+  const publishPreviewState = async (previewState: PreviewState): Promise<void> => {
+    sessionState.workbenchState = applyBackendMessage(
+      sessionState.workbenchState,
+      {
+        type: "preview:state",
+        preview: previewState,
+      },
+    );
+
+    await traceLogger.log("preview.state", {
+      sessionId: sessionState.sessionId,
+      preview: previewState,
+    });
+    await saveSessionState(sessionState);
+    await broadcast({
+      type: "preview:state",
+      preview: previewState,
+    });
+  };
+
   const createPreviewBridge = () =>
     createPreviewSupervisor({
       targetDirectory: sessionState.targetDirectory,
       capability: sessionState.discovery.previewCapability,
-      async onState(previewState) {
-        sessionState.workbenchState = applyBackendMessage(
-          sessionState.workbenchState,
-          {
-            type: "preview:state",
-            preview: previewState,
-          },
-        );
-
-        await traceLogger.log("preview.state", {
-          sessionId: sessionState.sessionId,
-          preview: previewState,
-        });
-        await saveSessionState(sessionState);
-        await broadcast({
-          type: "preview:state",
-          preview: previewState,
-        });
-      },
+      starterCanvasOnUnavailable: shouldUseStarterCanvasForScratchTarget({
+        activePhase: sessionState.activePhase,
+        discovery: sessionState.discovery,
+      }),
+      starterCanvasOnStartupFailure: sessionState.activePhase === "code",
+      onState: publishPreviewState,
     });
 
   let previewSupervisor = createPreviewBridge();
@@ -711,10 +736,13 @@ export async function startUiRuntimeServer(
     await saveSessionState(sessionState);
   };
 
-  const refreshPreviewSupervisor = async (): Promise<void> => {
-    await previewSupervisor.stop();
+  const restartPreviewSupervisor = async (
+    options?: { silent?: boolean },
+  ): Promise<void> => {
+    await previewSupervisor.stop(options);
     previewStarted = false;
     previewSupervisor = createPreviewBridge();
+    await publishPreviewState(previewSupervisor.getState());
 
     if (sockets.size > 0) {
       previewStarted = true;
@@ -740,7 +768,7 @@ export async function startUiRuntimeServer(
       reason,
       runtimeMode: "ui",
     });
-    await refreshPreviewSupervisor();
+    await restartPreviewSupervisor({ silent: true });
     return syncTargetManagerState();
   };
 
@@ -765,6 +793,27 @@ export async function startUiRuntimeServer(
       ...baseReporter,
       async onEdit(event) {
         await baseReporter.onEdit?.(event);
+
+        const previousPreviewCapability = sessionState.discovery.previewCapability;
+        const nextDiscovery = await discoverTarget(sessionState.targetDirectory);
+        const previewCapabilityChanged = !hasSamePreviewCapability(
+          previousPreviewCapability,
+          nextDiscovery.previewCapability,
+        );
+
+        sessionState.discovery = nextDiscovery;
+
+        if (
+          previewCapabilityChanged ||
+          (
+            nextDiscovery.previewCapability.status === "available" &&
+            previewSupervisor.isStarterCanvasActive()
+          )
+        ) {
+          await restartPreviewSupervisor({ silent: true });
+          return;
+        }
+
         await previewSupervisor.refresh(event.path);
       },
       async onTurnState(event) {
