@@ -52,7 +52,9 @@
 
 ## Implementation Evidence
 
-### Code References
+### P7-S01
+
+#### Code References
 
 - `shipyard/src/artifacts/types.ts`: adds the shared `ExecutionSpec` and
   `PlanningMode` contracts that later Phase 7 stories can reuse.
@@ -68,7 +70,7 @@
   and `shipyard/tests/ui-runtime.test.ts`: verify planner isolation, graph
   routing, lightweight-path preservation, and cancellation/follow-up behavior.
 
-### Representative Snippets
+#### Representative Snippets
 
 ```ts
 export interface ExecutionSpec {
@@ -90,4 +92,52 @@ usedPlanner: shouldCoordinatorUsePlanner({
   executionSpec: state.executionSpec,
   contextReport: state.contextReport,
 }),
+```
+
+### P7-S02
+
+#### Code References
+
+- `shipyard/src/artifacts/types.ts`: adds `EvaluationPlan`,
+  `VerificationCheckResult`, `VerificationHardFailure`, and the richer
+  `VerificationReport` fields used by the multi-check verifier.
+- `shipyard/src/agents/verifier.ts`: validates evaluation plans, normalizes
+  legacy single-command input into a one-check plan, executes ordered
+  command-backed checks, and reports the first required hard failure.
+- `shipyard/src/agents/coordinator.ts` and `shipyard/src/engine/graph.ts`:
+  derive the default verification plan from context plus
+  `ExecutionSpec.verificationIntent` and route the verify node through the new
+  contract.
+- `shipyard/tests/verifier-subagent.test.ts` and
+  `shipyard/tests/graph-runtime.test.ts`: verify plan validation,
+  backward-compatible single-check normalization, ordered results,
+  required-check fail-fast behavior, optional-check handling, and graph
+  integration.
+
+#### Representative Snippets
+
+```ts
+export interface VerificationCheckResult {
+  checkId: string;
+  label: string;
+  kind: "command";
+  command: string;
+  required: boolean;
+  status: VerificationCheckStatus;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  summary: string;
+}
+```
+
+```ts
+return runVerifierSubagent(
+  createVerificationPlan({
+    contextEnvelope: state.contextEnvelope,
+    executionSpec: state.executionSpec,
+  }),
+  state.targetDirectory,
+  await createSubagentLoopOptions(state, dependencies, signal),
+);
 ```

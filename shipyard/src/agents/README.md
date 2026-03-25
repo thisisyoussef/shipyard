@@ -13,8 +13,9 @@ runtimes behind those roles.
   returns `ContextReport`
 - `planner.ts`: read-only planning role that turns broad instructions into
   typed `ExecutionSpec` artifacts
-- `verifier.ts`: read-only validation role for tests, lint, and structured
-  verification reports; now also exposes the isolated verifier helper runtime
+- `verifier.ts`: read-only validation role for ordered `EvaluationPlan`
+  checks, tests, lint, and structured verification reports; now also exposes
+  the isolated verifier helper runtime
 
 ## Important Constraint
 
@@ -34,6 +35,7 @@ flowchart LR
   Writes["write operations"]
   Checks["checks and evidence"]
   Spec["ExecutionSpec"]
+  Eval["EvaluationPlan"]
 
   Instruction --> Coordinator
   Coordinator --> Explorer
@@ -43,6 +45,8 @@ flowchart LR
   Explorer --> Checks
   Planner --> Spec
   Spec --> Coordinator
+  Coordinator --> Eval
+  Eval --> Verifier
   Verifier --> Checks
   Checks --> Coordinator
 ```

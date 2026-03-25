@@ -12,6 +12,7 @@ import {
 } from "../checkpoints/manager.js";
 import type {
   ContextReport,
+  EvaluationPlan,
   ExecutionSpec,
   PlanningMode,
   TaskPlan,
@@ -22,7 +23,7 @@ import {
   createCoordinatorTaskPlan,
   createLightweightExecutionSpec,
   createExplorerQuery,
-  createVerificationCommand,
+  createVerificationPlan,
   shouldCoordinatorUseExplorer,
   shouldCoordinatorUsePlanner,
 } from "../agents/coordinator.js";
@@ -149,7 +150,7 @@ export interface AgentRuntimeDependencies {
     options?: PlannerRunOptions,
   ) => ExecutionSpec | Promise<ExecutionSpec>;
   runVerifierSubagent?: (
-    command: string,
+    input: string | EvaluationPlan,
     targetDirectory: string,
     options?: VerifierRunOptions,
   ) => VerificationReport | Promise<VerificationReport>;
@@ -285,7 +286,11 @@ async function checkpointBeforeEdit(
 function createDefaultVerificationReport(
   state: AgentGraphState,
 ): VerificationReport {
-  const command = createVerificationCommand(state.contextEnvelope);
+  const evaluationPlan = createVerificationPlan({
+    contextEnvelope: state.contextEnvelope,
+    executionSpec: state.executionSpec,
+  });
+  const command = evaluationPlan.checks[0]?.command ?? "";
 
   if (!state.lastEditedFile) {
     return {
@@ -295,6 +300,9 @@ function createDefaultVerificationReport(
       stdout: "",
       stderr: "No edited file available for verification.",
       summary: "Verification failed because no edited file was recorded.",
+      evaluationPlan,
+      checks: [],
+      firstHardFailure: null,
     };
   }
 
@@ -305,6 +313,9 @@ function createDefaultVerificationReport(
     stdout: "",
     stderr: "",
     summary: `Verification placeholder passed for ${state.lastEditedFile}.`,
+    evaluationPlan,
+    checks: [],
+    firstHardFailure: null,
   };
 }
 
@@ -433,7 +444,10 @@ async function defaultVerifyState(
     dependencies.runVerifierSubagent ?? executeVerifierSubagent;
 
   return runVerifierSubagent(
-    createVerificationCommand(state.contextEnvelope),
+    createVerificationPlan({
+      contextEnvelope: state.contextEnvelope,
+      executionSpec: state.executionSpec,
+    }),
     state.targetDirectory,
     await createSubagentLoopOptions(state, dependencies, signal),
   );
