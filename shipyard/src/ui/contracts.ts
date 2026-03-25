@@ -61,6 +61,8 @@ const enrichmentStatusSchema = z.enum([
   "complete",
   "error",
 ]);
+const deployStatusSchema = z.enum(["idle", "deploying", "success", "error"]);
+const uploadReceiptStatusSchema = z.enum(["ready", "rejected"]);
 
 const nonEmptyTextSchema = z.string().trim().min(1);
 const discoverySchema = z.object({
@@ -176,6 +178,35 @@ const contextReceiptSchema = z.object({
   submittedAt: z.string(),
   turnId: z.string(),
 });
+export const uploadReceiptSchema = z.object({
+  id: z.string(),
+  originalName: z.string(),
+  targetRelativePath: z.string().nullable(),
+  mediaType: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  previewText: z.string().nullable(),
+  uploadedAt: z.string(),
+  status: uploadReceiptStatusSchema,
+  errorMessage: z.string().nullable(),
+});
+export const uploadResponseSchema = z.object({
+  receipts: z.array(uploadReceiptSchema),
+});
+export const uploadDeleteResponseSchema = z.object({
+  removedId: z.string(),
+});
+export const deploySummarySchema = z.object({
+  status: deployStatusSchema,
+  platform: z.enum(["vercel"]),
+  available: z.boolean(),
+  unavailableReason: z.string().nullable(),
+  productionUrl: z.string().nullable(),
+  summary: z.string(),
+  logExcerpt: z.string().nullable(),
+  command: z.string().nullable(),
+  requestedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+});
 const pendingToolCallSchema = z.object({
   turnId: z.string(),
   fileEventId: z.string().optional(),
@@ -212,6 +243,8 @@ export const workbenchStateSchema = z.object({
   nextEventNumber: z.number().int().nonnegative(),
   nextFileEventNumber: z.number().int().nonnegative(),
   contextHistory: z.array(contextReceiptSchema),
+  pendingUploads: z.array(uploadReceiptSchema),
+  latestDeploy: deploySummarySchema,
   previewState: previewStateSchema,
   targetManager: targetManagerStateSchema.nullable(),
 });
@@ -248,6 +281,11 @@ export const targetEnrichRequestMessageSchema = z.object({
   userDescription: z.string().trim().optional(),
 });
 
+export const deployRequestMessageSchema = z.object({
+  type: z.literal("deploy:request"),
+  platform: z.enum(["vercel"]).default("vercel"),
+});
+
 export const sessionResumeRequestMessageSchema = z.object({
   type: z.literal("session:resume_request"),
   sessionId: nonEmptyTextSchema,
@@ -261,6 +299,7 @@ export const frontendToBackendMessageSchema = z.discriminatedUnion("type", [
   targetSwitchRequestMessageSchema,
   targetCreateRequestMessageSchema,
   targetEnrichRequestMessageSchema,
+  deployRequestMessageSchema,
 ]);
 
 export type FrontendToBackendMessage = z.infer<
@@ -359,6 +398,11 @@ export const targetEnrichmentProgressMessageSchema = z.object({
   message: z.string(),
 });
 
+export const deployStateMessageSchema = z.object({
+  type: z.literal("deploy:state"),
+  deploy: deploySummarySchema,
+});
+
 export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   sessionStateMessageSchema,
   agentThinkingMessageSchema,
@@ -372,6 +416,7 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   targetStateMessageSchema,
   targetSwitchCompleteMessageSchema,
   targetEnrichmentProgressMessageSchema,
+  deployStateMessageSchema,
 ]);
 
 export type BackendToFrontendMessage = z.infer<
@@ -386,6 +431,8 @@ export type TargetSummary = z.infer<typeof targetSummarySchema>;
 export type TargetEnrichmentState = z.infer<
   typeof targetEnrichmentStateSchema
 >;
+export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
+export type DeploySummary = z.infer<typeof deploySummarySchema>;
 
 function hasMessageType(value: unknown): value is { type: string } {
   return (
@@ -421,6 +468,7 @@ export function parseFrontendMessage(
     "target:switch_request",
     "target:create_request",
     "target:enrich_request",
+    "deploy:request",
   ]);
 
   if (hasMessageType(parsed)) {
@@ -431,12 +479,12 @@ export function parseFrontendMessage(
     }
 
     throw new Error(
-      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, or target:enrich_request.`,
+      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, target:enrich_request, or deploy:request.`,
     );
   }
 
   throw new Error(
-    "Invalid client message: expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, or target:enrich_request.",
+    "Invalid client message: expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, target:enrich_request, or deploy:request.",
   );
 }
 

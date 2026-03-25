@@ -1,3 +1,4 @@
+import "./deploy.js";
 import "./edit-block.js";
 import "./git-diff.js";
 import "./list-files.js";
@@ -9,6 +10,7 @@ import "./target-manager/index.js";
 import "./write-file.js";
 
 export { editBlockTool } from "./edit-block.js";
+export { deployTargetTool } from "./deploy.js";
 export {
   clearTrackedReadHashes,
   getTrackedReadHash,

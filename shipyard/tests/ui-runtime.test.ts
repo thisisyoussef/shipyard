@@ -9,7 +9,7 @@ import type {
   Model,
 } from "@anthropic-ai/sdk/resources/messages";
 import WebSocket from "ws";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { discoverTarget } from "../src/context/discovery.js";
 import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
@@ -18,10 +18,19 @@ import {
   ensureShipyardDirectories,
   saveSessionState,
 } from "../src/engine/state.js";
-import { formatUiStartupLines, parseArgs } from "../src/bin/shipyard.js";
+import {
+  formatUiStartupLines,
+  parseArgs,
+  resolveTargetsDirectory,
+} from "../src/bin/shipyard.js";
 import { createUnavailablePreviewCapability } from "../src/preview/contracts.js";
+import { prepareHostedWorkspace } from "../src/hosting/workspace.js";
 import type { BackendToFrontendMessage } from "../src/ui/contracts.js";
-import { startUiRuntimeServer } from "../src/ui/server.js";
+import {
+  resolveUiHost,
+  resolveUiPort,
+  startUiRuntimeServer,
+} from "../src/ui/server.js";
 import { queueInstructionTurn } from "../ui/src/view-models.js";
 import { scaffoldPreviewableTarget } from "./support/preview-target.js";
 
@@ -29,6 +38,7 @@ const createdDirectories: string[] = [];
 const socketMessageBuffers = new WeakMap<WebSocket, BackendToFrontendMessage[]>();
 const trackedSockets = new WeakSet<WebSocket>();
 const workspaceDirectory = path.resolve(process.cwd(), "..");
+const originalEnv = { ...process.env };
 
 interface MockAnthropicClient {
   messages: {
@@ -49,6 +59,31 @@ async function createTempDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), prefix));
   createdDirectories.push(directory);
   return directory;
+}
+
+async function removeDirectoryWithRetries(directory: string): Promise<void> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await rm(directory, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (
+        attempt === 3 ||
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        (
+          error.code !== "ENOTEMPTY" &&
+          error.code !== "EBUSY"
+        )
+      ) {
+        throw error;
+      }
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
+    }
+  }
 }
 
 async function runRawCommand(
@@ -312,6 +347,40 @@ async function waitForSocketOpen(socket: WebSocket): Promise<void> {
   });
 }
 
+async function waitForSocketFailure(
+  socket: WebSocket,
+): Promise<{ code: number; reason: string }> {
+  return await new Promise((resolve, reject) => {
+    const timeoutHandle = setTimeout(() => {
+      reject(new Error("Timed out waiting for the websocket to fail."));
+    }, 5_000);
+
+    const handleClose = (code: number, reason: Buffer) => {
+      clearTimeout(timeoutHandle);
+      resolve({
+        code,
+        reason: reason.toString(),
+      });
+    };
+
+    const handleError = (error: Error) => {
+      clearTimeout(timeoutHandle);
+      reject(error);
+    };
+
+    socket.once("close", handleClose);
+    socket.once("error", handleError);
+  });
+}
+
+function extractCookieHeader(setCookieHeader: string | null): string | null {
+  if (!setCookieHeader) {
+    return null;
+  }
+
+  return setCookieHeader.split(";")[0] ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Canonical UI event-stream contract (SV-S02)
 //
@@ -362,14 +431,21 @@ function assertRequiredEvents(
 }
 
 describe("ui runtime contract", () => {
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+    };
+  });
+
   afterEach(async () => {
     const directories = createdDirectories.splice(0, createdDirectories.length);
+    process.env = {
+      ...originalEnv,
+    };
 
-    await Promise.all(
-      directories.map((directory) =>
-        rm(directory, { recursive: true, force: true }),
-      ),
-    );
+    for (const directory of directories) {
+      await removeDirectoryWithRetries(directory);
+    }
   });
 
   it("parses --ui as the browser runtime selector", () => {
@@ -381,6 +457,42 @@ describe("ui runtime contract", () => {
       sessionId: undefined,
       ui: true,
     });
+  });
+
+  it("resolves SHIPYARD_TARGETS_DIR when no explicit target or flag is provided", () => {
+    process.env.SHIPYARD_TARGETS_DIR = "/app/workspace";
+
+    const options = parseArgs(["--ui"]);
+    const resolvedTargetsDirectory = resolveTargetsDirectory(["--ui"], options);
+
+    expect(resolvedTargetsDirectory).toBe("/app/workspace");
+  });
+
+  it("keeps explicit target paths ahead of SHIPYARD_TARGETS_DIR", () => {
+    process.env.SHIPYARD_TARGETS_DIR = "/app/workspace";
+
+    const options = parseArgs(["--target", "./demo", "--ui"]);
+    const resolvedTargetsDirectory = resolveTargetsDirectory(
+      ["--target", "./demo", "--ui"],
+      options,
+    );
+
+    expect(resolvedTargetsDirectory).toBe(path.resolve(process.cwd(), "."));
+  });
+
+  it("resolves UI host and port from provider-friendly env fallbacks", () => {
+    process.env.SHIPYARD_UI_HOST = "0.0.0.0";
+    process.env.PORT = "4110";
+
+    expect(resolveUiHost()).toBe("0.0.0.0");
+    expect(resolveUiPort(undefined)).toBe(4110);
+  });
+
+  it("prefers SHIPYARD_UI_PORT over PORT when both are set", () => {
+    process.env.SHIPYARD_UI_PORT = "4210";
+    process.env.PORT = "4110";
+
+    expect(resolveUiPort(undefined)).toBe(4210);
   });
 
   it("UI startup surfaces workspace identity, URLs, and collision recovery context", () => {
@@ -467,6 +579,182 @@ describe("ui runtime contract", () => {
       }
 
       await firstRuntime.close();
+    }
+  });
+
+  it("boots the UI runtime on provider env host and port and reports hosted health state", async () => {
+    process.env.SHIPYARD_UI_HOST = "0.0.0.0";
+    process.env.PORT = "0";
+    const targetDirectory = await createTempDirectory("shipyard-ui-hosted-");
+    const discovery = await discoverTarget(targetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-hosted-session",
+        targetDirectory,
+        discovery,
+      }),
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      expect(runtime.host).toBe("0.0.0.0");
+      expect(runtime.port).toBeGreaterThan(0);
+
+      const healthResponse = await fetch(
+        `http://127.0.0.1:${String(runtime.port)}/api/health`,
+      );
+
+      expect(healthResponse.ok).toBe(true);
+      await expect(healthResponse.json()).resolves.toMatchObject({
+        workspaceDirectory,
+        targetDirectory,
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("prepares an empty mounted hosted workspace for first boot", async () => {
+    const targetsDirectory = await createTempDirectory("shipyard-hosted-workspace-");
+    process.env.SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE = "1";
+    process.env.RAILWAY_VOLUME_MOUNT_PATH = targetsDirectory;
+
+    const workspace = await prepareHostedWorkspace(targetsDirectory);
+
+    expect(workspace).toMatchObject({
+      rootPath: targetsDirectory,
+      volumeMountPath: targetsDirectory,
+      persistentRequired: true,
+      mode: "persistent",
+    });
+  });
+
+  it("fails loudly when persistent hosted storage is required but no Railway volume is mounted", async () => {
+    const targetsDirectory = await createTempDirectory(
+      "shipyard-hosted-workspace-missing-volume-",
+    );
+    process.env.SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE = "1";
+
+    await expect(prepareHostedWorkspace(targetsDirectory)).rejects.toThrowError(
+      /Persistent hosted workspace requires a Railway volume mount/i,
+    );
+  });
+
+  it("restores existing hosted targets and resumes their latest saved session after restart", async () => {
+    const targetsDirectory = await createTempDirectory("shipyard-hosted-restore-");
+    const restoredTargetDirectory = path.join(targetsDirectory, "restored-app");
+    await mkdir(restoredTargetDirectory, { recursive: true });
+    await writeFile(
+      path.join(restoredTargetDirectory, "package.json"),
+      JSON.stringify({ name: "restored-app" }, null, 2),
+      "utf8",
+    );
+
+    const restoredDiscovery = await discoverTarget(restoredTargetDirectory);
+    const restoredSession = createSessionState({
+      sessionId: "restored-target-session",
+      targetDirectory: restoredTargetDirectory,
+      targetsDirectory,
+      discovery: restoredDiscovery,
+    });
+    restoredSession.turnCount = 4;
+    restoredSession.lastActiveAt = "2026-03-25T12:00:00.000Z";
+    restoredSession.workbenchState = queueInstructionTurn(
+      restoredSession.workbenchState,
+      "resume the prior hosted session",
+      [],
+    );
+    restoredSession.workbenchState.turns[0] = {
+      ...restoredSession.workbenchState.turns[0]!,
+      status: "success",
+      summary: "Recovered session from persistent hosted workspace.",
+    };
+    await saveSessionState(restoredSession);
+
+    process.env.SHIPYARD_TARGETS_DIR = targetsDirectory;
+    process.env.SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE = "1";
+    process.env.RAILWAY_VOLUME_MOUNT_PATH = targetsDirectory;
+
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-hosted-restore-session",
+        targetDirectory: targetsDirectory,
+        targetsDirectory,
+        activePhase: "target-manager",
+        discovery: createTargetManagerDiscovery(targetsDirectory),
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialTargetStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "target:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        const initialTargetState = await initialTargetStatePromise;
+
+        expect(initialTargetState).toMatchObject({
+          type: "target:state",
+          state: {
+            availableTargets: [
+              {
+                name: "restored-app",
+                path: restoredTargetDirectory,
+              },
+            ],
+          },
+        });
+
+        const switchSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.activePhase === "code" &&
+              message.targetDirectory === restoredTargetDirectory &&
+              message.sessionId === "restored-target-session"
+            ),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "target:switch_request",
+            targetPath: restoredTargetDirectory,
+          }),
+        );
+
+        const switchSequence = await switchSequencePromise;
+        const restoredSessionState = switchSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "session:state" }
+          > =>
+            message.type === "session:state" &&
+            message.activePhase === "code" &&
+            message.targetDirectory === restoredTargetDirectory,
+        );
+
+        expect(restoredSessionState).toMatchObject({
+          type: "session:state",
+          sessionId: "restored-target-session",
+          targetDirectory: restoredTargetDirectory,
+          activePhase: "code",
+          turnCount: 4,
+        });
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
     }
   });
 
@@ -2254,6 +2542,7 @@ describe("ui runtime contract", () => {
       port: 0,
       projectRules: "",
       projectRulesLoaded: false,
+      runtimeMode: "fallback",
       runtimeDependencies: {
         async createRawLoopOptions() {
           return {
@@ -2471,8 +2760,579 @@ describe("ui runtime contract", () => {
         expect(invalidMessageError).toMatchObject({
           type: "agent:error",
           message:
-            "Invalid client message type: bogus. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, or target:enrich_request.",
+            "Invalid client message type: bogus. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, target:enrich_request, or deploy:request.",
         });
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("runs deploy requests through the browser contract and recovers the latest production URL on reconnect", async () => {
+    process.env.VERCEL_TOKEN = "phase-nine-vercel-token";
+    const targetDirectory = await createTempDirectory("shipyard-ui-deploy-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-deploy-session",
+      targetDirectory,
+      discovery,
+    });
+    const deployInvocations: Array<{
+      platform: string;
+      targetDirectory: string;
+    }> = [];
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      async executeDeploy(input, deployTargetDirectory) {
+        deployInvocations.push({
+          platform: input.platform,
+          targetDirectory: deployTargetDirectory,
+        });
+
+        return {
+          success: true,
+          output: "Production URL: https://shipyard-demo.vercel.app",
+          data: {
+            platform: "vercel",
+            productionUrl: "https://shipyard-demo.vercel.app",
+            command: "vercel deploy --prod --yes --token [redacted]",
+            logExcerpt: "Production URL: https://shipyard-demo.vercel.app",
+            exitCode: 0,
+            timedOut: false,
+          },
+        };
+      },
+    });
+
+    const firstSocket = new WebSocket(runtime.socketUrl);
+
+    try {
+      const firstStatePromise = waitForSocketMessage(
+        firstSocket,
+        (message) => message.type === "session:state",
+      );
+
+      await waitForSocketOpen(firstSocket);
+      const firstState = await firstStatePromise;
+      expect(firstState).toMatchObject({
+        type: "session:state",
+        workbenchState: {
+          latestDeploy: {
+            status: "idle",
+            platform: "vercel",
+            available: true,
+            unavailableReason: null,
+          },
+        },
+      });
+
+      const deploySequencePromise = collectMessagesUntil(
+        firstSocket,
+        (messages) =>
+          messages.some(
+            (message) =>
+              message.type === "deploy:state" &&
+              message.deploy.status === "success",
+          ) &&
+          messages.some(
+            (message) =>
+              message.type === "agent:tool_call" &&
+              message.toolName === "deploy_target",
+          ) &&
+          messages.some(
+            (message) =>
+              message.type === "agent:tool_result" &&
+              message.toolName === "deploy_target" &&
+              message.success,
+          ),
+      );
+
+      firstSocket.send(
+        JSON.stringify({
+          type: "deploy:request",
+          platform: "vercel",
+        }),
+      );
+
+      const deployMessages = await deploySequencePromise;
+      expect(deployInvocations).toEqual([
+        {
+          platform: "vercel",
+          targetDirectory,
+        },
+      ]);
+      expect(deployMessages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "deploy:state",
+            deploy: expect.objectContaining({
+              status: "deploying",
+              available: false,
+            }),
+          }),
+          expect.objectContaining({
+            type: "agent:tool_call",
+            toolName: "deploy_target",
+          }),
+          expect.objectContaining({
+            type: "agent:tool_result",
+            toolName: "deploy_target",
+            success: true,
+            summary: "Deploy completed. Public URL: https://shipyard-demo.vercel.app",
+            command: "vercel deploy --prod --yes --token [redacted]",
+          }),
+          expect.objectContaining({
+            type: "deploy:state",
+            deploy: expect.objectContaining({
+              status: "success",
+              productionUrl: "https://shipyard-demo.vercel.app",
+              available: true,
+            }),
+          }),
+        ]),
+      );
+
+      const reconnectedSocket = new WebSocket(runtime.socketUrl);
+
+      try {
+        const recoveredStatePromise = waitForSocketMessage(
+          reconnectedSocket,
+          (message) => message.type === "session:state",
+        );
+        await waitForSocketOpen(reconnectedSocket);
+        const recoveredState = await recoveredStatePromise;
+
+        expect(recoveredState).toMatchObject({
+          type: "session:state",
+          workbenchState: {
+            latestDeploy: {
+              status: "success",
+              platform: "vercel",
+              productionUrl: "https://shipyard-demo.vercel.app",
+              available: true,
+              unavailableReason: null,
+              command: "vercel deploy --prod --yes --token [redacted]",
+            },
+          },
+        });
+      } finally {
+        reconnectedSocket.close();
+      }
+    } finally {
+      firstSocket.close();
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("requires a valid hosted access token before exposing session state over HTTP or websocket", async () => {
+    process.env.SHIPYARD_ACCESS_TOKEN = "phase-nine-demo-token";
+    const targetDirectory = await createTempDirectory("shipyard-ui-access-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-access-session",
+      targetDirectory,
+      discovery,
+    });
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const lockedAccessResponse = await fetch(`${runtime.url}/api/access`);
+      expect(lockedAccessResponse.ok).toBe(true);
+      await expect(lockedAccessResponse.json()).resolves.toMatchObject({
+        required: true,
+        authenticated: false,
+      });
+
+      const publicHealthResponse = await fetch(`${runtime.url}/api/health`);
+      expect(publicHealthResponse.ok).toBe(true);
+      await expect(publicHealthResponse.json()).resolves.toMatchObject({
+        ok: true,
+        runtimeMode: "ui",
+        accessProtected: true,
+      });
+
+      const lockedSocket = new WebSocket(runtime.socketUrl);
+      await expect(waitForSocketFailure(lockedSocket)).rejects.toThrowError(
+        /Unauthorized|Unexpected server response: 401/i,
+      );
+
+      const invalidAccessResponse = await fetch(`${runtime.url}/api/access`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          token: "wrong-token",
+        }),
+      });
+      expect(invalidAccessResponse.status).toBe(401);
+      await expect(invalidAccessResponse.json()).resolves.toMatchObject({
+        required: true,
+        authenticated: false,
+        message: "Invalid access token. Enter the shared token to continue.",
+      });
+
+      const grantedAccessResponse = await fetch(`${runtime.url}/api/access`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          token: "phase-nine-demo-token",
+        }),
+      });
+      expect(grantedAccessResponse.ok).toBe(true);
+
+      const grantedCookie = extractCookieHeader(
+        grantedAccessResponse.headers.get("set-cookie"),
+      );
+      expect(grantedCookie).toBeTruthy();
+      await expect(grantedAccessResponse.json()).resolves.toMatchObject({
+        required: true,
+        authenticated: true,
+      });
+
+      const unlockedHealthResponse = await fetch(`${runtime.url}/api/health`, {
+        headers: grantedCookie
+          ? {
+              cookie: grantedCookie,
+            }
+          : undefined,
+      });
+      expect(unlockedHealthResponse.ok).toBe(true);
+      await expect(unlockedHealthResponse.json()).resolves.toMatchObject({
+        ok: true,
+        runtimeMode: "ui",
+        sessionId: "ui-access-session",
+        workspaceDirectory,
+        targetDirectory,
+      });
+
+      const unlockedSocket = new WebSocket(runtime.socketUrl, {
+        headers: grantedCookie
+          ? {
+              Cookie: grantedCookie,
+            }
+          : undefined,
+      });
+      const initialStatePromise = waitForSocketMessage(
+        unlockedSocket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(unlockedSocket);
+        const initialState = await initialStatePromise;
+        expect(initialState).toMatchObject({
+          type: "session:state",
+          sessionId: "ui-access-session",
+          targetDirectory,
+        });
+      } finally {
+        unlockedSocket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("persists uploaded text files across reconnects and injects them into the next turn", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-uploads-");
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify(
+        {
+          name: "upload-target",
+          version: "1.0.0",
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-upload-session",
+      targetDirectory,
+      discovery,
+    });
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Uploaded context received.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            client,
+          };
+        },
+      },
+    });
+
+    try {
+      const firstSocket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        firstSocket,
+        (message) => message.type === "session:state",
+      );
+
+      await waitForSocketOpen(firstSocket);
+      await initialStatePromise;
+
+      const uploadForm = new FormData();
+      uploadForm.set("sessionId", "ui-upload-session");
+      uploadForm.append(
+        "files",
+        new File(["# Notes\nRemember the preview contract.\n"], "brief.md", {
+          type: "text/markdown",
+        }),
+      );
+      uploadForm.append(
+        "files",
+        new File(["binary"], "diagram.png", {
+          type: "image/png",
+        }),
+      );
+
+      const uploadResponse = await fetch(`${runtime.url}/api/uploads`, {
+        method: "POST",
+        body: uploadForm,
+      });
+      expect(uploadResponse.ok).toBe(true);
+
+      const uploadJson = await uploadResponse.json();
+      expect(uploadJson).toMatchObject({
+        receipts: expect.arrayContaining([
+          expect.objectContaining({
+            status: "ready",
+            originalName: "brief.md",
+          }),
+          expect.objectContaining({
+            status: "rejected",
+            originalName: "diagram.png",
+          }),
+        ]),
+      });
+
+      const pendingUploadMessage = await waitForSocketMessage(
+        firstSocket,
+        (
+          message,
+        ): message is Extract<BackendToFrontendMessage, { type: "session:state" }> =>
+          message.type === "session:state" &&
+          message.workbenchState.pendingUploads.length === 1,
+      ).catch((error) => {
+        throw new Error(
+          `Timed out waiting for the pending upload snapshot: ${
+            error instanceof Error ? error.message : String(error)
+          }\n${JSON.stringify(getSocketMessages(firstSocket), null, 2)}`,
+        );
+      });
+      expect(pendingUploadMessage).toMatchObject({
+        type: "session:state",
+        sessionId: "ui-upload-session",
+      });
+      if (pendingUploadMessage.type !== "session:state") {
+        throw new Error("Expected a session:state upload snapshot.");
+      }
+
+      const storedUpload = pendingUploadMessage.workbenchState.pendingUploads[0];
+      expect(storedUpload).toMatchObject({
+        status: "ready",
+        originalName: "brief.md",
+      });
+      expect(storedUpload?.targetRelativePath).toMatch(
+        /\.shipyard[\\/]+uploads[\\/]+ui-upload-session[\\/]+/u,
+      );
+
+      if (!storedUpload?.targetRelativePath) {
+        throw new Error("Expected a stored upload path.");
+      }
+
+      await expect(
+        readFile(path.join(targetDirectory, storedUpload.targetRelativePath), "utf8"),
+      ).resolves.toContain("Remember the preview contract.");
+
+      firstSocket.close();
+
+      const secondSocket = new WebSocket(runtime.socketUrl);
+      const reconnectedStatePromise = waitForSocketMessage(
+        secondSocket,
+        (
+          message,
+        ): message is Extract<BackendToFrontendMessage, { type: "session:state" }> =>
+          message.type === "session:state" &&
+          message.workbenchState.pendingUploads.length === 1,
+      );
+
+      try {
+        await waitForSocketOpen(secondSocket);
+        const reconnectedState = await reconnectedStatePromise.catch((error) => {
+          throw new Error(
+            `Timed out waiting for the reconnected upload snapshot: ${
+              error instanceof Error ? error.message : String(error)
+            }\n${JSON.stringify(getSocketMessages(secondSocket), null, 2)}`,
+          );
+        });
+        if (reconnectedState.type !== "session:state") {
+          throw new Error("Expected a session:state reconnect snapshot.");
+        }
+        expect(reconnectedState.workbenchState.pendingUploads[0]).toMatchObject({
+          id: storedUpload.id,
+          originalName: "brief.md",
+        });
+
+        const busyStatePromise = waitForSocketMessage(
+          secondSocket,
+          (
+            message,
+          ): message is Extract<BackendToFrontendMessage, { type: "session:state" }> =>
+            message.type === "session:state" &&
+            message.connectionState === "agent-busy",
+        );
+        secondSocket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "Summarize the uploaded note.",
+          }),
+        );
+
+        const busyState = await busyStatePromise.catch((error) => {
+          throw new Error(
+            `Timed out waiting for the busy upload turn snapshot: ${
+              error instanceof Error ? error.message : String(error)
+            }\n${JSON.stringify(getSocketMessages(secondSocket), null, 2)}`,
+          );
+        });
+        if (busyState.type !== "session:state") {
+          throw new Error("Expected a session:state busy snapshot.");
+        }
+        expect(busyState.workbenchState.turns[0]?.contextPreview.join("\n")).toContain(
+          "Uploaded reference file: brief.md",
+        );
+        expect(busyState.workbenchState.turns[0]?.contextPreview.join("\n")).toContain(
+          storedUpload.targetRelativePath,
+        );
+        expect(busyState.workbenchState.pendingUploads).toHaveLength(0);
+      } finally {
+        secondSocket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("removes pending uploaded files and deletes their stored copies", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-upload-remove-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-upload-remove-session",
+      targetDirectory,
+      discovery,
+    });
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialStatePromise;
+
+        const uploadForm = new FormData();
+        uploadForm.set("sessionId", "ui-upload-remove-session");
+        uploadForm.append(
+          "files",
+          new File(["temporary upload"], "scratch.txt", {
+            type: "text/plain",
+          }),
+        );
+
+        const uploadResponse = await fetch(`${runtime.url}/api/uploads`, {
+          method: "POST",
+          body: uploadForm,
+        });
+        expect(uploadResponse.ok).toBe(true);
+
+        const pendingUploadMessage = await waitForSocketMessage(
+          socket,
+          (
+            message,
+          ): message is Extract<BackendToFrontendMessage, { type: "session:state" }> =>
+            message.type === "session:state" &&
+            message.workbenchState.pendingUploads.length === 1,
+        );
+        if (pendingUploadMessage.type !== "session:state") {
+          throw new Error("Expected a session:state upload snapshot.");
+        }
+        const pendingUpload = pendingUploadMessage.workbenchState.pendingUploads[0];
+
+        if (!pendingUpload?.targetRelativePath) {
+          throw new Error("Expected a stored upload to remove.");
+        }
+
+        const deleteResponse = await fetch(
+          `${runtime.url}/api/uploads/${encodeURIComponent(pendingUpload.id)}?sessionId=${encodeURIComponent("ui-upload-remove-session")}`,
+          {
+            method: "DELETE",
+          },
+        );
+        expect(deleteResponse.ok).toBe(true);
+        await expect(deleteResponse.json()).resolves.toMatchObject({
+          removedId: pendingUpload.id,
+        });
+
+        const clearedUploadsMessage = await waitForSocketMessage(
+          socket,
+          (
+            message,
+          ): message is Extract<BackendToFrontendMessage, { type: "session:state" }> =>
+            message.type === "session:state" &&
+            message.workbenchState.pendingUploads.length === 0,
+        );
+        if (clearedUploadsMessage.type !== "session:state") {
+          throw new Error("Expected a session:state clear-upload snapshot.");
+        }
+        expect(clearedUploadsMessage.type).toBe("session:state");
+        await expect(
+          readFile(path.join(targetDirectory, pendingUpload.targetRelativePath), "utf8"),
+        ).rejects.toThrowError();
       } finally {
         socket.close();
       }

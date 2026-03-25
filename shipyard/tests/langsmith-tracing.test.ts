@@ -73,4 +73,42 @@ describe("LangSmith tracing helpers", () => {
       projectName: "shipyard",
     });
   });
+
+  it("retries transient run-url misses before surfacing the trace reference", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const client = {
+        getRunUrl: vi.fn()
+          .mockRejectedValueOnce(
+            new Error("Received status [404]: Not Found. Message: {\"detail\":\"Run not found\"}"),
+          )
+          .mockRejectedValueOnce(
+            new Error("Received status [404]: Not Found. Message: {\"detail\":\"Run not found\"}"),
+          )
+          .mockResolvedValue("https://smith.langchain.com/runs/run-123"),
+        getProjectUrl: vi.fn(async ({ projectName }: { projectName?: string }) =>
+          `https://smith.langchain.com/projects/${projectName ?? "missing"}`),
+      };
+
+      const tracePromise = resolveLangSmithTraceReference(
+        client as never,
+        "shipyard",
+        "run-123",
+      );
+
+      await vi.runAllTimersAsync();
+
+      await expect(tracePromise).resolves.toEqual({
+        projectName: "shipyard",
+        runId: "run-123",
+        traceUrl: "https://smith.langchain.com/runs/run-123",
+        projectUrl: "https://smith.langchain.com/projects/shipyard",
+      });
+      expect(client.getRunUrl).toHaveBeenCalledTimes(3);
+      expect(client.getProjectUrl).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -14,8 +14,13 @@ import type {
   BackendToFrontendMessage,
   FrontendToBackendMessage,
 } from "../../src/ui/contracts.js";
-import { backendToFrontendMessageSchema } from "../../src/ui/contracts.js";
+import {
+  backendToFrontendMessageSchema,
+  uploadDeleteResponseSchema,
+  uploadResponseSchema,
+} from "../../src/ui/contracts.js";
 import { validateContextDraft } from "./context-ui.js";
+import { HostedAccessGate } from "./HostedAccessGate.js";
 import type { BadgeTone } from "./primitives.js";
 import { ShipyardWorkbench } from "./ShipyardWorkbench.js";
 import { createSocketManager, type SocketManager } from "./socket-manager.js";
@@ -33,9 +38,97 @@ interface ComposerNotice {
   detail: string;
 }
 
+interface HostedAccessResponse {
+  required: boolean;
+  authenticated: boolean;
+  message?: string | null;
+}
+
+interface HostedAccessState {
+  checked: boolean;
+  required: boolean;
+  authenticated: boolean;
+  message: string | null;
+}
+
 function createSocketUrl(): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}/ws`;
+}
+
+function isHostedAccessResponse(value: unknown): value is HostedAccessResponse {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "required" in value &&
+    typeof value.required === "boolean" &&
+    "authenticated" in value &&
+    typeof value.authenticated === "boolean" &&
+    (!("message" in value) ||
+      value.message === null ||
+      typeof value.message === "string")
+  );
+}
+
+function extractApiMessage(payload: unknown): string | null {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "message" in payload &&
+    typeof payload.message === "string"
+  ) {
+    return payload.message;
+  }
+
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "error" in payload &&
+    typeof payload.error === "string"
+  ) {
+    return payload.error;
+  }
+
+  return null;
+}
+
+async function parseHostedAccessResponse(
+  response: Response,
+): Promise<HostedAccessResponse> {
+  const payload = await response.json().catch(() => null);
+
+  if (!isHostedAccessResponse(payload)) {
+    throw new Error("Shipyard returned an invalid hosted-access response.");
+  }
+
+  return payload;
+}
+
+export function extractBootstrapAccessToken(locationUrl: URL): {
+  token: string | null;
+  sanitizedRelativeUrl: string;
+} {
+  const searchParams = new URLSearchParams(locationUrl.search);
+  const rawToken = searchParams.get("access_token")?.trim() ?? "";
+
+  if (rawToken) {
+    searchParams.delete("access_token");
+  }
+
+  const nextSearch = searchParams.toString();
+
+  return {
+    token: rawToken || null,
+    sanitizedRelativeUrl:
+      `${locationUrl.pathname}${nextSearch ? `?${nextSearch}` : ""}${locationUrl.hash}` ||
+      "/",
+  };
+}
+
+export function createHostedEditorUrl(locationUrl: URL): string {
+  const bootstrapAccess = extractBootstrapAccessToken(locationUrl);
+
+  return `${locationUrl.origin}${bootstrapAccess.sanitizedRelativeUrl}`;
 }
 
 function readSidebarState(key: string, fallback: boolean): boolean {
@@ -59,6 +152,14 @@ function writeSidebarState(key: string, open: boolean): void {
 
 export function App() {
   const [viewState, setViewState] = useState(createInitialWorkbenchState);
+  const [accessState, setAccessState] = useState<HostedAccessState>({
+    checked: false,
+    required: false,
+    authenticated: false,
+    message: null,
+  });
+  const [accessToken, setAccessToken] = useState("");
+  const [accessSubmitting, setAccessSubmitting] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [contextDraft, setContextDraft] = useState("");
   const [composerNotice, setComposerNotice] = useState<ComposerNotice | null>(
@@ -78,6 +179,9 @@ export function App() {
   const deferredTurns = useDeferredValue(viewState.turns);
   const deferredFileEvents = useDeferredValue(viewState.fileEvents);
   const deferredContextHistory = useDeferredValue(viewState.contextHistory);
+  const hasUnlockedAccess =
+    accessState.checked &&
+    (!accessState.required || accessState.authenticated);
 
   /* ── Sidebar toggles ──────────────────────── */
 
@@ -157,7 +261,87 @@ export function App() {
     },
   );
 
+  const applyHostedAccessState = useEffectEvent(
+    (nextState: HostedAccessResponse) => {
+      setAccessState({
+        checked: true,
+        required: nextState.required,
+        authenticated: nextState.authenticated,
+        message: nextState.message ?? null,
+      });
+    },
+  );
+
+  const fetchHostedAccessState = useEffectEvent(async () => {
+    const response = await fetch("/api/access", {
+      headers: {
+        accept: "application/json",
+      },
+    });
+
+    return await parseHostedAccessResponse(response);
+  });
+
+  const submitHostedAccessToken = useEffectEvent(async (token: string) => {
+    const response = await fetch("/api/access", {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ token }),
+    });
+
+    return await parseHostedAccessResponse(response);
+  });
+
   useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const bootstrapAccess = extractBootstrapAccessToken(
+        new URL(window.location.href),
+      );
+
+      if (bootstrapAccess.token) {
+        window.history.replaceState({}, document.title, bootstrapAccess.sanitizedRelativeUrl);
+      }
+
+      try {
+        const nextAccessState = bootstrapAccess.token
+          ? await submitHostedAccessToken(bootstrapAccess.token)
+          : await fetchHostedAccessState();
+
+        if (cancelled) {
+          return;
+        }
+
+        applyHostedAccessState(nextAccessState);
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        setAccessState({
+          checked: true,
+          required: true,
+          authenticated: false,
+          message:
+            "Unable to verify hosted access right now. Refresh the page and try again.",
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasUnlockedAccess) {
+      return;
+    }
+
     const socketManager = createSocketManager({
       url: createSocketUrl(),
       hasSessionState: () => hasSessionRef.current,
@@ -196,7 +380,7 @@ export function App() {
         socketManagerRef.current = null;
       }
     };
-  }, []);
+  }, [hasUnlockedAccess]);
 
   /* ── Messaging ────────────────────────────── */
 
@@ -348,6 +532,17 @@ export function App() {
     if (composerNotice) setComposerNotice(null);
   }
 
+  function handleAccessTokenChange(value: string): void {
+    setAccessToken(value);
+
+    if (accessState.message) {
+      setAccessState((currentState) => ({
+        ...currentState,
+        message: null,
+      }));
+    }
+  }
+
   function handleContextChange(value: string): void {
     setContextDraft(value);
     if (composerNotice) setComposerNotice(null);
@@ -444,6 +639,222 @@ export function App() {
     }
   }
 
+  function handleDeployTarget(): void {
+    const sent = sendMessage({
+      type: "deploy:request",
+      platform: "vercel",
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Deploy unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before deploying this target.",
+      });
+    }
+  }
+
+  async function handleUploadFiles(files: File[]): Promise<void> {
+    const sessionId = viewState.sessionState?.sessionId;
+
+    if (!sessionId) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Upload unavailable",
+        detail: "Wait for Shipyard to finish syncing the current session before attaching files.",
+      });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set("sessionId", sessionId);
+
+    for (const file of files) {
+      formData.append("files", file);
+    }
+
+    try {
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        queueComposerNotice({
+          tone: "danger",
+          title: "Upload failed",
+          detail:
+            extractApiMessage(payload) ??
+            "Shipyard could not store the selected files.",
+        });
+        return;
+      }
+
+      const parsed = uploadResponseSchema.safeParse(payload);
+
+      if (!parsed.success) {
+        queueComposerNotice({
+          tone: "danger",
+          title: "Upload failed",
+          detail: "Shipyard returned an invalid upload receipt payload.",
+        });
+        return;
+      }
+
+      const readyUploads = parsed.data.receipts.filter(
+        (receipt) => receipt.status === "ready",
+      );
+      const rejectedUploads = parsed.data.receipts.filter(
+        (receipt) => receipt.status === "rejected",
+      );
+
+      if (readyUploads.length > 0 && rejectedUploads.length === 0) {
+        queueComposerNotice({
+          tone: "success",
+          title: "Files attached",
+          detail: `Shipyard stored ${String(readyUploads.length)} file${readyUploads.length === 1 ? "" : "s"} and will inject them into the next turn.`,
+        });
+        return;
+      }
+
+      if (readyUploads.length > 0) {
+        queueComposerNotice({
+          tone: "warning",
+          title: "Some files attached",
+          detail:
+            rejectedUploads[0]?.errorMessage ??
+            `Shipyard attached ${String(readyUploads.length)} file${readyUploads.length === 1 ? "" : "s"} and rejected ${String(rejectedUploads.length)} unsupported upload${rejectedUploads.length === 1 ? "" : "s"}.`,
+        });
+        return;
+      }
+
+      queueComposerNotice({
+        tone: "danger",
+        title: "Upload rejected",
+        detail:
+          rejectedUploads[0]?.errorMessage ??
+          "Shipyard only supports bounded text-based uploads in this first hosted pass.",
+      });
+    } catch {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Upload failed",
+        detail: "Shipyard could not reach the upload endpoint. Try again in a moment.",
+      });
+    }
+  }
+
+  async function handleRemovePendingUpload(receiptId: string): Promise<void> {
+    const sessionId = viewState.sessionState?.sessionId;
+
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/uploads/${encodeURIComponent(receiptId)}?sessionId=${encodeURIComponent(sessionId)}`,
+        {
+          method: "DELETE",
+          headers: {
+            accept: "application/json",
+          },
+        },
+      );
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        queueComposerNotice({
+          tone: "danger",
+          title: "Remove failed",
+          detail:
+            extractApiMessage(payload) ??
+            "Shipyard could not remove that pending upload.",
+        });
+        return;
+      }
+
+      const parsed = uploadDeleteResponseSchema.safeParse(payload);
+
+      if (!parsed.success) {
+        queueComposerNotice({
+          tone: "danger",
+          title: "Remove failed",
+          detail: "Shipyard returned an invalid upload-removal payload.",
+        });
+        return;
+      }
+
+      queueComposerNotice({
+        tone: "neutral",
+        title: "Attachment removed",
+        detail: "Shipyard will ignore that uploaded file on the next turn.",
+      });
+    } catch {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Remove failed",
+        detail: "Shipyard could not reach the upload endpoint. Try again in a moment.",
+      });
+    }
+  }
+
+  async function handleHostedAccessSubmit(
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> {
+    event.preventDefault();
+    const normalizedToken = accessToken.trim();
+
+    if (!normalizedToken) {
+      setAccessState({
+        checked: true,
+        required: true,
+        authenticated: false,
+        message: "Enter the shared access token to continue.",
+      });
+      return;
+    }
+
+    setAccessSubmitting(true);
+
+    try {
+      const nextAccessState = await submitHostedAccessToken(normalizedToken);
+      applyHostedAccessState(nextAccessState);
+
+      if (nextAccessState.authenticated) {
+        hasSessionRef.current = false;
+        setAccessToken("");
+      }
+    } catch {
+      setAccessState({
+        checked: true,
+        required: true,
+        authenticated: false,
+        message:
+          "Unable to verify hosted access right now. Refresh the page and try again.",
+      });
+    } finally {
+      setAccessSubmitting(false);
+    }
+  }
+
+  if (!hasUnlockedAccess) {
+    return (
+      <HostedAccessGate
+        accessToken={accessToken}
+        checking={!accessState.checked}
+        submitting={accessSubmitting}
+        message={accessState.message}
+        onAccessTokenChange={handleAccessTokenChange}
+        onSubmit={handleHostedAccessSubmit}
+      />
+    );
+  }
+
+  const hostedEditorUrl = createHostedEditorUrl(new URL(window.location.href));
+
   return (
     <ShipyardWorkbench
       sessionState={viewState.sessionState}
@@ -452,7 +863,10 @@ export function App() {
       turns={deferredTurns}
       fileEvents={deferredFileEvents}
       previewState={viewState.previewState}
+      latestDeploy={viewState.latestDeploy}
+      hostedEditorUrl={hostedEditorUrl}
       contextHistory={deferredContextHistory}
+      pendingUploads={viewState.pendingUploads}
       connectionState={viewState.connectionState}
       agentStatus={viewState.agentStatus}
       instruction={instruction}
@@ -467,6 +881,9 @@ export function App() {
       onClearContext={handleClearContext}
       onSubmitInstruction={handleInstructionSubmit}
       onCancelInstruction={handleCancelInstruction}
+      onUploadFiles={handleUploadFiles}
+      onRemovePendingUpload={handleRemovePendingUpload}
+      onRequestDeploy={handleDeployTarget}
       onRequestSessionResume={handleSessionResume}
       onRequestTargetSwitch={handleTargetSwitch}
       onRequestTargetCreate={handleTargetCreate}

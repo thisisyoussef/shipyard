@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { createUnavailablePreviewCapability } from "../src/preview/contracts.js";
 import {
+  addPendingUploads,
   applyBackendMessage,
+  clearPendingUploads,
   createInitialWorkbenchState,
   prepareInstructionSubmission,
   queueInstructionTurn,
+  removePendingUpload,
 } from "../ui/src/view-models.js";
 
 describe("ui view models", () => {
@@ -358,6 +361,64 @@ describe("ui view models", () => {
     });
   });
 
+  it("tracks deploy state updates separately from preview state", () => {
+    let state = createInitialWorkbenchState();
+
+    state = applyBackendMessage(state, {
+      type: "deploy:state",
+      deploy: {
+        status: "deploying",
+        platform: "vercel",
+        available: false,
+        unavailableReason: "A deploy is already in progress.",
+        productionUrl: null,
+        summary: "Deploying the current target to Vercel.",
+        logExcerpt: null,
+        command: null,
+        requestedAt: "2026-03-25T14:00:00.000Z",
+        completedAt: null,
+      },
+    });
+
+    expect(state.latestDeploy).toMatchObject({
+      status: "deploying",
+      platform: "vercel",
+      available: false,
+      unavailableReason: "A deploy is already in progress.",
+      summary: "Deploying the current target to Vercel.",
+      requestedAt: "2026-03-25T14:00:00.000Z",
+      completedAt: null,
+    });
+    expect(state.agentStatus).toBe("Deploying the current target to Vercel.");
+    expect(state.latestError).toBeNull();
+
+    state = applyBackendMessage(state, {
+      type: "deploy:state",
+      deploy: {
+        status: "error",
+        platform: "vercel",
+        available: true,
+        unavailableReason: null,
+        productionUrl: "https://shipyard-demo.vercel.app",
+        summary: "Deploy failed. Review the provider output excerpt and retry.",
+        logExcerpt: "Error: build command exited with status 1",
+        command: "vercel deploy --prod --yes --token [redacted]",
+        requestedAt: "2026-03-25T14:00:00.000Z",
+        completedAt: "2026-03-25T14:03:00.000Z",
+      },
+    });
+
+    expect(state.latestDeploy).toMatchObject({
+      status: "error",
+      available: true,
+      productionUrl: "https://shipyard-demo.vercel.app",
+      command: "vercel deploy --prod --yes --token [redacted]",
+    });
+    expect(state.latestError).toBe(
+      "Deploy failed. Review the provider output excerpt and retry.",
+    );
+  });
+
   it("tracks target manager state and enrichment progress in the reducer", () => {
     let state = createInitialWorkbenchState();
 
@@ -424,5 +485,49 @@ describe("ui view models", () => {
       },
     });
     expect(state.agentStatus).toBe("Analyzing project structure.");
+  });
+
+  it("tracks pending uploaded files until the next turn consumes them", () => {
+    let state = createInitialWorkbenchState();
+
+    state = addPendingUploads(state, [
+      {
+        id: "upload-1",
+        originalName: "brief.md",
+        targetRelativePath: ".shipyard/uploads/session-1/brief.md",
+        mediaType: "text/markdown",
+        sizeBytes: 128,
+        previewText: "# Brief",
+        uploadedAt: "2026-03-25T10:00:00.000Z",
+        status: "ready",
+        errorMessage: null,
+      },
+    ]);
+
+    expect(state.pendingUploads).toHaveLength(1);
+    expect(state.pendingUploads[0]).toMatchObject({
+      originalName: "brief.md",
+      status: "ready",
+    });
+
+    state = removePendingUpload(state, "upload-1");
+    expect(state.pendingUploads).toHaveLength(0);
+
+    state = addPendingUploads(state, [
+      {
+        id: "upload-2",
+        originalName: "notes.txt",
+        targetRelativePath: ".shipyard/uploads/session-1/notes.txt",
+        mediaType: "text/plain",
+        sizeBytes: 64,
+        previewText: "remember this",
+        uploadedAt: "2026-03-25T10:01:00.000Z",
+        status: "ready",
+        errorMessage: null,
+      },
+    ]);
+    state = clearPendingUploads(state);
+
+    expect(state.pendingUploads).toHaveLength(0);
   });
 });

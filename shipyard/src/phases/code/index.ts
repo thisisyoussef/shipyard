@@ -19,6 +19,7 @@ export const CODE_PHASE_TOOL_NAMES = [
   "search_files",
   "run_command",
   "git_diff",
+  "deploy_target",
 ];
 
 export const codePhase: Phase = {

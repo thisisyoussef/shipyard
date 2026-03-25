@@ -6,11 +6,12 @@
  * context badges, keyboard shortcuts, and visual state machine.
  */
 
-import type { FormEvent, KeyboardEvent, RefObject } from "react";
+import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { BadgeTone } from "../primitives.js";
 import { Badge } from "../primitives.js";
+import type { PendingUploadReceiptViewModel } from "../view-models.js";
 
 /* ── Types ──────────────────────────────────────── */
 
@@ -41,10 +42,14 @@ export interface ComposerPanelProps {
   submitting?: boolean;
   /** Notice to display above textarea */
   notice?: ComposerNotice | null;
-  /** Attached context file names */
-  contextFiles?: string[];
-  /** Callback to remove a context file */
-  onRemoveContext?: (filename: string) => void;
+  /** Uploaded file receipts waiting for the next turn */
+  pendingUploads?: PendingUploadReceiptViewModel[];
+  /** Whether file uploads are temporarily unavailable */
+  uploadsDisabled?: boolean;
+  /** Callback when the user selects local files to upload */
+  onUploadFiles?: (files: File[]) => void;
+  /** Callback to remove a pending upload before the next turn */
+  onRemoveUpload?: (receiptId: string) => void;
 }
 
 /* ── Auto-resize hook ───────────────────────────── */
@@ -79,10 +84,13 @@ export function ComposerPanel({
   agentBusy = false,
   submitting = false,
   notice,
-  contextFiles = [],
-  onRemoveContext,
+  pendingUploads = [],
+  uploadsDisabled = false,
+  onUploadFiles,
+  onRemoveUpload,
 }: ComposerPanelProps) {
   const [isFocused, setIsFocused] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   // Auto-resize textarea
   useAutoResize(textareaRef, instruction);
@@ -101,6 +109,23 @@ export function ComposerPanel({
 
   const handleFocus = useCallback(() => setIsFocused(true), []);
   const handleBlur = useCallback(() => setIsFocused(false), []);
+  const handleUploadPicker = useCallback(() => {
+    uploadInputRef.current?.click();
+  }, []);
+  const handleUploadChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const selectedFiles = event.target.files
+        ? Array.from(event.target.files)
+        : [];
+
+      if (selectedFiles.length > 0) {
+        onUploadFiles?.(selectedFiles);
+      }
+
+      event.target.value = "";
+    },
+    [onUploadFiles],
+  );
 
   return (
     <div className="composer-shell" role="form" data-state={state}>
@@ -136,29 +161,52 @@ export function ComposerPanel({
           data-state={state}
         />
 
-        {/* Context badges */}
-        {contextFiles.length > 0 && (
+        <div className="composer-toolbar">
+          <button
+            type="button"
+            className="composer-attach"
+            onClick={handleUploadPicker}
+            disabled={uploadsDisabled}
+            aria-disabled={uploadsDisabled}
+          >
+            Attach files
+          </button>
+          <input
+            ref={uploadInputRef}
+            type="file"
+            multiple
+            hidden
+            onChange={handleUploadChange}
+          />
+        </div>
+
+        {/* Pending upload badges */}
+        {pendingUploads.length > 0 && (
           <div
             className="composer-context-badges"
             role="list"
-            aria-label="Attached context"
+            aria-label="Pending uploaded files"
           >
-            {contextFiles.map((file) => (
-              <span key={file} className="composer-context-badge" role="listitem">
+            {pendingUploads.map((upload) => (
+              <span
+                key={upload.id}
+                className="composer-context-badge"
+                role="listitem"
+              >
                 <code
-                  title={file}
-                  aria-label={`Attached context: ${file}`}
+                  title={upload.targetRelativePath ?? upload.originalName}
+                  aria-label={`Pending uploaded file: ${upload.originalName}`}
                 >
-                  {file.length > 24
-                    ? `${file.slice(0, 12)}...${file.slice(-9)}`
-                    : file}
+                  {upload.originalName.length > 24
+                    ? `${upload.originalName.slice(0, 12)}...${upload.originalName.slice(-9)}`
+                    : upload.originalName}
                 </code>
-                {onRemoveContext && (
+                {onRemoveUpload && (
                   <button
                     type="button"
                     className="composer-context-dismiss"
-                    aria-label={`Remove ${file} from context`}
-                    onClick={() => onRemoveContext(file)}
+                    aria-label={`Remove ${upload.originalName} before the next turn`}
+                    onClick={() => onRemoveUpload(upload.id)}
                   >
                     ×
                   </button>

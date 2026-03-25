@@ -5,6 +5,8 @@ import {
 } from "../preview/contracts.js";
 import type {
   BackendToFrontendMessage,
+  DeploySummary,
+  UploadReceipt,
   SessionRunSummary,
   TargetEnrichmentState,
   TargetManagerState,
@@ -91,6 +93,10 @@ export interface ContextReceiptViewModel {
   turnId: string;
 }
 
+export interface PendingUploadReceiptViewModel extends UploadReceipt {}
+
+export interface LatestDeployViewModel extends DeploySummary {}
+
 export interface PendingToolCall {
   turnId: string;
   fileEventId?: string;
@@ -121,6 +127,8 @@ export interface WorkbenchViewState {
   nextEventNumber: number;
   nextFileEventNumber: number;
   contextHistory: ContextReceiptViewModel[];
+  pendingUploads: PendingUploadReceiptViewModel[];
+  latestDeploy: LatestDeployViewModel;
   previewState: PreviewStateViewModel;
   targetManager: TargetManagerViewModel | null;
 }
@@ -129,6 +137,24 @@ export interface PreparedInstructionSubmission {
   instruction: string;
   injectedContext?: string[];
   clearedContextDraft: string;
+}
+
+export function createInitialDeploySummary(
+  overrides: Partial<LatestDeployViewModel> = {},
+): LatestDeployViewModel {
+  return {
+    status: "idle",
+    platform: "vercel",
+    available: false,
+    unavailableReason: "Waiting for Shipyard to sync deploy availability.",
+    productionUrl: null,
+    summary: "Waiting for Shipyard to sync deploy availability.",
+    logExcerpt: null,
+    command: null,
+    requestedAt: null,
+    completedAt: null,
+    ...overrides,
+  };
 }
 
 function createTracePath(
@@ -388,10 +414,54 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     nextEventNumber: 1,
     nextFileEventNumber: 1,
     contextHistory: [],
+    pendingUploads: [],
+    latestDeploy: createInitialDeploySummary(),
     previewState: createIdlePreviewState(
       "Waiting for Shipyard to publish preview state.",
     ),
     targetManager: null,
+  };
+}
+
+export function addPendingUploads(
+  state: WorkbenchViewState,
+  uploads: PendingUploadReceiptViewModel[],
+): WorkbenchViewState {
+  const readyUploads = uploads.filter((upload) => upload.status === "ready");
+
+  if (readyUploads.length === 0) {
+    return state;
+  }
+
+  return {
+    ...state,
+    pendingUploads: [...readyUploads, ...state.pendingUploads].filter(
+      (upload, index, collection) =>
+        collection.findIndex((candidate) => candidate.id === upload.id) === index,
+    ),
+  };
+}
+
+export function removePendingUpload(
+  state: WorkbenchViewState,
+  uploadId: string,
+): WorkbenchViewState {
+  return {
+    ...state,
+    pendingUploads: state.pendingUploads.filter((upload) => upload.id !== uploadId),
+  };
+}
+
+export function clearPendingUploads(
+  state: WorkbenchViewState,
+): WorkbenchViewState {
+  if (state.pendingUploads.length === 0) {
+    return state;
+  }
+
+  return {
+    ...state,
+    pendingUploads: [],
   };
 }
 
@@ -431,6 +501,7 @@ export function applySessionSnapshot(
   message: Extract<BackendToFrontendMessage, { type: "session:state" }>,
 ): WorkbenchViewState {
   const recoveredState = message.workbenchState ?? state;
+  const latestDeploy = recoveredState.latestDeploy ?? createInitialDeploySummary();
   const previewState = recoveredState.previewState ??
     createInitialPreviewState({
       activePhase: message.activePhase,
@@ -461,6 +532,7 @@ export function applySessionSnapshot(
       createTargetManagerAgentStatus(
         recoveredState.targetManager ?? state.targetManager,
       ) ?? nextAgentStatus,
+    latestDeploy,
     previewState,
     targetManager: recoveredState.targetManager ?? state.targetManager ?? null,
   };
@@ -730,6 +802,18 @@ export function applyBackendMessage(
       return {
         ...state,
         previewState: message.preview,
+      };
+
+    case "deploy:state":
+      return {
+        ...state,
+        latestDeploy: message.deploy,
+        latestError:
+          message.deploy.status === "error" ? message.deploy.summary : null,
+        agentStatus:
+          message.deploy.status === "idle" && message.deploy.available
+            ? state.agentStatus
+            : message.deploy.summary,
       };
 
     case "target:state":

@@ -31,6 +31,8 @@ import {
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
+  LatestDeployViewModel,
+  PendingUploadReceiptViewModel,
   PreviewStateViewModel,
   SessionRunSummaryViewModel,
   SessionStateViewModel,
@@ -54,7 +56,10 @@ export interface ShipyardWorkbenchProps {
   turns: TurnViewModel[];
   fileEvents: FileEventViewModel[];
   previewState: PreviewStateViewModel;
+  latestDeploy: LatestDeployViewModel;
+  hostedEditorUrl: string;
   contextHistory: ContextReceiptViewModel[];
+  pendingUploads: PendingUploadReceiptViewModel[];
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
   instruction: string;
@@ -69,6 +74,9 @@ export interface ShipyardWorkbenchProps {
   onClearContext: () => void;
   onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
   onCancelInstruction: () => void;
+  onUploadFiles: (files: File[]) => void;
+  onRemovePendingUpload: (receiptId: string) => void;
+  onRequestDeploy: () => void;
   onRequestSessionResume: (sessionId: string) => void;
   onRequestTargetSwitch: (targetPath: string) => void;
   onRequestTargetCreate: (input: {
@@ -124,6 +132,19 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
     props.targetManager?.currentTarget.name ?? props.sessionState?.targetLabel;
   const targetPath =
     props.targetManager?.currentTarget.path ?? props.sessionState?.targetDirectory;
+  const deployDisabledReason = activePhase !== "code"
+    ? "Select or create a target before deploying."
+    : props.latestDeploy.status === "deploying"
+      ? "A deploy is already in progress."
+      : props.connectionState === "agent-busy"
+        ? "Finish the current browser action before deploying."
+        : props.connectionState === "disconnected" ||
+            props.connectionState === "error" ||
+            props.connectionState === "connecting"
+          ? "Wait for Shipyard to reconnect before deploying."
+          : props.latestDeploy.available
+            ? null
+            : props.latestDeploy.unavailableReason ?? props.latestDeploy.summary;
 
   const leftRailItems = [
     { id: "session", icon: <SessionIcon />, label: "Session", active: true },
@@ -161,7 +182,10 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               <TargetHeader
                 activePhase={activePhase}
                 targetManager={props.targetManager}
+                deployDisabledReason={activePhase === "code" ? deployDisabledReason : null}
+                deploying={props.latestDeploy.status === "deploying"}
                 onOpenSwitcher={() => setTargetSwitcherOpen(true)}
+                onRequestDeploy={props.onRequestDeploy}
               />
             ) : null}
 
@@ -176,6 +200,10 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               onInstructionChange={props.onInstructionChange}
               onSubmit={props.onSubmitInstruction}
               onCancel={props.onCancelInstruction}
+              pendingUploads={props.pendingUploads}
+              uploadsDisabled={props.sessionState === null}
+              onUploadFiles={props.onUploadFiles}
+              onRemoveUpload={props.onRemovePendingUpload}
               onKeyDown={props.onInstructionKeyDown}
               textareaRef={props.instructionInputRef}
               agentBusy={props.connectionState === "agent-busy"}
@@ -214,7 +242,11 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             {/* Workspace content */}
             <div className="workspace-content">
               {workspaceTab === "preview" ? (
-                <PreviewPanel preview={props.previewState} />
+                <PreviewPanel
+                  preview={props.previewState}
+                  deploy={props.latestDeploy}
+                  hostedEditorUrl={props.hostedEditorUrl}
+                />
               ) : (
                 <>
                   <FilePanel fileEvents={props.fileEvents} />

@@ -228,6 +228,17 @@ describe("ui event helpers", () => {
       scaffoldType: "react-ts",
     });
 
+    expect(
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "deploy:request",
+        }),
+      ),
+    ).toEqual({
+      type: "deploy:request",
+      platform: "vercel",
+    });
+
     expect(() =>
       parseFrontendMessage(
         JSON.stringify({

@@ -49,6 +49,8 @@ export interface ExecuteProcessInput {
   shell?: boolean;
   timeoutMs: number;
   signal?: AbortSignal;
+  displayCommand?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 const runCommandInputSchema = {
@@ -172,6 +174,7 @@ export async function executeProcess(
           stdio: ["ignore", "pipe", "pipe"],
           env: {
             ...process.env,
+            ...input.env,
             FORCE_COLOR: "0",
             NO_COLOR: "1",
             TERM: "dumb",
@@ -183,6 +186,7 @@ export async function executeProcess(
           stdio: ["ignore", "pipe", "pipe"],
           env: {
             ...process.env,
+            ...input.env,
             FORCE_COLOR: "0",
             NO_COLOR: "1",
             TERM: "dumb",
@@ -275,9 +279,11 @@ export async function executeProcess(
       const clipped = clipText(combined, MAX_COMBINED_OUTPUT_CHARS);
 
       resolve({
-        command: input.shell
-          ? input.command
-          : [input.command, ...(input.args ?? [])].join(" "),
+        command:
+          input.displayCommand ??
+          (input.shell
+            ? input.command
+            : [input.command, ...(input.args ?? [])].join(" ")),
         cwd: input.cwd,
         stdout: sanitizedStdout,
         stderr: sanitizedStderr,

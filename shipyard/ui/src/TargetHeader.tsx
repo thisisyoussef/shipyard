@@ -5,7 +5,10 @@ import type { TargetManagerViewModel } from "./view-models.js";
 interface TargetHeaderProps {
   activePhase: "code" | "target-manager";
   targetManager: TargetManagerViewModel;
+  deployDisabledReason: string | null;
+  deploying: boolean;
   onOpenSwitcher: () => void;
+  onRequestDeploy: () => void;
 }
 
 function createTargetDescription(
@@ -29,6 +32,9 @@ export function TargetHeader(props: TargetHeaderProps) {
     props.targetManager,
   );
   const hasSelectedTarget = props.activePhase === "code";
+  const deployActionHintId = hasSelectedTarget
+    ? `target-deploy-hint-${props.targetManager.currentTarget.name.replace(/\s+/g, "-").toLowerCase()}`
+    : undefined;
 
   return (
     <section className="target-header" aria-label="Target context">
@@ -70,13 +76,31 @@ export function TargetHeader(props: TargetHeaderProps) {
           hasProfile={props.targetManager.currentTarget.hasProfile}
           canEnrich={hasSelectedTarget}
         />
-        <button
-          type="button"
-          className="target-primary-action"
-          onClick={props.onOpenSwitcher}
-        >
-          {hasSelectedTarget ? "Change target" : "Browse targets"}
-        </button>
+        <div className="target-action-group">
+          {hasSelectedTarget ? (
+            <button
+              type="button"
+              className="target-primary-action"
+              onClick={props.onRequestDeploy}
+              disabled={props.deployDisabledReason !== null}
+              aria-describedby={props.deployDisabledReason ? deployActionHintId : undefined}
+            >
+              {props.deploying ? "Deploying..." : "Deploy to Vercel"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={hasSelectedTarget ? "target-inline-action" : "target-primary-action"}
+            onClick={props.onOpenSwitcher}
+          >
+            {hasSelectedTarget ? "Change target" : "Browse targets"}
+          </button>
+        </div>
+        {hasSelectedTarget && props.deployDisabledReason ? (
+          <p id={deployActionHintId} className="target-action-hint">
+            {props.deployDisabledReason}
+          </p>
+        ) : null}
       </div>
     </section>
   );

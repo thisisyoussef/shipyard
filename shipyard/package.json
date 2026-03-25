@@ -15,12 +15,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && vite build",
     "build:ui": "vite build",
-    "dev": "node --env-file=.env --import tsx ./src/bin/shipyard.ts",
-    "start": "node --env-file=.env --import tsx ./src/bin/shipyard.ts",
-    "shipyard": "node --env-file=.env --import tsx ./src/bin/shipyard.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx ./src/bin/shipyard.ts",
+    "start": "node --env-file-if-exists=.env --import tsx ./src/bin/shipyard.ts",
+    "shipyard": "node --env-file-if-exists=.env --import tsx ./src/bin/shipyard.ts",
     "test-target:init": "bash ../scripts/init-test-target.sh",
-    "test-target:cli": "node --env-file=.env --import tsx ./src/bin/shipyard.ts --target ../test-targets/tic-tac-toe",
-    "test-target:ui": "node --env-file=.env --import tsx ./src/bin/shipyard.ts --target ../test-targets/tic-tac-toe --ui",
+    "test-target:cli": "node --env-file-if-exists=.env --import tsx ./src/bin/shipyard.ts --target ../test-targets/tic-tac-toe",
+    "test-target:ui": "node --env-file-if-exists=.env --import tsx ./src/bin/shipyard.ts --target ../test-targets/tic-tac-toe --ui",
     "test:smoke": "vitest run tests/cli-loop.test.ts tests/tooling.test.ts tests/context-envelope.test.ts tests/turn-runtime.test.ts tests/graph-runtime.test.ts tests/ui-runtime.test.ts tests/langsmith-tracing.test.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.ui.json"
@@ -50,6 +50,7 @@
     "ora": "^9.3.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "vercel": "^50.37.0",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   }

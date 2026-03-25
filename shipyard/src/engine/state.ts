@@ -7,6 +7,7 @@ import { discoverTarget, normalizeDiscoveryReport } from "../context/discovery.j
 import { createInitialPreviewState } from "../preview/contracts.js";
 import { loadTargetProfile } from "../tools/target-manager/profile-io.js";
 import {
+  createInitialDeploySummary,
   createInitialWorkbenchState,
   type WorkbenchViewState,
 } from "../ui/workbench-state.js";
@@ -238,6 +239,14 @@ export async function loadSessionState(
     });
   }
 
+  if (!Array.isArray(workbenchState.pendingUploads)) {
+    workbenchState.pendingUploads = [];
+  }
+
+  if (!workbenchState.latestDeploy) {
+    workbenchState.latestDeploy = createInitialDeploySummary();
+  }
+
   return {
     ...parsed,
     discovery,
@@ -354,6 +363,10 @@ export async function switchTarget(
       activePhase: nextState.activePhase,
       discovery,
     });
+  }
+
+  if (!nextState.workbenchState.latestDeploy) {
+    nextState.workbenchState.latestDeploy = createInitialDeploySummary();
   }
 
   await saveSessionState(nextState);
