@@ -12,7 +12,9 @@
   - `git status -sb`
   - `git branch -vv`
 - If this is a new story, create or switch to a fresh `codex/<short-task-name>` branch before any edits.
+- If the current worktree already contains unrelated modifications, another active story, or other agents' in-progress work, do not pile the new story onto that tree. Create a clean worktree from the latest base branch and start the story there on a fresh `codex/<short-task-name>` branch.
 - When that story starts in a fresh branch or worktree, carry over the required local `.env*` files before running project commands, and keep them untracked.
+- If a story was started in a shared dirty tree anyway, move it into a clean worktree before finalization by replaying only the story-owned diff.
 - Do not continue a new story on the previous story's branch.
 
 ### Step 0.2: Run Story Preflight

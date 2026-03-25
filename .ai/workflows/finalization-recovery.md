@@ -12,6 +12,7 @@ Run this when any of the following happen during `.ai/workflows/git-finalization
 - base-branch sync or merge hits a conflict
 - push or PR creation fails
 - post-push checks/CI fail
+- a shared dirty worktree cannot be isolated safely for finalization
 - an approved post-merge deployment step fails after merge
 
 ---
@@ -23,6 +24,7 @@ Record:
 - exact command that failed
 - key error output
 - whether the branch is still clean or in the middle of a merge/rebase
+- whether the failure happened in the shared dirty tree or the isolated finalization tree
 
 ---
 
@@ -50,6 +52,7 @@ If neither is active, do not improvise destructive cleanup. Stop and inspect fir
 - `merge conflict`: re-sync base branch, resolve conflicts carefully, then re-run the combined completion gate
 - `push/PR failure`: restore remote/auth state, then retry finalization
 - `CI/check failure`: fix on the same branch, update the completion gate, and ask for approval again if the diff changed materially
+- `shared-tree isolation failure`: move the story onto a clean branch/worktree or get ownership clarification for overlapping files, then re-run the combined completion gate
 - `demo deploy failure`: record `blocked` or `failed` explicitly and decide whether a follow-up story is needed
 
 ---

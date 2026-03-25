@@ -51,6 +51,7 @@ pnpm build
 ## Story Rules
 
 - Start non-trivial work on a fresh `codex/` branch (Claude Code worktrees also work).
+- If the current worktree already contains unrelated in-progress changes or another active story, start the new story in a fresh worktree/branch instead of layering onto the shared dirty tree.
 - Do a **preparation pass** before edits: read relevant code, contracts, and docs first.
 - Use **TDD** for behavior changes when practical.
 - Keep narrow corrections narrow — do not silently expand scope.
@@ -90,6 +91,8 @@ For **trivial** stories (single file, no API/schema/contract changes): skip step
 - Before merging: update impacted docs/diagrams or explicitly record `N/A`.
 - When a story or spec pack is complete: update the relevant `shipyard/docs/specs/**` files with code references and short representative snippets, or explicit `N/A`.
 - For traced AI/runtime behavior changes: run `.ai/workflows/langsmith-finish-check.md` before merge.
+- Unrelated dirty state is not a valid reason to stop at local validation. Preserve it, isolate the current story in a clean branch/worktree, rerun validation there, and continue through commit → push → PR → merge → cleanup.
+- Escalate only when ownership or overlap cannot be disentangled safely without risking someone else's work.
 - Default to full GitHub flow: commit → push → PR → merge → cleanup.
 
 ## Memory System
