@@ -83,11 +83,13 @@ Do not assume defaults that have not been recorded.
 - Reuse existing patterns where possible
 - Keep boundaries explicit
 - For UI scope, define typography/layout/color/motion constraints, not vague design adjectives
-- For UI scope, run the **UI Skill Chain Phase 1** (Design Direction) from `.ai/codex.md`:
-  - `frontend-design` — set visual direction, avoid AI slop
-  - `interface-design` — dashboard/panel/tool interface patterns
-  - `emil-design-eng` — taste, unseen details, animation decisions
-  - `baseline-ui` — enforce component baseline standards
+
+### Step 3a: Run the Design Phase for UI Stories
+- If the story touches user-visible UI, run `.ai/workflows/design-phase.md` before TDD.
+- The design phase produces a concrete design brief at `.ai/state/design-brief/<story-id>/brief.md`.
+- The brief contains: visual direction, component inventory, token selections, layout/type/color/motion decisions, copy direction, accessibility requirements, responsive behavior, edge cases.
+- This brief becomes allowed context for TDD Agent 2 (implementer) and Agent 3 (reviewer).
+- Do not skip this step and invent design decisions during TDD.
 
 ### Step 3.5: Establish an Inspectable UI Surface Early
 - For stories that change visible product behavior, establish or extend the minimum inspectable UI surface early in the implementation sequence.

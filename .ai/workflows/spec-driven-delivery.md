@@ -123,6 +123,21 @@ For story packs:
 
 ---
 
+## Step 4b: Design Phase (UI Stories)
+
+If the story touches user-visible UI, run `.ai/workflows/design-phase.md` after the task breakdown and before the TDD test list.
+
+The design phase:
+- Takes the feature spec and task breakdown as input
+- Runs all 6 design steps (Understand → Define → Compose → Animate → Harden → Review)
+- Invokes 19 skills across the steps (see design-phase.md for the full mapping)
+- Produces a design brief at `.ai/state/design-brief/<story-id>/brief.md`
+- The brief becomes allowed context for the TDD pipeline
+
+Do not skip this for UI stories. The design brief prevents the implementer from inventing visual decisions under test pressure.
+
+---
+
 ## Step 5: TDD Test List From Spec
 
 Derive tests directly from acceptance criteria:

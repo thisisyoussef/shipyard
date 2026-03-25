@@ -78,9 +78,10 @@ Use:
 Allowed context:
 - Agent 1 test files from disk,
 - full repo codebase,
-- story spec.
+- story spec,
+- **design brief** from `.ai/state/design-brief/<story-id>/brief.md` (when it exists).
 
-For UI implementation stories, Agent 2 should apply the **UI Skill Chain Phase 2** (Build & Refine) from `.ai/codex.md`:
+For UI implementation stories, Agent 2 should read the design brief first, then apply the **UI Skill Chain Phase 2** (Build & Refine) from `.ai/codex.md`:
 - `typeset` — typography hierarchy and font loading
 - `colorize` — strategic color introduction
 - `arrange` — layout, spacing, visual rhythm
