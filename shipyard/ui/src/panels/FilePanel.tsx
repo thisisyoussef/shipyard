@@ -68,9 +68,9 @@ function getEventLabel(status: FileEventViewModel["status"]): string {
 /* ── Component ──────────────────────────────────── */
 
 export function FilePanel({ fileEvents }: FilePanelProps) {
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedFileEventId, setSelectedFileEventId] = useState<string | null>(null);
 
-  const selectedEvent = fileEvents.find((e) => e.path === selectedFile);
+  const selectedEvent = fileEvents.find((event) => event.id === selectedFileEventId);
 
   return (
     <div className="file-panel">
@@ -99,29 +99,32 @@ export function FilePanel({ fileEvents }: FilePanelProps) {
 
               return (
                 <div
-                  key={event.path}
+                  key={event.id}
                   className="file-item"
                   role="option"
-                  aria-selected={selectedFile === event.path}
-                  data-selected={selectedFile === event.path}
+                  aria-selected={selectedFileEventId === event.id}
+                  data-selected={selectedFileEventId === event.id}
                   onClick={() =>
-                    setSelectedFile(
-                      selectedFile === event.path ? null : event.path,
+                    setSelectedFileEventId(
+                      selectedFileEventId === event.id ? null : event.id,
                     )
                   }
                   tabIndex={0}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
-                      setSelectedFile(
-                        selectedFile === event.path ? null : event.path,
+                      setSelectedFileEventId(
+                        selectedFileEventId === event.id ? null : event.id,
                       );
                     }
                   }}
                 >
                   <FileIcon />
-                  <span className="file-item-name" title={event.path}>
-                    {fileName}
-                  </span>
+                  <div className="file-item-copy">
+                    <span className="file-item-name" title={event.path}>
+                      {fileName}
+                    </span>
+                    <span className="file-item-summary">{event.summary}</span>
+                  </div>
                   <Badge tone={tone} className="file-item-badge">
                     {label}
                   </Badge>
@@ -130,18 +133,41 @@ export function FilePanel({ fileEvents }: FilePanelProps) {
             })}
           </div>
 
-          {selectedEvent && selectedEvent.diffLines.length > 0 && (
+          {selectedEvent && (
             <div className="diff-viewer">
-              {selectedEvent.diffLines.map((line) => (
-                <div
-                  key={line.id}
-                  className="diff-line"
-                  data-kind={line.kind}
-                >
-                  <span className="diff-line-number" />
-                  <span className="diff-line-content">{line.text}</span>
+              {selectedEvent.beforePreview ? (
+                <div className="file-preview-pair">
+                  <div className="file-preview-card">
+                    <span className="file-preview-label">Before</span>
+                    <pre className="file-preview-code">
+                      {selectedEvent.beforePreview}
+                    </pre>
+                  </div>
+                  <div className="file-preview-card">
+                    <span className="file-preview-label">After</span>
+                    <pre className="file-preview-code">
+                      {selectedEvent.afterPreview ?? "No updated preview."}
+                    </pre>
+                  </div>
                 </div>
-              ))}
+              ) : null}
+
+              {selectedEvent.diffLines.length > 0 ? (
+                selectedEvent.diffLines.map((line) => (
+                  <div
+                    key={line.id}
+                    className="diff-line"
+                    data-kind={line.kind}
+                  >
+                    <span className="diff-line-number" />
+                    <span className="diff-line-content">{line.text}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="context-empty-text">
+                  No diff lines were recorded for this step.
+                </p>
+              )}
             </div>
           )}
         </>

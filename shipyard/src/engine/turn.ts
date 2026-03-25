@@ -9,8 +9,10 @@ import {
 import { createCodePhase } from "../phases/code/index.js";
 import { createTargetManagerPhase } from "../phases/target-manager/index.js";
 import { gitDiffTool } from "../tools/index.js";
+import type { EditBlockResult } from "../tools/edit-block.js";
 import type { ToolResult } from "../tools/registry.js";
 import type { RunCommandResult } from "../tools/run-command.js";
+import type { WriteFilePreviewData } from "../tools/write-file.js";
 import {
   createAgentGraphState,
   runAgentRuntime,
@@ -65,17 +67,24 @@ export interface ToolResultEvent {
   toolName: string;
   success: boolean;
   summary: string;
+  detail?: string;
+  command?: string;
 }
 
 export interface EditEvent {
   path: string;
   summary: string;
   diff: string;
+  beforePreview?: string | null;
+  afterPreview?: string | null;
+  addedLines?: number;
+  removedLines?: number;
 }
 
 export interface DoneEvent {
   status: "success" | "error" | "cancelled";
   summary: string;
+  langSmithTrace?: LangSmithTraceReference | null;
 }
 
 export interface InstructionTurnReporter {
@@ -262,6 +271,120 @@ function summarizeToolResult(result: ToolResult): string {
   return truncateText(result.error ?? result.output ?? "Tool failed.", 220);
 }
 
+function getToolResultDetail(result: ToolResult): string | undefined {
+  const detail = result.success
+    ? result.output
+    : result.error ?? result.output;
+  const trimmed = detail?.trim();
+
+  return trimmed ? trimmed : undefined;
+}
+
+function extractCommandFromToolInput(input: unknown): string | undefined {
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "command" in input &&
+    typeof input.command === "string" &&
+    input.command.trim()
+  ) {
+    return input.command.trim();
+  }
+
+  return undefined;
+}
+
+function isEditBlockResult(value: unknown): value is EditBlockResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "path" in value &&
+    typeof value.path === "string" &&
+    "beforePreview" in value &&
+    typeof value.beforePreview === "string" &&
+    "afterPreview" in value &&
+    typeof value.afterPreview === "string"
+  );
+}
+
+function isWriteFilePreviewData(value: unknown): value is WriteFilePreviewData {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "path" in value &&
+    typeof value.path === "string" &&
+    "afterPreview" in value &&
+    typeof value.afterPreview === "string"
+  );
+}
+
+function createImmediateEditDiff(options: {
+  path: string;
+  beforePreview?: string | null;
+  afterPreview?: string | null;
+}): string {
+  const lines = [
+    `diff --shipyard ${options.path}`,
+    "@@ immediate edit preview @@",
+  ];
+
+  if (options.beforePreview) {
+    lines.push(
+      ...options.beforePreview
+        .split("\n")
+        .map((line) => `-${line}`),
+    );
+  }
+
+  if (options.afterPreview) {
+    lines.push(
+      ...options.afterPreview
+        .split("\n")
+        .map((line) => `+${line}`),
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function createImmediateEditEvent(
+  toolName: string,
+  resultData: unknown,
+): EditEvent | null {
+  if (toolName === "edit_block" && isEditBlockResult(resultData)) {
+    return {
+      path: resultData.path,
+      summary: `Applied targeted edit to ${resultData.path}`,
+      diff: createImmediateEditDiff({
+        path: resultData.path,
+        beforePreview: resultData.beforePreview,
+        afterPreview: resultData.afterPreview,
+      }),
+      beforePreview: resultData.beforePreview,
+      afterPreview: resultData.afterPreview,
+      addedLines: resultData.addedLines,
+      removedLines: resultData.removedLines,
+    };
+  }
+
+  if (toolName === "write_file" && isWriteFilePreviewData(resultData)) {
+    return {
+      path: resultData.path,
+      summary: `Created ${resultData.path}`,
+      diff: createImmediateEditDiff({
+        path: resultData.path,
+        afterPreview: resultData.afterPreview,
+      }),
+      beforePreview: null,
+      afterPreview: resultData.afterPreview,
+      addedLines: resultData.totalLines,
+      removedLines: 0,
+    };
+  }
+
+  return null;
+}
+
 function isTargetSelectionData(value: unknown): value is { path: string } {
   return (
     typeof value === "object" &&
@@ -337,6 +460,7 @@ function createRuntimeDependencies(
   sessionState: SessionState,
   runtimeState: InstructionRuntimeState,
   reporter: InstructionTurnReporter | undefined,
+  editPreviewState: { emitted: boolean },
 ): AgentRuntimeDependencies {
   const baseDependencies = runtimeState.runtimeDependencies;
 
@@ -379,7 +503,21 @@ function createRuntimeDependencies(
             toolName: context.toolUse.name,
             success: context.result.success,
             summary,
+            detail: getToolResultDetail(context.result),
+            command: extractCommandFromToolInput(context.toolUse.input),
           });
+
+          const immediateEditEvent = context.result.success
+            ? createImmediateEditEvent(
+                context.toolUse.name,
+                context.result.data,
+              )
+            : null;
+
+          if (immediateEditEvent) {
+            editPreviewState.emitted = true;
+            await reporter?.onEdit?.(immediateEditEvent);
+          }
 
           if (
             context.result.success &&
@@ -482,10 +620,12 @@ export async function executeInstructionTurn(
     retryCountsByFile: runtimeState.retryCountsByFile,
     blockedFiles: runtimeState.blockedFiles,
   });
+  const editPreviewState = { emitted: false };
   const runtimeDependencies = createRuntimeDependencies(
     state,
     runtimeState,
     options.reporter,
+    editPreviewState,
   );
 
   configureTargetManagerEnrichmentInvoker(runtimeState.targetEnrichmentInvoker ?? null);
@@ -520,11 +660,13 @@ export async function executeInstructionTurn(
     runtimeState.retryCountsByFile = { ...finalState.retryCountsByFile };
     runtimeState.blockedFiles = [...finalState.blockedFiles];
 
-    await emitDiffPreviewIfAvailable(
-      options.reporter,
-      state.targetDirectory,
-      finalState.lastEditedFile,
-    );
+    if (!editPreviewState.emitted) {
+      await emitDiffPreviewIfAvailable(
+        options.reporter,
+        state.targetDirectory,
+        finalState.lastEditedFile,
+      );
+    }
     if (finalStateStatus === "failed") {
       const errorMessage = finalState.lastError ?? finalText;
       const failedTurnText = `Turn ${String(state.turnCount)} stopped: ${errorMessage}`;
@@ -542,6 +684,7 @@ export async function executeInstructionTurn(
       await options.reporter?.onDone?.({
         status: "error",
         summary: errorMessage,
+        langSmithTrace: finalState.langSmithTrace,
       });
       await emitTurnState(options.reporter, state, "error");
 
@@ -562,6 +705,7 @@ export async function executeInstructionTurn(
     await options.reporter?.onDone?.({
       status: "success",
       summary,
+      langSmithTrace: finalState.langSmithTrace,
     });
 
     state.rollingSummary = updateRollingSummary(
@@ -607,6 +751,7 @@ export async function executeInstructionTurn(
     await options.reporter?.onDone?.({
       status: "error",
       summary: message,
+      langSmithTrace: null,
     });
     await emitTurnState(options.reporter, state, "error");
 

@@ -68,7 +68,7 @@ sequenceDiagram
   Target-->>Tools: file or command results
   Tools-->>Runtime: structured tool results
   Runtime-->>Turn: final text + task plan + verification state
-  Turn-->>Entry: streaming updates + final summary
+  Turn-->>Entry: streaming updates + edit previews + final trace summary
 ```
 
 ## Runtime Artifact Layout
@@ -105,7 +105,9 @@ flowchart TD
 - `src/tracing/` writes local JSONL traces and attaches LangSmith when the
   required environment variables are configured.
 - `src/ui/` is the backend half of browser mode. The React frontend lives under
-  `ui/` and speaks to this layer over a typed WebSocket contract.
+  `ui/` and speaks to this layer over a typed WebSocket contract that now
+  carries immediate edit previews, richer tool detail, and completed-turn trace
+  metadata.
 - `src/preview/` owns loopback-only preview detection helpers plus the
   session-scoped supervisor that starts, refreshes, and stops supported local
   preview processes.

@@ -14,8 +14,8 @@ Shipyard browser workbench.
   backend-side UI module
 - `primitives.tsx`: local UI primitives
 - `shell/`: shell layout, header strip, sidebars, and footer
-- `panels/`: composer, activity, session, saved-run history, context, and file
-  panels
+- `panels/`: composer, chat workspace, live playback, session, saved-run
+  history, context, and file panels
 - `TargetHeader.tsx`, `TargetSwitcher.tsx`, `TargetCreationDialog.tsx`,
   `EnrichmentIndicator.tsx`: target-manager browser controls
 - `styles.css` and `tokens/`: visual system and styling tokens
@@ -25,10 +25,14 @@ Shipyard browser workbench.
 
 - `App.tsx` sends `session:resume_request` messages so the browser can reopen a
   saved run without restarting the Shipyard process.
-- `panels/ActivityFeed.tsx` renders grouped activity blocks with `Latest run`
-  and `All runs` scope controls.
+- `panels/ChatWorkspace.tsx` renders the latest multi-turn transcript with
+  context receipts, assistant summaries, and trace-link access.
+- `panels/LiveViewPanel.tsx` renders in-flight step playback with terminal-like
+  detail for tool results and before/after previews for edits.
 - `panels/RunHistoryPanel.tsx` lists saved sessions for the active target and
   surfaces a resume action for any non-current run.
+- `panels/FilePanel.tsx` keeps each file event distinct, even when one path is
+  touched multiple times during a single run.
 
 ## Diagram
 

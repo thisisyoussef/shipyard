@@ -12,6 +12,7 @@ Prove the current product surface in one pass:
 - target profile + project summary visible in the workbench
 - local preview auto-start with a direct `Open preview` link
 - same-session iteration without restarting Shipyard
+- chat transcript plus live step playback in the browser workbench
 - building a simple tic-tac-toe app from a greenfield scaffold
 
 ## Pre-Recording Setup
@@ -119,7 +120,8 @@ Turn this starter React app into a simple 3x3 tic-tac-toe board. Show a heading,
 ```
 
 - After the first turn finishes, point at:
-  - the activity feed
+  - the `Chat` tab
+  - the `Live view` tab
   - the file/output sidebars
   - the preview panel refreshing
 
@@ -128,6 +130,9 @@ Turn this starter React app into a simple 3x3 tic-tac-toe board. Show a heading,
 ```text
 Keep the next change small. Build on the current board instead of rewriting it, and tell me exactly which files changed.
 ```
+
+- Switch to `Live view` before sending the second instruction so the step
+  timeline is visible while the run is active.
 
 - Submit this second instruction in the same browser session:
 
@@ -146,19 +151,37 @@ Narration:
 > playable loop without restarting the agent or the app.
 
 > I’m also injecting operator context at runtime before the second turn. The UI
-> keeps that context visible as a receipt, while the workbench shows the file
-> diff, output, and live preview together so I can verify the change in one
-> place.
+> keeps that context visible as a receipt. I can read the conversation in the
+> `Chat` view, then flip to `Live view` to watch the read, edit, and result
+> steps land one by one while the run is still executing.
 
 Proof callout:
 - Same session accepts multiple turns without restarting Shipyard.
 - The second turn clearly uses injected context from the sidebar.
+- The `Live view` tab shows sequential step updates before the turn is fully
+  complete.
 - The file/output sidebars show a narrow edit surface rather than a full-file
-  rewrite.
+  rewrite, including before/after evidence for the edit step.
 - The preview updates live from scaffold to board to playable game, and can
   also be opened directly in its own tab.
 
-### 03:25-04:00: Close
+### 03:25-03:45: Show Saved Runs And Trace Proof
+
+Action:
+- Open the `Previous runs` panel in the left sidebar.
+- Point at the current run entry and at least one earlier saved run.
+- Click the `Open trace` link from the finished turn or selected live step.
+
+Narration:
+> The browser also keeps the session history local to this target, so I can
+> reopen older runs without restarting Shipyard. And for deeper inspection, each
+> completed run can expose its LangSmith trace right from the workbench.
+
+Proof callout:
+- Saved runs are visible in the browser for the current target.
+- A completed run exposes a direct trace link without leaving the workbench.
+
+### 03:45-04:00: Close
 
 Action:
 - End on the Shipyard workbench with the finished `tic-tac-toe-demo` board
@@ -167,8 +190,9 @@ Action:
 Narration:
 > That is the current Shipyard flow in one pass: start without a target,
 > create a fresh project from the browser, build a real feature in the same
-> session, and verify it through the built-in preview without restarting the
-> agent or leaving the local workflow.
+> session, inspect the run through chat plus live playback, and verify it
+> through the built-in preview without restarting the agent or leaving the local
+> workflow.
 
 ## Backup Path If A Live Turn Misbehaves
 
@@ -179,6 +203,9 @@ checked-in evidence instead of improvising:
   creation without restarting
 - `shipyard/tests/ui-runtime.test.ts` for browser target switching and preview
   lifecycle coverage
+- `shipyard/tests/ui-live-view.test.ts` and
+  `shipyard/tests/ui-chat-workspace.test.ts` for the new browser chat and
+  step-by-step playback surfaces
 - `shipyard/tests/ui-workbench.test.ts` for the visible `Local preview` and
   `Open preview` workbench surface
 - `shipyard/docs/specs/phase-target-manager/README.md` for the target-selection

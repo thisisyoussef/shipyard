@@ -6,7 +6,8 @@ itself lives in `../../ui/`.
 ## Files
 
 - `server.ts`: local HTTP and WebSocket runtime for `--ui`
-- `contracts.ts`: typed frontend/backend message protocol
+- `contracts.ts`: typed frontend/backend message protocol, including stepwise
+  tool detail, immediate edit preview, and trace-link fields
 - `events.ts`: translation layer from engine events into browser-safe messages
 - `workbench-state.ts`: session-backed browser state model, reducers, and turn
   queueing helpers
@@ -17,6 +18,8 @@ itself lives in `../../ui/`.
 - `ui/` renders the operator interface.
 - `src/engine/turn.ts` remains the shared execution path for both terminal and
   browser mode.
+- The browser contract should surface tool progress incrementally instead of
+  reconstructing every change only after `done`.
 
 When adding browser features, keep that split intact so UI transport concerns do
 not leak into the core runtime.

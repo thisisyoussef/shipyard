@@ -59,6 +59,7 @@ function createSavedSession(options: {
       summary: options.latestSummary,
       contextPreview: [],
       agentMessages: [options.latestSummary],
+      langSmithTrace: null,
       activity: [],
     },
   ];

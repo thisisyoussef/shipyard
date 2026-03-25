@@ -352,7 +352,7 @@ export const editBlockDefinition: ToolDefinition<
         ...input,
       });
 
-      return createToolSuccessResult(formatEditBlockOutput(result));
+      return createToolSuccessResult(formatEditBlockOutput(result), result);
     } catch (error) {
       return createToolErrorResult(error);
     }

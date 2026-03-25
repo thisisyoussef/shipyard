@@ -7,10 +7,11 @@ import type { FormEvent, KeyboardEvent, RefObject } from "react";
 import { useState } from "react";
 
 import {
-  ActivityFeed,
+  ChatWorkspace,
   ComposerPanel,
   ContextPanel,
   FilePanel,
+  LiveViewPanel,
   RunHistoryPanel,
   PreviewPanel,
   OutputPanel,
@@ -112,6 +113,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
   const [targetCreationOpen, setTargetCreationOpen] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(!props.leftSidebarOpen);
   const [rightCollapsed, setRightCollapsed] = useState(!props.rightSidebarOpen);
+  const [primaryView, setPrimaryView] = useState<"chat" | "live">("chat");
 
   const workspaceName = props.sessionState?.workspaceDirectory?.split("/").pop();
   const activePhase = props.sessionState?.activePhase ?? "target-manager";
@@ -225,8 +227,40 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
 
           <PreviewPanel preview={props.previewState} />
 
-          <div className="workbench-main-activity">
-            <ActivityFeed turns={props.turns} />
+          <div className="workbench-primary-shell">
+            <div
+              className="workbench-primary-tabs"
+              role="tablist"
+              aria-label="Primary workspace view"
+            >
+              <button
+                type="button"
+                className="workbench-primary-tab"
+                data-active={primaryView === "chat"}
+                aria-selected={primaryView === "chat"}
+                onClick={() => setPrimaryView("chat")}
+              >
+                Chat
+              </button>
+              <button
+                type="button"
+                className="workbench-primary-tab"
+                data-active={primaryView === "live"}
+                aria-selected={primaryView === "live"}
+                onClick={() => setPrimaryView("live")}
+              >
+                Live view
+              </button>
+            </div>
+
+            {primaryView === "chat" ? (
+              <ChatWorkspace turns={props.turns} />
+            ) : (
+              <LiveViewPanel
+                turns={props.turns}
+                tracePath={props.sessionState?.tracePath ?? null}
+              />
+            )}
           </div>
         </div>
       </ShipyardShell>

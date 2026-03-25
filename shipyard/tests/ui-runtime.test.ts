@@ -1087,8 +1087,12 @@ describe("ui runtime contract", () => {
         expect(editPreview).toMatchObject({
           type: "agent:edit",
           path: "package.json",
-          summary: "Current workspace diff preview for package.json",
-          diff: expect.stringContaining("ui-bridge-target-smoke"),
+          summary: "Applied targeted edit to package.json",
+          diff: expect.stringContaining('"name": "ui-bridge-target-smoke"'),
+          beforePreview: expect.stringContaining('"name": "ui-bridge-target"'),
+          afterPreview: expect.stringContaining('"name": "ui-bridge-target-smoke"'),
+          addedLines: 1,
+          removedLines: 1,
         });
 
         const updatedTrace = await readFile(tracePath, "utf8");

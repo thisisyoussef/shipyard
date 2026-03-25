@@ -9,6 +9,7 @@ import type {
   TargetEnrichmentState,
   TargetManagerState,
   TargetSummary,
+  UiLangSmithTraceReference,
 } from "./contracts.js";
 
 export type WorkbenchConnectionState =
@@ -41,6 +42,14 @@ export interface ActivityItemViewModel {
   tone: "neutral" | "working" | "success" | "danger";
   toolName?: string;
   callId?: string;
+  detailBody?: string;
+  path?: string;
+  diff?: string;
+  beforePreview?: string | null;
+  afterPreview?: string | null;
+  addedLines?: number;
+  removedLines?: number;
+  command?: string;
 }
 
 export interface TurnViewModel {
@@ -51,6 +60,7 @@ export interface TurnViewModel {
   summary: string;
   contextPreview: string[];
   agentMessages: string[];
+  langSmithTrace: UiLangSmithTraceReference | null;
   activity: ActivityItemViewModel[];
 }
 
@@ -70,6 +80,8 @@ export interface FileEventViewModel {
   callId?: string;
   turnId: string;
   diffLines: DiffLineViewModel[];
+  beforePreview?: string | null;
+  afterPreview?: string | null;
 }
 
 export interface ContextReceiptViewModel {
@@ -253,6 +265,7 @@ function ensureActiveTurn(
     summary: "Shipyard resumed a browser turn without a local draft.",
     contextPreview: [],
     agentMessages: [],
+    langSmithTrace: null,
     activity: [],
   };
 
@@ -429,6 +442,7 @@ export function queueInstructionTurn(
     summary: "Waiting for Shipyard to begin streaming activity.",
     contextPreview,
     agentMessages: [],
+    langSmithTrace: null,
     activity: [],
   };
 
@@ -530,6 +544,8 @@ export function applyBackendMessage(
         tone: message.success ? "success" : "danger",
         toolName: message.toolName,
         callId: message.callId,
+        detailBody: message.detail,
+        command: message.command,
       });
       const pendingCall = withActivity.pendingToolCalls[message.callId];
 
@@ -574,6 +590,12 @@ export function applyBackendMessage(
         title: message.path,
         detail: message.summary,
         tone: "success",
+        path: message.path,
+        diff: message.diff,
+        beforePreview: message.beforePreview ?? null,
+        afterPreview: message.afterPreview ?? null,
+        addedLines: message.addedLines,
+        removedLines: message.removedLines,
       });
       const [withFileId, fileEventId] = createFileEventId(withActivity);
       const nextFileEvent: FileEventViewModel = {
@@ -584,6 +606,8 @@ export function applyBackendMessage(
         summary: message.summary,
         turnId: withFileId.activeTurnId ?? "turn-unknown",
         diffLines: parseDiffLines(message.diff),
+        beforePreview: message.beforePreview ?? null,
+        afterPreview: message.afterPreview ?? null,
       };
 
       return {
@@ -634,6 +658,7 @@ export function applyBackendMessage(
           ...turn,
           status: message.status === "success" ? "success" : "error",
           summary: message.summary,
+          langSmithTrace: message.langSmithTrace ?? null,
         }),
       );
     }

@@ -100,6 +100,12 @@ const turns: TurnViewModel[] = [
     summary: "Read the package manifest and confirmed the scripts.",
     contextPreview: ["Use the package scripts as the source of truth."],
     agentMessages: ["Read the package manifest and confirmed the scripts."],
+    langSmithTrace: {
+      projectName: "shipyard",
+      runId: "run-123",
+      traceUrl: "https://smith.langchain.com/runs/run-123",
+      projectUrl: "https://smith.langchain.com/projects/shipyard",
+    },
     activity: [
       {
         id: "event-2",
@@ -118,6 +124,7 @@ const turns: TurnViewModel[] = [
         tone: "success",
         toolName: "read_file",
         callId: "call-read-1",
+        detailBody: "Read package.json\nLines: 18\nHash: demo1234",
       },
     ],
   },
@@ -129,6 +136,7 @@ const turns: TurnViewModel[] = [
     summary: "Connection error. Waiting to retry...",
     contextPreview: ["Honor the surgical editing contract."],
     agentMessages: ["Connection error. Waiting to retry..."],
+    langSmithTrace: null,
     activity: [
       {
         id: "event-1",
@@ -266,9 +274,11 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("Activity");
     expect(markup).toContain("Previous runs");
     expect(markup).toContain("fix the failing preview");
-    expect(markup).toContain("Latest run");
-    expect(markup).toContain("All runs");
-    expect(markup).toContain("Reading package.json");
+    expect(markup).toContain(">Chat<");
+    expect(markup).toContain("Live view");
+    expect(markup).toContain("Latest conversation");
+    expect(markup).toContain("inspect package.json");
+    expect(markup).toContain("Open trace");
     expect(markup).toContain('aria-label="Current location"');
   });
 

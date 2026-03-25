@@ -119,15 +119,30 @@ describe("ui event helpers", () => {
       toolName: "read_file",
       success: true,
       summary: "Read package.json (12 lines, hash abcd1234).",
+      detail: [
+        "Read package.json",
+        "Lines: 12",
+        "Hash: abcd1234",
+      ].join("\n"),
     });
     await reporter.onEdit?.({
       path: "src/app.ts",
-      summary: "Current workspace diff preview",
+      summary: "Applied targeted edit to src/app.ts",
       diff: "@@ -1,1 +1,1 @@\n-console.log('before')\n+console.log('after')",
+      beforePreview: "console.log('before')",
+      afterPreview: "console.log('after')",
+      addedLines: 1,
+      removedLines: 1,
     });
     await reporter.onDone?.({
       status: "success",
       summary: "Turn finished.",
+      langSmithTrace: {
+        projectName: "shipyard",
+        runId: "run-123",
+        traceUrl: "https://smith.langchain.com/runs/run-123",
+        projectUrl: "https://smith.langchain.com/projects/shipyard",
+      },
     });
 
     expect(messages).toMatchObject([
@@ -146,16 +161,28 @@ describe("ui event helpers", () => {
         callId: "call-read",
         toolName: "read_file",
         success: true,
+        detail: "Read package.json\nLines: 12\nHash: abcd1234",
       },
       {
         type: "agent:edit",
         path: "src/app.ts",
+        summary: "Applied targeted edit to src/app.ts",
         diff: "@@ -1,1 +1,1 @@\n-console.log('before')\n+console.log('after')",
+        beforePreview: "console.log('before')",
+        afterPreview: "console.log('after')",
+        addedLines: 1,
+        removedLines: 1,
       },
       {
         type: "agent:done",
         status: "success",
         summary: "Turn finished.",
+        langSmithTrace: {
+          projectName: "shipyard",
+          runId: "run-123",
+          traceUrl: "https://smith.langchain.com/runs/run-123",
+          projectUrl: "https://smith.langchain.com/projects/shipyard",
+        },
       },
     ]);
   });
