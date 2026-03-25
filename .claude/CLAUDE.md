@@ -88,6 +88,7 @@ For **trivial** stories (single file, no API/schema/contract changes): skip step
 
 - A story is **not complete until merged to `main`** unless user explicitly pauses.
 - Before merging: update impacted docs/diagrams or explicitly record `N/A`.
+- When a story or spec pack is complete: update the relevant `shipyard/docs/specs/**` files with code references and short representative snippets, or explicit `N/A`.
 - For traced AI/runtime behavior changes: run `.ai/workflows/langsmith-finish-check.md` before merge.
 - Default to full GitHub flow: commit → push → PR → merge → cleanup.
 

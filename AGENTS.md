@@ -46,5 +46,6 @@ If the change touches `.ai/`, re-read the source-of-truth files and verify the h
 - Do not assume deploy work exists unless the story explicitly adds it.
 - A story is not complete until it is merged to `main` on GitHub, unless the user explicitly asks to pause before merge or use a different merge path.
 - Before merging, do a final docs/diagrams sweep and update anything impacted (especially `shipyard/docs/**` and `shipyard/docs/architecture/**`), or explicitly record that no doc/diagram updates are needed for this story.
+- When a story or spec pack is complete, update the relevant `shipyard/docs/specs/**` pack with implementation evidence: exact code references and short representative snippets, or an explicit `N/A` when no implementation landed.
 - For stories that change traced AI/runtime behavior, run the LangSmith CLI finish check, inspect recent traces/runs/insights, and correct unexpected behavior before merge.
 - Once the requested work is complete and validated, default to the full GitHub flow automatically: commit, push, open or update a PR, merge to `main`, sync local `main`, and clean up the story branch unless the user explicitly asks to pause finalization or use a different merge path.

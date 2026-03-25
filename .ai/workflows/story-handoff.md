@@ -86,6 +86,13 @@ When architecture, runtime flow, tool contracts, or operator UX changed, prefer 
 
 If doc/diagram updates change the diff materially after the completion gate is issued, re-issue the completion gate before proceeding to finalization.
 
+When a story or spec pack is complete, the relevant `shipyard/docs/specs/**` pack must also include implementation evidence:
+- a `Code References` section with exact file paths and the functions/components/contracts that now realize the spec
+- a `Representative Snippets` section with short landed excerpts that anchor the spec to real code
+- an explicit `N/A` note instead of invented evidence when the pack is intentionally docs-only or still unimplemented
+
+The completion gate's `Docs / Diagrams` section must list the exact spec-pack files that were updated with this evidence.
+
 ---
 
 ## User Audit Checklist Requirements
