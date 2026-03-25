@@ -10,6 +10,8 @@ This folder holds small shared types that move between runtime layers.
 - `EditIntent`: a typed description of a surgical file change
 - `VerificationReport`: the shape used to report validation outcomes
 - `DiscoveryReport`: the normalized summary of the target repository
+- `ExecutionHandoff` and `LoadedExecutionHandoff`: the durable long-run resume
+  contract persisted under `.shipyard/artifacts/<sessionId>/...handoff.json`
 
 Keep this directory narrow. It should describe runtime contracts, not absorb
 business logic.
@@ -23,6 +25,7 @@ flowchart LR
   Plan["TaskPlan"]
   Engine["Engine runtime"]
   Verify["VerificationReport"]
+  Handoff["ExecutionHandoff"]
   Findings["ContextReport / ContextFinding"]
 
   Discovery --> Context
@@ -30,4 +33,8 @@ flowchart LR
   Plan --> Engine
   Findings --> Engine
   Verify --> Engine
+  Engine --> Handoff
 ```
+
+Handoff persistence should stay target-local, typed, and safe to reload after a
+later turn. Keep write logic narrow and atomic enough for resume behavior.

@@ -3,7 +3,7 @@
 - Pack: Phase 7 Planner, Evaluator, and Long-Run Handoff
 - Estimate: 8-12 hours
 - Date: 2026-03-25
-- Status: Drafted for implementation
+- Status: In progress
 
 ## Pack Objectives
 
@@ -54,8 +54,50 @@
 
 ### Code References
 
-- N/A. This landing only adds the Phase 7 planning pack under `shipyard/docs/specs/phase-7/` and updates the spec-pack index in `shipyard/docs/specs/README.md`.
+- `shipyard/src/artifacts/types.ts` and `shipyard/src/artifacts/handoff.ts`:
+  `P7-S04` adds the typed `ExecutionHandoff` contract, threshold evaluation,
+  malformed-artifact rejection, and target-local save/load helpers under
+  `.shipyard/artifacts/<sessionId>/`.
+- `shipyard/src/engine/state.ts`, `shipyard/src/context/envelope.ts`, and
+  `shipyard/src/engine/turn.ts`: persist `activeHandoffPath`, inject the latest
+  loaded handoff into the shared context envelope, and emit or clear handoff
+  state without disturbing short-turn lightweight behavior.
+- `shipyard/src/engine/graph.ts`, `shipyard/src/engine/loop.ts`, and
+  `shipyard/src/ui/server.ts`: record reset reason, handoff path, and resume
+  state in LangSmith metadata plus local JSONL `instruction.plan` events.
+- `shipyard/src/tracing/langsmith.ts`: keeps LangSmith URL lookup best-effort
+  so fresh handoff traces can return a stable `runId` even when the hosted run
+  URL has not indexed yet, rather than turning observability lag into a failed
+  turn.
+- `shipyard/tests/handoff-artifacts.test.ts`,
+  `shipyard/tests/context-envelope.test.ts`,
+  `shipyard/tests/graph-runtime.test.ts`, and
+  `shipyard/tests/loop-runtime.test.ts`: cover persistence, threshold gating,
+  malformed fallback, prompt injection, and observability.
 
 ### Representative Snippets
 
-- N/A. No runtime or product-code implementation landed as part of this story-pack drafting pass.
+- `P7-S04` threshold-gated reset routing:
+
+  ```ts
+  if (options.actingIterations >= thresholds.actingIterations) {
+    return {
+      shouldPersist: true,
+      kind: "iteration-threshold",
+      summary:
+        `Shipyard used ${String(options.actingIterations)} acting ${label}, so the next turn should resume from a persisted handoff instead of continuing the same long-running loop.`,
+      thresholds,
+      metrics,
+    };
+  }
+  ```
+
+- `P7-S04` atomic handoff persistence:
+
+  ```ts
+  await writeFile(tempPath, `${JSON.stringify(handoff, null, 2)}\n`, "utf8");
+  await rename(tempPath, absolutePath);
+  ```
+
+- Remaining stories `P7-S01`, `P7-S02`, `P7-S03`, and `P7-S05`: implementation
+  evidence is still pending on `main`.

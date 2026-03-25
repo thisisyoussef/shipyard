@@ -843,6 +843,7 @@ export async function startUiRuntimeServer(
       status: turnResult.status,
       summary: turnResult.summary,
       langSmithTrace: turnResult.langSmithTrace,
+      handoff: turnResult.handoff,
       runtimeSurface: "ui",
     });
     await saveSessionState(sessionState);

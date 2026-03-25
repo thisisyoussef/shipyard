@@ -31,6 +31,7 @@ flowchart LR
   Target["Target repository"]
   Session["Session state<br/>target/.shipyard/sessions"]
   Checkpoints["Checkpoints<br/>target/.shipyard/checkpoints"]
+  Artifacts["Artifacts<br/>target/.shipyard/artifacts"]
   Traces["Tracing<br/>target/.shipyard/traces<br/>LangSmith optional"]
 
   User --> CLI
@@ -46,6 +47,7 @@ flowchart LR
   Phase --> Tools
   Tools --> Target
   Turn --> Session
+  Turn --> Artifacts
   Graph --> Checkpoints
   Turn --> Traces
 ```
@@ -83,11 +85,15 @@ flowchart TD
   Shipyard[".shipyard/"]
   Sessions["sessions/<sessionId>.json"]
   Checkpoints["checkpoints/<sessionId>/...checkpoint"]
+  Artifacts["artifacts/<sessionId>/"]
+  Handoff["...handoff.json"]
   Traces["traces/<sessionId>.jsonl"]
 
   Target --> Shipyard
   Shipyard --> Sessions
   Shipyard --> Checkpoints
+  Shipyard --> Artifacts
+  Artifacts --> Handoff
   Shipyard --> Traces
 ```
 
@@ -97,9 +103,12 @@ flowchart TD
   chooses terminal or browser mode.
 - `src/context/` inspects the target repository and serializes a reusable
   prompt context envelope, including target `AGENTS.md` rules when present.
+- `src/artifacts/` defines the typed contracts that move between runtime
+  layers, including `TaskPlan`, `VerificationReport`, and the long-run
+  `ExecutionHandoff` resume artifact.
 - `src/engine/` owns the persistent loop, shared turn execution path, graph
-  runtime, coordinator routing, fallback raw loop, per-turn cancellation, and
-  session persistence.
+  runtime, coordinator routing, fallback raw loop, per-turn cancellation,
+  session persistence, and threshold-based handoff emission/resume.
 - `src/agents/` holds the coordinator-only write boundary plus isolated helper
   runtimes such as the explorer and verifier helpers plus the coordinator's
   path-detection and verification-command heuristics.
@@ -107,8 +116,9 @@ flowchart TD
   the code phase.
 - `src/checkpoints/` snapshots files before `edit_block` writes so recovery can
   revert failed attempts.
-- `src/tracing/` writes local JSONL traces and attaches LangSmith when the
-  required environment variables are configured.
+- `src/tracing/` writes local JSONL traces, records handoff load/emission state
+  in turn-level logs, and attaches LangSmith metadata when the required
+  environment variables are configured.
 - `src/ui/` is the backend half of browser mode. The React frontend lives under
   `ui/` and speaks to this layer over a typed WebSocket contract that now
   carries immediate edit previews, richer tool detail, and completed-turn trace
@@ -125,5 +135,8 @@ flowchart TD
   then expose them through the phase configuration rather than reaching around
   the tool registry.
 - Treat `target/.shipyard/` as runtime output, not as hand-authored source.
+- Keep `rollingSummary` compact. Durable long-run resume state belongs in
+  typed artifacts under `target/.shipyard/artifacts/<sessionId>/`, with only
+  the active artifact path persisted in session state.
 - When documenting new features, prefer adding durable notes here and linking
   to any relevant story pack under `docs/specs/`.

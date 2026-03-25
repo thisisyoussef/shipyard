@@ -418,6 +418,8 @@ function createRuntimeTraceMetadata(
   state: AgentGraphState,
   runtimeMode: "graph" | "fallback",
 ): Record<string, unknown> {
+  const latestHandoff = state.contextEnvelope.session.latestHandoff;
+
   return {
     sessionId: state.sessionId,
     runtimeMode,
@@ -430,6 +432,9 @@ function createRuntimeTraceMetadata(
       taskPlan: state.taskPlan,
       contextReport: state.contextReport,
     }),
+    handoffLoaded: latestHandoff !== null,
+    handoffPath: latestHandoff?.artifactPath ?? null,
+    handoffReason: latestHandoff?.handoff.resetReason.kind ?? null,
   };
 }
 

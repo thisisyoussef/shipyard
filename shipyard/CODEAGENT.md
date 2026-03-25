@@ -93,6 +93,11 @@ and schema-described before it reaches the model.
 - Checkpoints are stored under
   `target/.shipyard/checkpoints/<sessionId>/...checkpoint`, and local trace logs
   are stored under `target/.shipyard/traces/<sessionId>.jsonl`.
+- Long-running or unstable turns can emit typed `ExecutionHandoff` artifacts
+  under `target/.shipyard/artifacts/<sessionId>/...handoff.json`. Session state
+  keeps only `activeHandoffPath`, and resumed turns inject the loaded handoff
+  into `ContextEnvelope.session.latestHandoff` instead of stuffing that state
+  into `rollingSummary`.
 
 ### Entry conditions
 
@@ -248,7 +253,9 @@ the two canonical public trace examples below:
 
 Every local run also writes JSONL traces to
 `target/.shipyard/traces/<sessionId>.jsonl`, so the runtime always has a local
-audit trail even when LangSmith credentials are absent.
+audit trail even when LangSmith credentials are absent. Long-run reset routing
+adds handoff payloads to local `instruction.plan` events and records
+`handoffLoaded`, `handoffPath`, and `handoffReason` in trace metadata.
 
 ## Architecture Decisions (Final Submission)
 

@@ -1,7 +1,18 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
 
-import type { TargetProfile, TaskPlan } from "../artifacts/types.js";
+import {
+  createExecutionHandoff,
+  createExecutionHandoffDecision,
+  loadExecutionHandoff,
+  type LoadExecutionHandoffResult,
+  saveExecutionHandoff,
+} from "../artifacts/handoff.js";
+import type {
+  LoadedExecutionHandoff,
+  TargetProfile,
+  TaskPlan,
+} from "../artifacts/types.js";
 import {
   buildContextEnvelope,
   composeSystemPrompt,
@@ -122,6 +133,13 @@ export interface InstructionTurnResult {
   finalText: string;
   selectedTargetPath: string | null;
   langSmithTrace: LangSmithTraceReference | null;
+  handoff: InstructionTurnHandoffState;
+}
+
+export interface InstructionTurnHandoffState {
+  loaded: LoadedExecutionHandoff | null;
+  loadError: string | null;
+  emitted: LoadedExecutionHandoff | null;
 }
 
 const EXPLICIT_FILE_PATH_PATTERN =
@@ -452,6 +470,14 @@ function createSilentLogger() {
   };
 }
 
+function createEmptyTurnHandoffState(): InstructionTurnHandoffState {
+  return {
+    loaded: null,
+    loadError: null,
+    emitted: null,
+  };
+}
+
 function createTurnSummary(
   turnCount: number,
   runtimeMode: InstructionRuntimeMode,
@@ -610,6 +636,21 @@ export async function executeInstructionTurn(
     ...runtimeState.baseInjectedContext,
     ...(options.injectedContext ?? []),
   ];
+  let loadedHandoff: LoadedExecutionHandoff | null = null;
+  let handoffLoadError: string | null = null;
+
+  if (state.activeHandoffPath) {
+    const loadedHandoffResult: LoadExecutionHandoffResult =
+      await loadExecutionHandoff(state.targetDirectory, state.activeHandoffPath);
+
+    loadedHandoff = loadedHandoffResult.handoff;
+    handoffLoadError = loadedHandoffResult.error;
+
+    if (handoffLoadError) {
+      state.activeHandoffPath = null;
+      rememberRecent(runtimeState.recentErrors, handoffLoadError);
+    }
+  }
 
   state.turnCount += 1;
   state.lastActiveAt = new Date().toISOString();
@@ -631,6 +672,7 @@ export async function executeInstructionTurn(
     rollingSummary: state.rollingSummary,
     retryCountsByFile: runtimeState.retryCountsByFile,
     blockedFiles: runtimeState.blockedFiles,
+    latestHandoff: loadedHandoff,
   });
 
   runtimeState.projectRules = contextEnvelope.stable.projectRules;
@@ -687,6 +729,51 @@ export async function executeInstructionTurn(
       finalStateStatus,
       finalText,
     );
+    const handoffDecision = createExecutionHandoffDecision({
+      actingIterations: finalState.actingIterations,
+      retryCountsByFile: finalState.retryCountsByFile,
+      blockedFiles: finalState.blockedFiles,
+    });
+    let emittedHandoff: LoadedExecutionHandoff | null = null;
+
+    if (
+      handoffDecision.shouldPersist &&
+      handoffDecision.kind &&
+      handoffDecision.summary
+    ) {
+      emittedHandoff = await saveExecutionHandoff(
+        state.targetDirectory,
+        createExecutionHandoff({
+          sessionId: state.sessionId,
+          turnCount: state.turnCount,
+          instruction: options.instruction,
+          phaseName: phase.name,
+          runtimeMode: runtimeState.runtimeMode,
+          status:
+            finalStateStatus === "done"
+              ? "success"
+              : finalStateStatus === "failed"
+                ? "error"
+                : "cancelled",
+          summary,
+          taskPlan,
+          actingIterations: finalState.actingIterations,
+          retryCountsByFile: finalState.retryCountsByFile,
+          blockedFiles: finalState.blockedFiles,
+          lastEditedFile: finalState.lastEditedFile,
+          verificationReport: finalState.verificationReport,
+          decision: handoffDecision,
+        }),
+      );
+      state.activeHandoffPath = emittedHandoff.artifactPath;
+    } else if (loadedHandoff && finalStateStatus === "done") {
+      state.activeHandoffPath = null;
+    }
+    const handoffState: InstructionTurnHandoffState = {
+      loaded: loadedHandoff,
+      loadError: handoffLoadError,
+      emitted: emittedHandoff,
+    };
 
     runtimeState.retryCountsByFile = { ...finalState.retryCountsByFile };
     runtimeState.blockedFiles = [...finalState.blockedFiles];
@@ -731,6 +818,7 @@ export async function executeInstructionTurn(
         finalText: cancelledTurnText,
         selectedTargetPath: null,
         langSmithTrace: finalState.langSmithTrace,
+        handoff: handoffState,
       };
     }
     if (finalStateStatus === "failed") {
@@ -764,6 +852,7 @@ export async function executeInstructionTurn(
         finalText: failedTurnText,
         selectedTargetPath: null,
         langSmithTrace: finalState.langSmithTrace,
+        handoff: handoffState,
       };
     }
 
@@ -793,6 +882,7 @@ export async function executeInstructionTurn(
       finalText,
       selectedTargetPath: runtimeState.pendingTargetSelectionPath,
       langSmithTrace: finalState.langSmithTrace,
+      handoff: handoffState,
     };
   } catch (error) {
     const cancelledError = toTurnCancelledError(error, options.signal);
@@ -839,6 +929,11 @@ export async function executeInstructionTurn(
         finalText,
         selectedTargetPath: null,
         langSmithTrace: null,
+        handoff: {
+          loaded: loadedHandoff,
+          loadError: handoffLoadError,
+          emitted: null,
+        },
       };
     }
 
@@ -883,6 +978,11 @@ export async function executeInstructionTurn(
       finalText,
       selectedTargetPath: null,
       langSmithTrace: null,
+      handoff: {
+        loaded: loadedHandoff,
+        loadError: handoffLoadError,
+        emitted: null,
+      },
     };
   } finally {
     configureTargetManagerEnrichmentInvoker(null);

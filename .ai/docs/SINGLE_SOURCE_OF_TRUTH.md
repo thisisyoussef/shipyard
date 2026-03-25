@@ -2,7 +2,7 @@
 
 **Last Updated**: 2026-03-25
 **Current Phase**: Day 1 foundation
-**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI and Phase 8 operator workflow
+**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, with Phase 7 long-run handoff and Phase 8 spec-loading now established on `main`
 **Project Status**: Active
 **Canonical App Directory**: `shipyard/`
 **Canonical Harness Directory**: `.ai/`
@@ -13,15 +13,15 @@
 
 ### Active Task
 
-- **Title**: Implement the Phase 8 spec-driven operator workflow incrementally, starting with `P8-S01` named spec loading
-- **Status**: In progress
+- **Title**: Continue the next Phase 7 or Phase 8 story from the shipped spec-loading and handoff foundation
+- **Status**: Ready for the next story
 - **Owner**: Codex
 
 ### Next Immediate Actions
 
 1. Keep the harness aligned with the actual repo shape: `.ai/` beside `shipyard/`.
 2. Continue building the persistent CLI loop, typed tools, and tracing inside `shipyard/`.
-3. Advance the drafted Phase 8 pack from docs-only planning into runtime implementation.
+3. Build the next Phase 7 or Phase 8 story on the shipped `load_spec` and durable handoff foundation instead of reintroducing ad hoc prompt memory.
 
 ---
 

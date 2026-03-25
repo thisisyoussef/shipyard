@@ -419,6 +419,7 @@ export async function runShipyardLoop(
             status: turnResult.status,
             summary: turnResult.summary,
             langSmithTrace: turnResult.langSmithTrace,
+            handoff: turnResult.handoff,
           });
 
           if (turnResult.selectedTargetPath) {

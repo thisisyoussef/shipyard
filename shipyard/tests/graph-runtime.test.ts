@@ -79,12 +79,13 @@ function createContextEnvelope(): ContextEnvelope {
       recentErrors: [],
       currentGitDiff: null,
     },
-    session: {
-      rollingSummary: "",
-      retryCountsByFile: {},
-      blockedFiles: [],
-    },
-  };
+      session: {
+        rollingSummary: "",
+        retryCountsByFile: {},
+        blockedFiles: [],
+        latestHandoff: null,
+      },
+    };
 }
 
 function createAssistantMessage(options: {
@@ -690,6 +691,93 @@ describe("Phase 4 graph runtime contract", () => {
       expect.objectContaining({
         metadata: expect.objectContaining({
           usedExplorer: true,
+        }),
+      }),
+    );
+  });
+
+  it("records loaded handoff resume metadata when tracing is enabled", async () => {
+    const trace = {
+      projectName: "shipyard",
+      runId: "graph-run-789",
+      traceUrl: "https://smith.langchain.com/runs/graph-run-789",
+      projectUrl: "https://smith.langchain.com/projects/shipyard",
+    } satisfies LangSmithTraceReference;
+    const contextEnvelope = createContextEnvelope();
+
+    contextEnvelope.task.currentInstruction = "Continue src/app.ts";
+    contextEnvelope.task.targetFilePaths = ["src/app.ts"];
+    contextEnvelope.session.latestHandoff = {
+      artifactPath: ".shipyard/artifacts/session-123/turn-3.handoff.json",
+      handoff: {
+        version: 1,
+        sessionId: "session-123",
+        turnCount: 3,
+        createdAt: "2026-03-25T21:30:00.000Z",
+        instruction: "Implement the dashboard shell",
+        phaseName: "code",
+        runtimeMode: "graph",
+        status: "success",
+        summary: "Turn 3 completed via graph: dashboard shell is scaffolded.",
+        goal: "Implement the dashboard shell",
+        completedWork: ["Captured the implementation goal."],
+        remainingWork: ["Resume in a fresh turn to finish the remaining task plan safely."],
+        touchedFiles: ["src/app.ts"],
+        blockedFiles: [],
+        latestEvaluation: null,
+        nextRecommendedAction: "Resume from the handoff before making additional edits.",
+        resetReason: {
+          kind: "iteration-threshold",
+          summary: "The acting loop crossed the long-run iteration threshold.",
+          thresholds: {
+            actingIterations: 4,
+            recoveryAttempts: 1,
+          },
+          metrics: {
+            actingIterations: 5,
+            recoveryAttempts: 0,
+            blockedFileCount: 0,
+          },
+        },
+        taskPlan: {
+          instruction: "Implement the dashboard shell",
+          goal: "Implement the dashboard shell",
+          targetFilePaths: ["src/app.ts"],
+          plannedSteps: [
+            "Read the relevant files before editing.",
+            "Implement the dashboard shell.",
+            "Verify the result after the edit.",
+          ],
+        },
+      },
+    };
+
+    mockLangSmithTrace(trace);
+
+    await runAgentRuntime(createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Continue the dashboard shell work.",
+      contextEnvelope,
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+    }), {
+      dependencies: {
+        runActingLoop: async () => ({
+          finalText: "Resumed cleanly.",
+          messageHistory: [],
+          iterations: 1,
+          didEdit: false,
+          lastEditedFile: null,
+        }),
+      },
+    });
+
+    expect(langsmith.runWithLangSmithTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          handoffLoaded: true,
+          handoffPath: ".shipyard/artifacts/session-123/turn-3.handoff.json",
+          handoffReason: "iteration-threshold",
         }),
       }),
     );
