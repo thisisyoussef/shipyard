@@ -101,13 +101,22 @@ export function Badge({
 
 // ── StatusDot ──────────────────────────────────
 
-interface StatusDotProps {
+export interface StatusDotProps {
   /** Visual tone — drives color and optional pulse animation. */
   tone: BadgeTone;
+  /** Whether to show pulse animation (for active states). */
+  pulse?: boolean;
 }
 
-export function StatusDot({ tone }: StatusDotProps) {
-  return <span className="status-dot" data-tone={tone} aria-hidden="true" />;
+export function StatusDot({ tone, pulse = false }: StatusDotProps) {
+  return (
+    <span
+      className="status-dot"
+      data-tone={tone}
+      data-pulse={pulse}
+      aria-hidden="true"
+    />
+  );
 }
 
 // ── Divider ────────────────────────────────────
@@ -145,5 +154,86 @@ export function MicroLabel({ className, children }: MicroLabelProps) {
     <span className={joinClassNames("micro-label", className)}>
       {children}
     </span>
+  );
+}
+
+// ── Accessibility Primitives (S08) ─────────────
+
+/**
+ * VisuallyHidden — Screen reader only text.
+ * Content is hidden visually but remains accessible to assistive tech.
+ */
+export interface VisuallyHiddenProps extends PropsWithChildren {
+  /** Element to render (default: span) */
+  as?: "span" | "div";
+}
+
+export function VisuallyHidden({
+  as: Component = "span",
+  children,
+}: VisuallyHiddenProps) {
+  return <Component className="visually-hidden">{children}</Component>;
+}
+
+/**
+ * LiveRegion — Announces dynamic content changes.
+ * Use for status updates, errors, or notifications.
+ */
+export interface LiveRegionProps extends PropsWithChildren {
+  /** Politeness level: polite waits, assertive interrupts */
+  politeness?: "polite" | "assertive";
+  /** Only announce when content changes */
+  atomic?: boolean;
+}
+
+export function LiveRegion({
+  politeness = "polite",
+  atomic = true,
+  children,
+}: LiveRegionProps) {
+  return (
+    <div
+      role="status"
+      aria-live={politeness}
+      aria-atomic={atomic}
+      className="live-region"
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Skeleton — Loading placeholder with shimmer animation.
+ */
+export interface SkeletonProps {
+  /** Width (CSS value or number for px) */
+  width?: string | number;
+  /** Height (CSS value or number for px) */
+  height?: string | number;
+  /** Border radius variant */
+  radius?: "sm" | "md" | "lg" | "full";
+  /** Additional class name */
+  className?: string;
+}
+
+export function Skeleton({
+  width = "100%",
+  height = "1rem",
+  radius = "md",
+  className,
+}: SkeletonProps) {
+  const style: React.CSSProperties = {
+    width: typeof width === "number" ? `${width}px` : width,
+    height: typeof height === "number" ? `${height}px` : height,
+  };
+
+  return (
+    <div
+      className={joinClassNames("skeleton", className)}
+      data-radius={radius}
+      style={style}
+      aria-hidden="true"
+    />
   );
 }

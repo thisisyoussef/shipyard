@@ -5,6 +5,8 @@
 
 @import "./tokens/index.css";
 @import "./components.css";
+@import "./shell/shell.css";
+@import "./panels/panels.css";
 
 /* ── Body ──────────────────────────────────── */
 
@@ -314,6 +316,9 @@ pre,
 
 .status-dot[data-tone="accent"] {
   background: var(--accent-strong);
+}
+
+.status-dot[data-pulse="true"] {
   animation: pulse 1.55s ease-out infinite;
 }
 
@@ -327,7 +332,6 @@ pre,
 
 .status-dot[data-tone="warning"] {
   background: var(--warning-strong);
-  animation: pulse 1.55s ease-out infinite;
 }
 
 /* ── Fact grid ───────────────────────────────── */
@@ -1132,6 +1136,56 @@ pre,
   height: 1px;
   margin: var(--space-4) 0;
   background: var(--border-subtle);
+}
+
+/* ── A11y Primitives (S08) ───────────────────── */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.live-region {
+  /* Screen reader only by default */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skeleton loading */
+.skeleton {
+  background: var(--surface-muted);
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton[data-radius="sm"] { border-radius: var(--radius-sm); }
+.skeleton[data-radius="md"] { border-radius: var(--radius-md); }
+.skeleton[data-radius="lg"] { border-radius: var(--radius-lg); }
+.skeleton[data-radius="full"] { border-radius: var(--radius-full); }
+
+@keyframes skeleton-shimmer {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 /* ── Animations ──────────────────────────────── */

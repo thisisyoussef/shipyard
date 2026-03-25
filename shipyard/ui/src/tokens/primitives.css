@@ -1,13 +1,13 @@
 /* ───────────────────────────────────────────────
    Primitive Design Tokens
-   UIV2-S01 · Design System Foundation
+   UIV3-S01 · Design System Rebuild
 
    Color, typography, spacing, radius, elevation.
    These are the raw building blocks — component
    tokens in components.css reference these.
 
-   Color derivation: OKLCH with sRGB fallbacks.
-   Type scale: 1rem base × 1.2 ratio (minor third).
+   Color: OKLCH with hex fallbacks (perceptually uniform).
+   Type: 1rem = 14.5px, minor third (1.2) ratio.
    Spacing: 4px (0.25rem) base unit.
    ─────────────────────────────────────────────── */
 
@@ -20,48 +20,33 @@
 
   /* Font families */
   --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  --font-body: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
 
-  /* @font-face declarations — replaces Google Fonts @import url().
-     Using Google Fonts CSS2 API static URLs for individual weights.
-     font-display: swap ensures text is visible during font load. */
-
-  /* Type scale — minor third (1.2) from 1rem base
-     Step formula: 1rem × 1.2^n where n ranges from -3 to +5
-     -3: 0.579rem  → --text-3xs
-     -2: 0.694rem  → --text-2xs
-     -1: 0.833rem  → --text-xs
-      0: 1rem      → --text-sm
-      1: 1.2rem    → --text-base
-      2: 1.44rem   → --text-md
-      3: 1.728rem  → --text-lg
-      4: 2.074rem  → --text-xl
-      5: 2.488rem  → --text-2xl
-     hero: fluid    → --text-hero */
-
-  --text-3xs: 0.579rem;
-  --text-2xs: 0.694rem;
-  --text-xs:  0.833rem;
-  --text-sm:  1rem;
-  --text-base: 1.2rem;
-  --text-md:  1.44rem;
-  --text-lg:  1.728rem;
-  --text-xl:  2.074rem;
-  --text-2xl: 2.488rem;
-  --text-hero: clamp(2.488rem, 4vw, 3.35rem);
+  /* Type scale — minor third (1.2) from 1rem = 14.5px base
+     Formula: 1rem × 1.2^n */
+  --text-2xs: 0.579rem;   /* ~8.4px — timestamps, line numbers */
+  --text-xs:  0.694rem;   /* ~10px — kickers, micro labels */
+  --text-sm:  0.833rem;   /* ~12px — captions, metadata, badges */
+  --text-base: 1rem;      /* 14.5px — body text, form inputs */
+  --text-md:  1.2rem;     /* ~17.4px — card titles, block headings */
+  --text-lg:  1.44rem;    /* ~20.9px — section headings */
+  --text-xl:  1.728rem;   /* ~25px — panel headings */
+  --text-2xl: 2.074rem;   /* ~30px — page-level headings */
+  --text-hero: clamp(2.488rem, 4vw, 3.583rem); /* 36-52px — top-bar title */
 
   /* Semantic type aliases */
-  --text-heading-hero:    var(--text-hero);
-  --text-heading-section: var(--text-xl);
-  --text-heading-sub:     var(--text-lg);
-  --text-heading-card:    var(--text-md);
-  --text-body:            var(--text-base);
-  --text-body-small:      var(--text-sm);
-  --text-caption:         var(--text-xs);
-  --text-micro:           var(--text-2xs);
-  --text-mono:            var(--text-sm);
-  --text-mono-small:      var(--text-xs);
+  --type-heading-xl: var(--text-2xl);
+  --type-heading-lg: var(--text-xl);
+  --type-heading-md: var(--text-lg);
+  --type-heading-sm: var(--text-md);
+  --type-body: var(--text-base);
+  --type-body-sm: var(--text-sm);
+  --type-caption: var(--text-xs);
+  --type-kicker: var(--text-xs);
+  --type-mono: var(--text-base);
+  --type-mono-sm: var(--text-sm);
+  --type-mono-xs: var(--text-2xs);
 
   /* Line heights */
   --leading-none:    0.94;
@@ -86,8 +71,7 @@
   --weight-bold:     700;
 
   /* ═══════════════════════════════════════════════
-     SPACING
-     Base unit: 0.25rem (4px)
+     SPACING — 4px (0.25rem) base unit
      ═══════════════════════════════════════════════ */
 
   --space-0:   0;
@@ -96,277 +80,267 @@
   --space-1:   0.25rem;   /*  4px */
   --space-1-5: 0.375rem;  /*  6px */
   --space-2:   0.5rem;    /*  8px */
-  --space-2-5: 0.625rem;  /* 10px */
   --space-3:   0.75rem;   /* 12px */
-  --space-3-5: 0.875rem;  /* 14px */
   --space-4:   1rem;      /* 16px */
   --space-5:   1.25rem;   /* 20px */
   --space-6:   1.5rem;    /* 24px */
-  --space-7:   1.75rem;   /* 28px */
-  --space-8:   2rem;      /* 32px */
-  --space-9:   2.25rem;   /* 36px */
-  --space-10:  2.5rem;    /* 40px */
-  --space-11:  2.75rem;   /* 44px */
-  --space-12:  3rem;      /* 48px */
-  --space-14:  3.5rem;    /* 56px */
-  --space-16:  4rem;      /* 64px */
-  --space-20:  5rem;      /* 80px */
-  --space-24:  6rem;      /* 96px */
+  --space-7:   2rem;      /* 32px */
+  --space-8:   2.5rem;    /* 40px */
+  --space-9:   3rem;      /* 48px */
+  --space-10:  4rem;      /* 64px */
+  --space-12:  6rem;      /* 96px */
 
   /* Contextual spacing aliases */
-  --space-card-padding:  var(--space-6);
-  --space-section-gap:   var(--space-5);
-  --space-inline-gap:    var(--space-2);
-  --space-panel-gap:     var(--space-5);
+  --gap-inline:  var(--space-2);  /* 8px — between inline elements */
+  --gap-stack:   var(--space-3);  /* 12px — between stacked items */
+  --gap-section: var(--space-6);  /* 24px — between major sections */
+  --gap-panel:   var(--space-5);  /* 20px — between panels */
+  --pad-card:    var(--space-5);  /* 20px — card internal padding */
+  --pad-card-sm: var(--space-4);  /* 16px — compact card padding */
+  --pad-inset:   var(--space-4);  /* 16px — inset area padding */
 
   /* ═══════════════════════════════════════════════
      BORDER RADIUS
      ═══════════════════════════════════════════════ */
 
-  --radius-xs:   0.25rem;
-  --radius-sm:   0.375rem;
-  --radius-md:   0.5rem;
-  --radius-lg:   0.75rem;
-  --radius-xl:   1rem;
-  --radius-2xl:  1.25rem;
-  --radius-3xl:  1.5rem;
-  --radius-full: 9999px;
-  --radius-pill: 9999px;  /* alias */
+  --radius-xs:   0.25rem;  /* 4px */
+  --radius-sm:   0.375rem; /* 6px */
+  --radius-md:   0.5rem;   /* 8px */
+  --radius-lg:   0.75rem;  /* 12px */
+  --radius-xl:   1rem;     /* 16px */
+  --radius-2xl:  1.25rem;  /* 20px */
+  --radius-pill: 999px;
+  --radius-full: 999px;    /* alias for pill */
 
   /* ═══════════════════════════════════════════════
-     COLORS — OKLCH with sRGB fallbacks
-     Hue anchors:
-       Amber  (accent)  ~  55°
-       Green  (success)  ~ 145°
-       Red    (danger)   ~  25°
-       Yellow (warning)  ~  85°
-       Teal   (info)     ~ 185°
-     Lightness/Chroma curves:
-       strong: L 0.72, C 0.14 (vivid)
-       soft:   L 0.30, C 0.04 (background tint)
-       subtle: L 0.20, C 0.02 (barely visible)
+     PRIMITIVE COLORS — Hex fallbacks
+     OKLCH values in @supports block below
      ═══════════════════════════════════════════════ */
 
-  /* ── Surfaces ──────────────────────────────── */
-  --surface-canvas:      #061015;
-  --surface-shell:       rgba(8, 16, 22, 0.86);
-  --surface-card:        rgba(14, 21, 28, 0.88);
-  --surface-card-strong: rgba(18, 28, 37, 0.95);
+  /* Gray scale (blue-gray undertone) */
+  --gray-1:  #0a0f14;  /* Canvas / deepest */
+  --gray-2:  #0e151c;  /* Card background */
+  --gray-3:  #121d25;  /* Card strong */
+  --gray-4:  #1a2730;  /* Inset / recessed */
+  --gray-5:  #253440;  /* Subtle border */
+  --gray-6:  #3a4d5c;  /* Medium border */
+  --gray-7:  #5a707e;  /* Muted text */
+  --gray-8:  #7e929f;  /* Secondary body */
+  --gray-9:  #a3b3be;  /* Primary body */
+  --gray-10: #c5d0d8;  /* Strong body */
+  --gray-11: #e4eaee;  /* Headings */
+  --gray-12: #f2f5f7;  /* Maximum contrast */
+
+  /* Amber accent scale */
+  --amber-1:  #1f1508;  /* Soft background */
+  --amber-2:  #33220d;  /* Hover background */
+  --amber-3:  #4a3112;  /* Active/pressed */
+  --amber-4:  #634118;  /* Subtle border */
+  --amber-5:  #8a5c24;  /* Medium border */
+  --amber-6:  #b07430;  /* Strong border */
+  --amber-7:  #d58c53;  /* PRIMARY ACCENT */
+  --amber-8:  #e0a876;  /* Hover accent */
+  --amber-9:  #ecc4a0;  /* Muted accent text */
+  --amber-10: #f5dfc8;  /* Faint accent wash */
+
+  /* Status colors — Success (green) */
+  --green-soft:   #152e24;
+  --green-strong: #7ec99a;
+  --green-border: #2d5a45;
+
+  /* Status colors — Danger (red) */
+  --red-soft:   #2e1515;
+  --red-strong: #ec8170;
+  --red-border: #5a2d2d;
+
+  /* Status colors — Warning (yellow) */
+  --yellow-soft:   #2e2a15;
+  --yellow-strong: #d6b56d;
+  --yellow-border: #5a522d;
+
+  /* ═══════════════════════════════════════════════
+     SEMANTIC COLORS
+     Reference primitive scales
+     ═══════════════════════════════════════════════ */
+
+  /* Surfaces */
+  --surface-canvas:      var(--gray-1);
+  --surface-card:        var(--gray-2);
+  --surface-card-strong: var(--gray-3);
+  --surface-inset:       var(--gray-4);
   --surface-muted:       rgba(255, 255, 255, 0.035);
-  --surface-highlight:   rgba(213, 140, 83, 0.1);
-  --surface-inset:       rgba(6, 11, 15, 0.74);
-  --surface-overlay:     rgba(0, 0, 0, 0.6);
+  --surface-highlight:   var(--amber-1);
 
-  /* ── Text ──────────────────────────────────── */
-  --text-strong:  #f2f5f7;
-  --text-default: #cbd6dc;  /* new canonical name */
-  --text-body:    var(--text-default);  /* alias for backwards compat */
-  --text-muted:   #8e9faa;
-  --text-faint:   rgba(142, 159, 170, 0.6);
-  --text-inverse: #120d08;
+  /* Borders */
+  --border-subtle: rgba(37, 52, 64, 0.6);   /* gray-5 with alpha */
+  --border-medium: rgba(58, 77, 92, 0.6);   /* gray-6 with alpha */
+  --border-strong: var(--amber-5);
+  --border-focus:  var(--amber-7);
 
-  /* ── Borders ───────────────────────────────── */
-  --border-subtle:  rgba(209, 220, 228, 0.1);
-  --border-medium:  rgba(186, 197, 207, 0.16);
-  --border-strong:  rgba(213, 140, 83, 0.26);
-  --border-danger:  rgba(236, 129, 112, 0.24);
-  --border-success: rgba(126, 201, 154, 0.24);
-  --border-warning: rgba(214, 181, 109, 0.24);
+  /* Text */
+  --text-strong:  var(--gray-12);
+  --text-default: var(--gray-9);
+  --text-body:    var(--gray-9);
+  --text-muted:   var(--gray-7);
+  --text-faint:   rgba(90, 112, 126, 0.6);  /* gray-7 at 60% */
+  --text-inverse: var(--gray-1);
 
-  /* ── Accent (amber ~55°) ───────────────────── */
-  --accent-strong: #d58c53;
-  --accent-soft:   rgba(213, 140, 83, 0.12);
+  /* Accent */
+  --accent-strong: var(--amber-7);
+  --accent-hover:  var(--amber-8);
+  --accent-soft:   var(--amber-1);
+  --accent-border: var(--amber-5);
   --accent-glow:   rgba(213, 140, 83, 0.3);
-  --accent-border: rgba(213, 140, 83, 0.24);
-  --accent-subtle: rgba(213, 140, 83, 0.06);
 
-  /* ── Success (green ~145°) ─────────────────── */
-  --success-strong: #7ec99a;
-  --success-soft:   rgba(126, 201, 154, 0.12);
-  --success-subtle: rgba(126, 201, 154, 0.06);
-
-  /* ── Danger (red ~25°) ─────────────────────── */
-  --danger-strong: #ec8170;
-  --danger-soft:   rgba(236, 129, 112, 0.14);
-  --danger-subtle: rgba(236, 129, 112, 0.06);
-
-  /* ── Warning (yellow ~85°) ─────────────────── */
-  --warning-strong: #d6b56d;
-  --warning-soft:   rgba(214, 181, 109, 0.14);
-  --warning-subtle: rgba(214, 181, 109, 0.06);
-
-  /* ── Info (teal ~185°) ─────────────────────── */
-  --info-strong: #5eb8b8;
-  --info-soft:   rgba(94, 184, 184, 0.12);
-  --info-subtle: rgba(94, 184, 184, 0.06);
+  /* Status */
+  --success-strong: var(--green-strong);
+  --success-soft:   var(--green-soft);
+  --success-border: var(--green-border);
+  --danger-strong:  var(--red-strong);
+  --danger-soft:    var(--red-soft);
+  --danger-border:  var(--red-border);
+  --warning-strong: var(--yellow-strong);
+  --warning-soft:   var(--yellow-soft);
+  --warning-border: var(--yellow-border);
 
   /* ═══════════════════════════════════════════════
      ELEVATION
-     4-tier depth system + inner highlight
      ═══════════════════════════════════════════════ */
 
   --elevation-0: none;
-  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.16);
-  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.2);
-  --elevation-3: 0 18px 40px rgba(0, 0, 0, 0.24);
-  --elevation-4: 0 24px 70px rgba(0, 0, 0, 0.28);
-  --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.12);
+  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.18);
+  --elevation-3: 0 12px 32px rgba(0, 0, 0, 0.22);
+  --elevation-4: 0 24px 64px rgba(0, 0, 0, 0.28);
+  --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --shadow-glow: 0 0 0 1px var(--accent-glow);
+
+  /* ═══════════════════════════════════════════════
+     BLUR / GLASS
+     ═══════════════════════════════════════════════ */
+
+  --blur-sm: blur(8px);
+  --blur-md: blur(16px);
+  --blur-lg: blur(24px);
+
+  /* ═══════════════════════════════════════════════
+     FOCUS RING
+     ═══════════════════════════════════════════════ */
+
+  --focus-ring: 0 0 0 2px var(--surface-canvas), 0 0 0 4px var(--amber-7);
+  --focus-ring-color: var(--amber-7);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
 
   /* ═══════════════════════════════════════════════
      LAYOUT
-     Shell dimensions and grid helpers
      ═══════════════════════════════════════════════ */
 
-  --grid-line: rgba(186, 197, 207, 0.06);
+  --grid-line: rgba(37, 52, 64, 0.06);
   --shell-max-width: 104rem;
-  --sidebar-min: 18rem;
-  --sidebar-max-left: 22rem;
-  --sidebar-max-right: 25rem;
-  --panel-gap: var(--space-section-gap);
-
-  /* ── Blur ──────────────────────────────────── */
-  --blur-card: blur(16px);
-  --blur-shell: blur(18px);
+  --sidebar-width: 220px;
+  --sidebar-collapsed: 48px;
+  --sidebar-right: 280px;
+  --panel-gap: var(--gap-panel);
 }
 
 /* ═══════════════════════════════════════════════
-   OKLCH Progressive Enhancement
-   Browsers that support OKLCH get perceptually
-   uniform color values. Others keep the sRGB
-   fallbacks defined above.
+   OKLCH PROGRESSIVE ENHANCEMENT
+   Overrides hex colors with perceptually uniform OKLCH
    ═══════════════════════════════════════════════ */
 
 @supports (color: oklch(0 0 0)) {
   :root {
-    --accent-strong:  oklch(0.72 0.14 55);
-    --success-strong: oklch(0.76 0.12 145);
-    --danger-strong:  oklch(0.70 0.16 25);
-    --warning-strong: oklch(0.76 0.12 85);
-    --info-strong:    oklch(0.72 0.08 185);
+    /* Gray scale */
+    --gray-1:  oklch(0.07 0.01 230);
+    --gray-2:  oklch(0.10 0.012 230);
+    --gray-3:  oklch(0.13 0.014 230);
+    --gray-4:  oklch(0.17 0.012 230);
+    --gray-5:  oklch(0.22 0.010 230);
+    --gray-6:  oklch(0.30 0.008 230);
+    --gray-7:  oklch(0.42 0.006 230);
+    --gray-8:  oklch(0.55 0.005 230);
+    --gray-9:  oklch(0.70 0.004 230);
+    --gray-10: oklch(0.82 0.003 230);
+    --gray-11: oklch(0.92 0.002 230);
+    --gray-12: oklch(0.97 0.001 230);
 
-    --text-strong:    oklch(0.96 0.005 220);
-    --text-default:   oklch(0.84 0.015 220);
-    --text-muted:     oklch(0.65 0.02 220);
-    --text-inverse:   oklch(0.15 0.02 55);
+    /* Amber scale */
+    --amber-1:  oklch(0.15 0.04 60);
+    --amber-2:  oklch(0.22 0.06 60);
+    --amber-3:  oklch(0.30 0.08 60);
+    --amber-4:  oklch(0.38 0.10 60);
+    --amber-5:  oklch(0.50 0.12 60);
+    --amber-6:  oklch(0.62 0.14 60);
+    --amber-7:  oklch(0.72 0.15 60);
+    --amber-8:  oklch(0.80 0.12 60);
+    --amber-9:  oklch(0.88 0.08 60);
+    --amber-10: oklch(0.94 0.04 60);
+
+    /* Status — Green (hue ~155) */
+    --green-soft:   oklch(0.25 0.06 155);
+    --green-strong: oklch(0.72 0.14 155);
+    --green-border: oklch(0.40 0.08 155);
+
+    /* Status — Red (hue ~25) */
+    --red-soft:   oklch(0.22 0.06 25);
+    --red-strong: oklch(0.70 0.16 25);
+    --red-border: oklch(0.38 0.10 25);
+
+    /* Status — Yellow (hue ~85) */
+    --yellow-soft:   oklch(0.25 0.06 85);
+    --yellow-strong: oklch(0.78 0.12 85);
+    --yellow-border: oklch(0.40 0.08 85);
+
+    /* Elevation with OKLCH */
+    --elevation-1: 0 1px 3px oklch(0 0 0 / 0.12);
+    --elevation-2: 0 4px 12px oklch(0 0 0 / 0.18);
+    --elevation-3: 0 12px 32px oklch(0 0 0 / 0.22);
+    --elevation-4: 0 24px 64px oklch(0 0 0 / 0.28);
+    --shadow-inner: inset 0 1px 0 oklch(1 0 0 / 0.05);
   }
 }
 
 /* ═══════════════════════════════════════════════
-   Light Theme Override
-   Applied via data-theme="light" on <html>.
-   Inverts lightness curves while keeping hues.
+   LIGHT THEME OVERRIDE
    ═══════════════════════════════════════════════ */
 
 [data-theme="light"] {
   color-scheme: light;
 
-  --surface-canvas:      #f8f9fa;
-  --surface-shell:       rgba(255, 255, 255, 0.92);
-  --surface-card:        rgba(255, 255, 255, 0.95);
-  --surface-card-strong: rgba(245, 247, 249, 0.98);
-  --surface-muted:       rgba(0, 0, 0, 0.035);
-  --surface-highlight:   rgba(213, 140, 83, 0.08);
-  --surface-inset:       rgba(240, 243, 246, 0.9);
-  --surface-overlay:     rgba(0, 0, 0, 0.3);
+  --gray-1:  #f8fafb;
+  --gray-2:  #f0f4f6;
+  --gray-3:  #e8eef1;
+  --gray-4:  #dce4e9;
+  --gray-5:  #c5d0d8;
+  --gray-6:  #a3b3be;
+  --gray-7:  #7e929f;
+  --gray-8:  #5a707e;
+  --gray-9:  #3a4d5c;
+  --gray-10: #253440;
+  --gray-11: #121d25;
+  --gray-12: #0a0f14;
 
-  --text-strong:  #1a1d20;
-  --text-default: #3d4752;
-  --text-muted:   #6b7a85;
-  --text-faint:   rgba(107, 122, 133, 0.5);
-  --text-inverse: #f2f5f7;
+  --surface-canvas: var(--gray-1);
+  --surface-card: var(--gray-2);
+  --surface-card-strong: var(--gray-3);
+  --surface-inset: var(--gray-4);
+  --surface-muted: rgba(0, 0, 0, 0.035);
 
-  --border-subtle:  rgba(0, 0, 0, 0.08);
-  --border-medium:  rgba(0, 0, 0, 0.12);
-  --border-strong:  rgba(213, 140, 83, 0.35);
-  --border-danger:  rgba(220, 90, 70, 0.3);
-  --border-success: rgba(60, 160, 100, 0.3);
-  --border-warning: rgba(190, 155, 60, 0.3);
+  --border-subtle: rgba(197, 208, 216, 0.6);
+  --border-medium: rgba(163, 179, 190, 0.6);
 
-  --accent-soft:   rgba(213, 140, 83, 0.08);
-  --accent-glow:   rgba(213, 140, 83, 0.2);
-  --accent-subtle: rgba(213, 140, 83, 0.04);
-  --success-soft:  rgba(60, 160, 100, 0.08);
-  --danger-soft:   rgba(220, 90, 70, 0.08);
-  --warning-soft:  rgba(190, 155, 60, 0.08);
-  --info-soft:     rgba(40, 140, 140, 0.08);
+  --text-strong: var(--gray-12);
+  --text-body: var(--gray-9);
+  --text-muted: var(--gray-7);
+  --text-faint: rgba(126, 146, 159, 0.6);
+  --text-inverse: var(--gray-1);
 
-  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.06);
   --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --elevation-3: 0 18px 40px rgba(0, 0, 0, 0.1);
-  --elevation-4: 0 24px 70px rgba(0, 0, 0, 0.12);
+  --elevation-3: 0 12px 32px rgba(0, 0, 0, 0.10);
+  --elevation-4: 0 24px 64px rgba(0, 0, 0, 0.12);
   --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 
-  --grid-line: rgba(0, 0, 0, 0.04);
-}
-
-/* ═══════════════════════════════════════════════
-   @font-face Declarations
-   Replaces the old @import url() to Google Fonts.
-   Using Google Fonts CSS2 static URLs served via
-   their CDN. font-display: swap avoids FOIT.
-   ═══════════════════════════════════════════════ */
-
-/* IBM Plex Sans — body text */
-@font-face {
-  font-family: "IBM Plex Sans";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("https://fonts.gstatic.com/s/ibmplexsans/v23/zYXzKVElMYYaJe8bpLHnCwDKr932-G7dytD-Dmu1syxeKYbSB4Zh.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("https://fonts.gstatic.com/s/ibmplexsans/v23/zYXzKVElMYYaJe8bpLHnCwDKr932-G7dytD-Dmu1syxeKYbSB4Zh.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("https://fonts.gstatic.com/s/ibmplexsans/v23/zYXzKVElMYYaJe8bpLHnCwDKr932-G7dytD-Dmu1syxeKYbSB4Zh.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("https://fonts.gstatic.com/s/ibmplexsans/v23/zYXzKVElMYYaJe8bpLHnCwDKr932-G7dytD-Dmu1syxeKYbSB4Zh.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
-}
-
-/* IBM Plex Mono — code / data */
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q131nj-o.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3vAOwlBFgsAXHNk.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
-}
-
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3pQPwlBFgsAXHNk.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
+  --focus-ring: 0 0 0 2px var(--surface-canvas), 0 0 0 4px var(--amber-6);
 }
