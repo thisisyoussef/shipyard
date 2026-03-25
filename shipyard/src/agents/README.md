@@ -1,7 +1,7 @@
 # Agents
 
 This folder defines the role contracts that Shipyard reasons about when it
-plans work. As Phase 6 lands, it also starts to hold the isolated helper
+plans work. As Phase 6 lands, selected files also hold isolated helper
 runtimes behind those roles.
 
 ## Files
@@ -11,7 +11,7 @@ runtimes behind those roles.
 - `explorer.ts`: read-only search role plus the isolated explorer helper that
   returns `ContextReport`
 - `verifier.ts`: read-only validation role for tests, lint, and structured
-  verification reports; still a descriptor until its runtime helper lands
+  verification reports; now also exposes the isolated verifier helper runtime
 
 ## Important Constraint
 
