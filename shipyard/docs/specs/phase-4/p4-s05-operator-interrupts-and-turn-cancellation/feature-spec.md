@@ -39,31 +39,31 @@ the same live session.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Shipyard defines one per-turn cancellation primitive that is owned
+- [x] AC-1: Shipyard defines one per-turn cancellation primitive that is owned
   by the active operator surface and passed through `executeInstructionTurn`
   into graph and fallback runtime execution.
-- [ ] AC-2: Terminal mode supports a real human interrupt of the active turn
+- [x] AC-2: Terminal mode supports a real human interrupt of the active turn
   without killing the Shipyard process, and the prompt returns ready for the
   next instruction in the same session.
-- [ ] AC-3: Browser `cancel` requests stop the active browser-driven turn and
+- [x] AC-3: Browser `cancel` requests stop the active browser-driven turn and
   end the streamed activity with `agent:done` status `cancelled` instead of a
   placeholder error.
-- [ ] AC-4: The shared turn runtime distinguishes `cancelled` from `error` in
+- [x] AC-4: The shared turn runtime distinguishes `cancelled` from `error` in
   reporter events, final turn result, rolling summary, session persistence, and
   workbench state.
-- [ ] AC-5: Graph mode and fallback mode both honor cancellation at the next
+- [x] AC-5: Graph mode and fallback mode both honor cancellation at the next
   safe boundary so they stop planning, tool use, verification, and response
   streaming once the interrupt is in effect.
-- [ ] AC-6: Long-running subprocess-backed work, especially `run_command`, is
+- [x] AC-6: Long-running subprocess-backed work, especially `run_command`, is
   terminated or concluded as cancelled when the turn is interrupted, with
   cleanup behavior made explicit.
-- [ ] AC-7: Late-arriving tool or model results after cancellation do not emit
+- [x] AC-7: Late-arriving tool or model results after cancellation do not emit
   success output, overwrite the cancelled summary, or leave terminal/UI state
   stuck as busy.
-- [ ] AC-8: Automated coverage proves at least one terminal interrupt path and
+- [x] AC-8: Automated coverage proves at least one terminal interrupt path and
   one browser cancel path, and proves a follow-up instruction succeeds without
   restarting the session.
-- [ ] AC-9: Local traces and any configured LangSmith-linked runtime reporting
+- [x] AC-9: Local traces and any configured LangSmith-linked runtime reporting
   record cancellation distinctly from ordinary failures.
 
 ## Edge Cases
@@ -114,3 +114,86 @@ the same live session.
   hard process stop.
 - Tests cover interrupted-turn behavior plus successful follow-up work in the
   same session.
+
+## Code References
+
+- [`../../../../src/engine/cancellation.ts`](../../../../src/engine/cancellation.ts):
+  defines the shared turn-scoped cancellation primitive, idempotent abort
+  helper, and error normalization used by terminal, browser, runtime, and tool
+  layers.
+- [`../../../../src/engine/turn.ts`](../../../../src/engine/turn.ts):
+  accepts the per-turn `signal`, suppresses late post-cancel tool emissions,
+  returns `cancelled` as a first-class turn status, and persists cancelled
+  summaries into the session trace/history.
+- [`../../../../src/engine/graph.ts`](../../../../src/engine/graph.ts),
+  [`../../../../src/agents/explorer.ts`](../../../../src/agents/explorer.ts),
+  and [`../../../../src/agents/verifier.ts`](../../../../src/agents/verifier.ts):
+  propagate cancellation through plan/act/verify helper paths so graph runtime
+  exits with a cancelled state instead of surfacing planner/verifier aborts as
+  ordinary failures.
+- [`../../../../src/engine/loop.ts`](../../../../src/engine/loop.ts):
+  keeps the terminal process alive, maps `Ctrl+C` onto the active turn
+  controller, and returns the prompt ready for the next instruction in the same
+  session.
+- [`../../../../src/ui/server.ts`](../../../../src/ui/server.ts),
+  [`../../../../src/ui/workbench-state.ts`](../../../../src/ui/workbench-state.ts),
+  [`../../../../ui/src/App.tsx`](../../../../ui/src/App.tsx), and
+  [`../../../../ui/src/panels/ComposerPanel.tsx`](../../../../ui/src/panels/ComposerPanel.tsx):
+  replace the browser cancel placeholder with a real interrupt path, keep the
+  browser workbench truthful about cancelled turns, and preserve the next draft
+  instruction while a turn is being stopped.
+- [`../../../../src/tools/run-command.ts`](../../../../src/tools/run-command.ts):
+  threads the active turn signal into spawned subprocesses and terminates the
+  process tree when the operator interrupts the turn.
+- [`../../../../tests/loop-runtime.test.ts`](../../../../tests/loop-runtime.test.ts),
+  [`../../../../tests/turn-runtime.test.ts`](../../../../tests/turn-runtime.test.ts),
+  [`../../../../tests/ui-runtime.test.ts`](../../../../tests/ui-runtime.test.ts),
+  [`../../../../tests/tooling.test.ts`](../../../../tests/tooling.test.ts), and
+  [`../../../../tests/graph-runtime.test.ts`](../../../../tests/graph-runtime.test.ts):
+  cover terminal interrupts, browser cancel, cancelled turn-state propagation,
+  subprocess abortion, and planner-path cancellation.
+
+## Representative Snippets
+
+```ts
+export function abortTurn(
+  controller: AbortController,
+  reason = DEFAULT_TURN_CANCELLED_REASON,
+): void {
+  if (controller.signal.aborted) {
+    return;
+  }
+
+  controller.abort(createTurnCancelledError(reason));
+}
+```
+
+```ts
+const handleSigint = (): void => {
+  if (activeTurnController === null) {
+    console.log("No active Shipyard turn is running.");
+    rl.prompt();
+    return;
+  }
+
+  console.log(
+    "Interrupt requested. Waiting for Shipyard to stop the current turn...",
+  );
+  abortTurn(activeTurnController);
+};
+```
+
+```ts
+if (activeInstructionController.signal.aborted) {
+  sessionState.workbenchState = {
+    ...sessionState.workbenchState,
+    latestError: null,
+    agentStatus:
+      "Cancellation already requested. Waiting for the active turn to stop.",
+  };
+  await broadcastSessionState();
+  break;
+}
+
+abortTurn(activeInstructionController);
+```

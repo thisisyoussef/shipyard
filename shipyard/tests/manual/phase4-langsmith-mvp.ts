@@ -31,7 +31,7 @@ import {
 interface ScenarioOutcome {
   name: string;
   runtimeMode: InstructionRuntimeMode;
-  resultStatus: "success" | "error";
+  resultStatus: "success" | "error" | "cancelled";
   finalText: string;
   trace: LangSmithTraceReference;
   toolCalls: ToolCallEvent[];

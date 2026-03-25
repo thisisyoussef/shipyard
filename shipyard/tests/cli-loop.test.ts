@@ -360,7 +360,7 @@ describe("shipyard CLI loop", () => {
         sendLine(runner, "create a README");
         cursor = await waitForText(
           runner,
-          'Turn 1 finished in phase "code" via graph runtime.',
+          'Turn 1 stopped in phase "code" via graph runtime.',
           {
             cursor,
             label: "turn 1 completion summary",
@@ -393,7 +393,7 @@ describe("shipyard CLI loop", () => {
         sendLine(runner, "add a package.json");
         cursor = await waitForText(
           runner,
-          'Turn 2 finished in phase "code" via graph runtime.',
+          'Turn 2 stopped in phase "code" via graph runtime.',
           {
             cursor,
             label: "turn 2 completion summary",
@@ -457,7 +457,7 @@ describe("shipyard CLI loop", () => {
         sendLine(firstRun, "inspect the repo");
         firstCursor = await waitForText(
           firstRun,
-          'Turn 1 finished in phase "code" via graph runtime.',
+          'Turn 1 stopped in phase "code" via graph runtime.',
           {
             cursor: firstCursor,
             label: "resume setup turn completion summary",

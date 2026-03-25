@@ -1,6 +1,11 @@
 import { spawn } from "node:child_process";
 
 import {
+  createTurnCancelledError,
+  toTurnCancelledError,
+  throwIfTurnCancelled,
+} from "../engine/cancellation.js";
+import {
   createToolErrorResult,
   createToolSuccessResult,
   registerTool,
@@ -21,6 +26,7 @@ export interface RunCommandInput {
   command: string;
   timeout_seconds?: number;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface RunCommandResult {
@@ -42,6 +48,7 @@ export interface ExecuteProcessInput {
   args?: string[];
   shell?: boolean;
   timeoutMs: number;
+  signal?: AbortSignal;
 }
 
 const runCommandInputSchema = {
@@ -135,14 +142,33 @@ function formatRunCommandOutput(result: RunCommandResult): string {
   return lines.join("\n");
 }
 
+function terminateProcessTree(
+  child: ReturnType<typeof spawn>,
+  signal: NodeJS.Signals,
+): void {
+  if (child.pid && process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // Fall back to killing the direct child below.
+    }
+  }
+
+  child.kill(signal);
+}
+
 export async function executeProcess(
   input: ExecuteProcessInput,
 ): Promise<RunCommandResult> {
+  throwIfTurnCancelled(input.signal);
+
   return new Promise((resolve, reject) => {
     const child = input.shell
       ? spawn(input.command, {
           cwd: input.cwd,
           shell: true,
+          detached: process.platform !== "win32",
           stdio: ["ignore", "pipe", "pipe"],
           env: {
             ...process.env,
@@ -153,6 +179,7 @@ export async function executeProcess(
         })
       : spawn(input.command, input.args ?? [], {
           cwd: input.cwd,
+          detached: process.platform !== "win32",
           stdio: ["ignore", "pipe", "pipe"],
           env: {
             ...process.env,
@@ -165,18 +192,53 @@ export async function executeProcess(
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let cancelled = false;
     let closed = false;
+    let abortEscalationHandle: NodeJS.Timeout | null = null;
 
     const timeoutHandle = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      terminateProcessTree(child, "SIGTERM");
 
       setTimeout(() => {
         if (!closed) {
-          child.kill("SIGKILL");
+          terminateProcessTree(child, "SIGKILL");
         }
       }, 250).unref();
     }, input.timeoutMs);
+
+    const handleAbortSignal = () => {
+      if (closed || cancelled) {
+        return;
+      }
+
+      cancelled = true;
+      terminateProcessTree(child, "SIGTERM");
+      abortEscalationHandle = setTimeout(() => {
+        if (!closed) {
+          terminateProcessTree(child, "SIGKILL");
+        }
+      }, 250);
+      abortEscalationHandle.unref();
+    };
+
+    const cleanupListeners = () => {
+      clearTimeout(timeoutHandle);
+
+      if (abortEscalationHandle) {
+        clearTimeout(abortEscalationHandle);
+      }
+
+      input.signal?.removeEventListener("abort", handleAbortSignal);
+    };
+
+    if (input.signal?.aborted) {
+      handleAbortSignal();
+    } else {
+      input.signal?.addEventListener("abort", handleAbortSignal, {
+        once: true,
+      });
+    }
 
     child.stdout.on("data", (chunk: Buffer | string) => {
       stdout += chunk.toString();
@@ -187,13 +249,25 @@ export async function executeProcess(
     });
 
     child.on("error", (error) => {
-      clearTimeout(timeoutHandle);
+      cleanupListeners();
+      const cancelledError = toTurnCancelledError(error, input.signal);
+
+      if (cancelled || cancelledError) {
+        reject(cancelledError ?? createTurnCancelledError(input.signal?.reason));
+        return;
+      }
+
       reject(error);
     });
 
     child.on("close", (exitCode, signal) => {
       closed = true;
-      clearTimeout(timeoutHandle);
+      cleanupListeners();
+
+      if (cancelled || input.signal?.aborted) {
+        reject(createTurnCancelledError(input.signal?.reason));
+        return;
+      }
 
       const sanitizedStdout = stripAnsi(stdout);
       const sanitizedStderr = stripAnsi(stderr);
@@ -234,6 +308,7 @@ export async function runCommandTool(
     command,
     shell: true,
     timeoutMs,
+    signal: input.signal,
   });
 }
 
@@ -244,11 +319,12 @@ export const runCommandDefinition: ToolDefinition<
   description:
     "Run a shell command inside the target directory with bounded output and timeout handling.",
   inputSchema: runCommandInputSchema,
-  async execute(input, targetDirectory) {
+  async execute(input, targetDirectory, context) {
     try {
       const result = await runCommandTool({
         targetDirectory,
         ...input,
+        signal: context?.signal,
       });
       const formattedOutput = formatRunCommandOutput(result);
 
@@ -262,6 +338,12 @@ export const runCommandDefinition: ToolDefinition<
 
       return createToolSuccessResult(formattedOutput);
     } catch (error) {
+      const cancelledError = toTurnCancelledError(error, context?.signal);
+
+      if (cancelledError) {
+        throw cancelledError;
+      }
+
       return createToolErrorResult(error);
     }
   },

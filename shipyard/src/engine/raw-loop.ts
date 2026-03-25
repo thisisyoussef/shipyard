@@ -18,6 +18,11 @@ import {
   type ToolResult,
 } from "../tools/registry.js";
 import { getLangSmithConfig } from "../tracing/langsmith.js";
+import {
+  getTurnCancellationReason,
+  throwIfTurnCancelled,
+  toTurnCancelledError,
+} from "./cancellation.js";
 
 export const RAW_LOOP_MAX_ITERATIONS = 25;
 const LOG_PREVIEW_LIMIT = 160;
@@ -47,6 +52,7 @@ export interface RawToolExecution {
 }
 
 export interface RawToolLoopResult {
+  status: "completed" | "cancelled";
   finalText: string;
   messageHistory: MessageParam[];
   toolExecutions: RawToolExecution[];
@@ -59,6 +65,7 @@ export interface RawToolLoopOptions {
   client?: AnthropicMessagesClient;
   logger?: RawLoopLogger;
   maxIterations?: number;
+  signal?: AbortSignal;
   beforeToolExecution?: (
     context: RawLoopToolHookContext,
   ) => Promise<void> | void;
@@ -165,11 +172,39 @@ function createUserToolResultHistoryMessage(
   };
 }
 
+function createCancelledLoopResult(options: {
+  signal?: AbortSignal;
+  fallbackReason?: string;
+  messageHistory: MessageParam[];
+  toolExecutions: RawToolExecution[];
+  iterations: number;
+  lastEditedFile: string | null;
+}): RawToolLoopResult {
+  const reason = getTurnCancellationReason(
+    options.signal,
+    options.fallbackReason,
+  ) ?? options.fallbackReason
+    ?? "The active turn was cancelled.";
+
+  return {
+    status: "cancelled",
+    finalText: reason,
+    messageHistory: [...options.messageHistory],
+    toolExecutions: [...options.toolExecutions],
+    iterations: options.iterations,
+    didEdit: options.lastEditedFile !== null,
+    lastEditedFile: options.lastEditedFile,
+  };
+}
+
 async function executeToolUse(
   toolUse: ToolUseBlock,
   targetDirectory: string,
   allowedToolNames: Set<string>,
+  signal?: AbortSignal,
 ): Promise<ToolResult> {
+  throwIfTurnCancelled(signal);
+
   if (!allowedToolNames.has(toolUse.name)) {
     return createToolErrorResult(
       `Tool "${toolUse.name}" is not available in this loop.`,
@@ -185,8 +220,16 @@ async function executeToolUse(
   }
 
   try {
-    return await tool.execute(toolUse.input, targetDirectory);
+    return await tool.execute(toolUse.input, targetDirectory, {
+      signal,
+    });
   } catch (error) {
+    const cancelledError = toTurnCancelledError(error, signal);
+
+    if (cancelledError) {
+      throw cancelledError;
+    }
+
     return createToolErrorResult(
       `Tool "${toolUse.name}" execution failed: ${error instanceof Error ? error.message : String(error)}`,
     );
@@ -198,15 +241,16 @@ async function executeToolUseWithTracing(
   targetDirectory: string,
   allowedToolNames: Set<string>,
   turnNumber: number,
+  signal?: AbortSignal,
 ): Promise<ToolResult> {
   const langSmith = getLangSmithConfig();
 
   if (!langSmith.enabled) {
-    return executeToolUse(toolUse, targetDirectory, allowedToolNames);
+    return executeToolUse(toolUse, targetDirectory, allowedToolNames, signal);
   }
 
   const tracedToolExecution = traceable(
-    async () => executeToolUse(toolUse, targetDirectory, allowedToolNames),
+    async () => executeToolUse(toolUse, targetDirectory, allowedToolNames, signal),
     {
       name: `shipyard.tool.${toolUse.name}`,
       run_type: "tool",
@@ -229,6 +273,7 @@ async function executeToolUsesForTurn(
   allowedToolNames: Set<string>,
   logger: RawLoopLogger,
   turnNumber: number,
+  signal: AbortSignal | undefined,
   beforeToolExecution?: (
     context: RawLoopToolHookContext,
   ) => Promise<void> | void,
@@ -243,6 +288,7 @@ async function executeToolUsesForTurn(
   const toolExecutions: RawToolExecution[] = [];
 
   for (const toolUse of toolUses) {
+    throwIfTurnCancelled(signal);
     await beforeToolExecution?.({
       toolUse,
       turnNumber,
@@ -260,6 +306,7 @@ async function executeToolUsesForTurn(
       targetDirectory,
       allowedToolNames,
       turnNumber,
+      signal,
     );
 
     logger.log(
@@ -278,6 +325,7 @@ async function executeToolUsesForTurn(
     };
 
     toolExecutions.push(toolExecution);
+    throwIfTurnCancelled(signal);
     await afterToolExecution?.({
       toolUse,
       turnNumber,
@@ -331,15 +379,41 @@ async function runRawToolLoopDetailedCore(
   let lastEditedFile: string | null = null;
 
   for (let turnNumber = 1; turnNumber <= maxIterations; turnNumber += 1) {
+    throwIfTurnCancelled(options.signal);
     logger.log(
       `[raw-loop] turn ${String(turnNumber)} request messages=${String(messages.length)} tools=${String(anthropicTools.length)}`,
     );
 
-    const assistantMessage = await createAnthropicMessage(client, {
-      systemPrompt: normalizedSystemPrompt,
-      messages,
-      tools: anthropicTools,
-    });
+    let assistantMessage: Message;
+
+    try {
+      assistantMessage = await createAnthropicMessage(
+        client,
+        {
+          systemPrompt: normalizedSystemPrompt,
+          messages,
+          tools: anthropicTools,
+        },
+        {
+          signal: options.signal,
+        },
+      );
+    } catch (error) {
+      const cancelledError = toTurnCancelledError(error, options.signal);
+
+      if (cancelledError) {
+        return createCancelledLoopResult({
+          signal: options.signal,
+          fallbackReason: cancelledError.message,
+          messageHistory: messages,
+          toolExecutions,
+          iterations: Math.max(turnNumber - 1, 0),
+          lastEditedFile,
+        });
+      }
+
+      throw error;
+    }
 
     logger.log(
       `[raw-loop] turn ${String(turnNumber)} stop_reason=${assistantMessage.stop_reason ?? "unknown"}`,
@@ -348,15 +422,38 @@ async function runRawToolLoopDetailedCore(
     if (assistantMessage.stop_reason === "tool_use") {
       const toolUses = validateToolUseTurn(assistantMessage, turnNumber);
       const assistantHistoryMessage = createAssistantHistoryMessage(assistantMessage);
-      const toolTurnResult = await executeToolUsesForTurn(
-        toolUses,
-        targetDirectory,
-        allowedToolNames,
-        logger,
-        turnNumber,
-        options.beforeToolExecution,
-        options.afterToolExecution,
-      );
+      let toolTurnResult: {
+        toolResultMessage: MessageParam;
+        toolExecutions: RawToolExecution[];
+      };
+
+      try {
+        toolTurnResult = await executeToolUsesForTurn(
+          toolUses,
+          targetDirectory,
+          allowedToolNames,
+          logger,
+          turnNumber,
+          options.signal,
+          options.beforeToolExecution,
+          options.afterToolExecution,
+        );
+      } catch (error) {
+        const cancelledError = toTurnCancelledError(error, options.signal);
+
+        if (cancelledError) {
+          return createCancelledLoopResult({
+            signal: options.signal,
+            fallbackReason: cancelledError.message,
+            messageHistory: [...messages, assistantHistoryMessage],
+            toolExecutions,
+            iterations: turnNumber,
+            lastEditedFile,
+          });
+        }
+
+        throw error;
+      }
 
       toolExecutions.push(...toolTurnResult.toolExecutions);
       const editedExecution = [...toolTurnResult.toolExecutions]
@@ -367,8 +464,28 @@ async function runRawToolLoopDetailedCore(
         lastEditedFile = editedExecution.editedPath;
       }
 
+      if (options.signal?.aborted) {
+        return createCancelledLoopResult({
+          signal: options.signal,
+          messageHistory: [...messages, assistantHistoryMessage],
+          toolExecutions,
+          iterations: turnNumber,
+          lastEditedFile,
+        });
+      }
+
       messages.push(assistantHistoryMessage, toolTurnResult.toolResultMessage);
       continue;
+    }
+
+    if (options.signal?.aborted) {
+      return createCancelledLoopResult({
+        signal: options.signal,
+        messageHistory: messages,
+        toolExecutions,
+        iterations: turnNumber,
+        lastEditedFile,
+      });
     }
 
     const finalText = extractAssistantText(assistantMessage).trim();
@@ -386,6 +503,7 @@ async function runRawToolLoopDetailedCore(
     messages.push(createAssistantHistoryMessage(assistantMessage));
 
     return {
+      status: "completed",
       finalText,
       messageHistory: messages,
       toolExecutions,

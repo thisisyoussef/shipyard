@@ -21,6 +21,7 @@ import {
   type InstructionTurnReporter,
   type TurnStateEvent,
 } from "../engine/turn.js";
+import { abortTurn } from "../engine/cancellation.js";
 import type { AgentRuntimeDependencies } from "../engine/graph.js";
 import {
   listSessionRunSummaries,
@@ -547,6 +548,7 @@ export async function startUiRuntimeServer(
   const socketServer = new WebSocketServer({ noServer: true });
   const sockets = new Set<WebSocket>();
   let activeInstruction: Promise<void> | null = null;
+  let activeInstructionController: AbortController | null = null;
   let previewStarted = false;
   const closed = new Promise<void>((resolve) => {
     httpServer.once("close", () => {
@@ -745,6 +747,7 @@ export async function startUiRuntimeServer(
   const runBrowserInstruction = async (
     instruction: string,
     injectedContext: string[] | undefined,
+    signal?: AbortSignal,
   ): Promise<void> => {
     const baseReporter = createUiInstructionReporter({
       send: broadcastBrowserMessage,
@@ -780,6 +783,7 @@ export async function startUiRuntimeServer(
       instruction,
       injectedContext,
       reporter,
+      signal,
     });
     await traceLogger.log("instruction.plan", {
       instruction,
@@ -842,14 +846,35 @@ export async function startUiRuntimeServer(
             await sendTargetState(socket);
             break;
           case "cancel":
-            await sendToSocket(
-              socket,
-              createErrorMessage(
-                activeInstruction === null
-                  ? "No active browser-driven instruction is running yet."
-                  : "Cancellation is not implemented yet for browser turns.",
-              ),
-            );
+            if (activeInstructionController === null) {
+              sessionState.workbenchState = {
+                ...sessionState.workbenchState,
+                latestError: null,
+                agentStatus: "No active browser-driven turn is running.",
+              };
+              await broadcastSessionState();
+              break;
+            }
+
+            if (activeInstructionController.signal.aborted) {
+              sessionState.workbenchState = {
+                ...sessionState.workbenchState,
+                latestError: null,
+                agentStatus:
+                  "Cancellation already requested. Waiting for the active turn to stop.",
+              };
+              await broadcastSessionState();
+              break;
+            }
+
+            sessionState.workbenchState = {
+              ...sessionState.workbenchState,
+              latestError: null,
+              agentStatus:
+                "Cancellation requested. Waiting for the active turn to stop.",
+            };
+            await broadcastSessionState();
+            abortTurn(activeInstructionController);
             break;
           case "session:resume_request": {
             if (activeInstruction !== null) {
@@ -1050,15 +1075,19 @@ export async function startUiRuntimeServer(
               message.injectedContext ?? [],
             );
             await saveSessionState(sessionState);
+            const turnController = new AbortController();
+            activeInstructionController = turnController;
             activeInstruction = runBrowserInstruction(
               message.text,
               message.injectedContext,
+              turnController.signal,
             );
 
             try {
               await activeInstruction;
             } finally {
               activeInstruction = null;
+              activeInstructionController = null;
             }
             break;
         }
@@ -1101,6 +1130,10 @@ export async function startUiRuntimeServer(
     workspaceDirectory,
     portResolution,
     async close(): Promise<void> {
+      if (activeInstructionController !== null) {
+        abortTurn(activeInstructionController);
+      }
+
       await previewSupervisor.stop();
 
       for (const client of socketServer.clients) {

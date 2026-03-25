@@ -29,6 +29,8 @@ export interface ComposerPanelProps {
   onInstructionChange: (value: string) => void;
   /** Callback when form is submitted */
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  /** Callback when the current turn should be cancelled */
+  onCancel?: () => void;
   /** Handle keyboard events (Enter, history navigation) */
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   /** Ref to the textarea for external focus management */
@@ -71,6 +73,7 @@ export function ComposerPanel({
   instruction,
   onInstructionChange,
   onSubmit,
+  onCancel,
   onKeyDown,
   textareaRef,
   agentBusy = false,
@@ -94,12 +97,7 @@ export function ComposerPanel({
         : "idle";
 
   // Submit button label
-  const submitLabel =
-    state === "submitting"
-      ? "Sending..."
-      : state === "busy"
-        ? "Working..."
-        : "Run instruction";
+  const submitLabel = state === "submitting" ? "Sending..." : "Run instruction";
 
   const handleFocus = useCallback(() => setIsFocused(true), []);
   const handleBlur = useCallback(() => setIsFocused(false), []);
@@ -171,14 +169,26 @@ export function ComposerPanel({
         )}
 
         {/* Submit button attached to textarea */}
-        <button
-          type="submit"
-          className="composer-submit"
-          disabled={agentBusy || submitting}
-          aria-disabled={agentBusy || submitting}
-        >
-          {submitLabel}
-        </button>
+        {agentBusy ? (
+          <button
+            type="button"
+            className="composer-submit"
+            onClick={onCancel}
+            disabled={!onCancel}
+            aria-disabled={!onCancel}
+          >
+            Cancel turn
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="composer-submit"
+            disabled={submitting}
+            aria-disabled={submitting}
+          >
+            {submitLabel}
+          </button>
+        )}
       </form>
 
       {/* Keyboard hint below */}

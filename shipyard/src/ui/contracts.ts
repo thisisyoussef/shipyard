@@ -8,7 +8,13 @@ export const uiConnectionStateSchema = z.enum([
   "agent-busy",
   "error",
 ]);
-const turnStatusSchema = z.enum(["working", "success", "error", "idle"]);
+const turnStatusSchema = z.enum([
+  "working",
+  "success",
+  "error",
+  "cancelled",
+  "idle",
+]);
 const activityKindSchema = z.enum([
   "thinking",
   "tool",
@@ -24,7 +30,13 @@ const activityToneSchema = z.enum([
   "danger",
 ]);
 const diffKindSchema = z.enum(["meta", "context", "add", "remove"]);
-const fileEventStatusSchema = z.enum(["running", "success", "error", "diff"]);
+const fileEventStatusSchema = z.enum([
+  "running",
+  "success",
+  "error",
+  "cancelled",
+  "diff",
+]);
 const previewCapabilityStatusSchema = z.enum(["available", "unavailable"]);
 const previewKindSchema = z.enum(["dev-server", "watch-build", "static-output"]);
 const previewRunnerSchema = z.enum(["npm", "pnpm", "yarn", "bun"]);

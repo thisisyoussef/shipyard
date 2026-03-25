@@ -24,6 +24,11 @@ import type {
   RawLoopToolResultHookContext,
 } from "./raw-loop.js";
 import {
+  DEFAULT_TURN_CANCELLED_REASON,
+  getTurnCancellationReason,
+  toTurnCancelledError,
+} from "./cancellation.js";
+import {
   saveSessionState,
   type ContextEnvelope,
   type SessionState,
@@ -104,6 +109,7 @@ export interface ExecuteInstructionTurnOptions {
   instruction: string;
   injectedContext?: string[];
   reporter?: InstructionTurnReporter;
+  signal?: AbortSignal;
 }
 
 export interface InstructionTurnResult {
@@ -111,7 +117,7 @@ export interface InstructionTurnResult {
   runtimeMode: InstructionRuntimeMode;
   taskPlan: TaskPlan;
   contextEnvelope: ContextEnvelope;
-  status: "success" | "error";
+  status: "success" | "error" | "cancelled";
   summary: string;
   finalText: string;
   selectedTargetPath: string | null;
@@ -449,11 +455,22 @@ function createSilentLogger() {
 function createTurnSummary(
   turnCount: number,
   runtimeMode: InstructionRuntimeMode,
-  finalStateStatus: "done" | "failed",
+  finalStateStatus: "done" | "failed" | "cancelled",
   finalText: string,
 ): string {
-  const statusLabel = finalStateStatus === "failed" ? "failed" : "completed";
+  const statusLabel = finalStateStatus === "failed"
+    ? "failed"
+    : finalStateStatus === "cancelled"
+      ? "cancelled"
+      : "completed";
   return `Turn ${turnCount} ${statusLabel} via ${runtimeMode}: ${truncateText(finalText, 140)}`;
+}
+
+function createCancelledTurnText(
+  turnCount: number,
+  reason: string,
+): string {
+  return `Turn ${String(turnCount)} cancelled: ${reason}`;
 }
 
 function createRuntimeDependencies(
@@ -461,6 +478,7 @@ function createRuntimeDependencies(
   runtimeState: InstructionRuntimeState,
   reporter: InstructionTurnReporter | undefined,
   editPreviewState: { emitted: boolean },
+  signal?: AbortSignal,
 ): AgentRuntimeDependencies {
   const baseDependencies = runtimeState.runtimeDependencies;
 
@@ -478,6 +496,11 @@ function createRuntimeDependencies(
         logger: baseOptions.logger ?? createSilentLogger(),
         beforeToolExecution: async (context: RawLoopToolHookContext) => {
           await existingBeforeToolExecution?.(context);
+
+          if (signal?.aborted) {
+            return;
+          }
+
           await reporter?.onToolCall?.({
             callId: context.toolUse.id,
             toolName: context.toolUse.name,
@@ -486,6 +509,10 @@ function createRuntimeDependencies(
         },
         afterToolExecution: async (context: RawLoopToolResultHookContext) => {
           await existingAfterToolExecution?.(context);
+
+          if (signal?.aborted) {
+            return;
+          }
 
           const summary = summarizeToolResult(context.result);
 
@@ -626,6 +653,7 @@ export async function executeInstructionTurn(
     runtimeState,
     options.reporter,
     editPreviewState,
+    options.signal,
   );
 
   configureTargetManagerEnrichmentInvoker(runtimeState.targetEnrichmentInvoker ?? null);
@@ -633,6 +661,7 @@ export async function executeInstructionTurn(
   try {
     const finalState = await runAgentRuntime(initialState, {
       mode: runtimeState.runtimeMode,
+      signal: options.signal,
       dependencies: runtimeDependencies,
     } satisfies AgentRuntimeOptions);
     const taskPlan = finalState.taskPlan ?? {
@@ -649,7 +678,9 @@ export async function executeInstructionTurn(
       ?? "Shipyard finished without a final response.";
     const finalStateStatus = finalState.status === "failed"
       ? "failed"
-      : "done";
+      : finalState.status === "cancelled"
+        ? "cancelled"
+        : "done";
     const summary = createTurnSummary(
       state.turnCount,
       runtimeState.runtimeMode,
@@ -666,6 +697,41 @@ export async function executeInstructionTurn(
         state.targetDirectory,
         finalState.lastEditedFile,
       );
+    }
+    if (finalStateStatus === "cancelled") {
+      const cancellationReason = finalText || getTurnCancellationReason(options.signal)
+        || DEFAULT_TURN_CANCELLED_REASON;
+      const cancelledTurnText = createCancelledTurnText(
+        state.turnCount,
+        cancellationReason,
+      );
+
+      state.rollingSummary = updateRollingSummary(
+        state.rollingSummary,
+        state.turnCount,
+        options.instruction,
+        summary,
+      );
+
+      await options.reporter?.onText?.(cancelledTurnText);
+      await options.reporter?.onDone?.({
+        status: "cancelled",
+        summary: cancellationReason,
+        langSmithTrace: finalState.langSmithTrace,
+      });
+      await emitTurnState(options.reporter, state, "ready");
+
+      return {
+        phaseName: phase.name,
+        runtimeMode: runtimeState.runtimeMode,
+        taskPlan,
+        contextEnvelope,
+        status: "cancelled",
+        summary: cancellationReason,
+        finalText: cancelledTurnText,
+        selectedTargetPath: null,
+        langSmithTrace: finalState.langSmithTrace,
+      };
     }
     if (finalStateStatus === "failed") {
       const errorMessage = finalState.lastError ?? finalText;
@@ -729,6 +795,53 @@ export async function executeInstructionTurn(
       langSmithTrace: finalState.langSmithTrace,
     };
   } catch (error) {
+    const cancelledError = toTurnCancelledError(error, options.signal);
+
+    if (cancelledError) {
+      const cancellationReason = cancelledError.message;
+      const finalText = createCancelledTurnText(
+        state.turnCount,
+        cancellationReason,
+      );
+      const summary = createTurnSummary(
+        state.turnCount,
+        runtimeState.runtimeMode,
+        "cancelled",
+        cancellationReason,
+      );
+
+      state.rollingSummary = updateRollingSummary(
+        state.rollingSummary,
+        state.turnCount,
+        options.instruction,
+        summary,
+      );
+
+      await options.reporter?.onText?.(finalText);
+      await options.reporter?.onDone?.({
+        status: "cancelled",
+        summary: cancellationReason,
+      });
+      await emitTurnState(options.reporter, state, "ready");
+
+      return {
+        phaseName: phase.name,
+        runtimeMode: runtimeState.runtimeMode,
+        taskPlan: {
+          instruction: options.instruction,
+          goal: options.instruction,
+          targetFilePaths,
+          plannedSteps: [],
+        },
+        contextEnvelope,
+        status: "cancelled",
+        summary: cancellationReason,
+        finalText,
+        selectedTargetPath: null,
+        langSmithTrace: null,
+      };
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     const finalText = `Turn ${String(state.turnCount)} stopped: ${message}`;
     const summary = createTurnSummary(

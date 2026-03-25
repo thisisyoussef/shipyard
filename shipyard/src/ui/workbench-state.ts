@@ -55,7 +55,7 @@ export interface ActivityItemViewModel {
 export interface TurnViewModel {
   id: string;
   instruction: string;
-  status: "working" | "success" | "error" | "idle";
+  status: "working" | "success" | "error" | "cancelled" | "idle";
   startedAt: string;
   summary: string;
   contextPreview: string[];
@@ -73,7 +73,7 @@ export interface DiffLineViewModel {
 export interface FileEventViewModel {
   id: string;
   path: string;
-  status: "running" | "success" | "error" | "diff";
+  status: "running" | "success" | "error" | "cancelled" | "diff";
   title: string;
   summary: string;
   toolName?: string;
@@ -335,6 +335,38 @@ function hasRecoveredHistory(state: WorkbenchViewState): boolean {
     state.fileEvents.length > 0 ||
     state.contextHistory.length > 0
   );
+}
+
+function createDoneTone(
+  status: Extract<
+    BackendToFrontendMessage,
+    { type: "agent:done" }
+  >["status"],
+): ActivityItemViewModel["tone"] {
+  switch (status) {
+    case "success":
+      return "success";
+    case "cancelled":
+      return "neutral";
+    default:
+      return "danger";
+  }
+}
+
+function createTurnStatusFromDone(
+  status: Extract<
+    BackendToFrontendMessage,
+    { type: "agent:done" }
+  >["status"],
+): TurnViewModel["status"] {
+  switch (status) {
+    case "success":
+      return "success";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return "error";
+  }
 }
 
 export function createInitialWorkbenchState(): WorkbenchViewState {
@@ -641,26 +673,50 @@ export function applyBackendMessage(
     }
 
     case "agent:done": {
+      const activeTurnId = state.activeTurnId;
       const withActivity = appendActivity(state, {
         kind: "done",
         title: "Turn complete",
         detail: message.summary,
-        tone: message.status === "success" ? "success" : "danger",
+        tone: createDoneTone(message.status),
       });
-
-      return updateActiveTurn(
-        {
-          ...withActivity,
-          activeTurnId: null,
-          agentStatus: message.summary,
-        },
-        (turn) => ({
-          ...turn,
-          status: message.status === "success" ? "success" : "error",
-          summary: message.summary,
-          langSmithTrace: message.langSmithTrace ?? null,
-        }),
+      const pendingFileEventIds = new Set(
+        Object.values(withActivity.pendingToolCalls)
+          .filter((pendingCall) => pendingCall.turnId === activeTurnId)
+          .map((pendingCall) => pendingCall.fileEventId)
+          .filter((fileEventId): fileEventId is string => Boolean(fileEventId)),
       );
+
+      return {
+        ...withActivity,
+        activeTurnId: null,
+        fileEvents: withActivity.fileEvents.map((fileEvent) =>
+          pendingFileEventIds.has(fileEvent.id)
+            ? {
+                ...fileEvent,
+                status: message.status === "cancelled" ? "cancelled" : "error",
+                summary: message.summary,
+              }
+            : fileEvent
+        ),
+        pendingToolCalls: Object.fromEntries(
+          Object.entries(withActivity.pendingToolCalls).filter(
+            ([, pendingCall]) => pendingCall.turnId !== activeTurnId,
+          ),
+        ),
+        latestError: message.status === "error" ? message.summary : null,
+        agentStatus: message.summary,
+        turns: withActivity.turns.map((turn) =>
+          turn.id === activeTurnId
+            ? {
+                ...turn,
+                status: createTurnStatusFromDone(message.status),
+                summary: message.summary,
+                langSmithTrace: message.langSmithTrace ?? turn.langSmithTrace,
+              }
+            : turn
+        ),
+      };
     }
 
     case "preview:state":

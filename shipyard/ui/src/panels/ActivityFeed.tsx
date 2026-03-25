@@ -38,6 +38,7 @@ function getTurnTone(status: TurnViewModel["status"]): BadgeTone {
       return "danger";
     case "working":
       return "accent";
+    case "cancelled":
     default:
       return "neutral";
   }

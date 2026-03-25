@@ -9,6 +9,10 @@ share one execution core:
 Both surfaces converge on the same session model, context envelope, tool
 registry, and graph-or-fallback instruction executor.
 
+Both surfaces also own the same turn-scoped cancellation contract: terminal
+`Ctrl+C` and browser `cancel` requests resolve one active turn controller, and
+the shared runtime treats interruption as a first-class `cancelled` outcome.
+
 ## System Map
 
 ```mermaid
@@ -94,7 +98,8 @@ flowchart TD
 - `src/context/` inspects the target repository and serializes a reusable
   prompt context envelope, including target `AGENTS.md` rules when present.
 - `src/engine/` owns the persistent loop, shared turn execution path, graph
-  runtime, coordinator routing, fallback raw loop, and session persistence.
+  runtime, coordinator routing, fallback raw loop, per-turn cancellation, and
+  session persistence.
 - `src/agents/` holds the coordinator-only write boundary plus isolated helper
   runtimes such as the explorer and verifier helpers plus the coordinator's
   path-detection and verification-command heuristics.

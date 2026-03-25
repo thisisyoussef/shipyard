@@ -248,6 +248,7 @@ function renderWorkbench(overrides?: {
       onContextKeyDown: () => undefined,
       onClearContext: () => undefined,
       onSubmitInstruction: () => undefined,
+      onCancelInstruction: () => undefined,
       onRequestTargetSwitch: () => undefined,
       onRequestTargetCreate: () => undefined,
       onRequestTargetEnrich: () => undefined,

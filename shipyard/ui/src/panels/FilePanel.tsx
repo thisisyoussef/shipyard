@@ -42,6 +42,8 @@ function getEventTone(
   switch (status) {
     case "success":
       return "success";
+    case "cancelled":
+      return "neutral";
     case "error":
       return "danger";
     case "running":
@@ -56,6 +58,8 @@ function getEventLabel(status: FileEventViewModel["status"]): string {
   switch (status) {
     case "success":
       return "OK";
+    case "cancelled":
+      return "CXL";
     case "error":
       return "ERR";
     case "running":

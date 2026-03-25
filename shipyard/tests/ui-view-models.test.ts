@@ -201,6 +201,30 @@ describe("ui view models", () => {
     });
   });
 
+  it("tracks cancelled turns distinctly from runtime errors", () => {
+    let state = createInitialWorkbenchState();
+
+    state = queueInstructionTurn(state, "inspect package.json", []);
+    state = applyBackendMessage(state, {
+      type: "agent:text",
+      text: "Turn 1 cancelled: Operator interrupted the active turn.",
+    });
+    state = applyBackendMessage(state, {
+      type: "agent:done",
+      status: "cancelled",
+      summary: "Operator interrupted the active turn.",
+    });
+
+    expect(state.activeTurnId).toBeNull();
+    expect(state.latestError).toBeNull();
+    expect(state.agentStatus).toBe("Operator interrupted the active turn.");
+    expect(state.turns[0]).toMatchObject({
+      instruction: "inspect package.json",
+      status: "cancelled",
+      summary: "Operator interrupted the active turn.",
+    });
+  });
+
   it("page reload restores the same session snapshot", () => {
     const snapshot = queueInstructionTurn(
       createInitialWorkbenchState(),
