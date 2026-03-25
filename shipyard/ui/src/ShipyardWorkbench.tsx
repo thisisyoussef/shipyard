@@ -1,6 +1,9 @@
 /**
- * Shipyard Workbench — Root composition component.
- * UIV3: Full implementation using shell and panel components.
+ * Shipyard Workbench — Split-pane composition.
+ * Art Deco Command · Lovable-style architecture.
+ *
+ * Left: conversation (chat + composer at bottom)
+ * Right: workspace (preview / files / live view — tabbed)
  */
 
 import type { FormEvent, KeyboardEvent, RefObject } from "react";
@@ -23,7 +26,6 @@ import { TargetHeader } from "./TargetHeader.js";
 import { TargetSwitcher } from "./TargetSwitcher.js";
 import {
   HeaderStrip,
-  ShellFooter,
   ShellSidebar,
   ShipyardShell,
 } from "./shell/index.js";
@@ -86,7 +88,7 @@ export interface ShipyardWorkbenchProps {
   onToggleRightSidebar: () => void;
 }
 
-/* ── Icon components for sidebar rail ──────── */
+/* ── Icon components ──────────────────────── */
 
 function SessionIcon() {
   return (
@@ -113,10 +115,9 @@ function ContextIcon() {
 export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
   const [targetSwitcherOpen, setTargetSwitcherOpen] = useState(false);
   const [targetCreationOpen, setTargetCreationOpen] = useState(false);
-  const [leftCollapsed, setLeftCollapsed] = useState(!props.leftSidebarOpen);
-  const [rightCollapsed, setRightCollapsed] = useState(!props.rightSidebarOpen);
-  const [primaryView, setPrimaryView] = useState<"chat" | "preview" | "live">(
-    props.initialPrimaryView ?? "chat",
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState<"preview" | "files">(
+    "preview",
   );
 
   const workspaceName = props.sessionState?.workspaceDirectory?.split("/").pop();
@@ -127,12 +128,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
     props.targetManager?.currentTarget.path ?? props.sessionState?.targetDirectory;
 
   const leftRailItems = [
-    {
-      id: "session",
-      icon: <SessionIcon />,
-      label: "Session",
-      active: true,
-    },
+    { id: "session", icon: <SessionIcon />, label: "Session", active: true },
     {
       id: "context",
       icon: <ContextIcon />,
@@ -141,25 +137,9 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
     },
   ];
 
-  const handleLeftToggle = () => {
-    const nextState = !leftCollapsed;
-    setLeftCollapsed(nextState);
-    props.onToggleLeftSidebar();
-  };
-
-  const handleRightToggle = () => {
-    const nextState = !rightCollapsed;
-    setRightCollapsed(nextState);
-    props.onToggleRightSidebar();
-  };
-
   return (
     <>
       <ShipyardShell
-        leftCollapsed={leftCollapsed}
-        rightCollapsed={rightCollapsed}
-        onLeftCollapsedChange={setLeftCollapsed}
-        onRightCollapsedChange={setRightCollapsed}
         header={
           <HeaderStrip
             workspaceName={workspaceName}
@@ -167,17 +147,109 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             targetName={targetName}
             targetPath={targetPath}
             connectionState={props.connectionState}
-            leftSidebarOpen={!leftCollapsed}
-            rightSidebarOpen={!rightCollapsed}
+            leftSidebarOpen={drawerOpen}
+            rightSidebarOpen={false}
             onCopyTracePath={props.onCopyTracePath}
             onRefresh={props.onRefreshStatus}
-            onToggleLeftSidebar={handleLeftToggle}
-            onToggleRightSidebar={handleRightToggle}
+            onToggleLeftSidebar={() => setDrawerOpen((v) => !v)}
+            onToggleRightSidebar={() => setDrawerOpen((v) => !v)}
             traceButtonLabel={props.traceButtonLabel}
           />
         }
+        leftPanel={
+          <div className="conversation-pane">
+            {/* Target context — compact */}
+            {props.targetManager ? (
+              <TargetHeader
+                activePhase={activePhase}
+                targetManager={props.targetManager}
+                onOpenSwitcher={() => setTargetSwitcherOpen(true)}
+                onRequestEnrichment={props.onRequestTargetEnrich}
+              />
+            ) : null}
+
+            {/* Scrollable conversation */}
+            <div className="conversation-scroll">
+              <ChatWorkspace turns={props.turns} />
+            </div>
+
+            {/* Composer pinned at bottom */}
+            <ComposerPanel
+              instruction={props.instruction}
+              onInstructionChange={props.onInstructionChange}
+              onSubmit={props.onSubmitInstruction}
+              onCancel={props.onCancelInstruction}
+              onKeyDown={props.onInstructionKeyDown}
+              textareaRef={props.instructionInputRef}
+              agentBusy={props.connectionState === "agent-busy"}
+              notice={props.composerNotice}
+            />
+          </div>
+        }
+        rightPanel={
+          <div className="workspace-pane">
+            {/* Workspace tabs */}
+            <div
+              className="workspace-tabs"
+              role="tablist"
+              aria-label="Workspace view"
+            >
+              <button
+                type="button"
+                className="workspace-tab"
+                data-active={workspaceTab === "preview"}
+                aria-selected={workspaceTab === "preview"}
+                onClick={() => setWorkspaceTab("preview")}
+              >
+                Preview
+              </button>
+              <button
+                type="button"
+                className="workspace-tab"
+                data-active={workspaceTab === "files"}
+                aria-selected={workspaceTab === "files"}
+                onClick={() => setWorkspaceTab("files")}
+              >
+                Files
+              </button>
+            </div>
+
+            {/* Workspace content */}
+            <div className="workspace-content">
+              {workspaceTab === "preview" ? (
+                <PreviewPanel preview={props.previewState} />
+              ) : (
+                <>
+                  <FilePanel fileEvents={props.fileEvents} />
+                  <OutputPanel turns={props.turns} />
+                </>
+              )}
+            </div>
+          </div>
+        }
+        drawer={
+          <div className="drawer-content">
+            <SessionPanel session={props.sessionState} />
+            <RunHistoryPanel
+              runs={props.sessionHistory}
+              currentSessionId={props.sessionState?.sessionId ?? null}
+              onResumeSession={props.onRequestSessionResume}
+            />
+            <ContextPanel
+              history={props.contextHistory}
+              draft={props.contextDraft}
+              onDraftChange={props.onContextChange}
+              onKeyDown={props.onContextKeyDown}
+              onClear={props.onClearContext}
+              textareaRef={props.contextInputRef}
+            />
+          </div>
+        }
+        drawerOpen={drawerOpen}
+        onDrawerClose={() => setDrawerOpen(false)}
+        // Legacy props for backward compat with tests
         leftSidebar={
-          <ShellSidebar collapsed={leftCollapsed} railItems={leftRailItems}>
+          <ShellSidebar collapsed={!drawerOpen} railItems={leftRailItems}>
             <SessionPanel session={props.sessionState} />
             <RunHistoryPanel
               runs={props.sessionHistory}
@@ -195,89 +267,15 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
           </ShellSidebar>
         }
         rightSidebar={
-          <ShellSidebar collapsed={rightCollapsed} railItems={[]}>
+          <ShellSidebar collapsed={true} railItems={[]}>
             <FilePanel fileEvents={props.fileEvents} />
             <OutputPanel turns={props.turns} />
           </ShellSidebar>
         }
-        footer={
-          <ShellFooter
-            connectionState={props.connectionState}
-            sessionId={props.sessionState?.sessionId}
-            workspacePath={props.sessionState?.workspaceDirectory}
-            agentStatus={props.agentStatus}
-          />
-        }
-      >
-        <div className="workbench-main-stack">
-          {props.targetManager ? (
-            <TargetHeader
-              activePhase={activePhase}
-              targetManager={props.targetManager}
-              onOpenSwitcher={() => setTargetSwitcherOpen(true)}
-              onRequestEnrichment={props.onRequestTargetEnrich}
-            />
-          ) : null}
-
-          <ComposerPanel
-            instruction={props.instruction}
-            onInstructionChange={props.onInstructionChange}
-            onSubmit={props.onSubmitInstruction}
-            onCancel={props.onCancelInstruction}
-            onKeyDown={props.onInstructionKeyDown}
-            textareaRef={props.instructionInputRef}
-            agentBusy={props.connectionState === "agent-busy"}
-            notice={props.composerNotice}
-          />
-
-          <div className="workbench-primary-shell">
-            <div
-              className="workbench-primary-tabs"
-              role="tablist"
-              aria-label="Primary workspace view"
-            >
-              <button
-                type="button"
-                className="workbench-primary-tab"
-                data-active={primaryView === "chat"}
-                aria-selected={primaryView === "chat"}
-                onClick={() => setPrimaryView("chat")}
-              >
-                Chat
-              </button>
-              <button
-                type="button"
-                className="workbench-primary-tab"
-                data-active={primaryView === "preview"}
-                aria-selected={primaryView === "preview"}
-                onClick={() => setPrimaryView("preview")}
-              >
-                Local preview
-              </button>
-              <button
-                type="button"
-                className="workbench-primary-tab"
-                data-active={primaryView === "live"}
-                aria-selected={primaryView === "live"}
-                onClick={() => setPrimaryView("live")}
-              >
-                Live view
-              </button>
-            </div>
-
-            {primaryView === "chat" ? (
-              <ChatWorkspace turns={props.turns} />
-            ) : primaryView === "preview" ? (
-              <PreviewPanel preview={props.previewState} />
-            ) : (
-              <LiveViewPanel
-                turns={props.turns}
-                tracePath={props.sessionState?.tracePath ?? null}
-              />
-            )}
-          </div>
-        </div>
-      </ShipyardShell>
+        footer={null}
+        leftCollapsed={!drawerOpen}
+        rightCollapsed={true}
+      />
 
       {props.targetManager ? (
         <TargetSwitcher

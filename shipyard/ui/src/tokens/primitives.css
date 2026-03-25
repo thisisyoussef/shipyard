@@ -1,14 +1,14 @@
 /* ───────────────────────────────────────────────
    Primitive Design Tokens
-   UIV3-S01 · Design System Rebuild
+   Art Deco Command · Design System
 
    Color, typography, spacing, radius, elevation.
    These are the raw building blocks — component
    tokens in components.css reference these.
 
-   Color: OKLCH with hex fallbacks (perceptually uniform).
-   Type: 1rem = 14.5px, minor third (1.2) ratio.
-   Spacing: 4px (0.25rem) base unit.
+   Palette: Deep navy + gold + jewel-toned semantics.
+   Type: 1rem = 15px, major third (1.25) ratio.
+   Spacing: 4px base unit.
    ─────────────────────────────────────────────── */
 
 :root {
@@ -19,21 +19,20 @@
      ═══════════════════════════════════════════════ */
 
   /* Font families */
-  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Source Sans 3", system-ui, -apple-system, sans-serif;
+  --font-mono: "Fira Code", "SFMono-Regular", ui-monospace, monospace;
 
-  /* Type scale — minor third (1.2) from 1rem = 14.5px base
-     Formula: 1rem × 1.2^n */
-  --text-2xs: 0.579rem;   /* ~8.4px — timestamps, line numbers */
-  --text-xs:  0.694rem;   /* ~10px — kickers, micro labels */
-  --text-sm:  0.833rem;   /* ~12px — captions, metadata, badges */
-  --text-base: 1rem;      /* 14.5px — body text, form inputs */
-  --text-md:  1.2rem;     /* ~17.4px — card titles, block headings */
-  --text-lg:  1.44rem;    /* ~20.9px — section headings */
-  --text-xl:  1.728rem;   /* ~25px — panel headings */
-  --text-2xl: 2.074rem;   /* ~30px — page-level headings */
-  --text-hero: clamp(2.488rem, 4vw, 3.583rem); /* 36-52px — top-bar title */
+  /* Type scale — major third (1.25) from 1rem = 15px base */
+  --text-2xs: 0.64rem;    /* ~9.6px — timestamps, line numbers */
+  --text-xs:  0.75rem;    /* ~11.25px — kickers, micro labels */
+  --text-sm:  0.875rem;   /* ~13.1px — captions, metadata, badges */
+  --text-base: 1rem;      /* 15px — body text, form inputs */
+  --text-md:  1.125rem;   /* ~16.9px — card titles, block headings */
+  --text-lg:  1.25rem;    /* ~18.75px — section headings */
+  --text-xl:  1.5rem;     /* ~22.5px — panel headings */
+  --text-2xl: 1.875rem;   /* ~28px — page-level headings */
+  --text-hero: clamp(2.5rem, 5vw, 4rem); /* 37-60px — top-bar title */
 
   /* Semantic type aliases */
   --type-heading-xl: var(--text-2xl);
@@ -52,26 +51,27 @@
   --leading-none:    0.94;
   --leading-tight:   1.1;
   --leading-snug:    1.25;
-  --leading-normal:  1.45;
+  --leading-normal:  1.5;
   --leading-relaxed: 1.6;
   --leading-loose:   1.8;
 
   /* Letter spacing */
-  --tracking-tighter: -0.05em;
-  --tracking-tight:   -0.03em;
+  --tracking-tighter: -0.03em;
+  --tracking-tight:   -0.01em;
   --tracking-normal:   0;
-  --tracking-wide:     0.02em;
-  --tracking-wider:    0.08em;
-  --tracking-widest:   0.16em;
+  --tracking-wide:     0.05em;
+  --tracking-wider:    0.1em;
+  --tracking-widest:   0.15em;
 
   /* Font weights */
+  --weight-light:    300;
   --weight-normal:   400;
   --weight-medium:   500;
   --weight-semibold: 600;
   --weight-bold:     700;
 
   /* ═══════════════════════════════════════════════
-     SPACING — 4px (0.25rem) base unit
+     SPACING — 4px base unit
      ═══════════════════════════════════════════════ */
 
   --space-0:   0;
@@ -104,63 +104,62 @@
      ═══════════════════════════════════════════════ */
 
   --radius-xs:   0.25rem;  /* 4px */
-  --radius-sm:   0.375rem; /* 6px */
+  --radius-sm:   0.25rem;  /* 4px — tighter than before */
   --radius-md:   0.5rem;   /* 8px */
   --radius-lg:   0.75rem;  /* 12px */
-  --radius-xl:   1rem;     /* 16px */
-  --radius-2xl:  1.25rem;  /* 20px */
+  --radius-xl:   0.5rem;   /* 8px — reduced from 16px, more architectural */
+  --radius-2xl:  0.75rem;  /* 12px */
   --radius-pill: 999px;
-  --radius-full: 999px;    /* alias for pill */
+  --radius-full: 999px;
 
   /* ═══════════════════════════════════════════════
-     PRIMITIVE COLORS — Hex fallbacks
-     OKLCH values in @supports block below
+     ART DECO COMMAND — Color Palette
+     Deep navy + gold + jewel-toned semantics
      ═══════════════════════════════════════════════ */
 
-  /* Gray scale (blue-gray undertone) */
-  --gray-1:  #0a0f14;  /* Canvas / deepest */
-  --gray-2:  #0e151c;  /* Card background */
-  --gray-3:  #121d25;  /* Card strong */
-  --gray-4:  #1a2730;  /* Inset / recessed */
-  --gray-5:  #253440;  /* Subtle border */
-  --gray-6:  #3a4d5c;  /* Medium border */
-  --gray-7:  #5a707e;  /* Muted text */
-  --gray-8:  #7e929f;  /* Secondary body */
-  --gray-9:  #a3b3be;  /* Primary body */
-  --gray-10: #c5d0d8;  /* Strong body */
-  --gray-11: #e4eaee;  /* Headings */
-  --gray-12: #f2f5f7;  /* Maximum contrast */
+  /* Canvas & surface scale (deep navy) */
+  --gray-1:  #0F172A;  /* Canvas / deepest */
+  --gray-2:  #1E293B;  /* Card background / surface */
+  --gray-3:  #273548;  /* Elevated surface */
+  --gray-4:  #334155;  /* Inset / recessed */
+  --gray-5:  rgba(148, 163, 184, 0.08);  /* Subtle border */
+  --gray-6:  rgba(148, 163, 184, 0.14);  /* Medium border */
+  --gray-7:  #64748B;  /* Muted text / faint */
+  --gray-8:  #94A3B8;  /* Muted / secondary text */
+  --gray-9:  #CBD5E1;  /* Pearl dim / body text */
+  --gray-10: #E2E8F0;  /* Strong body */
+  --gray-11: #F1F5F9;  /* Headings */
+  --gray-12: #F8FAFC;  /* Pearl / maximum contrast */
 
-  /* Amber accent scale */
-  --amber-1:  #1f1508;  /* Soft background */
-  --amber-2:  #33220d;  /* Hover background */
-  --amber-3:  #4a3112;  /* Active/pressed */
-  --amber-4:  #634118;  /* Subtle border */
-  --amber-5:  #8a5c24;  /* Medium border */
-  --amber-6:  #b07430;  /* Strong border */
-  --amber-7:  #d58c53;  /* PRIMARY ACCENT */
-  --amber-8:  #e0a876;  /* Hover accent */
-  --amber-9:  #ecc4a0;  /* Muted accent text */
-  --amber-10: #f5dfc8;  /* Faint accent wash */
+  /* Gold accent scale */
+  --amber-1:  rgba(212, 168, 67, 0.08);  /* Soft background */
+  --amber-2:  rgba(212, 168, 67, 0.15);  /* Hover background / gold-dim */
+  --amber-3:  rgba(212, 168, 67, 0.22);  /* Active/pressed */
+  --amber-4:  rgba(212, 168, 67, 0.18);  /* Subtle border */
+  --amber-5:  rgba(212, 168, 67, 0.25);  /* Gold border */
+  --amber-6:  #A07B2E;  /* Darkened gold */
+  --amber-7:  #D4A843;  /* PRIMARY GOLD */
+  --amber-8:  #E0BE6A;  /* Hover gold */
+  --amber-9:  #C2956B;  /* Copper / secondary warm */
+  --amber-10: rgba(212, 168, 67, 0.04); /* Faint gold wash */
 
-  /* Status colors — Success (green) */
-  --green-soft:   #152e24;
-  --green-strong: #7ec99a;
-  --green-border: #2d5a45;
+  /* Status — Success (emerald) */
+  --green-soft:   rgba(52, 211, 153, 0.12);
+  --green-strong: #34D399;
+  --green-border: rgba(52, 211, 153, 0.25);
 
-  /* Status colors — Danger (red) */
-  --red-soft:   #2e1515;
-  --red-strong: #ec8170;
-  --red-border: #5a2d2d;
+  /* Status — Danger (ruby) */
+  --red-soft:   rgba(244, 63, 94, 0.12);
+  --red-strong: #F43F5E;
+  --red-border: rgba(244, 63, 94, 0.25);
 
-  /* Status colors — Warning (yellow) */
-  --yellow-soft:   #2e2a15;
-  --yellow-strong: #d6b56d;
-  --yellow-border: #5a522d;
+  /* Status — Warning (amber) */
+  --yellow-soft:   rgba(251, 191, 36, 0.12);
+  --yellow-strong: #FBBF24;
+  --yellow-border: rgba(251, 191, 36, 0.25);
 
   /* ═══════════════════════════════════════════════
      SEMANTIC COLORS
-     Reference primitive scales
      ═══════════════════════════════════════════════ */
 
   /* Surfaces */
@@ -168,12 +167,12 @@
   --surface-card:        var(--gray-2);
   --surface-card-strong: var(--gray-3);
   --surface-inset:       var(--gray-4);
-  --surface-muted:       rgba(255, 255, 255, 0.035);
+  --surface-muted:       rgba(255, 255, 255, 0.03);
   --surface-highlight:   var(--amber-1);
 
   /* Borders */
-  --border-subtle: rgba(37, 52, 64, 0.6);   /* gray-5 with alpha */
-  --border-medium: rgba(58, 77, 92, 0.6);   /* gray-6 with alpha */
+  --border-subtle: var(--gray-5);
+  --border-medium: var(--gray-6);
   --border-strong: var(--amber-5);
   --border-focus:  var(--amber-7);
 
@@ -182,15 +181,15 @@
   --text-default: var(--gray-9);
   --text-body:    var(--gray-9);
   --text-muted:   var(--gray-7);
-  --text-faint:   rgba(90, 112, 126, 0.6);  /* gray-7 at 60% */
+  --text-faint:   rgba(100, 116, 139, 0.6);
   --text-inverse: var(--gray-1);
 
-  /* Accent */
+  /* Accent — Gold */
   --accent-strong: var(--amber-7);
   --accent-hover:  var(--amber-8);
   --accent-soft:   var(--amber-1);
   --accent-border: var(--amber-5);
-  --accent-glow:   rgba(213, 140, 83, 0.3);
+  --accent-glow:   rgba(212, 168, 67, 0.08);
 
   /* Status */
   --success-strong: var(--green-strong);
@@ -208,23 +207,23 @@
      ═══════════════════════════════════════════════ */
 
   --elevation-0: none;
-  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.12);
-  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.18);
-  --elevation-3: 0 12px 32px rgba(0, 0, 0, 0.22);
-  --elevation-4: 0 24px 64px rgba(0, 0, 0, 0.28);
-  --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --shadow-glow: 0 0 0 1px var(--accent-glow);
+  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --elevation-2: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --elevation-3: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --elevation-4: 0 24px 64px rgba(0, 0, 0, 0.5);
+  --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --shadow-glow: 0 0 20px rgba(212, 168, 67, 0.08);
 
   /* ═══════════════════════════════════════════════
-     BLUR / GLASS
+     BLUR — removed glassmorphism, keep for menus
      ═══════════════════════════════════════════════ */
 
   --blur-sm: blur(8px);
-  --blur-md: blur(16px);
-  --blur-lg: blur(24px);
+  --blur-md: blur(12px);
+  --blur-lg: blur(20px);
 
   /* ═══════════════════════════════════════════════
-     FOCUS RING
+     FOCUS RING — gold
      ═══════════════════════════════════════════════ */
 
   --focus-ring: 0 0 0 2px var(--surface-canvas), 0 0 0 4px var(--amber-7);
@@ -236,69 +235,12 @@
      LAYOUT
      ═══════════════════════════════════════════════ */
 
-  --grid-line: rgba(37, 52, 64, 0.06);
+  --grid-line: transparent; /* removed grid background */
   --shell-max-width: 104rem;
   --sidebar-width: 220px;
   --sidebar-collapsed: 48px;
   --sidebar-right: 280px;
   --panel-gap: var(--gap-panel);
-}
-
-/* ═══════════════════════════════════════════════
-   OKLCH PROGRESSIVE ENHANCEMENT
-   Overrides hex colors with perceptually uniform OKLCH
-   ═══════════════════════════════════════════════ */
-
-@supports (color: oklch(0 0 0)) {
-  :root {
-    /* Gray scale */
-    --gray-1:  oklch(0.07 0.01 230);
-    --gray-2:  oklch(0.10 0.012 230);
-    --gray-3:  oklch(0.13 0.014 230);
-    --gray-4:  oklch(0.17 0.012 230);
-    --gray-5:  oklch(0.22 0.010 230);
-    --gray-6:  oklch(0.30 0.008 230);
-    --gray-7:  oklch(0.42 0.006 230);
-    --gray-8:  oklch(0.55 0.005 230);
-    --gray-9:  oklch(0.70 0.004 230);
-    --gray-10: oklch(0.82 0.003 230);
-    --gray-11: oklch(0.92 0.002 230);
-    --gray-12: oklch(0.97 0.001 230);
-
-    /* Amber scale */
-    --amber-1:  oklch(0.15 0.04 60);
-    --amber-2:  oklch(0.22 0.06 60);
-    --amber-3:  oklch(0.30 0.08 60);
-    --amber-4:  oklch(0.38 0.10 60);
-    --amber-5:  oklch(0.50 0.12 60);
-    --amber-6:  oklch(0.62 0.14 60);
-    --amber-7:  oklch(0.72 0.15 60);
-    --amber-8:  oklch(0.80 0.12 60);
-    --amber-9:  oklch(0.88 0.08 60);
-    --amber-10: oklch(0.94 0.04 60);
-
-    /* Status — Green (hue ~155) */
-    --green-soft:   oklch(0.25 0.06 155);
-    --green-strong: oklch(0.72 0.14 155);
-    --green-border: oklch(0.40 0.08 155);
-
-    /* Status — Red (hue ~25) */
-    --red-soft:   oklch(0.22 0.06 25);
-    --red-strong: oklch(0.70 0.16 25);
-    --red-border: oklch(0.38 0.10 25);
-
-    /* Status — Yellow (hue ~85) */
-    --yellow-soft:   oklch(0.25 0.06 85);
-    --yellow-strong: oklch(0.78 0.12 85);
-    --yellow-border: oklch(0.40 0.08 85);
-
-    /* Elevation with OKLCH */
-    --elevation-1: 0 1px 3px oklch(0 0 0 / 0.12);
-    --elevation-2: 0 4px 12px oklch(0 0 0 / 0.18);
-    --elevation-3: 0 12px 32px oklch(0 0 0 / 0.22);
-    --elevation-4: 0 24px 64px oklch(0 0 0 / 0.28);
-    --shadow-inner: inset 0 1px 0 oklch(1 0 0 / 0.05);
-  }
 }
 
 /* ═══════════════════════════════════════════════
@@ -308,39 +250,44 @@
 [data-theme="light"] {
   color-scheme: light;
 
-  --gray-1:  #f8fafb;
-  --gray-2:  #f0f4f6;
-  --gray-3:  #e8eef1;
-  --gray-4:  #dce4e9;
-  --gray-5:  #c5d0d8;
-  --gray-6:  #a3b3be;
-  --gray-7:  #7e929f;
-  --gray-8:  #5a707e;
-  --gray-9:  #3a4d5c;
-  --gray-10: #253440;
-  --gray-11: #121d25;
-  --gray-12: #0a0f14;
+  --gray-1:  #F8FAFC;
+  --gray-2:  #FFFFFF;
+  --gray-3:  #F1F5F9;
+  --gray-4:  #E2E8F0;
+  --gray-5:  rgba(15, 23, 42, 0.06);
+  --gray-6:  rgba(15, 23, 42, 0.1);
+  --gray-7:  #94A3B8;
+  --gray-8:  #64748B;
+  --gray-9:  #334155;
+  --gray-10: #1E293B;
+  --gray-11: #0F172A;
+  --gray-12: #0F172A;
+
+  --amber-6: #8B6C3F;
+  --amber-7: #A07B2E;
+  --amber-8: #8B6C3F;
+  --amber-9: #8B6C3F;
 
   --surface-canvas: var(--gray-1);
   --surface-card: var(--gray-2);
   --surface-card-strong: var(--gray-3);
   --surface-inset: var(--gray-4);
-  --surface-muted: rgba(0, 0, 0, 0.035);
+  --surface-muted: rgba(0, 0, 0, 0.02);
 
-  --border-subtle: rgba(197, 208, 216, 0.6);
-  --border-medium: rgba(163, 179, 190, 0.6);
+  --border-subtle: var(--gray-5);
+  --border-medium: var(--gray-6);
 
   --text-strong: var(--gray-12);
   --text-body: var(--gray-9);
   --text-muted: var(--gray-7);
-  --text-faint: rgba(126, 146, 159, 0.6);
+  --text-faint: rgba(148, 163, 184, 0.6);
   --text-inverse: var(--gray-1);
 
-  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --elevation-3: 0 12px 32px rgba(0, 0, 0, 0.10);
-  --elevation-4: 0 24px 64px rgba(0, 0, 0, 0.12);
+  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --elevation-2: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --elevation-3: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --elevation-4: 0 24px 64px rgba(0, 0, 0, 0.1);
   --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 
-  --focus-ring: 0 0 0 2px var(--surface-canvas), 0 0 0 4px var(--amber-6);
+  --focus-ring: 0 0 0 2px var(--surface-canvas), 0 0 0 4px var(--amber-7);
 }

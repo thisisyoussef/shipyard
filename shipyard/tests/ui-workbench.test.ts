@@ -274,12 +274,11 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("The active React workspace.");
     expect(markup).toContain("Change target");
     expect(markup).toContain("Enriched");
-    expect(markup).toContain("Activity");
+    expect(markup).toContain("activity");
     expect(markup).toContain("Previous runs");
     expect(markup).toContain("fix the failing preview");
-    expect(markup).toContain(">Chat<");
-    expect(markup).toContain("Local preview");
-    expect(markup).toContain("Live view");
+    expect(markup).toContain("Preview");
+    expect(markup).toContain("Files");
     expect(markup).toContain("Latest conversation");
     expect(markup).toContain("inspect package.json");
     expect(markup).toContain("Open trace");
