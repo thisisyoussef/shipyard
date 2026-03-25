@@ -5,6 +5,7 @@ This folder holds small shared types that move between runtime layers.
 ## Current Artifacts
 
 - `TaskPlan`: the phase-level plan Shipyard produces before or during execution
+- `ExecutionSpec`: the richer planner artifact for broad or non-trivial work
 - `ContextReport` and `ContextFinding`: structured evidence returned from
   exploratory work
 - `EditIntent`: a typed description of a surgical file change
@@ -21,6 +22,7 @@ flowchart LR
   Discovery["DiscoveryReport"]
   Context["Context layer"]
   Plan["TaskPlan"]
+  Execution["ExecutionSpec"]
   Engine["Engine runtime"]
   Verify["VerificationReport"]
   Findings["ContextReport / ContextFinding"]
@@ -28,6 +30,7 @@ flowchart LR
   Discovery --> Context
   Context --> Engine
   Plan --> Engine
+  Execution --> Engine
   Findings --> Engine
   Verify --> Engine
 ```

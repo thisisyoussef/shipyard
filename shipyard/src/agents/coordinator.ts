@@ -1,8 +1,25 @@
-import type { ContextReport, TaskPlan } from "../artifacts/types.js";
+import type {
+  ContextReport,
+  ExecutionSpec,
+  TaskPlan,
+} from "../artifacts/types.js";
 import type { ContextEnvelope } from "../engine/state.js";
 import { normalizeTargetRelativePath } from "../tools/file-state.js";
 
 const verificationScriptPriority = ["test", "typecheck", "build"] as const;
+const lightweightInstructionPrefixes = [
+  "inspect ",
+  "read ",
+  "show ",
+  "list ",
+  "search ",
+  "find ",
+  "grep ",
+  "run ",
+  "test ",
+  "typecheck",
+  "build",
+] as const;
 
 function uniqueStrings(values: Iterable<string>): string[] {
   return [...new Set(values)];
@@ -31,11 +48,13 @@ function normalizeInstructionPath(candidate: string): string | null {
 function getKnownTargetFilePaths(options: {
   contextEnvelope: ContextEnvelope;
   taskPlan?: TaskPlan | null;
+  executionSpec?: ExecutionSpec | null;
   contextReport?: ContextReport | null;
 }): string[] {
   return uniqueStrings([
     ...options.contextEnvelope.task.targetFilePaths,
     ...(options.taskPlan?.targetFilePaths ?? []),
+    ...(options.executionSpec?.targetFilePaths ?? []),
     ...(options.contextReport?.findings.map((finding) => finding.filePath) ?? []),
   ]);
 }
@@ -79,6 +98,7 @@ export function shouldCoordinatorUseExplorer(options: {
   instruction: string;
   contextEnvelope: ContextEnvelope;
   taskPlan?: TaskPlan | null;
+  executionSpec?: ExecutionSpec | null;
   contextReport?: ContextReport | null;
 }): boolean {
   if (options.contextEnvelope.stable.discovery.isGreenfield) {
@@ -92,14 +112,81 @@ export function shouldCoordinatorUseExplorer(options: {
   return getKnownTargetFilePaths(options).length === 0;
 }
 
+function isClearlyLightweightInstruction(instruction: string): boolean {
+  const normalizedInstruction = instruction.trim().toLowerCase();
+
+  return lightweightInstructionPrefixes.some((prefix) =>
+    normalizedInstruction.startsWith(prefix)
+  );
+}
+
+export function shouldCoordinatorUsePlanner(options: {
+  instruction: string;
+  contextEnvelope: ContextEnvelope;
+  taskPlan?: TaskPlan | null;
+  executionSpec?: ExecutionSpec | null;
+  contextReport?: ContextReport | null;
+}): boolean {
+  if (options.executionSpec) {
+    return false;
+  }
+
+  if (extractInstructionTargetFilePaths(options.instruction).length > 0) {
+    return false;
+  }
+
+  if (isClearlyLightweightInstruction(options.instruction)) {
+    return false;
+  }
+
+  return true;
+}
+
 export function createExplorerQuery(instruction: string): string {
   return `Identify the files most relevant to this request: ${instruction.trim()}`;
+}
+
+export function createLightweightExecutionSpec(options: {
+  instruction: string;
+  contextEnvelope: ContextEnvelope;
+  taskPlan?: TaskPlan | null;
+  executionSpec?: ExecutionSpec | null;
+  contextReport?: ContextReport | null;
+}): ExecutionSpec {
+  const explicitTargetFilePaths = extractInstructionTargetFilePaths(
+    options.instruction,
+  );
+  const targetFilePaths = uniqueStrings([
+    ...explicitTargetFilePaths,
+    ...getKnownTargetFilePaths(options),
+  ]);
+  const targetLabel = targetFilePaths.length > 0
+    ? targetFilePaths.join(", ")
+    : "the relevant files";
+
+  return {
+    instruction: options.instruction,
+    goal: options.contextReport?.query ?? options.instruction,
+    deliverables: [
+      `Address the request within ${targetLabel}.`,
+    ],
+    acceptanceCriteria: [
+      `The requested change is applied within ${targetLabel}.`,
+      "The resulting change stays aligned with the original instruction.",
+    ],
+    verificationIntent: [
+      "Run the most relevant verification command after the change.",
+    ],
+    targetFilePaths,
+    risks: [],
+  };
 }
 
 export function createCoordinatorTaskPlan(options: {
   instruction: string;
   contextEnvelope: ContextEnvelope;
   taskPlan?: TaskPlan | null;
+  executionSpec?: ExecutionSpec | null;
   contextReport?: ContextReport | null;
 }): TaskPlan {
   const explicitTargetFilePaths = extractInstructionTargetFilePaths(
@@ -117,14 +204,23 @@ export function createCoordinatorTaskPlan(options: {
       targetFilePaths.length > 0
         ? `Inspect ${targetFilePaths.join(", ")} before editing.`
         : "Search for the most relevant files before editing.",
+      ...(options.executionSpec?.deliverables.map((deliverable) =>
+        `Deliver: ${deliverable}`
+      ) ?? []),
       "Choose the smallest unique anchor for each change.",
+      ...(options.executionSpec?.verificationIntent.map((intent) =>
+        `Verify: ${intent}`
+      ) ?? []),
       "Verify the result after the edit.",
     ],
   );
 
   return {
     instruction: options.instruction,
-    goal: options.contextReport?.query ?? options.instruction,
+    goal:
+      options.executionSpec?.goal
+      ?? options.contextReport?.query
+      ?? options.instruction,
     targetFilePaths,
     plannedSteps,
   };

@@ -24,6 +24,15 @@ Capture failures so they are not repeated.
 - **Why it failed**: Current context becomes noisy and harder to trust.
 - **Prevention rule**: Move only durable truths into project memory and keep session notes concise.
 
+- **Problem**: Sending every instruction through the heavy planner path
+- **Example**: Running planner mode for target-manager actions, greenfield
+  bootstrap turns, or exact-path inspection/edit requests.
+- **Why it failed**: It adds avoidable model hops, complicates cancellation
+  flows, and makes narrow tasks more brittle without improving the result.
+- **Prevention rule**: Reserve planner mode for broad non-trivial code-phase
+  work, and keep lightweight execution as the default for narrow or non-code
+  turns.
+
 - **Problem**: Stuffing raw spec bodies into rolling summaries or ad hoc prompt prose
 - **Example**: Copying long `feature-spec.md` contents into `rollingSummary` or relying on manual paste-only context for spec-driven stories
 - **Why it failed**: Prompt state becomes noisy, unstable, and hard for later plan/task flows to reference reliably.

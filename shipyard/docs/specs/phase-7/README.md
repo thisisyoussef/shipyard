@@ -54,8 +54,40 @@
 
 ### Code References
 
-- N/A. This landing only adds the Phase 7 planning pack under `shipyard/docs/specs/phase-7/` and updates the spec-pack index in `shipyard/docs/specs/README.md`.
+- `shipyard/src/artifacts/types.ts`: adds the shared `ExecutionSpec` and
+  `PlanningMode` contracts that later Phase 7 stories can reuse.
+- `shipyard/src/agents/planner.ts` and `shipyard/src/agents/coordinator.ts`:
+  add the read-only planner helper, schema validation, lightweight fallback
+  specs, and planner opt-in heuristics.
+- `shipyard/src/engine/graph.ts`, `shipyard/src/engine/turn.ts`,
+  `shipyard/src/engine/loop.ts`, and `shipyard/src/ui/server.ts`: carry
+  planner artifacts through the runtime and attach planner metadata to local and
+  LangSmith trace surfaces.
+- `shipyard/tests/planner-subagent.test.ts`, `shipyard/tests/graph-runtime.test.ts`,
+  `shipyard/tests/turn-runtime.test.ts`, `shipyard/tests/loop-runtime.test.ts`,
+  and `shipyard/tests/ui-runtime.test.ts`: verify planner isolation, graph
+  routing, lightweight-path preservation, and cancellation/follow-up behavior.
 
 ### Representative Snippets
 
-- N/A. No runtime or product-code implementation landed as part of this story-pack drafting pass.
+```ts
+export interface ExecutionSpec {
+  instruction: string;
+  goal: string;
+  deliverables: string[];
+  acceptanceCriteria: string[];
+  verificationIntent: string[];
+  targetFilePaths: string[];
+  risks: string[];
+}
+```
+
+```ts
+usedPlanner: shouldCoordinatorUsePlanner({
+  instruction: state.currentInstruction,
+  contextEnvelope: state.contextEnvelope,
+  taskPlan: state.taskPlan,
+  executionSpec: state.executionSpec,
+  contextReport: state.contextReport,
+}),
+```

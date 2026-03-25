@@ -51,3 +51,56 @@ Shipyard's current `TaskPlan` is intentionally lightweight, which keeps simple e
 
 ## Done Definition
 - Shipyard has a validated `ExecutionSpec` contract and a planner path that can produce it for broad work while preserving the lightweight path for trivial edits.
+
+## Code References
+
+- [`../../../../src/artifacts/types.ts`](../../../../src/artifacts/types.ts):
+  defines `ExecutionSpec` and `PlanningMode` so later planner, evaluator, and
+  handoff stories can share one typed planning contract.
+- [`../../../../src/agents/planner.ts`](../../../../src/agents/planner.ts):
+  implements the read-only planner helper, prompt, JSON extraction, Zod
+  validation, and unauthorized-tool rejection.
+- [`../../../../src/agents/coordinator.ts`](../../../../src/agents/coordinator.ts):
+  adds the planner opt-in helper, the lightweight `ExecutionSpec` fallback, and
+  `TaskPlan` derivation from richer planning artifacts.
+- [`../../../../src/engine/graph.ts`](../../../../src/engine/graph.ts):
+  threads `ExecutionSpec` and `planningMode` through the `plan` node, records
+  planner usage in trace metadata, and preserves the existing act/verify path.
+- [`../../../../src/engine/turn.ts`](../../../../src/engine/turn.ts):
+  carries `TargetProfile` into runtime planning and includes planner artifacts
+  in the turn result for local trace logging.
+- [`../../../../tests/planner-subagent.test.ts`](../../../../tests/planner-subagent.test.ts)
+  and [`../../../../tests/graph-runtime.test.ts`](../../../../tests/graph-runtime.test.ts):
+  cover planner invocation, malformed output rejection, lightweight-path bypass,
+  and planner trace metadata.
+
+## Representative Snippets
+
+```ts
+export interface ExecutionSpec {
+  instruction: string;
+  goal: string;
+  deliverables: string[];
+  acceptanceCriteria: string[];
+  verificationIntent: string[];
+  targetFilePaths: string[];
+  risks: string[];
+}
+```
+
+```ts
+const planningArtifacts = await maybePlanExecutionSpec(
+  state,
+  contextReport,
+  dependencies,
+  signal,
+);
+
+return {
+  taskPlan,
+  executionSpec: planningArtifacts.executionSpec,
+  planningMode: planningArtifacts.planningMode,
+  contextReport,
+  status: "acting",
+};
+```

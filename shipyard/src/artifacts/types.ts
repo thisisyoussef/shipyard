@@ -5,6 +5,18 @@ export interface TaskPlan {
   plannedSteps: string[];
 }
 
+export interface ExecutionSpec {
+  instruction: string;
+  goal: string;
+  deliverables: string[];
+  acceptanceCriteria: string[];
+  verificationIntent: string[];
+  targetFilePaths: string[];
+  risks: string[];
+}
+
+export type PlanningMode = "lightweight" | "planner";
+
 export interface ContextFinding {
   filePath: string;
   excerpt: string;

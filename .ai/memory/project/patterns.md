@@ -21,6 +21,15 @@ Capture repeatable patterns that match how this workspace actually works.
   human-readable summaries plus structured `data`, so browser activity and
   later-turn `recentToolOutputs` can reuse the same result contract.
 
+## Runtime Artifact Pattern
+
+- Keep lightweight coordinator planning in `TaskPlan`, but use a richer typed
+  `ExecutionSpec` for broad code-phase instructions so later evaluator and
+  handoff stories can reuse the same contract.
+- New read-only helper roles should follow the explorer/verifier/planner shape:
+  isolated history, explicit tool allowlist, local Zod validation, and fail-
+  closed parsing before coordinator code consumes the result.
+
 ## Testing and Validation
 
 - Tests live in `shipyard/tests/` and use Vitest.
