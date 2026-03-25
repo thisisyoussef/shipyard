@@ -1,12 +1,11 @@
 import { execFile } from "node:child_process";
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import type { DiscoveryReport } from "../../artifacts/types.js";
 import { discoverTarget } from "../../context/discovery.js";
 import { ensureShipyardDirectories } from "../../engine/state.js";
-import { ToolError } from "../read-file.js";
 import {
   createToolErrorResult,
   createToolSuccessResult,
@@ -15,10 +14,13 @@ import {
   type ToolInputSchema,
 } from "../registry.js";
 import {
-  getScaffoldFiles,
   SCAFFOLD_TYPES,
   type ScaffoldType,
 } from "./scaffolds.js";
+import {
+  materializeScaffold,
+  normalizeTargetName,
+} from "./scaffold-materializer.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -31,6 +33,7 @@ export interface CreateTargetInput {
 
 export interface CreateTargetResult {
   path: string;
+  createdFiles: string[];
   discovery: DiscoveryReport;
 }
 
@@ -51,26 +54,13 @@ const createTargetInputSchema = {
     },
     scaffold_type: {
       type: "string",
-      description: "Minimal scaffold type to generate for the new target.",
-      enum: SCAFFOLD_TYPES,
+      description: "Shared scaffold preset to generate for the new target.",
+      enum: [...SCAFFOLD_TYPES],
     },
   },
   required: ["name", "description", "targets_dir"],
   additionalProperties: false,
 } satisfies ToolInputSchema;
-
-function normalizeTargetName(name: string): string {
-  return name.trim().replace(/\s+/gu, "-");
-}
-
-async function ensureCreatableTargetDirectory(targetPath: string): Promise<void> {
-  await mkdir(targetPath, { recursive: true });
-  const entries = await readdir(targetPath);
-
-  if (entries.length > 0) {
-    throw new ToolError(`Target already exists and is not empty: ${targetPath}`);
-  }
-}
 
 async function initializeGitRepository(targetPath: string): Promise<void> {
   try {
@@ -88,15 +78,12 @@ export async function createTargetTool(
   const targetPath = path.join(input.targetsDir, targetName);
 
   await mkdir(input.targetsDir, { recursive: true });
-  await ensureCreatableTargetDirectory(targetPath);
-
-  const scaffoldFiles = getScaffoldFiles(scaffoldType, targetName, input.description);
-
-  for (const scaffoldFile of scaffoldFiles) {
-    const absolutePath = path.join(targetPath, scaffoldFile.path);
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, scaffoldFile.content, "utf8");
-  }
+  const { createdFiles } = await materializeScaffold({
+    targetPath,
+    name: targetName,
+    description: input.description,
+    scaffoldType,
+  });
 
   await initializeGitRepository(targetPath);
   await ensureShipyardDirectories(targetPath);
@@ -105,6 +92,7 @@ export async function createTargetTool(
 
   return {
     path: targetPath,
+    createdFiles,
     discovery,
   };
 }
@@ -116,6 +104,7 @@ function formatCreateTargetOutput(
   return [
     `Created target at ${result.path}`,
     `Scaffold: ${scaffoldType}`,
+    `Files: ${String(result.createdFiles.length)}`,
     `Language: ${result.discovery.language ?? "unknown"}`,
     `Framework: ${result.discovery.framework ?? "unknown"}`,
   ].join("\n");
@@ -129,7 +118,7 @@ export const createTargetDefinition: ToolDefinition<{
 }> = {
   name: "create_target",
   description:
-    "Create a new target directory with minimal scaffold files, README.md, AGENTS.md, and git initialization.",
+    "Create a new target directory with a shared scaffold preset, README.md, AGENTS.md, and git initialization.",
   inputSchema: createTargetInputSchema,
   async execute(input) {
     try {

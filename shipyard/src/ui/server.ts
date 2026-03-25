@@ -343,7 +343,7 @@ function createFallbackUiHtml(sessionState: SessionState): string {
   "cancel": { "requestId": "string?" },
   "status": {},
   "target:switch_request": { "targetPath": "string" },
-  "target:create_request": { "name": "string", "description": "string", "scaffoldType": "empty|react-ts|express-ts|python|go?" },
+  "target:create_request": { "name": "string", "description": "string", "scaffoldType": "ts-pnpm-workspace|empty|react-ts|express-ts|python|go?" },
   "target:enrich_request": { "userDescription": "string?" }
 }</pre>
         </div>

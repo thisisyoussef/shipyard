@@ -22,12 +22,12 @@ Shipyard already has target-manager scaffolds, but they are intentionally minima
 - As a coordinator working in an already-selected empty target, I want a shared bootstrap path that reuses the same preset logic instead of hand-writing every boilerplate file.
 
 ## Acceptance Criteria
-- [ ] AC-1: The shared scaffold catalog supports at least one richer generic workspace preset suitable for full-stack TypeScript/pnpm-style work.
-- [ ] AC-2: The target-manager creation flow can use that richer preset without duplicating template logic.
-- [ ] AC-3: A shared bootstrap path exists for already-selected empty targets so code phase can initialize the preset in one bounded action instead of many `write_file` calls.
-- [ ] AC-4: Shared scaffold generation stays deterministic and local-only: no network fetches, no `create-*` CLI wrappers, no dependency install side effects.
-- [ ] AC-5: Prompting or runtime guidance for greenfield code phase is updated so Shipyard prefers the shared bootstrap path over manual boilerplate file creation when appropriate.
-- [ ] AC-6: The story does not hard-code external project-specific “Ship” structure or backlog assumptions into Shipyard.
+- [x] AC-1: The shared scaffold catalog supports at least one richer generic workspace preset suitable for full-stack TypeScript/pnpm-style work.
+- [x] AC-2: The target-manager creation flow can use that richer preset without duplicating template logic.
+- [x] AC-3: A shared bootstrap path exists for already-selected empty targets so code phase can initialize the preset in one bounded action instead of many `write_file` calls.
+- [x] AC-4: Shared scaffold generation stays deterministic and local-only: no network fetches, no `create-*` CLI wrappers, no dependency install side effects.
+- [x] AC-5: Prompting or runtime guidance for greenfield code phase is updated so Shipyard prefers the shared bootstrap path over manual boilerplate file creation when appropriate.
+- [x] AC-6: The story does not hard-code external project-specific “Ship” structure or backlog assumptions into Shipyard.
 
 ## Edge Cases
 - Non-empty target selected for bootstrap: reject clearly instead of partially overwriting files.
@@ -51,3 +51,54 @@ Shipyard already has target-manager scaffolds, but they are intentionally minima
 
 ## Done Definition
 - Shipyard can bootstrap an empty target through shared scaffold presets without duplicating template logic or wasting turns on repetitive boilerplate file creation.
+
+## Implementation Evidence
+
+### Code References
+
+- [`../../../../src/tools/target-manager/scaffolds.ts`](../../../../src/tools/target-manager/scaffolds.ts):
+  adds the `ts-pnpm-workspace` preset and keeps all generated boilerplate in the
+  shared scaffold catalog.
+- [`../../../../src/tools/target-manager/scaffold-materializer.ts`](../../../../src/tools/target-manager/scaffold-materializer.ts),
+  [`../../../../src/tools/target-manager/create-target.ts`](../../../../src/tools/target-manager/create-target.ts),
+  and [`../../../../src/tools/target-manager/bootstrap-target.ts`](../../../../src/tools/target-manager/bootstrap-target.ts):
+  reuse one materialization helper for both target creation and empty-target
+  bootstrap while enforcing the non-empty-target guard rail.
+- [`../../../../src/phases/code/index.ts`](../../../../src/phases/code/index.ts),
+  [`../../../../src/phases/code/prompts.ts`](../../../../src/phases/code/prompts.ts),
+  and [`../../../../src/engine/turn.ts`](../../../../src/engine/turn.ts):
+  expose `bootstrap_target` in code phase, steer the model toward it for
+  standard greenfield work, and refresh discovery/edit previews after bootstrap.
+- [`../../../../src/ui/contracts.ts`](../../../../src/ui/contracts.ts) and
+  [`../../../../tests/scaffold-bootstrap.test.ts`](../../../../tests/scaffold-bootstrap.test.ts):
+  keep the richer preset available through browser target creation and cover the
+  preset shape, shared reuse, prompt wiring, and empty-target rejection.
+
+### Representative Snippets
+
+```ts
+export const SCAFFOLD_TYPES = [
+  "ts-pnpm-workspace",
+  "react-ts",
+  "express-ts",
+  "python",
+  "go",
+  "empty",
+] as const;
+```
+
+```ts
+const { createdFiles } = await materializeScaffold({
+  targetPath,
+  name: targetName,
+  description: input.description,
+  scaffoldType,
+  allowedExistingEntries: [".shipyard", ".git"],
+});
+```
+
+```ts
+- If the target directory is empty and the user wants a standard project or workspace starter,
+  prefer bootstrap_target with the closest shared scaffold preset.
+- For a generic full-stack TypeScript/pnpm starter, prefer scaffold_type "ts-pnpm-workspace".
+```

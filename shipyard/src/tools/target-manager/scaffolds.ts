@@ -1,17 +1,33 @@
-export type ScaffoldType = "react-ts" | "express-ts" | "python" | "go" | "empty";
+export const SCAFFOLD_TYPES = [
+  "ts-pnpm-workspace",
+  "react-ts",
+  "express-ts",
+  "python",
+  "go",
+  "empty",
+] as const;
+
+export type ScaffoldType = (typeof SCAFFOLD_TYPES)[number];
 
 export interface ScaffoldFile {
   path: string;
   content: string;
 }
 
-export const SCAFFOLD_TYPES: ScaffoldType[] = [
-  "react-ts",
-  "express-ts",
-  "python",
-  "go",
-  "empty",
-];
+const PNPM_VERSION = "10.33.0";
+const REACT_VERSION = "^19.2.4";
+const REACT_TYPES_VERSION = "^19.2.14";
+const REACT_DOM_TYPES_VERSION = "^19.2.3";
+const VITE_PLUGIN_REACT_VERSION = "^6.0.1";
+const VITE_VERSION = "^8.0.2";
+const TYPESCRIPT_VERSION = "^6.0.2";
+const TSX_VERSION = "^4.21.0";
+const EXPRESS_VERSION = "^5.1.0";
+const EXPRESS_TYPES_VERSION = "^5.0.3";
+
+function formatJson(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
 
 function toDisplayName(name: string): string {
   return name
@@ -46,6 +62,43 @@ Working rules:
 `;
 }
 
+function createWorkspaceReadme(name: string, description: string): string {
+  return `# ${toDisplayName(name)}
+
+${description}
+
+## Workspace Layout
+
+- \`apps/web\`: React + Vite frontend
+- \`apps/api\`: Express API
+- \`packages/shared\`: shared TypeScript helpers and constants
+
+## Getting Started
+
+1. Run \`pnpm install\`.
+2. Run \`pnpm dev:web\` for the frontend.
+3. Run \`pnpm dev:api\` for the API.
+`;
+}
+
+function createWorkspaceAgentsFile(name: string, description: string): string {
+  return `# ${toDisplayName(name)} Agent Notes
+
+Project description:
+- ${description}
+
+Workspace layout:
+- \`apps/web\` owns the browser application.
+- \`apps/api\` owns the HTTP API.
+- \`packages/shared\` owns shared TypeScript constants and helpers.
+
+Working rules:
+- Prefer small, verifiable changes.
+- Keep package boundaries clear before extracting shared code.
+- Update workspace scripts and docs together when structure changes.
+`;
+}
+
 function createBaseFiles(name: string, description: string): ScaffoldFile[] {
   return [
     {
@@ -59,6 +112,292 @@ function createBaseFiles(name: string, description: string): ScaffoldFile[] {
   ];
 }
 
+function createWorkspaceScope(name: string): string {
+  return `@${name}`;
+}
+
+function createTsPnpmWorkspaceScaffold(
+  name: string,
+  description: string,
+): ScaffoldFile[] {
+  const scope = createWorkspaceScope(name);
+  const displayName = toDisplayName(name);
+
+  return [
+    {
+      path: "README.md",
+      content: createWorkspaceReadme(name, description),
+    },
+    {
+      path: "AGENTS.md",
+      content: createWorkspaceAgentsFile(name, description),
+    },
+    {
+      path: ".gitignore",
+      content: `node_modules
+dist
+.vite
+coverage
+.shipyard
+*.tsbuildinfo
+.env
+`,
+    },
+    {
+      path: "package.json",
+      content: formatJson({
+        name,
+        private: true,
+        version: "0.1.0",
+        packageManager: `pnpm@${PNPM_VERSION}`,
+        scripts: {
+          dev: `pnpm --filter ${scope}/web dev`,
+          "dev:web": `pnpm --filter ${scope}/web dev`,
+          "dev:api": `pnpm --filter ${scope}/api dev`,
+          build:
+            `pnpm --filter ${scope}/shared build && ` +
+            `pnpm --filter ${scope}/api build && ` +
+            `pnpm --filter ${scope}/web build`,
+          typecheck:
+            `pnpm --filter ${scope}/shared typecheck && ` +
+            `pnpm --filter ${scope}/api typecheck && ` +
+            `pnpm --filter ${scope}/web typecheck`,
+        },
+      }),
+    },
+    {
+      path: "pnpm-workspace.yaml",
+      content: `packages:
+  - apps/*
+  - packages/*
+`,
+    },
+    {
+      path: "tsconfig.base.json",
+      content: formatJson({
+        compilerOptions: {
+          target: "ES2022",
+          strict: true,
+          noUncheckedIndexedAccess: true,
+          noImplicitReturns: true,
+          noFallthroughCasesInSwitch: true,
+          forceConsistentCasingInFileNames: true,
+          skipLibCheck: true,
+          esModuleInterop: true,
+          allowSyntheticDefaultImports: true,
+          resolveJsonModule: true,
+        },
+      }),
+    },
+    {
+      path: "tsconfig.json",
+      content: formatJson({
+        extends: "./tsconfig.base.json",
+        compilerOptions: {
+          noEmit: true,
+        },
+        files: [],
+      }),
+    },
+    {
+      path: "apps/web/package.json",
+      content: formatJson({
+        name: `${scope}/web`,
+        private: true,
+        version: "0.1.0",
+        type: "module",
+        scripts: {
+          dev: "vite",
+          build: "tsc -p tsconfig.json && vite build",
+          preview: "vite preview",
+          typecheck: "tsc -p tsconfig.json --pretty false",
+        },
+        dependencies: {
+          [`${scope}/shared`]: "workspace:*",
+          react: REACT_VERSION,
+          "react-dom": REACT_VERSION,
+        },
+        devDependencies: {
+          "@types/react": REACT_TYPES_VERSION,
+          "@types/react-dom": REACT_DOM_TYPES_VERSION,
+          "@vitejs/plugin-react": VITE_PLUGIN_REACT_VERSION,
+          typescript: TYPESCRIPT_VERSION,
+          vite: VITE_VERSION,
+        },
+      }),
+    },
+    {
+      path: "apps/web/tsconfig.json",
+      content: formatJson({
+        extends: "../../tsconfig.base.json",
+        compilerOptions: {
+          jsx: "react-jsx",
+          lib: ["ES2022", "DOM", "DOM.Iterable"],
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          noEmit: true,
+          types: ["vite/client"],
+        },
+        include: ["src", "vite.config.ts"],
+      }),
+    },
+    {
+      path: "apps/web/vite.config.ts",
+      content: `import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+});
+`,
+    },
+    {
+      path: "apps/web/index.html",
+      content: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${displayName}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+`,
+    },
+    {
+      path: "apps/web/src/main.tsx",
+      content: `import React from "react";
+import ReactDOM from "react-dom/client";
+
+import { App } from "./App";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
+`,
+    },
+    {
+      path: "apps/web/src/App.tsx",
+      content: `export function App() {
+  return (
+    <main>
+      <h1>${displayName}</h1>
+      <p>${description}</p>
+      <ul>
+        <li>Frontend lives in <code>apps/web</code>.</li>
+        <li>API lives in <code>apps/api</code>.</li>
+        <li>Shared helpers can live in <code>packages/shared</code>.</li>
+      </ul>
+    </main>
+  );
+}
+`,
+    },
+    {
+      path: "apps/api/package.json",
+      content: formatJson({
+        name: `${scope}/api`,
+        private: true,
+        version: "0.1.0",
+        type: "module",
+        scripts: {
+          dev: "tsx watch src/index.ts",
+          build: "tsc -p tsconfig.json",
+          start: "node dist/index.js",
+          typecheck: "tsc -p tsconfig.json --noEmit --pretty false",
+        },
+        dependencies: {
+          [`${scope}/shared`]: "workspace:*",
+          express: EXPRESS_VERSION,
+        },
+        devDependencies: {
+          "@types/express": EXPRESS_TYPES_VERSION,
+          typescript: TYPESCRIPT_VERSION,
+          tsx: TSX_VERSION,
+        },
+      }),
+    },
+    {
+      path: "apps/api/tsconfig.json",
+      content: formatJson({
+        extends: "../../tsconfig.base.json",
+        compilerOptions: {
+          module: "NodeNext",
+          moduleResolution: "NodeNext",
+          outDir: "dist",
+          rootDir: "src",
+          types: ["node"],
+        },
+        include: ["src/**/*.ts"],
+      }),
+    },
+    {
+      path: "apps/api/src/index.ts",
+      content: `import express from "express";
+
+const app = express();
+const port = Number(process.env.PORT ?? 3000);
+
+app.get("/api/health", (_request, response) => {
+  response.json({
+    name: "${name}",
+    status: "ok",
+    message: "API routes are ready under /api.",
+  });
+});
+
+app.listen(port, () => {
+  console.log("API listening on", port);
+});
+`,
+    },
+    {
+      path: "packages/shared/package.json",
+      content: formatJson({
+        name: `${scope}/shared`,
+        private: true,
+        version: "0.1.0",
+        type: "module",
+        exports: {
+          ".": "./src/index.ts",
+        },
+        scripts: {
+          build: "tsc -p tsconfig.json",
+          typecheck: "tsc -p tsconfig.json --noEmit --pretty false",
+        },
+        devDependencies: {
+          typescript: TYPESCRIPT_VERSION,
+        },
+      }),
+    },
+    {
+      path: "packages/shared/tsconfig.json",
+      content: formatJson({
+        extends: "../../tsconfig.base.json",
+        compilerOptions: {
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          rootDir: "src",
+          outDir: "dist",
+          declaration: true,
+        },
+        include: ["src/**/*.ts"],
+      }),
+    },
+    {
+      path: "packages/shared/src/index.ts",
+      content: `export const workspaceName = "${displayName}";
+export const apiReadyMessage = "API routes are ready under /api.";
+`,
+    },
+  ];
+}
+
 function createReactTsScaffold(
   name: string,
   description: string,
@@ -67,51 +406,43 @@ function createReactTsScaffold(
     ...createBaseFiles(name, description),
     {
       path: "package.json",
-      content: `${JSON.stringify(
-        {
-          name,
-          private: true,
-          version: "0.1.0",
-          type: "module",
-          scripts: {
-            dev: "vite",
-            build: "tsc -b && vite build",
-            preview: "vite preview",
-          },
-          dependencies: {
-            react: "^19.2.4",
-            "react-dom": "^19.2.4",
-          },
-          devDependencies: {
-            "@types/react": "^19.2.14",
-            "@types/react-dom": "^19.2.3",
-            "@vitejs/plugin-react": "^6.0.1",
-            typescript: "^6.0.2",
-            vite: "^8.0.2",
-          },
+      content: formatJson({
+        name,
+        private: true,
+        version: "0.1.0",
+        type: "module",
+        scripts: {
+          dev: "vite",
+          build: "tsc -b && vite build",
+          preview: "vite preview",
         },
-        null,
-        2,
-      )}\n`,
+        dependencies: {
+          react: REACT_VERSION,
+          "react-dom": REACT_VERSION,
+        },
+        devDependencies: {
+          "@types/react": REACT_TYPES_VERSION,
+          "@types/react-dom": REACT_DOM_TYPES_VERSION,
+          "@vitejs/plugin-react": VITE_PLUGIN_REACT_VERSION,
+          typescript: TYPESCRIPT_VERSION,
+          vite: VITE_VERSION,
+        },
+      }),
     },
     {
       path: "tsconfig.json",
-      content: `${JSON.stringify(
-        {
-          compilerOptions: {
-            target: "ES2022",
-            module: "ESNext",
-            moduleResolution: "Bundler",
-            jsx: "react-jsx",
-            strict: true,
-            noEmit: true,
-            skipLibCheck: true,
-          },
-          include: ["src"],
+      content: formatJson({
+        compilerOptions: {
+          target: "ES2022",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          jsx: "react-jsx",
+          strict: true,
+          noEmit: true,
+          skipLibCheck: true,
         },
-        null,
-        2,
-      )}\n`,
+        include: ["src"],
+      }),
     },
     {
       path: "vite.config.ts",
@@ -143,7 +474,7 @@ export default defineConfig({
       path: "src/main.tsx",
       content: `import React from "react";
 import ReactDOM from "react-dom/client";
-import { App } from "./App.js";
+import { App } from "./App";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -175,48 +506,40 @@ function createExpressTsScaffold(
     ...createBaseFiles(name, description),
     {
       path: "package.json",
-      content: `${JSON.stringify(
-        {
-          name,
-          private: true,
-          version: "0.1.0",
-          type: "module",
-          scripts: {
-            dev: "tsx watch src/index.ts",
-            build: "tsc -p tsconfig.json",
-            start: "node dist/index.js",
-          },
-          dependencies: {
-            express: "^5.1.0",
-          },
-          devDependencies: {
-            "@types/express": "^5.0.3",
-            tsx: "^4.21.0",
-            typescript: "^6.0.2",
-          },
+      content: formatJson({
+        name,
+        private: true,
+        version: "0.1.0",
+        type: "module",
+        scripts: {
+          dev: "tsx watch src/index.ts",
+          build: "tsc -p tsconfig.json",
+          start: "node dist/index.js",
         },
-        null,
-        2,
-      )}\n`,
+        dependencies: {
+          express: EXPRESS_VERSION,
+        },
+        devDependencies: {
+          "@types/express": EXPRESS_TYPES_VERSION,
+          tsx: TSX_VERSION,
+          typescript: TYPESCRIPT_VERSION,
+        },
+      }),
     },
     {
       path: "tsconfig.json",
-      content: `${JSON.stringify(
-        {
-          compilerOptions: {
-            target: "ES2022",
-            module: "NodeNext",
-            moduleResolution: "NodeNext",
-            strict: true,
-            esModuleInterop: true,
-            outDir: "dist",
-            skipLibCheck: true,
-          },
-          include: ["src"],
+      content: formatJson({
+        compilerOptions: {
+          target: "ES2022",
+          module: "NodeNext",
+          moduleResolution: "NodeNext",
+          strict: true,
+          esModuleInterop: true,
+          outDir: "dist",
+          skipLibCheck: true,
         },
-        null,
-        2,
-      )}\n`,
+        include: ["src"],
+      }),
     },
     {
       path: "src/index.ts",
@@ -290,7 +613,7 @@ go 1.22
 import "fmt"
 
 func main() {
-	fmt.Println("Hello from ${name}")
+\tfmt.Println("Hello from ${name}")
 }
 `,
     },
@@ -303,6 +626,8 @@ export function getScaffoldFiles(
   description: string,
 ): ScaffoldFile[] {
   switch (scaffoldType) {
+    case "ts-pnpm-workspace":
+      return createTsPnpmWorkspaceScaffold(name, description);
     case "react-ts":
       return createReactTsScaffold(name, description);
     case "express-ts":
