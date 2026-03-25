@@ -28,13 +28,15 @@
 ## Pack Cohesion and Sequencing (for phase packs or multi-story planning)
 - Higher-level pack objectives:
   - hosted Railway runtime
+  - durable hosted workspace
   - lightweight access token gate
   - typed production deploy flow
   - trustworthy two-URL UX
 - Story ordering rationale: this story must land first because later auth and
   deploy work depend on a real hosted runtime contract.
 - Gaps/overlap check: this story owns provider startup and workspace wiring
-  only. It does not include access control or deploy tooling.
+  only. It does not include durable storage, access control, or deploy
+  tooling.
 - Whole-pack success signal: later stories can run on top of a public Shipyard
   service instead of a purely local developer workflow.
 
@@ -47,13 +49,13 @@
 - Rationale: the current HTTP + WebSocket server already owns health, asset
   serving, and session bootstrap. Duplicating that surface would add needless
   drift.
-- Decision: accept `/app/workspace`-style provider-local storage for the first
-  hosted pack.
+- Decision: accept `/app/workspace`-style provider-local storage as the hosted
+  runtime baseline, then add durability in a follow-on story.
 - Alternatives considered:
   - remote object storage
   - per-session external volumes
-- Rationale: the user story targets a simple assignment/demo path, not durable
-  multi-tenant infrastructure.
+- Rationale: the hosted runtime still needs one concrete filesystem root even
+  before `P9-S05` adds durability on top of it.
 
 ## Data Model / API Contracts
 - Request shape:

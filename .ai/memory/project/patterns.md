@@ -20,6 +20,15 @@ Capture repeatable patterns that match how this workspace actually works.
 - New read-only capability surfaces should prefer dedicated tools with
   human-readable summaries plus structured `data`, so browser activity and
   later-turn `recentToolOutputs` can reuse the same result contract.
+- Durable long-run resume state should live under
+  `shipyard/.shipyard/artifacts/<sessionId>/` as typed artifacts, while session
+  snapshots keep only a lightweight pointer such as `activeHandoffPath`.
+- When a resumed turn needs prior long-run state, inject it as a dedicated
+  structured context block like `latestHandoff` instead of inflating
+  `rollingSummary` or copied prompt prose.
+- Local JSONL traces and LangSmith metadata should carry the routing facts
+  needed to debug coordinator decisions, including handoff load/emission state
+  and reset reason when applicable.
 
 ## Runtime Artifact Pattern
 

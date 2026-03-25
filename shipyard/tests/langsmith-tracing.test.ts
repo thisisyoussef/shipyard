@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ensureLangSmithTracingEnabled,
@@ -8,6 +8,10 @@ import {
 } from "../src/tracing/langsmith.js";
 
 describe("LangSmith tracing helpers", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("recognizes the required LangSmith environment variables", () => {
     const config = getLangSmithConfig({
       LANGCHAIN_TRACING_V2: "true",
@@ -69,6 +73,37 @@ describe("LangSmith tracing helpers", () => {
     expect(client.getRunUrl).toHaveBeenCalledWith({
       runId: "run-123",
     });
+    expect(client.getProjectUrl).toHaveBeenCalledWith({
+      projectName: "shipyard",
+    });
+  });
+
+  it("falls back to a partial trace reference when the run URL is not available yet", async () => {
+    vi.useFakeTimers();
+
+    const client = {
+      getRunUrl: vi.fn(async () => {
+        throw new Error("Failed to fetch /runs/run-123. Received status [404]: Not Found.");
+      }),
+      getProjectUrl: vi.fn(async ({ projectName }: { projectName?: string }) =>
+        `https://smith.langchain.com/projects/${projectName ?? "missing"}`),
+    };
+
+    const tracePromise = resolveLangSmithTraceReference(
+      client as never,
+      "shipyard",
+      "run-123",
+    );
+
+    await vi.runAllTimersAsync();
+
+    await expect(tracePromise).resolves.toEqual({
+      projectName: "shipyard",
+      runId: "run-123",
+      traceUrl: null,
+      projectUrl: "https://smith.langchain.com/projects/shipyard",
+    });
+    expect(client.getRunUrl).toHaveBeenCalledTimes(3);
     expect(client.getProjectUrl).toHaveBeenCalledWith({
       projectName: "shipyard",
     });

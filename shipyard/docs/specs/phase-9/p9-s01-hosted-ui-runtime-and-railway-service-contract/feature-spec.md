@@ -24,6 +24,8 @@ generated project files under a predictable server-side workspace path.
   from inside the target directory.
 - Objective 4: Make the hosted Shipyard URL and deployed target-app URL
   clearly distinct in the UX.
+- Objective 5: Persist hosted project files across sessions, service restarts,
+  and Railway redeploys, starting with a mounted volume at `/app/workspace`.
 - How this story or pack contributes to the overall objective set: This story
   establishes the hosted runtime baseline that every later access-control and
   deploy flow depends on.
@@ -76,7 +78,8 @@ generated project files under a predictable server-side workspace path.
 - Access control for the public URL.
 - Deployment of generated target apps.
 - Public preview tunnels or Lovable-style sandbox URLs.
-- Durable storage across Railway redeploys.
+- Durable storage across Railway redeploys inside this story. That lands
+  separately in `P9-S05`.
 
 ## Done Definition
 - Shipyard has one credible Railway deployment contract for browser mode.

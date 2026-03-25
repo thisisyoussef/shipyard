@@ -39,6 +39,62 @@ export interface PersistedTaskQueue {
   tasks: PlanTask[];
 }
 
+export interface ExecutionHandoffEvaluation {
+  command: string;
+  exitCode: number | null;
+  passed: boolean;
+  summary: string;
+}
+
+export type ExecutionHandoffResetKind =
+  | "iteration-threshold"
+  | "recovery-threshold"
+  | "blocked-file";
+
+export interface ExecutionHandoffResetThresholds {
+  actingIterations: number;
+  recoveryAttempts: number;
+}
+
+export interface ExecutionHandoffResetMetrics {
+  actingIterations: number;
+  recoveryAttempts: number;
+  blockedFileCount: number;
+}
+
+export interface ExecutionHandoffResetReason {
+  kind: ExecutionHandoffResetKind;
+  summary: string;
+  thresholds: ExecutionHandoffResetThresholds;
+  metrics: ExecutionHandoffResetMetrics;
+}
+
+export interface ExecutionHandoff {
+  version: 1;
+  sessionId: string;
+  turnCount: number;
+  createdAt: string;
+  instruction: string;
+  phaseName: string;
+  runtimeMode: "graph" | "fallback";
+  status: "success" | "error" | "cancelled";
+  summary: string;
+  goal: string;
+  completedWork: string[];
+  remainingWork: string[];
+  touchedFiles: string[];
+  blockedFiles: string[];
+  latestEvaluation: ExecutionHandoffEvaluation | null;
+  nextRecommendedAction: string;
+  resetReason: ExecutionHandoffResetReason;
+  taskPlan: TaskPlan;
+}
+
+export interface LoadedExecutionHandoff {
+  artifactPath: string;
+  handoff: ExecutionHandoff;
+}
+
 export interface ContextFinding {
   filePath: string;
   excerpt: string;

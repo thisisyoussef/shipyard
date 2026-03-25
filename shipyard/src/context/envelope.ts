@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { DiscoveryReport } from "../artifacts/types.js";
+import type { DiscoveryReport, LoadedExecutionHandoff } from "../artifacts/types.js";
 import type { ContextEnvelope } from "../engine/state.js";
 
 export interface BuildContextEnvelopeOptions {
@@ -16,6 +16,7 @@ export interface BuildContextEnvelopeOptions {
   currentGitDiff?: string | null;
   retryCountsByFile?: Record<string, number>;
   blockedFiles?: string[];
+  latestHandoff?: LoadedExecutionHandoff | null;
   projectRules?: string;
 }
 
@@ -58,6 +59,31 @@ function formatRetryList(retryCountsByFile: Record<string, number>): string {
     .join("\n");
 }
 
+function formatLatestHandoff(handoff: LoadedExecutionHandoff | null): string {
+  if (!handoff) {
+    return "(none)";
+  }
+
+  const latestEvaluation = handoff.handoff.latestEvaluation
+    ? `${handoff.handoff.latestEvaluation.passed ? "passed" : "failed"}: ${handoff.handoff.latestEvaluation.summary}`
+    : "(none)";
+
+  return [
+    `Path: ${handoff.artifactPath}`,
+    `Created At: ${handoff.handoff.createdAt}`,
+    `Trigger: ${handoff.handoff.resetReason.kind}`,
+    `Reason: ${handoff.handoff.resetReason.summary}`,
+    "Completed Work:",
+    formatList(handoff.handoff.completedWork),
+    "Remaining Work:",
+    formatList(handoff.handoff.remainingWork),
+    "Touched Files:",
+    formatList(handoff.handoff.touchedFiles),
+    `Latest Evaluation: ${latestEvaluation}`,
+    `Next Recommended Action: ${handoff.handoff.nextRecommendedAction}`,
+  ].join("\n");
+}
+
 export async function loadProjectRules(targetDirectory: string): Promise<string> {
   const agentsPath = path.join(targetDirectory, "AGENTS.md");
 
@@ -94,6 +120,7 @@ export async function buildContextEnvelope(
       rollingSummary: options.rollingSummary,
       retryCountsByFile: { ...(options.retryCountsByFile ?? {}) },
       blockedFiles: [...(options.blockedFiles ?? [])],
+      latestHandoff: options.latestHandoff ?? null,
     },
   };
 }
@@ -132,6 +159,7 @@ export function serializeContextEnvelope(
     "Retry Counts:",
     formatRetryList(envelope.session.retryCountsByFile),
   ].join("\n");
+  const latestHandoffBody = formatLatestHandoff(envelope.session.latestHandoff);
   const recentErrorsBody = formatList(envelope.runtime.recentErrors);
   const blockedFilesBody = formatList(envelope.session.blockedFiles);
 
@@ -147,6 +175,9 @@ export function serializeContextEnvelope(
     "",
     "Session History",
     sessionHistoryBody,
+    "",
+    "Latest Handoff",
+    latestHandoffBody,
     "",
     "Recent Errors",
     recentErrorsBody,

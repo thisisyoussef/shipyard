@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -73,11 +73,17 @@ function createTurnResult(
         rollingSummary: "",
         retryCountsByFile: {},
         blockedFiles: [],
+        latestHandoff: null,
       },
     },
     summary: options.finalText,
     selectedTargetPath: null,
     langSmithTrace: null,
+    handoff: {
+      loaded: null,
+      loadError: null,
+      emitted: null,
+    },
     ...options,
   };
 }
@@ -189,6 +195,7 @@ function createPlanningTurnResult(
         rollingSummary: "",
         retryCountsByFile: {},
         blockedFiles: [],
+        latestHandoff: null,
       },
     },
     executionSpec: {
@@ -405,6 +412,117 @@ describe("terminal loop interrupts", () => {
     expect(logSpy.mock.calls.flat()).toContain(
       "Saved plan for: plan: break this feature into reviewable tasks",
     );
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("records emitted handoff metadata in the local instruction trace", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-loop-handoff-");
+    const sessionState = createSessionState({
+      sessionId: "loop-handoff-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: [],
+        topLevelDirectories: [],
+        projectName: null,
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
+      },
+    });
+    const fakeReadline = new FakeReadline();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const executeTurn = vi.fn(async (): Promise<InstructionTurnResult> =>
+      createTurnResult({
+        status: "success",
+        finalText: "Turn 1 completed with a handoff.",
+        handoff: {
+          loaded: null,
+          loadError: null,
+          emitted: {
+            artifactPath:
+              ".shipyard/artifacts/loop-handoff-session/turn-1.handoff.json",
+            handoff: {
+              version: 1,
+              sessionId: "loop-handoff-session",
+              turnCount: 1,
+              createdAt: "2026-03-25T21:30:00.000Z",
+              instruction: "Long-running task",
+              phaseName: "code",
+              runtimeMode: "graph",
+              status: "success",
+              summary: "Turn 1 completed with a handoff.",
+              goal: "Long-running task",
+              completedWork: ["Captured the implementation goal."],
+              remainingWork: ["Resume in a fresh turn to finish the remaining task plan safely."],
+              touchedFiles: ["src/app.ts"],
+              blockedFiles: [],
+              latestEvaluation: null,
+              nextRecommendedAction:
+                "Resume from the handoff before making additional edits.",
+              resetReason: {
+                kind: "iteration-threshold",
+                summary:
+                  "The acting loop crossed the long-run iteration threshold.",
+                thresholds: {
+                  actingIterations: 4,
+                  recoveryAttempts: 1,
+                },
+                metrics: {
+                  actingIterations: 5,
+                  recoveryAttempts: 0,
+                  blockedFileCount: 0,
+                },
+              },
+              taskPlan: {
+                instruction: "Long-running task",
+                goal: "Long-running task",
+                targetFilePaths: ["src/app.ts"],
+                plannedSteps: [],
+              },
+            },
+          },
+        },
+      }));
+
+    const loopPromise = runShipyardLoop({
+      sessionState,
+      executeTurn,
+      createReadlineInterface: () =>
+        fakeReadline as unknown as ReturnType<typeof import("node:readline").createInterface>,
+    });
+
+    fakeReadline.pushLine("keep going on the long task");
+    await vi.waitFor(() => {
+      expect(executeTurn).toHaveBeenCalledTimes(1);
+    });
+    fakeReadline.pushLine("exit");
+    await loopPromise;
+
+    const traceContents = await readFile(
+      path.join(
+        targetDirectory,
+        ".shipyard",
+        "traces",
+        "loop-handoff-session.jsonl",
+      ),
+      "utf8",
+    );
+
+    expect(traceContents).toContain('"event":"instruction.plan"');
+    expect(traceContents).toContain('"handoff"');
+    expect(traceContents).toContain(
+      '".shipyard/artifacts/loop-handoff-session/turn-1.handoff.json"',
+    );
+    expect(traceContents).toContain('"iteration-threshold"');
+    expect(logSpy).toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
   });
 });

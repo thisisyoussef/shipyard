@@ -66,6 +66,8 @@ import { buildTargetManagerState, IDLE_TARGET_ENRICHMENT_STATE } from "./target-
 import { createTargetTool } from "../tools/target-manager/create-target.js";
 import { enrichTargetTool } from "../tools/target-manager/enrich-target.js";
 
+const CLOSE_ENRICHMENT_DRAIN_TIMEOUT_MS = 100;
+
 export interface StartUiRuntimeServerOptions {
   sessionState: SessionState;
   host?: string;
@@ -589,6 +591,7 @@ export async function startUiRuntimeServer(
         targetPath: string;
       }
     | null = null;
+  const pendingEnrichmentTasks = new Set<Promise<void>>();
   const closed = new Promise<void>((resolve) => {
     httpServer.once("close", () => {
       resolve();
@@ -809,6 +812,7 @@ export async function startUiRuntimeServer(
         },
         {
           invokeModel: runtimeState.targetEnrichmentInvoker,
+          shouldCancel: () => isStaleEnrichmentRun(runId, options.targetPath),
           async onProgress(event) {
             if (isStaleEnrichmentRun(runId, options.targetPath)) {
               return;
@@ -862,6 +866,16 @@ export async function startUiRuntimeServer(
         activeEnrichmentRun = null;
       }
     }
+  };
+
+  const startBrowserTargetEnrichment = (
+    options: Parameters<typeof runBrowserTargetEnrichment>[0],
+  ): void => {
+    const task = runBrowserTargetEnrichment(options);
+    pendingEnrichmentTasks.add(task);
+    void task.finally(() => {
+      pendingEnrichmentTasks.delete(task);
+    });
   };
 
   const maybeAutoEnrichBrowserTarget = async (
@@ -934,7 +948,7 @@ export async function startUiRuntimeServer(
       message: plan.queuedMessage,
       reason: options.reason,
     });
-    void runBrowserTargetEnrichment({
+    startBrowserTargetEnrichment({
       targetPath,
       trigger: "automatic",
       userDescription: plan.userDescription,
@@ -1078,6 +1092,7 @@ export async function startUiRuntimeServer(
         status: turnResult.status,
         summary: turnResult.summary,
         langSmithTrace: turnResult.langSmithTrace,
+        handoff: turnResult.handoff,
         runtimeSurface: "ui",
       });
       await saveSessionState(sessionState);
@@ -1341,7 +1356,7 @@ export async function startUiRuntimeServer(
                 message: "Manual target analysis requested.",
                 reason: "browser:manual-request",
               });
-              void runBrowserTargetEnrichment({
+              startBrowserTargetEnrichment({
                 targetPath: sessionState.targetDirectory,
                 trigger: "manual",
                 userDescription: message.userDescription,
@@ -1433,6 +1448,15 @@ export async function startUiRuntimeServer(
     async close(): Promise<void> {
       isClosing = true;
       activeEnrichmentRun = null;
+
+      if (pendingEnrichmentTasks.size > 0) {
+        await Promise.race([
+          Promise.allSettled([...pendingEnrichmentTasks]),
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, CLOSE_ENRICHMENT_DRAIN_TIMEOUT_MS);
+          }),
+        ]);
+      }
 
       if (activeInstructionController !== null) {
         abortTurn(activeInstructionController);
