@@ -37,3 +37,4 @@ Capture repeatable patterns that match how this workspace actually works.
 
 - Visible UI stories default to `node scripts/generate-design-brief.mjs --story <story-id>` before TDD.
 - The design brief bridge is Claude-first and falls back to Codex only when Claude is unavailable or errors.
+- When Refero is configured, the UI workflow uses it during brainstorming/reference research before drafting the brief.

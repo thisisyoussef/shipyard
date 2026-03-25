@@ -8,4 +8,8 @@ Use this folder for:
 - condensed notes from important design or product documents
 - reference material that should outlive one chat or one branch
 
+Current notable references:
+
+- `refero-mcp.md`: how Shipyard uses Refero during UI brainstorming and design-phase work
+
 Do not use this folder for imported backlog history from other repos.

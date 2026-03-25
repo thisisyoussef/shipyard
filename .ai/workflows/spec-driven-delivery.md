@@ -135,7 +135,7 @@ The design phase:
 - Produces a design brief at `.ai/state/design-brief/<story-id>/brief.md`
 - The brief becomes allowed context for the TDD pipeline
 
-The bridge is Claude-first by default and only falls back to Codex when Claude is unavailable or errors.
+The bridge is Claude-first by default, uses Refero-backed research when configured, and only falls back to Codex when Claude is unavailable or errors.
 
 Do not skip this for UI stories. The design brief prevents the implementer from inventing visual decisions under test pressure.
 
