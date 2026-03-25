@@ -141,3 +141,59 @@ return runVerifierSubagent(
   await createSubagentLoopOptions(state, dependencies, signal),
 );
 ```
+
+### P7-S03
+
+#### Code References
+
+- `shipyard/src/artifacts/types.ts`: adds the shared browser-evaluation
+  contracts for preview targets, ordered browser steps, structured step
+  results, failure metadata, and artifact references.
+- `shipyard/src/agents/browser-evaluator.ts`: implements the read-only
+  Playwright-backed evaluator, loopback-only target validation, preview-state
+  handoff, console/page-error capture, non-loopback request blocking, and
+  optional failure screenshots.
+- `shipyard/package.json` and `shipyard/pnpm-workspace.yaml`: add the browser
+  runtime dependency and explicitly allow the pnpm install scripts needed for
+  Chromium provisioning.
+- `shipyard/tests/browser-evaluator.test.ts` and
+  `shipyard/tests/manual/phase7-browser-evaluator-smoke.ts`: verify malformed
+  plan rejection, preview-unavailable handling, passing interactive preview
+  evidence, console/selector failures, and bounded artifact capture.
+
+#### Representative Snippets
+
+```ts
+export interface BrowserEvaluationReport {
+  status: BrowserEvaluationStatus;
+  summary: string;
+  previewUrl: string | null;
+  browserEvaluationPlan: BrowserEvaluationPlan;
+  steps: BrowserEvaluationStepResult[];
+  consoleMessages: BrowserEvaluationConsoleMessage[];
+  pageErrors: string[];
+  artifacts: BrowserEvaluationArtifact[];
+  failure: BrowserEvaluationFailure | null;
+}
+```
+
+```ts
+if (previewState.status === "running" && previewState.url) {
+  return {
+    status: "available",
+    previewUrl: previewState.url,
+    reason: previewState.summary,
+  };
+}
+
+if (
+  previewState.status === "idle"
+  || previewState.status === "unavailable"
+) {
+  return {
+    status: "not_applicable",
+    previewUrl: null,
+    reason: previewState.summary,
+  };
+}
+```

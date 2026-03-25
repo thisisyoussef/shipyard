@@ -16,6 +16,9 @@ runtimes behind those roles.
 - `verifier.ts`: read-only validation role for ordered `EvaluationPlan`
   checks, tests, lint, and structured verification reports; now also exposes
   the isolated verifier helper runtime
+- `browser-evaluator.ts`: read-only browser helper that inspects loopback
+  previews and returns structured UI evidence without crossing the
+  coordinator-only write boundary
 
 ## Important Constraint
 
@@ -32,15 +35,18 @@ flowchart LR
   Explorer["explorer"]
   Planner["planner"]
   Verifier["verifier"]
+  BrowserEval["browser-evaluator"]
   Writes["write operations"]
   Checks["checks and evidence"]
   Spec["ExecutionSpec"]
   Eval["EvaluationPlan"]
+  BrowserEvidence["BrowserEvaluationReport"]
 
   Instruction --> Coordinator
   Coordinator --> Explorer
   Coordinator --> Planner
   Coordinator --> Verifier
+  Coordinator --> BrowserEval
   Coordinator --> Writes
   Explorer --> Checks
   Planner --> Spec
@@ -48,5 +54,7 @@ flowchart LR
   Coordinator --> Eval
   Eval --> Verifier
   Verifier --> Checks
+  BrowserEval --> BrowserEvidence
+  BrowserEvidence --> Coordinator
   Checks --> Coordinator
 ```

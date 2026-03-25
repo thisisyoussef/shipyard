@@ -103,6 +103,116 @@ export interface VerificationReport {
   firstHardFailure?: VerificationHardFailure | null;
 }
 
+export type BrowserEvaluationTargetStatus =
+  | "available"
+  | "unavailable"
+  | "not_applicable";
+
+export interface BrowserEvaluationTarget {
+  status: BrowserEvaluationTargetStatus;
+  previewUrl: string | null;
+  reason: string;
+}
+
+export type BrowserNavigationWaitUntil = "load" | "domcontentloaded";
+export type BrowserConsoleMessageType =
+  | "log"
+  | "debug"
+  | "info"
+  | "warning"
+  | "error";
+
+export interface BrowserEvaluationLoadStep {
+  id: string;
+  label: string;
+  kind: "load";
+  path?: string;
+  waitUntil?: BrowserNavigationWaitUntil;
+  timeoutMs?: number;
+}
+
+export interface BrowserEvaluationConsoleStep {
+  id: string;
+  label: string;
+  kind: "console";
+  failOn?: BrowserConsoleMessageType[];
+  includePageErrors?: boolean;
+}
+
+export interface BrowserEvaluationWaitForSelectorStep {
+  id: string;
+  label: string;
+  kind: "wait_for_selector";
+  selector: string;
+  timeoutMs?: number;
+  state?: "attached" | "detached" | "visible" | "hidden";
+}
+
+export interface BrowserEvaluationClickStep {
+  id: string;
+  label: string;
+  kind: "click";
+  selector: string;
+  timeoutMs?: number;
+}
+
+export type BrowserEvaluationStep =
+  | BrowserEvaluationLoadStep
+  | BrowserEvaluationConsoleStep
+  | BrowserEvaluationWaitForSelectorStep
+  | BrowserEvaluationClickStep;
+
+export interface BrowserEvaluationPlan {
+  summary: string;
+  target: BrowserEvaluationTarget;
+  steps: BrowserEvaluationStep[];
+  captureArtifacts?: "none" | "on-failure";
+}
+
+export type BrowserEvaluationStatus = "passed" | "failed" | "not_applicable";
+export type BrowserEvaluationStepStatus = "passed" | "failed" | "skipped";
+
+export interface BrowserEvaluationConsoleMessage {
+  type: BrowserConsoleMessageType;
+  text: string;
+  location: string | null;
+}
+
+export interface BrowserEvaluationStepResult {
+  stepId: string;
+  label: string;
+  kind: BrowserEvaluationStep["kind"];
+  status: BrowserEvaluationStepStatus;
+  summary: string;
+  error: string | null;
+  elapsedMs: number;
+}
+
+export interface BrowserEvaluationFailure {
+  stepId: string | null;
+  label: string | null;
+  kind: "target" | "console" | "pageerror" | "step";
+  message: string;
+}
+
+export interface BrowserEvaluationArtifact {
+  kind: "screenshot";
+  stepId: string;
+  path: string;
+}
+
+export interface BrowserEvaluationReport {
+  status: BrowserEvaluationStatus;
+  summary: string;
+  previewUrl: string | null;
+  browserEvaluationPlan: BrowserEvaluationPlan;
+  steps: BrowserEvaluationStepResult[];
+  consoleMessages: BrowserEvaluationConsoleMessage[];
+  pageErrors: string[];
+  artifacts: BrowserEvaluationArtifact[];
+  failure: BrowserEvaluationFailure | null;
+}
+
 export type PreviewCapabilityStatus = "available" | "unavailable";
 export type PreviewKind = "dev-server" | "watch-build" | "static-output";
 export type PreviewRunner = "npm" | "pnpm" | "yarn" | "bun";
