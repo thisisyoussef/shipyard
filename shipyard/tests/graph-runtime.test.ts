@@ -30,6 +30,11 @@ import type {
 } from "../src/tracing/langsmith.js";
 import * as langsmith from "../src/tracing/langsmith.js";
 import { CheckpointManager } from "../src/checkpoints/manager.js";
+import type {
+  BrowserEvaluationPlan,
+  EvaluationPlan,
+  PreviewState,
+} from "../src/artifacts/types.js";
 import {
   clearTrackedReadHashes,
   getTrackedReadHash,
@@ -86,6 +91,19 @@ function createContextEnvelope(): ContextEnvelope {
       latestHandoff: null,
       activeTask: null,
     },
+  };
+}
+
+function createPreviewState(
+  overrides: Partial<PreviewState> = {},
+): PreviewState {
+  return {
+    status: "unavailable" as const,
+    summary: "No preview is available for this target.",
+    url: null,
+    logTail: [],
+    lastRestartReason: null,
+    ...overrides,
   };
 }
 
@@ -167,6 +185,7 @@ function createInitialState(targetDirectory = "/tmp/shipyard-graph") {
     sessionId: "session-123",
     instruction: "Inspect src/app.ts",
     contextEnvelope: createContextEnvelope(),
+    previewState: createPreviewState(),
     targetDirectory,
     phaseConfig: createCodePhase(),
   });
@@ -191,6 +210,7 @@ describe("Phase 4 graph runtime contract", () => {
       sessionId: "session-123",
       instruction: "Fix src/app.ts",
       contextEnvelope: createContextEnvelope(),
+      previewState: createPreviewState(),
       targetDirectory: "/tmp/shipyard-graph",
       phaseConfig: createCodePhase(),
       retryCountsByFile: {
@@ -248,6 +268,7 @@ describe("Phase 4 graph runtime contract", () => {
       sessionId: "session-123",
       instruction: "Fix the auth flow",
       contextEnvelope: createContextEnvelope(),
+      previewState: createPreviewState(),
       targetDirectory: "/tmp/shipyard-graph",
       phaseConfig: createCodePhase(),
     });
@@ -290,6 +311,7 @@ describe("Phase 4 graph runtime contract", () => {
       sessionId: "session-123",
       instruction: "Update src/app.ts to rename the counter export.",
       contextEnvelope: createContextEnvelope(),
+      previewState: createPreviewState(),
       targetDirectory: "/tmp/shipyard-graph",
       phaseConfig: createCodePhase(),
     });
@@ -327,6 +349,7 @@ describe("Phase 4 graph runtime contract", () => {
       sessionId: "session-123",
       instruction: "Fix the auth flow",
       contextEnvelope: createContextEnvelope(),
+      previewState: createPreviewState(),
       targetDirectory: "/tmp/shipyard-graph",
       phaseConfig: createCodePhase(),
     });
@@ -443,6 +466,7 @@ describe("Phase 4 graph runtime contract", () => {
       sessionId: "session-123",
       instruction: "Fix src/app.ts",
       contextEnvelope: createContextEnvelope(),
+      previewState: createPreviewState(),
       targetDirectory: "/tmp/shipyard-graph",
       phaseConfig: createCodePhase(),
       lastEditedFile: "src/app.ts",
@@ -474,6 +498,113 @@ describe("Phase 4 graph runtime contract", () => {
       stdout: "",
       stderr: "",
       summary: "Verification passed.",
+      browserEvaluationReport: null,
+    });
+    expect(update.harnessRoute).toMatchObject({
+      usedVerifier: true,
+      verificationMode: "command",
+      verificationCheckCount: 1,
+      usedBrowserEvaluator: false,
+      browserEvaluationStatus: "not_run",
+    });
+    expect(update.status).toBe("responding");
+  });
+
+  it("verify node runs multi-check verification and browser evaluation for previewable UI work", async () => {
+    const contextEnvelope = createContextEnvelope();
+
+    contextEnvelope.stable.discovery.scripts = {
+      test: "vitest run",
+      typecheck: "tsc -p tsconfig.json",
+      build: "vite build",
+    };
+    contextEnvelope.stable.availableScripts = {
+      test: "vitest run",
+      typecheck: "tsc -p tsconfig.json",
+      build: "vite build",
+    };
+
+    const runVerifierSubagent = vi.fn(async (input: string | EvaluationPlan) => ({
+      command: typeof input === "string" ? input : input.checks.at(-1)?.command ?? "",
+      exitCode: 0,
+      passed: true,
+      stdout: "build ok\n",
+      stderr: "",
+      summary: "All 3 evaluation checks passed.",
+      evaluationPlan: typeof input === "string" ? undefined : input,
+      checks: [],
+      firstHardFailure: null,
+      browserEvaluationReport: null,
+    }));
+    const runBrowserEvaluator = vi.fn(async (plan: BrowserEvaluationPlan) => ({
+      status: "passed" as const,
+      summary: "Browser evaluation passed.",
+      previewUrl: "http://127.0.0.1:4173/",
+      browserEvaluationPlan: plan,
+      steps: [
+        {
+          stepId: "load-preview",
+          label: "Load the current preview",
+          kind: "load" as const,
+          status: "passed" as const,
+          summary: "Loaded the preview successfully.",
+          error: null,
+          elapsedMs: 25,
+        },
+      ],
+      consoleMessages: [],
+      pageErrors: [],
+      artifacts: [],
+      failure: null,
+    }));
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runVerifierSubagent,
+        runBrowserEvaluator,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Polish the app layout in src/app.tsx",
+      contextEnvelope,
+      previewState: createPreviewState({
+        status: "running",
+        summary: "Preview running.",
+        url: "http://127.0.0.1:4173/",
+      }),
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+      planningMode: "planner",
+      executionSpec: {
+        instruction: "Polish the app layout in src/app.tsx",
+        goal: "Polish the app layout without breaking the existing flow.",
+        deliverables: ["Refine the main app layout."],
+        acceptanceCriteria: ["The layout renders cleanly in the preview."],
+        verificationIntent: ["Run the verification checks."],
+        targetFilePaths: ["src/app.tsx"],
+        risks: [],
+      },
+      lastEditedFile: "src/app.tsx",
+    });
+
+    const update = await nodes.verify(state);
+    const verifierCall = runVerifierSubagent.mock.calls.at(0)?.[0] as
+      | { summary: string; checks: Array<{ command: string }> }
+      | undefined;
+
+    expect(verifierCall?.checks.map((check) => check.command)).toEqual([
+      "pnpm test",
+      "pnpm typecheck",
+      "pnpm build",
+    ]);
+    expect(runBrowserEvaluator).toHaveBeenCalledTimes(1);
+    expect(update.verificationReport?.passed).toBe(true);
+    expect(update.browserEvaluationReport?.status).toBe("passed");
+    expect(update.harnessRoute).toMatchObject({
+      verificationMode: "command+browser",
+      verificationCheckCount: 3,
+      usedBrowserEvaluator: true,
+      browserEvaluationStatus: "passed",
     });
     expect(update.status).toBe("responding");
   });
@@ -498,6 +629,7 @@ describe("Phase 4 graph runtime contract", () => {
       sessionId: "session-123",
       instruction: "Fix src/app.ts",
       contextEnvelope: createContextEnvelope(),
+      previewState: createPreviewState(),
       targetDirectory: directory,
       phaseConfig: createCodePhase(),
       lastEditedFile: "src/app.ts",
@@ -628,6 +760,7 @@ describe("Phase 4 graph runtime contract", () => {
         sessionId: "session-123",
         instruction: "Fix the auth flow",
         contextEnvelope: createContextEnvelope(),
+        previewState: createPreviewState(),
         targetDirectory: directory,
         phaseConfig: createCodePhase(),
       }),
@@ -725,6 +858,7 @@ describe("Phase 4 graph runtime contract", () => {
       sessionId: "session-123",
       instruction: "Fix the auth flow",
       contextEnvelope,
+      previewState: createPreviewState(),
       targetDirectory: "/tmp/shipyard-graph",
       phaseConfig: createCodePhase(),
     }), {
@@ -778,6 +912,7 @@ describe("Phase 4 graph runtime contract", () => {
       sessionId: "session-123",
       instruction: "Fix the auth flow",
       contextEnvelope,
+      previewState: createPreviewState(),
       targetDirectory: "/tmp/shipyard-graph",
       phaseConfig: createCodePhase(),
     }), {
@@ -883,6 +1018,7 @@ describe("Phase 4 graph runtime contract", () => {
       sessionId: "session-123",
       instruction: "Continue src/app.ts",
       contextEnvelope,
+      previewState: createPreviewState(),
       targetDirectory: "/tmp/shipyard-graph",
       phaseConfig: createCodePhase(),
     }), {

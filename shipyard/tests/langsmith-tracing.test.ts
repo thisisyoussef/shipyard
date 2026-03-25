@@ -50,6 +50,104 @@ describe("LangSmith tracing helpers", () => {
     expect(result.trace).toBeNull();
   });
 
+  it("merges result-derived metadata before the trace is finalized", async () => {
+    const previousLangSmithTracing = process.env.LANGSMITH_TRACING;
+    const previousLangChainTracing = process.env.LANGCHAIN_TRACING_V2;
+    const previousLangSmithApiKey = process.env.LANGSMITH_API_KEY;
+    const previousLangSmithProject = process.env.LANGSMITH_PROJECT;
+    const createRun = vi.fn(async (_payload: Record<string, unknown>) => undefined);
+    const updateRun = vi.fn(
+      async (_id: string, _payload: Record<string, unknown>) => undefined,
+    );
+    const client = {
+      createRun,
+      updateRun,
+      awaitPendingTraceBatches: vi.fn(async () => undefined),
+      getRunUrl: vi.fn(async ({ runId }: { runId?: string }) =>
+        `https://smith.langchain.com/runs/${runId ?? "missing"}`),
+      getProjectUrl: vi.fn(async ({ projectName }: { projectName?: string }) =>
+        `https://smith.langchain.com/projects/${projectName ?? "missing"}`),
+    };
+
+    process.env.LANGSMITH_TRACING = "true";
+    process.env.LANGCHAIN_TRACING_V2 = "true";
+    process.env.LANGSMITH_API_KEY = "lsv2_test_123";
+    process.env.LANGSMITH_PROJECT = "shipyard";
+
+    try {
+      const traced = await runWithLangSmithTrace({
+        name: "shipyard.test.metadata",
+        env: {
+          LANGSMITH_TRACING: "true",
+          LANGSMITH_API_KEY: "lsv2_test_123",
+          LANGSMITH_PROJECT: "shipyard",
+        },
+        client: client as never,
+        metadata: {
+          selectedPath: "lightweight",
+          usedBrowserEvaluator: false,
+        },
+        getResultMetadata: (result: {
+          selectedPath: string;
+          usedBrowserEvaluator: boolean;
+          handoffReason: string | null;
+        }) => ({
+          selectedPath: result.selectedPath,
+          usedBrowserEvaluator: result.usedBrowserEvaluator,
+          handoffReason: result.handoffReason,
+        }),
+        fn: async () => ({
+          selectedPath: "planner-backed",
+          usedBrowserEvaluator: true,
+          handoffReason: "iteration-threshold",
+        }),
+        args: [],
+      });
+
+      expect(traced.result).toEqual({
+        selectedPath: "planner-backed",
+        usedBrowserEvaluator: true,
+        handoffReason: "iteration-threshold",
+      });
+      expect(createRun).toHaveBeenCalledTimes(1);
+      expect(updateRun).toHaveBeenCalledTimes(1);
+      expect(updateRun.mock.calls[0]?.[1]).toMatchObject({
+        extra: {
+          metadata: {
+            selectedPath: "planner-backed",
+            usedBrowserEvaluator: true,
+            handoffReason: "iteration-threshold",
+          },
+        },
+      });
+      expect(traced.trace?.runId).toBeTruthy();
+    } finally {
+      if (previousLangSmithTracing === undefined) {
+        delete process.env.LANGSMITH_TRACING;
+      } else {
+        process.env.LANGSMITH_TRACING = previousLangSmithTracing;
+      }
+
+      if (previousLangChainTracing === undefined) {
+        delete process.env.LANGCHAIN_TRACING_V2;
+      } else {
+        process.env.LANGCHAIN_TRACING_V2 = previousLangChainTracing;
+      }
+
+      if (previousLangSmithApiKey === undefined) {
+        delete process.env.LANGSMITH_API_KEY;
+      } else {
+        process.env.LANGSMITH_API_KEY = previousLangSmithApiKey;
+      }
+
+      if (previousLangSmithProject === undefined) {
+        delete process.env.LANGSMITH_PROJECT;
+      } else {
+        process.env.LANGSMITH_PROJECT = previousLangSmithProject;
+      }
+    }
+  });
+
   it("resolves trace and project URLs from the LangSmith client", async () => {
     const client = {
       getRunUrl: vi.fn(async ({ runId }: { runId?: string }) =>

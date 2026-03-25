@@ -224,6 +224,7 @@ async function createPlannerRunOptions(options: {
     sessionId: options.sessionState.sessionId,
     instruction: options.planInstruction,
     contextEnvelope: options.contextEnvelope,
+    previewState: options.sessionState.workbenchState.previewState,
     targetProfile: options.sessionState.targetProfile ?? null,
     targetDirectory: options.sessionState.targetDirectory,
     phaseConfig: phase,

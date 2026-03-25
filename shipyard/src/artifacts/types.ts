@@ -180,6 +180,25 @@ export interface VerificationReport {
   evaluationPlan?: EvaluationPlan;
   checks?: VerificationCheckResult[];
   firstHardFailure?: VerificationHardFailure | null;
+  browserEvaluationReport?: BrowserEvaluationReport | null;
+}
+
+export type HarnessSelectedPath = "lightweight" | "planner-backed";
+export type HarnessVerificationMode = "none" | "command" | "command+browser";
+
+export interface HarnessRouteSummary {
+  selectedPath: HarnessSelectedPath;
+  usedExplorer: boolean;
+  usedPlanner: boolean;
+  usedVerifier: boolean;
+  verificationMode: HarnessVerificationMode;
+  verificationCheckCount: number;
+  usedBrowserEvaluator: boolean;
+  browserEvaluationStatus: BrowserEvaluationStatus | "not_run";
+  handoffLoaded: boolean;
+  handoffEmitted: boolean;
+  handoffReason: ExecutionHandoffResetKind | null;
+  firstHardFailure: VerificationHardFailure | null;
 }
 
 export type BrowserEvaluationTargetStatus =

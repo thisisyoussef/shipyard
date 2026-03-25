@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 import {
   Annotation,
@@ -11,19 +13,25 @@ import {
   type CheckpointManagerLike,
 } from "../checkpoints/manager.js";
 import type {
+  BrowserEvaluationReport,
   ContextReport,
   EvaluationPlan,
   ExecutionSpec,
+  HarnessRouteSummary,
   PlanningMode,
+  PreviewState,
   TaskPlan,
   TargetProfile,
   VerificationReport,
 } from "../artifacts/types.js";
 import {
   createCoordinatorTaskPlan,
+  createBrowserEvaluationPlan,
   createLightweightExecutionSpec,
   createExplorerQuery,
   createVerificationPlan,
+  mergeBrowserEvaluationIntoVerificationReport,
+  shouldCoordinatorUseBrowserEvaluator,
   shouldCoordinatorUseExplorer,
   shouldCoordinatorUsePlanner,
 } from "../agents/coordinator.js";
@@ -36,6 +44,10 @@ import {
   type PlannerInput,
   type PlannerRunOptions,
 } from "../agents/planner.js";
+import {
+  runBrowserEvaluator as executeBrowserEvaluator,
+  type BrowserEvaluatorRunOptions,
+} from "../agents/browser-evaluator.js";
 import {
   runVerifierSubagent as executeVerifierSubagent,
   type VerifierRunOptions,
@@ -50,7 +62,11 @@ import {
   type RawLoopToolHookContext,
   type RawToolLoopResult,
 } from "./raw-loop.js";
-import type { ContextEnvelope, FileHashMap } from "./state.js";
+import {
+  getArtifactDirectory,
+  type ContextEnvelope,
+  type FileHashMap,
+} from "./state.js";
 import {
   getLangSmithCallbacksForCurrentTrace,
   getLangSmithConfig,
@@ -77,6 +93,7 @@ export interface AgentGraphState {
   messageHistory: MessageParam[];
   currentInstruction: string;
   contextEnvelope: ContextEnvelope;
+  previewState: PreviewState;
   targetProfile: TargetProfile | null;
   targetDirectory: string;
   phaseConfig: Phase;
@@ -91,6 +108,8 @@ export interface AgentGraphState {
   planningMode: PlanningMode;
   contextReport: ContextReport | null;
   verificationReport: VerificationReport | null;
+  browserEvaluationReport: BrowserEvaluationReport | null;
+  harnessRoute: HarnessRouteSummary;
   actingIterations: number;
   fallbackMode: boolean;
   lastError: string | null;
@@ -101,6 +120,7 @@ export interface CreateAgentGraphStateOptions {
   sessionId?: string;
   instruction: string;
   contextEnvelope: ContextEnvelope;
+  previewState: PreviewState;
   targetProfile?: TargetProfile | null;
   targetDirectory: string;
   phaseConfig: Phase;
@@ -116,6 +136,8 @@ export interface CreateAgentGraphStateOptions {
   planningMode?: PlanningMode;
   contextReport?: ContextReport | null;
   verificationReport?: VerificationReport | null;
+  browserEvaluationReport?: BrowserEvaluationReport | null;
+  harnessRoute?: HarnessRouteSummary;
   actingIterations?: number;
   fallbackMode?: boolean;
   lastError?: string | null;
@@ -154,6 +176,10 @@ export interface AgentRuntimeDependencies {
     targetDirectory: string,
     options?: VerifierRunOptions,
   ) => VerificationReport | Promise<VerificationReport>;
+  runBrowserEvaluator?: (
+    input: Parameters<typeof executeBrowserEvaluator>[0],
+    options?: BrowserEvaluatorRunOptions,
+  ) => BrowserEvaluationReport | Promise<BrowserEvaluationReport>;
   verifyState?: (
     state: AgentGraphState,
   ) => VerificationReport | Promise<VerificationReport>;
@@ -181,6 +207,7 @@ const AgentGraphStateAnnotation = Annotation.Root({
   messageHistory: Annotation<MessageParam[]>(),
   currentInstruction: Annotation<string>(),
   contextEnvelope: Annotation<ContextEnvelope>(),
+  previewState: Annotation<PreviewState>(),
   targetProfile: Annotation<TargetProfile | null>(),
   targetDirectory: Annotation<string>(),
   phaseConfig: Annotation<Phase>(),
@@ -195,6 +222,8 @@ const AgentGraphStateAnnotation = Annotation.Root({
   planningMode: Annotation<PlanningMode>(),
   contextReport: Annotation<ContextReport | null>(),
   verificationReport: Annotation<VerificationReport | null>(),
+  browserEvaluationReport: Annotation<BrowserEvaluationReport | null>(),
+  harnessRoute: Annotation<HarnessRouteSummary>(),
   actingIterations: Annotation<number>(),
   fallbackMode: Annotation<boolean>(),
   lastError: Annotation<string | null>(),
@@ -223,6 +252,35 @@ function applyStateUpdate(
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function createInitialHarnessRouteSummary(
+  contextEnvelope: ContextEnvelope,
+): HarnessRouteSummary {
+  const latestHandoff = contextEnvelope.session.latestHandoff;
+
+  return {
+    selectedPath: "lightweight",
+    usedExplorer: false,
+    usedPlanner: false,
+    usedVerifier: false,
+    verificationMode: "none",
+    verificationCheckCount: 0,
+    usedBrowserEvaluator: false,
+    browserEvaluationStatus: "not_run",
+    handoffLoaded: latestHandoff !== null,
+    handoffEmitted: false,
+    handoffReason: latestHandoff?.handoff.resetReason.kind ?? null,
+    firstHardFailure: null,
+  };
+}
+
+function createBrowserArtifactsDirectory(state: AgentGraphState): string {
+  return path.join(
+    getArtifactDirectory(state.targetDirectory),
+    state.sessionId,
+    "browser-evaluator",
+  );
 }
 
 function getCheckpointManager(
@@ -303,6 +361,7 @@ function createDefaultVerificationReport(
       evaluationPlan,
       checks: [],
       firstHardFailure: null,
+      browserEvaluationReport: null,
     };
   }
 
@@ -316,6 +375,7 @@ function createDefaultVerificationReport(
     evaluationPlan,
     checks: [],
     firstHardFailure: null,
+    browserEvaluationReport: null,
   };
 }
 
@@ -508,6 +568,7 @@ export function createAgentGraphState(
       "instruction",
     ),
     contextEnvelope: options.contextEnvelope,
+    previewState: { ...options.previewState },
     targetProfile: options.targetProfile ?? null,
     targetDirectory: options.targetDirectory,
     phaseConfig: options.phaseConfig,
@@ -522,6 +583,10 @@ export function createAgentGraphState(
     planningMode: options.planningMode ?? "lightweight",
     contextReport: options.contextReport ?? null,
     verificationReport: options.verificationReport ?? null,
+    browserEvaluationReport: options.browserEvaluationReport ?? null,
+    harnessRoute:
+      options.harnessRoute
+      ?? createInitialHarnessRouteSummary(options.contextEnvelope),
     actingIterations: options.actingIterations ?? 0,
     fallbackMode: options.fallbackMode ?? false,
     lastError: options.lastError ?? null,
@@ -534,6 +599,24 @@ function createRuntimeTraceMetadata(
   runtimeMode: "graph" | "fallback",
 ): Record<string, unknown> {
   const latestHandoff = state.contextEnvelope.session.latestHandoff;
+  const predictedExplorerUsage = shouldCoordinatorUseExplorer({
+    instruction: state.currentInstruction,
+    contextEnvelope: state.contextEnvelope,
+    taskPlan: state.taskPlan,
+    executionSpec: state.executionSpec,
+    contextReport: state.contextReport,
+  });
+  const predictedPlannerUsage = shouldCoordinatorUsePlanner({
+    instruction: state.currentInstruction,
+    contextEnvelope: state.contextEnvelope,
+    taskPlan: state.taskPlan,
+    executionSpec: state.executionSpec,
+    contextReport: state.contextReport,
+  });
+  const selectedPath = state.harnessRoute.selectedPath === "lightweight" &&
+      predictedPlannerUsage
+    ? "planner-backed"
+    : state.harnessRoute.selectedPath;
 
   return {
     sessionId: state.sessionId,
@@ -541,23 +624,21 @@ function createRuntimeTraceMetadata(
     phase: state.phaseConfig.name,
     instruction: state.currentInstruction,
     targetDirectory: state.targetDirectory,
-    usedExplorer: shouldCoordinatorUseExplorer({
-      instruction: state.currentInstruction,
-      contextEnvelope: state.contextEnvelope,
-      taskPlan: state.taskPlan,
-      executionSpec: state.executionSpec,
-      contextReport: state.contextReport,
-    }),
-    usedPlanner: shouldCoordinatorUsePlanner({
-      instruction: state.currentInstruction,
-      contextEnvelope: state.contextEnvelope,
-      taskPlan: state.taskPlan,
-      executionSpec: state.executionSpec,
-      contextReport: state.contextReport,
-    }),
-    handoffLoaded: latestHandoff !== null,
+    selectedPath,
+    usedExplorer: state.harnessRoute.usedExplorer || predictedExplorerUsage,
+    usedPlanner: state.harnessRoute.usedPlanner || predictedPlannerUsage,
+    usedVerifier: state.harnessRoute.usedVerifier,
+    verificationMode: state.harnessRoute.verificationMode,
+    verificationCheckCount: state.harnessRoute.verificationCheckCount,
+    usedBrowserEvaluator: state.harnessRoute.usedBrowserEvaluator,
+    browserEvaluationStatus: state.harnessRoute.browserEvaluationStatus,
+    handoffLoaded: state.harnessRoute.handoffLoaded || latestHandoff !== null,
+    handoffEmitted: state.harnessRoute.handoffEmitted,
     handoffPath: latestHandoff?.artifactPath ?? null,
-    handoffReason: latestHandoff?.handoff.resetReason.kind ?? null,
+    handoffReason: state.harnessRoute.handoffReason
+      ?? latestHandoff?.handoff.resetReason.kind
+      ?? null,
+    firstHardFailure: state.harnessRoute.firstHardFailure,
   };
 }
 
@@ -688,6 +769,13 @@ export function createAgentRuntimeNodes(
       }
 
       try {
+        const shouldUseExplorer = shouldCoordinatorUseExplorer({
+          instruction: state.currentInstruction,
+          contextEnvelope: state.contextEnvelope,
+          taskPlan: state.taskPlan,
+          executionSpec: state.executionSpec,
+          contextReport: state.contextReport,
+        });
         const contextReport = await maybeExploreContext(state, dependencies, signal);
         const cancelledAfterExplore = createCancellationUpdate(signal);
 
@@ -731,9 +819,18 @@ export function createAgentRuntimeNodes(
           executionSpec: planningArtifacts.executionSpec,
           planningMode: planningArtifacts.planningMode,
           contextReport,
+          harnessRoute: {
+            ...state.harnessRoute,
+            selectedPath: planningArtifacts.planningMode === "planner"
+              ? "planner-backed"
+              : "lightweight",
+            usedExplorer: shouldUseExplorer,
+            usedPlanner: planningArtifacts.planningMode === "planner",
+          },
           status: "acting",
           lastError: null,
           verificationReport: null,
+          browserEvaluationReport: null,
         };
       } catch (error) {
         const cancelledUpdate = createCancellationUpdateFromError(error, signal);
@@ -809,21 +906,74 @@ export function createAgentRuntimeNodes(
         const verificationReport = await (dependencies.verifyState
           ? dependencies.verifyState(state)
           : defaultVerifyState(state, dependencies, signal));
+        let browserEvaluationReport: BrowserEvaluationReport | null = null;
+
+        if (
+          verificationReport.passed &&
+          shouldCoordinatorUseBrowserEvaluator({
+            instruction: state.currentInstruction,
+            contextEnvelope: state.contextEnvelope,
+            previewState: state.previewState,
+            executionSpec: state.executionSpec,
+            contextReport: state.contextReport,
+          })
+        ) {
+          const runBrowserEvaluator =
+            dependencies.runBrowserEvaluator ?? executeBrowserEvaluator;
+
+          browserEvaluationReport = await runBrowserEvaluator(
+            createBrowserEvaluationPlan({
+              instruction: state.currentInstruction,
+              previewState: state.previewState,
+              executionSpec: state.executionSpec,
+            }),
+            {
+              artifactsDirectory: createBrowserArtifactsDirectory(state),
+            },
+          );
+        }
+
+        const combinedVerificationReport = mergeBrowserEvaluationIntoVerificationReport({
+          verificationReport,
+          browserEvaluationReport,
+        });
+        const plannedVerificationChecks = createVerificationPlan({
+          contextEnvelope: state.contextEnvelope,
+          executionSpec: state.executionSpec,
+        }).checks.length;
         const cancelledAfterVerify = createCancellationUpdate(signal);
 
         if (cancelledAfterVerify) {
           return {
-            verificationReport,
+            verificationReport: combinedVerificationReport,
+            browserEvaluationReport,
             ...cancelledAfterVerify,
           };
         }
 
         return {
-          verificationReport,
-          status: verificationReport.passed ? "responding" : "recovering",
-          lastError: verificationReport.passed
+          verificationReport: combinedVerificationReport,
+          browserEvaluationReport,
+          harnessRoute: {
+            ...state.harnessRoute,
+            usedVerifier: true,
+            verificationMode: browserEvaluationReport
+              ? "command+browser"
+              : "command",
+            verificationCheckCount:
+              combinedVerificationReport.evaluationPlan?.checks.length
+              ?? combinedVerificationReport.checks?.length
+              ?? plannedVerificationChecks,
+            usedBrowserEvaluator: browserEvaluationReport !== null,
+            browserEvaluationStatus:
+              browserEvaluationReport?.status ?? "not_run",
+            firstHardFailure:
+              combinedVerificationReport.firstHardFailure ?? null,
+          },
+          status: combinedVerificationReport.passed ? "responding" : "recovering",
+          lastError: combinedVerificationReport.passed
             ? null
-            : verificationReport.summary,
+            : combinedVerificationReport.summary,
         };
       } catch (error) {
         const cancelledUpdate = createCancellationUpdateFromError(error, signal);
@@ -932,6 +1082,7 @@ export function createAgentRuntimeNodes(
           status: "responding",
           lastEditedFile: null,
           verificationReport: null,
+          browserEvaluationReport: null,
           lastError: escalationSummary,
           finalResult: `Blocked ${state.lastEditedFile} after ${String(nextRetries)} failed verification attempts. ${escalationSummary}`,
         };
@@ -943,6 +1094,7 @@ export function createAgentRuntimeNodes(
         status: "planning",
         lastEditedFile: null,
         verificationReport: null,
+        browserEvaluationReport: null,
         lastError: null,
         finalResult: null,
       };
@@ -1059,6 +1211,8 @@ export async function runAgentRuntime(
       runType: "chain",
       tags: ["shipyard", "fallback-runtime", initialState.phaseConfig.name],
       metadata: createRuntimeTraceMetadata(initialState, "fallback"),
+      getResultMetadata: (result) =>
+        createRuntimeTraceMetadata(result, "fallback"),
       fn: async () => runFallbackRuntime(initialState, options),
       args: [],
     });
@@ -1085,6 +1239,7 @@ export async function runAgentRuntime(
     runType: "chain",
     tags: ["shipyard", "graph-runtime", initialState.phaseConfig.name],
     metadata: createRuntimeTraceMetadata(initialState, "graph"),
+    getResultMetadata: (result) => createRuntimeTraceMetadata(result, "graph"),
     fn: async () => {
       const callbacks = await getLangSmithCallbacksForCurrentTrace();
 

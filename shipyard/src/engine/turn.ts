@@ -11,6 +11,7 @@ import {
 import type {
   DiscoveryReport,
   ExecutionSpec,
+  HarnessRouteSummary,
   LoadedExecutionHandoff,
   PlanningMode,
   TargetProfile,
@@ -53,7 +54,10 @@ import {
   type ContextEnvelope,
   type SessionState,
 } from "./state.js";
-import type { LangSmithTraceReference } from "../tracing/langsmith.js";
+import {
+  runWithLangSmithTrace,
+  type LangSmithTraceReference,
+} from "../tracing/langsmith.js";
 import { configureTargetManagerEnrichmentInvoker } from "../tools/target-manager/enrich-target.js";
 
 export type InstructionRuntimeMode = "graph" | "fallback";
@@ -138,6 +142,7 @@ export interface InstructionTurnResult {
   taskPlan: TaskPlan;
   executionSpec: ExecutionSpec | null;
   planningMode: PlanningMode;
+  harnessRoute: HarnessRouteSummary;
   contextEnvelope: ContextEnvelope;
   status: "success" | "error" | "cancelled";
   summary: string;
@@ -151,6 +156,27 @@ export interface InstructionTurnHandoffState {
   loaded: LoadedExecutionHandoff | null;
   loadError: string | null;
   emitted: LoadedExecutionHandoff | null;
+}
+
+function createHarnessRouteForErrorState(
+  contextEnvelope: ContextEnvelope,
+): HarnessRouteSummary {
+  const latestHandoff = contextEnvelope.session.latestHandoff;
+
+  return {
+    selectedPath: "lightweight",
+    usedExplorer: false,
+    usedPlanner: false,
+    usedVerifier: false,
+    verificationMode: "none",
+    verificationCheckCount: 0,
+    usedBrowserEvaluator: false,
+    browserEvaluationStatus: "not_run",
+    handoffLoaded: latestHandoff !== null,
+    handoffEmitted: false,
+    handoffReason: latestHandoff?.handoff.resetReason.kind ?? null,
+    firstHardFailure: null,
+  };
 }
 
 const EXPLICIT_FILE_PATH_PATTERN =
@@ -649,6 +675,57 @@ export function createInstructionRuntimeState(
   };
 }
 
+function createInstructionTurnTraceMetadata(options: {
+  sessionId: string;
+  runtimeMode: InstructionRuntimeMode;
+  phaseName: string;
+  instruction: string;
+  targetDirectory: string;
+  planningMode?: PlanningMode | null;
+  harnessRoute?: HarnessRouteSummary | null;
+}): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {
+    sessionId: options.sessionId,
+    runtimeMode: options.runtimeMode,
+    phase: options.phaseName,
+    instruction: options.instruction,
+    targetDirectory: options.targetDirectory,
+  };
+
+  if (options.planningMode) {
+    metadata.planningMode = options.planningMode;
+  }
+
+  if (options.harnessRoute) {
+    Object.assign(metadata, options.harnessRoute);
+  }
+
+  return metadata;
+}
+
+async function emitInstructionTurnOutcome(
+  reporter: InstructionTurnReporter | undefined,
+  sessionState: SessionState,
+  result: InstructionTurnResult,
+): Promise<void> {
+  await reporter?.onText?.(result.finalText);
+
+  if (result.status === "error") {
+    await reporter?.onError?.(result.summary);
+  }
+
+  await reporter?.onDone?.({
+    status: result.status,
+    summary: result.summary,
+    langSmithTrace: result.langSmithTrace,
+  });
+  await emitTurnState(
+    reporter,
+    sessionState,
+    result.status === "error" ? "error" : "ready",
+  );
+}
+
 export async function executeInstructionTurn(
   options: ExecuteInstructionTurnOptions,
 ): Promise<InstructionTurnResult> {
@@ -693,255 +770,209 @@ export async function executeInstructionTurn(
     `Planning turn ${String(state.turnCount)} in phase "${phase.name}" via ${runtimeState.runtimeMode} runtime.`,
   );
 
-  const contextEnvelope = await buildContextEnvelope({
-    targetDirectory: state.targetDirectory,
-    discovery: state.discovery,
-    currentInstruction: options.instruction,
-    injectedContext: mergedInjectedContext,
-    targetFilePaths,
-    recentToolOutputs: runtimeState.recentToolOutputs,
-    recentErrors: runtimeState.recentErrors,
-    currentGitDiff: await captureCurrentGitDiff(state.targetDirectory),
-    rollingSummary: state.rollingSummary,
-    retryCountsByFile: runtimeState.retryCountsByFile,
-    blockedFiles: runtimeState.blockedFiles,
-    latestHandoff: loadedHandoff,
-    activeTask: state.activeTask,
-  });
-
-  runtimeState.projectRules = contextEnvelope.stable.projectRules;
-
-  const initialState = createAgentGraphState({
-    sessionId: state.sessionId,
-    instruction: options.instruction,
-    contextEnvelope,
-    targetProfile: state.targetProfile ?? null,
-    targetDirectory: state.targetDirectory,
-    phaseConfig: {
-      ...phase,
-      systemPrompt: composeSystemPrompt(phase.systemPrompt, contextEnvelope),
-    },
-    retryCountsByFile: runtimeState.retryCountsByFile,
-    blockedFiles: runtimeState.blockedFiles,
-  });
-  const editPreviewState = { emitted: false };
-  const runtimeDependencies = createRuntimeDependencies(
-    state,
-    runtimeState,
-    options.reporter,
-    editPreviewState,
-    options.signal,
-  );
-
-  configureTargetManagerEnrichmentInvoker(runtimeState.targetEnrichmentInvoker ?? null);
-
-  try {
-    const finalState = await runAgentRuntime(initialState, {
-      mode: runtimeState.runtimeMode,
-      signal: options.signal,
-      dependencies: runtimeDependencies,
-    } satisfies AgentRuntimeOptions);
-    const taskPlan = finalState.taskPlan ?? {
-      instruction: options.instruction,
-      goal: options.instruction,
+  const executeCore = async (): Promise<InstructionTurnResult> => {
+    const contextEnvelope = await buildContextEnvelope({
+      targetDirectory: state.targetDirectory,
+      discovery: state.discovery,
+      currentInstruction: options.instruction,
+      injectedContext: mergedInjectedContext,
       targetFilePaths,
-      plannedSteps: [
-        "Read the relevant files before editing.",
-        "Choose the smallest unique anchor for each change.",
-        "Verify the result after the edit.",
-      ],
-    };
-    const executionSpec = finalState.executionSpec ?? null;
-    const planningMode = finalState.planningMode;
-    const finalText = finalState.finalResult
-      ?? "Shipyard finished without a final response.";
-    const finalStateStatus = finalState.status === "failed"
-      ? "failed"
-      : finalState.status === "cancelled"
-        ? "cancelled"
-        : "done";
-    const summary = createExecutionTurnSummary(
-      state.turnCount,
-      runtimeState.runtimeMode,
-      finalStateStatus,
-      finalText,
-    );
-    const handoffDecision = createExecutionHandoffDecision({
-      actingIterations: finalState.actingIterations,
-      retryCountsByFile: finalState.retryCountsByFile,
-      blockedFiles: finalState.blockedFiles,
-    });
-    let emittedHandoff: LoadedExecutionHandoff | null = null;
-
-    if (
-      handoffDecision.shouldPersist &&
-      handoffDecision.kind &&
-      handoffDecision.summary
-    ) {
-      emittedHandoff = await saveExecutionHandoff(
-        state.targetDirectory,
-        createExecutionHandoff({
-          sessionId: state.sessionId,
-          turnCount: state.turnCount,
-          instruction: options.instruction,
-          phaseName: phase.name,
-          runtimeMode: runtimeState.runtimeMode,
-          status:
-            finalStateStatus === "done"
-              ? "success"
-              : finalStateStatus === "failed"
-                ? "error"
-                : "cancelled",
-          summary,
-          taskPlan,
-          actingIterations: finalState.actingIterations,
-          retryCountsByFile: finalState.retryCountsByFile,
-          blockedFiles: finalState.blockedFiles,
-          lastEditedFile: finalState.lastEditedFile,
-          verificationReport: finalState.verificationReport,
-          decision: handoffDecision,
-        }),
-      );
-      state.activeHandoffPath = emittedHandoff.artifactPath;
-    } else if (loadedHandoff && finalStateStatus === "done") {
-      state.activeHandoffPath = null;
-    }
-    const handoffState: InstructionTurnHandoffState = {
-      loaded: loadedHandoff,
-      loadError: handoffLoadError,
-      emitted: emittedHandoff,
-    };
-
-    runtimeState.retryCountsByFile = { ...finalState.retryCountsByFile };
-    runtimeState.blockedFiles = [...finalState.blockedFiles];
-
-    if (!editPreviewState.emitted) {
-      await emitDiffPreviewIfAvailable(
-        options.reporter,
-        state.targetDirectory,
-        finalState.lastEditedFile,
-      );
-    }
-    if (finalStateStatus === "cancelled") {
-      const cancellationReason = finalText || getTurnCancellationReason(options.signal)
-        || DEFAULT_TURN_CANCELLED_REASON;
-      const cancelledTurnText = createCancelledTurnText(
-        state.turnCount,
-        cancellationReason,
-      );
-
-      state.rollingSummary = updateRollingSummary(
-        state.rollingSummary,
-        state.turnCount,
-        options.instruction,
-        summary,
-      );
-
-      await options.reporter?.onText?.(cancelledTurnText);
-      await options.reporter?.onDone?.({
-        status: "cancelled",
-        summary: cancellationReason,
-        langSmithTrace: finalState.langSmithTrace,
-      });
-      await emitTurnState(options.reporter, state, "ready");
-
-      return {
-        phaseName: phase.name,
-        runtimeMode: runtimeState.runtimeMode,
-        taskPlan,
-        executionSpec,
-        planningMode,
-        contextEnvelope,
-        status: "cancelled",
-        summary: cancellationReason,
-        finalText: cancelledTurnText,
-        selectedTargetPath: null,
-        langSmithTrace: finalState.langSmithTrace,
-        handoff: handoffState,
-      };
-    }
-    if (finalStateStatus === "failed") {
-      const errorMessage = finalState.lastError ?? finalText;
-      const failedTurnText = `Turn ${String(state.turnCount)} stopped: ${errorMessage}`;
-
-      rememberRecent(runtimeState.recentErrors, errorMessage);
-      state.rollingSummary = updateRollingSummary(
-        state.rollingSummary,
-        state.turnCount,
-        options.instruction,
-        summary,
-      );
-
-      await options.reporter?.onText?.(failedTurnText);
-      await options.reporter?.onError?.(errorMessage);
-      await options.reporter?.onDone?.({
-        status: "error",
-        summary: errorMessage,
-        langSmithTrace: finalState.langSmithTrace,
-      });
-      await emitTurnState(options.reporter, state, "error");
-
-      return {
-        phaseName: phase.name,
-        runtimeMode: runtimeState.runtimeMode,
-        taskPlan,
-        executionSpec,
-        planningMode,
-        contextEnvelope,
-        status: "error",
-        summary: errorMessage,
-        finalText: failedTurnText,
-        selectedTargetPath: null,
-        langSmithTrace: finalState.langSmithTrace,
-        handoff: handoffState,
-      };
-    }
-
-    await options.reporter?.onText?.(finalText);
-    await options.reporter?.onDone?.({
-      status: "success",
-      summary,
-      langSmithTrace: finalState.langSmithTrace,
+      recentToolOutputs: runtimeState.recentToolOutputs,
+      recentErrors: runtimeState.recentErrors,
+      currentGitDiff: await captureCurrentGitDiff(state.targetDirectory),
+      rollingSummary: state.rollingSummary,
+      retryCountsByFile: runtimeState.retryCountsByFile,
+      blockedFiles: runtimeState.blockedFiles,
+      latestHandoff: loadedHandoff,
+      activeTask: state.activeTask,
     });
 
-    state.rollingSummary = updateRollingSummary(
-      state.rollingSummary,
-      state.turnCount,
-      options.instruction,
-      summary,
-    );
+    runtimeState.projectRules = contextEnvelope.stable.projectRules;
 
-    await emitTurnState(options.reporter, state, "ready");
-
-    return {
-      phaseName: phase.name,
-      runtimeMode: runtimeState.runtimeMode,
-      taskPlan,
-      executionSpec,
-      planningMode,
+    const initialState = createAgentGraphState({
+      sessionId: state.sessionId,
+      instruction: options.instruction,
       contextEnvelope,
-      status: "success",
-      summary,
-      finalText,
-      selectedTargetPath: runtimeState.pendingTargetSelectionPath,
-      langSmithTrace: finalState.langSmithTrace,
-      handoff: handoffState,
-    };
-  } catch (error) {
-    const cancelledError = toTurnCancelledError(error, options.signal);
+      previewState: state.workbenchState.previewState,
+      targetProfile: state.targetProfile ?? null,
+      targetDirectory: state.targetDirectory,
+      phaseConfig: {
+        ...phase,
+        systemPrompt: composeSystemPrompt(phase.systemPrompt, contextEnvelope),
+      },
+      retryCountsByFile: runtimeState.retryCountsByFile,
+      blockedFiles: runtimeState.blockedFiles,
+    });
+    const editPreviewState = { emitted: false };
+    const runtimeDependencies = createRuntimeDependencies(
+      state,
+      runtimeState,
+      options.reporter,
+      editPreviewState,
+      options.signal,
+    );
 
-    if (cancelledError) {
-      const cancellationReason = cancelledError.message;
-      const finalText = createCancelledTurnText(
-        state.turnCount,
-        cancellationReason,
-      );
+    configureTargetManagerEnrichmentInvoker(
+      runtimeState.targetEnrichmentInvoker ?? null,
+    );
+
+    try {
+      const finalState = await runAgentRuntime(initialState, {
+        mode: runtimeState.runtimeMode,
+        signal: options.signal,
+        dependencies: runtimeDependencies,
+      } satisfies AgentRuntimeOptions);
+      const taskPlan = finalState.taskPlan ?? {
+        instruction: options.instruction,
+        goal: options.instruction,
+        targetFilePaths,
+        plannedSteps: [
+          "Read the relevant files before editing.",
+          "Choose the smallest unique anchor for each change.",
+          "Verify the result after the edit.",
+        ],
+      };
+      const executionSpec = finalState.executionSpec ?? null;
+      const planningMode = finalState.planningMode;
+      const finalText = finalState.finalResult
+        ?? "Shipyard finished without a final response.";
+      const finalStateStatus = finalState.status === "failed"
+        ? "failed"
+        : finalState.status === "cancelled"
+          ? "cancelled"
+          : "done";
       const summary = createExecutionTurnSummary(
         state.turnCount,
         runtimeState.runtimeMode,
-        "cancelled",
-        cancellationReason,
+        finalStateStatus,
+        finalText,
       );
+      const handoffDecision = createExecutionHandoffDecision({
+        actingIterations: finalState.actingIterations,
+        retryCountsByFile: finalState.retryCountsByFile,
+        blockedFiles: finalState.blockedFiles,
+      });
+      let emittedHandoff: LoadedExecutionHandoff | null = null;
+
+      if (
+        handoffDecision.shouldPersist &&
+        handoffDecision.kind &&
+        handoffDecision.summary
+      ) {
+        emittedHandoff = await saveExecutionHandoff(
+          state.targetDirectory,
+          createExecutionHandoff({
+            sessionId: state.sessionId,
+            turnCount: state.turnCount,
+            instruction: options.instruction,
+            phaseName: phase.name,
+            runtimeMode: runtimeState.runtimeMode,
+            status:
+              finalStateStatus === "done"
+                ? "success"
+                : finalStateStatus === "failed"
+                  ? "error"
+                  : "cancelled",
+            summary,
+            taskPlan,
+            actingIterations: finalState.actingIterations,
+            retryCountsByFile: finalState.retryCountsByFile,
+            blockedFiles: finalState.blockedFiles,
+            lastEditedFile: finalState.lastEditedFile,
+            verificationReport: finalState.verificationReport,
+            decision: handoffDecision,
+          }),
+        );
+        state.activeHandoffPath = emittedHandoff.artifactPath;
+      } else if (loadedHandoff && finalStateStatus === "done") {
+        state.activeHandoffPath = null;
+      }
+      const handoffState: InstructionTurnHandoffState = {
+        loaded: loadedHandoff,
+        loadError: handoffLoadError,
+        emitted: emittedHandoff,
+      };
+      const harnessRoute: HarnessRouteSummary = {
+        ...finalState.harnessRoute,
+        handoffLoaded: loadedHandoff !== null,
+        handoffEmitted: emittedHandoff !== null,
+        handoffReason:
+          emittedHandoff?.handoff.resetReason.kind
+          ?? finalState.harnessRoute.handoffReason
+          ?? loadedHandoff?.handoff.resetReason.kind
+          ?? null,
+      };
+
+      runtimeState.retryCountsByFile = { ...finalState.retryCountsByFile };
+      runtimeState.blockedFiles = [...finalState.blockedFiles];
+
+      if (!editPreviewState.emitted) {
+        await emitDiffPreviewIfAvailable(
+          options.reporter,
+          state.targetDirectory,
+          finalState.lastEditedFile,
+        );
+      }
+      if (finalStateStatus === "cancelled") {
+        const cancellationReason = finalText
+          || getTurnCancellationReason(options.signal)
+          || DEFAULT_TURN_CANCELLED_REASON;
+        const cancelledTurnText = createCancelledTurnText(
+          state.turnCount,
+          cancellationReason,
+        );
+
+        state.rollingSummary = updateRollingSummary(
+          state.rollingSummary,
+          state.turnCount,
+          options.instruction,
+          summary,
+        );
+
+        return {
+          phaseName: phase.name,
+          runtimeMode: runtimeState.runtimeMode,
+          taskPlan,
+          executionSpec,
+          planningMode,
+          harnessRoute,
+          contextEnvelope,
+          status: "cancelled",
+          summary: cancellationReason,
+          finalText: cancelledTurnText,
+          selectedTargetPath: null,
+          langSmithTrace: finalState.langSmithTrace,
+          handoff: handoffState,
+        };
+      }
+      if (finalStateStatus === "failed") {
+        const errorMessage = finalState.lastError ?? finalText;
+        const failedTurnText = `Turn ${String(state.turnCount)} stopped: ${errorMessage}`;
+
+        rememberRecent(runtimeState.recentErrors, errorMessage);
+        state.rollingSummary = updateRollingSummary(
+          state.rollingSummary,
+          state.turnCount,
+          options.instruction,
+          summary,
+        );
+
+        return {
+          phaseName: phase.name,
+          runtimeMode: runtimeState.runtimeMode,
+          taskPlan,
+          executionSpec,
+          planningMode,
+          harnessRoute,
+          contextEnvelope,
+          status: "error",
+          summary: errorMessage,
+          finalText: failedTurnText,
+          selectedTargetPath: null,
+          langSmithTrace: finalState.langSmithTrace,
+          handoff: handoffState,
+        };
+      }
 
       state.rollingSummary = updateRollingSummary(
         state.rollingSummary,
@@ -950,12 +981,86 @@ export async function executeInstructionTurn(
         summary,
       );
 
-      await options.reporter?.onText?.(finalText);
-      await options.reporter?.onDone?.({
-        status: "cancelled",
-        summary: cancellationReason,
-      });
-      await emitTurnState(options.reporter, state, "ready");
+      return {
+        phaseName: phase.name,
+        runtimeMode: runtimeState.runtimeMode,
+        taskPlan,
+        executionSpec,
+        planningMode,
+        harnessRoute,
+        contextEnvelope,
+        status: "success",
+        summary,
+        finalText,
+        selectedTargetPath: runtimeState.pendingTargetSelectionPath,
+        langSmithTrace: finalState.langSmithTrace,
+        handoff: handoffState,
+      };
+    } catch (error) {
+      const cancelledError = toTurnCancelledError(error, options.signal);
+
+      if (cancelledError) {
+        const cancellationReason = cancelledError.message;
+        const finalText = createCancelledTurnText(
+          state.turnCount,
+          cancellationReason,
+        );
+        const summary = createExecutionTurnSummary(
+          state.turnCount,
+          runtimeState.runtimeMode,
+          "cancelled",
+          cancellationReason,
+        );
+
+        state.rollingSummary = updateRollingSummary(
+          state.rollingSummary,
+          state.turnCount,
+          options.instruction,
+          summary,
+        );
+
+        return {
+          phaseName: phase.name,
+          runtimeMode: runtimeState.runtimeMode,
+          taskPlan: {
+            instruction: options.instruction,
+            goal: options.instruction,
+            targetFilePaths,
+            plannedSteps: [],
+          },
+          executionSpec: null,
+          planningMode: "lightweight",
+          harnessRoute: createHarnessRouteForErrorState(contextEnvelope),
+          contextEnvelope,
+          status: "cancelled",
+          summary: cancellationReason,
+          finalText,
+          selectedTargetPath: null,
+          langSmithTrace: null,
+          handoff: {
+            loaded: loadedHandoff,
+            loadError: handoffLoadError,
+            emitted: null,
+          },
+        };
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+      const finalText = `Turn ${String(state.turnCount)} stopped: ${message}`;
+      const summary = createExecutionTurnSummary(
+        state.turnCount,
+        runtimeState.runtimeMode,
+        "failed",
+        message,
+      );
+
+      rememberRecent(runtimeState.recentErrors, message);
+      state.rollingSummary = updateRollingSummary(
+        state.rollingSummary,
+        state.turnCount,
+        options.instruction,
+        summary,
+      );
 
       return {
         phaseName: phase.name,
@@ -968,9 +1073,10 @@ export async function executeInstructionTurn(
         },
         executionSpec: null,
         planningMode: "lightweight",
+        harnessRoute: createHarnessRouteForErrorState(contextEnvelope),
         contextEnvelope,
-        status: "cancelled",
-        summary: cancellationReason,
+        status: "error",
+        summary: message,
         finalText,
         selectedTargetPath: null,
         langSmithTrace: null,
@@ -980,59 +1086,44 @@ export async function executeInstructionTurn(
           emitted: null,
         },
       };
+    } finally {
+      configureTargetManagerEnrichmentInvoker(null);
+      await saveSessionState(state);
     }
+  };
 
-    const message = error instanceof Error ? error.message : String(error);
-    const finalText = `Turn ${String(state.turnCount)} stopped: ${message}`;
-    const summary = createExecutionTurnSummary(
-      state.turnCount,
-      runtimeState.runtimeMode,
-      "failed",
-      message,
-    );
-
-    rememberRecent(runtimeState.recentErrors, message);
-    state.rollingSummary = updateRollingSummary(
-      state.rollingSummary,
-      state.turnCount,
-      options.instruction,
-      summary,
-    );
-
-    await options.reporter?.onText?.(finalText);
-    await options.reporter?.onError?.(message);
-    await options.reporter?.onDone?.({
-      status: "error",
-      summary: message,
-      langSmithTrace: null,
-    });
-    await emitTurnState(options.reporter, state, "error");
-
-    return {
-      phaseName: phase.name,
+  const tracedTurn = await runWithLangSmithTrace({
+    name: "shipyard.instruction-turn",
+    runType: "chain",
+    tags: ["shipyard", "instruction-turn", phase.name],
+    metadata: createInstructionTurnTraceMetadata({
+      sessionId: state.sessionId,
       runtimeMode: runtimeState.runtimeMode,
-      taskPlan: {
+      phaseName: phase.name,
+      instruction: options.instruction,
+      targetDirectory: state.targetDirectory,
+    }),
+    getResultMetadata: (result) =>
+      createInstructionTurnTraceMetadata({
+        sessionId: state.sessionId,
+        runtimeMode: result.runtimeMode,
+        phaseName: result.phaseName,
         instruction: options.instruction,
-        goal: options.instruction,
-        targetFilePaths,
-        plannedSteps: [],
-      },
-      executionSpec: null,
-      planningMode: "lightweight",
-      contextEnvelope,
-      status: "error",
-      summary: message,
-      finalText,
-      selectedTargetPath: null,
-      langSmithTrace: null,
-      handoff: {
-        loaded: loadedHandoff,
-        loadError: handoffLoadError,
-        emitted: null,
-      },
-    };
-  } finally {
-    configureTargetManagerEnrichmentInvoker(null);
-    await saveSessionState(state);
-  }
+        targetDirectory: state.targetDirectory,
+        planningMode: result.planningMode,
+        harnessRoute: result.harnessRoute,
+      }),
+    fn: executeCore,
+    args: [],
+  });
+  const result = tracedTurn.trace
+    ? {
+        ...tracedTurn.result,
+        langSmithTrace: tracedTurn.trace,
+      }
+    : tracedTurn.result;
+
+  await emitInstructionTurnOutcome(options.reporter, state, result);
+
+  return result;
 }

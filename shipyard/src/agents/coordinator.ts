@@ -1,13 +1,35 @@
 import type {
+  BrowserEvaluationPlan,
+  BrowserEvaluationReport,
   ContextReport,
   EvaluationPlan,
   ExecutionSpec,
+  PreviewState,
   TaskPlan,
+  VerificationReport,
 } from "../artifacts/types.js";
+import { createBrowserEvaluationTargetFromPreviewState } from "./browser-evaluator.js";
 import type { ContextEnvelope } from "../engine/state.js";
 import { normalizeTargetRelativePath } from "../tools/file-state.js";
 
 const verificationScriptPriority = ["test", "typecheck", "build"] as const;
+const browserEvaluationKeywordPatterns = [
+  /\bui\b/i,
+  /\bux\b/i,
+  /\bvisual\b/i,
+  /\bstyle\b/i,
+  /\bcss\b/i,
+  /\bcomponent\b/i,
+  /\bpage\b/i,
+  /\bscreen\b/i,
+  /\blayout\b/i,
+  /\bmodal\b/i,
+  /\bbutton\b/i,
+  /\bpreview\b/i,
+  /\bbrowser\b/i,
+  /\bform\b/i,
+  /\breact\b/i,
+] as const;
 const lightweightInstructionPrefixes = [
   "inspect ",
   "read ",
@@ -21,6 +43,9 @@ const lightweightInstructionPrefixes = [
   "typecheck",
   "build",
 ] as const;
+const uiFilePathPattern =
+  /(^|\/)(app|components|pages|routes|ui)\//i;
+const uiFileExtensionPattern = /\.(?:tsx|jsx|css|scss|sass|less|html)$/i;
 
 function uniqueStrings(values: Iterable<string>): string[] {
   return [...new Set(values)];
@@ -241,25 +266,144 @@ export function createVerificationCommand(
   return "git diff --stat";
 }
 
+function createVerificationChecks(
+  contextEnvelope: ContextEnvelope,
+): EvaluationPlan["checks"] {
+  const packageManager = contextEnvelope.stable.discovery.packageManager;
+  const checks = verificationScriptPriority
+    .filter((scriptName) => contextEnvelope.stable.availableScripts[scriptName])
+    .map((scriptName, index) => ({
+      id: `check-${String(index + 1)}`,
+      label: `Run ${buildPackageManagerScriptCommand(packageManager, scriptName)}`,
+      kind: "command" as const,
+      command: buildPackageManagerScriptCommand(packageManager, scriptName),
+      required: true,
+    }));
+
+  if (checks.length > 0) {
+    return checks;
+  }
+
+  return [
+    {
+      id: "check-1",
+      label: "Run git diff --stat",
+      kind: "command",
+      command: "git diff --stat",
+      required: true,
+    },
+  ];
+}
+
 export function createVerificationPlan(options: {
   contextEnvelope: ContextEnvelope;
   executionSpec?: ExecutionSpec | null;
 }): EvaluationPlan {
-  const command = createVerificationCommand(options.contextEnvelope);
+  const checks = createVerificationChecks(options.contextEnvelope);
 
   return {
-    summary:
-      options.executionSpec?.verificationIntent[0]
-      ?? "Run the verification command.",
-    checks: [
+    summary: options.executionSpec?.verificationIntent[0]
+      ?? `Run ${checks.length === 1 ? "the verification command" : "the verification checks"}.`,
+    checks,
+  };
+}
+
+function looksLikeUiRelevantInstruction(instruction: string): boolean {
+  return browserEvaluationKeywordPatterns.some((pattern) =>
+    pattern.test(instruction)
+  );
+}
+
+function looksLikeUiRelevantFilePath(filePath: string): boolean {
+  return uiFilePathPattern.test(filePath) || uiFileExtensionPattern.test(filePath);
+}
+
+export function shouldCoordinatorUseBrowserEvaluator(options: {
+  instruction: string;
+  contextEnvelope: ContextEnvelope;
+  previewState: PreviewState;
+  executionSpec?: ExecutionSpec | null;
+  contextReport?: ContextReport | null;
+}): boolean {
+  if (
+    options.previewState.status !== "running"
+    || options.previewState.url === null
+  ) {
+    return false;
+  }
+
+  const targetFilePaths = getKnownTargetFilePaths({
+    contextEnvelope: options.contextEnvelope,
+    executionSpec: options.executionSpec,
+    contextReport: options.contextReport,
+  });
+  const explicitFilePaths = extractInstructionTargetFilePaths(options.instruction);
+
+  if (
+    [...targetFilePaths, ...explicitFilePaths].some((filePath) =>
+      looksLikeUiRelevantFilePath(filePath)
+    )
+  ) {
+    return true;
+  }
+
+  return looksLikeUiRelevantInstruction(options.instruction);
+}
+
+export function createBrowserEvaluationPlan(options: {
+  instruction: string;
+  previewState: PreviewState;
+  executionSpec?: ExecutionSpec | null;
+}): BrowserEvaluationPlan {
+  return {
+    summary: options.executionSpec?.goal ?? options.instruction.trim(),
+    target: createBrowserEvaluationTargetFromPreviewState(options.previewState),
+    steps: [
       {
-        id: "check-1",
-        label: `Run ${command}`,
-        kind: "command",
-        command,
-        required: true,
+        id: "load-preview",
+        label: "Load the current preview",
+        kind: "load",
+      },
+      {
+        id: "check-console",
+        label: "Check browser console health",
+        kind: "console",
+        failOn: ["error"],
+        includePageErrors: true,
       },
     ],
+    captureArtifacts: "on-failure",
+  };
+}
+
+export function mergeBrowserEvaluationIntoVerificationReport(options: {
+  verificationReport: VerificationReport;
+  browserEvaluationReport: BrowserEvaluationReport | null;
+}): VerificationReport {
+  const { verificationReport, browserEvaluationReport } = options;
+
+  if (
+    browserEvaluationReport === null
+    || browserEvaluationReport.status === "not_applicable"
+  ) {
+    return {
+      ...verificationReport,
+      browserEvaluationReport,
+    };
+  }
+
+  if (browserEvaluationReport.status === "passed") {
+    return {
+      ...verificationReport,
+      browserEvaluationReport,
+    };
+  }
+
+  return {
+    ...verificationReport,
+    passed: false,
+    summary: `Browser evaluation failed: ${browserEvaluationReport.summary}`,
+    browserEvaluationReport,
   };
 }
 

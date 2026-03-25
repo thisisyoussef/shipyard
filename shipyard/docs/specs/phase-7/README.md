@@ -3,7 +3,7 @@
 - Pack: Phase 7 Planner, Evaluator, and Long-Run Handoff
 - Estimate: 8-12 hours
 - Date: 2026-03-25
-- Status: In progress
+- Status: Complete
 
 ## Pack Objectives
 
@@ -243,5 +243,74 @@ await writeFile(tempPath, `${JSON.stringify(handoff, null, 2)}\n`, "utf8");
 await rename(tempPath, absolutePath);
 ```
 
-- Remaining story `P7-S05`: implementation evidence is still
-  pending on `main`.
+### P7-S05
+
+#### Code References
+
+- `shipyard/src/artifacts/types.ts`: adds the shared `HarnessRouteSummary`
+  contract and extends `VerificationReport` so browser-evaluator evidence can
+  travel with command verification.
+- `shipyard/src/agents/coordinator.ts`: upgrades the default verification plan
+  to ordered `test` / `typecheck` / `build` checks, adds conservative preview
+  heuristics for browser evaluation, and merges browser-evaluator failures into
+  the final verification verdict.
+- `shipyard/src/engine/graph.ts`: threads preview state into the graph,
+  maintains the selected harness route as runtime state, routes previewable
+  UI-facing work through the browser evaluator after command verification, and
+  exposes the final planner/verifier/browser decision set for tracing.
+- `shipyard/src/engine/turn.ts`, `shipyard/src/tracing/langsmith.ts`,
+  `shipyard/src/engine/loop.ts`, and `shipyard/src/ui/server.ts`: finalize the
+  handoff-aware route summary, attach the final route metadata before the
+  LangSmith turn trace patches, return the root turn trace reference, and
+  persist the same structured harness route in local JSONL logs for both
+  terminal and browser surfaces.
+- `shipyard/tests/graph-runtime.test.ts`,
+  `shipyard/tests/turn-runtime.test.ts`,
+  `shipyard/tests/loop-runtime.test.ts`,
+  `shipyard/tests/evaluator-calibration.test.ts`, and
+  `shipyard/tests/fixtures/evaluator-calibration.ts`: cover lightweight vs
+  planner-backed routing, preview-backed browser verification, reset-backed
+  trace metadata, and the golden scenario set for evaluator strictness.
+
+#### Representative Snippets
+
+```ts
+export interface HarnessRouteSummary {
+  selectedPath: HarnessSelectedPath;
+  usedExplorer: boolean;
+  usedPlanner: boolean;
+  usedVerifier: boolean;
+  verificationMode: HarnessVerificationMode;
+  verificationCheckCount: number;
+  usedBrowserEvaluator: boolean;
+  browserEvaluationStatus: BrowserEvaluationStatus | "not_run";
+  handoffLoaded: boolean;
+  handoffEmitted: boolean;
+  handoffReason: ExecutionHandoffResetKind | null;
+  firstHardFailure: VerificationHardFailure | null;
+}
+```
+
+```ts
+if (
+  verificationReport.passed &&
+  shouldCoordinatorUseBrowserEvaluator({
+    instruction: state.currentInstruction,
+    contextEnvelope: state.contextEnvelope,
+    previewState: state.previewState,
+    executionSpec: state.executionSpec,
+    contextReport: state.contextReport,
+  })
+) {
+  browserEvaluationReport = await runBrowserEvaluator(
+    createBrowserEvaluationPlan({
+      instruction: state.currentInstruction,
+      previewState: state.previewState,
+      executionSpec: state.executionSpec,
+    }),
+    {
+      artifactsDirectory: createBrowserArtifactsDirectory(state),
+    },
+  );
+}
+```
