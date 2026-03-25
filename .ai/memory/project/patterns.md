@@ -17,6 +17,9 @@ Capture repeatable patterns that match how this workspace actually works.
 - Agent role definitions: `shipyard/src/agents/`
 - Phase contracts: `shipyard/src/phases/`
 - Local checkpoints and tracing: `shipyard/src/checkpoints/`, `shipyard/src/tracing/`
+- New read-only capability surfaces should prefer dedicated tools with
+  human-readable summaries plus structured `data`, so browser activity and
+  later-turn `recentToolOutputs` can reuse the same result contract.
 
 ## Testing and Validation
 

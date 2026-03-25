@@ -22,13 +22,13 @@ Shipyard already supports pasted injected context and can read files with `read_
 - As a coordinator, I want spec documents to come through as named context sources so I can cite or reload them intentionally during planning.
 
 ## Acceptance Criteria
-- [ ] AC-1: A read-only `load_spec` tool exists and accepts either a file path or a directory path.
-- [ ] AC-2: `load_spec` resolves only allowed paths under the target or configured spec-adjacent locations and fails clearly on invalid or unreadable paths.
-- [ ] AC-3: File loads return a stable name/reference, source path, and bounded text content suitable for use as injected context in the current turn.
-- [ ] AC-4: Directory loads expand deterministically into an ordered list of spec documents and skip unreadable or obviously non-text files with clear reporting.
-- [ ] AC-5: Large spec bodies are truncated with explicit markers rather than silently overflowing prompt context.
-- [ ] AC-6: Tool output is visible in traces or activity logs so later plan creation can show which specs were loaded.
-- [ ] AC-7: The story does not require the operator to paste the loaded content manually into the next turn.
+- [x] AC-1: A read-only `load_spec` tool exists and accepts either a file path or a directory path.
+- [x] AC-2: `load_spec` resolves only allowed paths under the target or configured spec-adjacent locations and fails clearly on invalid or unreadable paths.
+- [x] AC-3: File loads return a stable name/reference, source path, and bounded text content suitable for use as injected context in the current turn.
+- [x] AC-4: Directory loads expand deterministically into an ordered list of spec documents and skip unreadable or obviously non-text files with clear reporting.
+- [x] AC-5: Large spec bodies are truncated with explicit markers rather than silently overflowing prompt context.
+- [x] AC-6: Tool output is visible in traces or activity logs so later plan creation can show which specs were loaded.
+- [x] AC-7: The story does not require the operator to paste the loaded content manually into the next turn.
 
 ## Edge Cases
 - Empty directory or no matching text files: returns a clear “no spec documents found” result.
@@ -52,3 +52,52 @@ Shipyard already supports pasted injected context and can read files with `read_
 
 ## Done Definition
 - Shipyard can load spec documents from disk through a dedicated read-only workflow and make them available as named context sources for later planning and execution.
+
+## Implementation Evidence
+
+- `shipyard/src/tools/load-spec.ts`: implements the read-only `load_spec`
+  tool, including target-relative path checks, deterministic directory walks,
+  stable `spec:` refs, binary/oversize skipping, and explicit content
+  truncation markers.
+
+  ```ts
+  export async function loadSpecTool(
+    input: LoadSpecInput,
+  ): Promise<LoadSpecResult> {
+    const resolvedPath = resolveWithinTarget(input.targetDirectory, input.path);
+    const pathStats = await stat(resolvedPath.absolutePath);
+    // ...
+  }
+  ```
+
+- `shipyard/src/tools/index.ts` and `shipyard/src/phases/code/index.ts`:
+  register `load_spec` in the shared barrel and expose it to the code phase so
+  the runtime can call it in normal turns.
+
+  ```ts
+  export const CODE_PHASE_TOOL_NAMES = [
+    "read_file",
+    "load_spec",
+    "write_file",
+  ];
+  ```
+
+- `shipyard/src/phases/code/prompts.ts`: tells the code phase to prefer
+  `load_spec` for spec-driven work instead of depending on pasted briefs.
+
+  ```ts
+  - For spec-driven work, prefer load_spec for on-disk spec files or spec
+    folders when you need named, bounded brief content.
+  ```
+
+- `shipyard/tests/spec-loader.test.ts`: covers file loads, deterministic
+  directory expansion, duplicate-name disambiguation, path rejection,
+  non-text skipping, truncation, and shared tool-registry output.
+
+  ```ts
+  expect(result.documents.map((document) => document.name)).toEqual([
+    "alpha/overview",
+    "beta/overview",
+    "notes",
+  ]);
+  ```

@@ -23,3 +23,8 @@ Capture failures so they are not repeated.
 - **Example**: Accumulating long story histories under `.ai/memory/session/`
 - **Why it failed**: Current context becomes noisy and harder to trust.
 - **Prevention rule**: Move only durable truths into project memory and keep session notes concise.
+
+- **Problem**: Stuffing raw spec bodies into rolling summaries or ad hoc prompt prose
+- **Example**: Copying long `feature-spec.md` contents into `rollingSummary` or relying on manual paste-only context for spec-driven stories
+- **Why it failed**: Prompt state becomes noisy, unstable, and hard for later plan/task flows to reference reliably.
+- **Prevention rule**: Use named, bounded spec-loading paths and keep `rollingSummary` compact.

@@ -3,7 +3,7 @@
 - Pack: Phase 8 Spec-Driven Operator Workflow
 - Estimate: 10-14 hours
 - Date: 2026-03-25
-- Status: Drafted for implementation
+- Status: In progress
 
 ## Pack Objectives
 
@@ -60,8 +60,36 @@
 
 ### Code References
 
-- N/A. This landing adds a new planning pack under `shipyard/docs/specs/phase-8/` and updates the spec-pack index only.
+- `shipyard/src/tools/load-spec.ts`: `P8-S01` lands the new read-only
+  `load_spec` workflow with deterministic directory expansion, stable `spec:`
+  refs, explicit truncation markers, and clear skip reasons for non-text or
+  oversized files.
+- `shipyard/src/tools/index.ts` and `shipyard/src/phases/code/index.ts`:
+  register `load_spec` and expose it on the normal code-phase tool surface.
+- `shipyard/src/phases/code/prompts.ts`: updates the default code-phase
+  guidance so spec-driven work prefers `load_spec`.
+- `shipyard/tests/spec-loader.test.ts`: validates the story contract end to
+  end.
 
 ### Representative Snippets
 
-- N/A. No runtime or product-code implementation landed as part of this docs-only planning pass.
+- `P8-S01` stable-ref shape:
+
+  ```ts
+  function createSpecRef(relativePath: string): string {
+    return `spec:${stripFileExtension(relativePath)}`;
+  }
+  ```
+
+- `P8-S01` code-phase tool exposure:
+
+  ```ts
+  export const CODE_PHASE_TOOL_NAMES = [
+    "read_file",
+    "load_spec",
+    "write_file",
+  ];
+  ```
+
+- Remaining stories `P8-S02` through `P8-S04`: implementation evidence is
+  still pending.
