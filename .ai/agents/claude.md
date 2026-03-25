@@ -46,14 +46,16 @@ Claude Code should follow the same gates defined in `AGENTS.md` and `.ai/codex.m
 2. **Story lookup** — `.ai/workflows/story-lookup.md`
 3. **Story sizing** — `.ai/workflows/story-sizing.md` (trivial vs standard)
 4. **Spec-driven delivery** — `.ai/workflows/spec-driven-delivery.md` (standard lane only)
-5. **TDD pipeline** — `.ai/workflows/tdd-pipeline.md` (behavior changes)
-6. **Story handoff** — `.ai/workflows/story-handoff.md` (completion gate)
-7. **Git finalization** — `.ai/workflows/git-finalization.md` (merge to main)
-8. **Recovery** — `.ai/workflows/finalization-recovery.md` (if finalization fails)
+5. **Design phase** — `.ai/workflows/design-phase.md` (visible UI stories, between spec and TDD)
+6. **TDD pipeline** — `.ai/workflows/tdd-pipeline.md` (behavior changes)
+7. **Story handoff** — `.ai/workflows/story-handoff.md` (completion gate)
+8. **Git finalization** — `.ai/workflows/git-finalization.md` (merge to main)
+9. **Recovery** — `.ai/workflows/finalization-recovery.md` (if finalization fails)
 
 Additional gates when applicable:
 - `.ai/workflows/user-correction-triage.md` — handle user feedback
-- `.ai/workflows/ui-qa-critic.md` — visible UI stories
+- `.ai/workflows/design-phase.md` — visible UI stories (between spec and TDD)
+- `.ai/workflows/ui-qa-critic.md` — visible UI stories (after implementation)
 - `.ai/workflows/ai-architecture-change.md` — harness/orchestrator changes
 - `.ai/workflows/langsmith-finish-check.md` — traced AI behavior changes
 
@@ -75,20 +77,30 @@ Agent(architect): "Review this proposed change against existing patterns"
 
 ## UI Skill Chain
 
-When a story touches visible UI, Claude should follow the same skill chain defined in `.ai/codex.md`:
+When a story touches visible UI, run `.ai/workflows/design-phase.md` between spec and TDD.
 
-1. **Design Direction**: `frontend-design`, `emil-design-eng`, design philosophy, `baseline-ui`
-2. **Build & Refine**: `typeset`, `colorize`, `arrange`, `animate`, `bolder`
-3. **Quality Gate**: `critique`, `audit`, `fixing-accessibility`, `fixing-motion-performance`, `ui-qa-critic`
-4. **Final Polish**: `polish`, `overdrive` (when ambitious)
+The design phase uses all 27 installed skills across 6 steps:
 
-Skills are in `.agents/skills/`. Not every story requires every skill — see codex.md for guidance.
+| Step | Skills | Output |
+|---|---|---|
+| 1. Understand | `extract`, `normalize` | Landscape assessment |
+| 2. Define | `frontend-design`, `interface-design`, `emil-design-eng`, `baseline-ui` | Visual direction |
+| 3. Compose | `clarify`, `distill`, `typeset`, `colorize`, `arrange`, `adapt` | Concrete decisions |
+| 4. Animate | `animate`, `delight`, `quieter` | Motion plan |
+| 5. Harden | `harden`, `onboard` | Edge cases |
+| 6. Review | `critique`, `normalize` | Self-critique |
 
-**When to invoke during implementation (not just spec-building):**
-- **Design (Step 3)**: Phase 1 skills set visual direction before coding
-- **Implement (TDD Agent 2)**: Phase 2 skills guide CSS/component decisions during coding
-- **Review (TDD Agent 3)**: Phase 3 skills evaluate quality and fix gaps during refactor
-- **Validate (Step 9)**: Phase 3 skills run final audit; Phase 4 for pack-closing polish
+Then during TDD and validation:
+
+| Workflow Step | Skills |
+|---|---|
+| TDD Agent 2 (implement) | `typeset`, `colorize`, `arrange`, `animate`, `bolder` |
+| TDD Agent 3 (review) | `critique`, `audit`, `fixing-accessibility`, `fixing-motion-performance` |
+| Validation | `audit`, `fixing-accessibility`, `fixing-motion-performance` |
+| Pack-closing polish | `polish`, `overdrive` |
+| On-demand | `optimize`, `fixing-metadata` |
+
+Skills are in `.agents/skills/`. See `.ai/codex.md` for the full mapping.
 
 ## Compatibility Notes
 

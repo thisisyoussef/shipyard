@@ -25,7 +25,7 @@ Then use as needed:
 - Feature stories: use `.ai/workflows/spec-driven-delivery.md` and `.ai/skills/spec-driven-development.md`.
 - AI or harness changes: use `.ai/workflows/ai-architecture-change.md` and keep `.ai/` aligned with the real repo layout.
 - Behavior changes: use `.ai/workflows/tdd-pipeline.md`; if repo-owned helper scripts exist, use them, otherwise keep the same staged boundaries manually.
-- Visible UI work: use the UI skill chain below and `.ai/workflows/ui-qa-critic.md` when UI surfaces exist.
+- Visible UI work: run `.ai/workflows/design-phase.md` between spec and TDD, then use `.ai/workflows/ui-qa-critic.md` after implementation. See the UI Skill Chain below for which skills fire at each step.
 
 ## UI Skill Chain (Design → Build → Critique → Polish)
 
@@ -63,17 +63,22 @@ Not every story requires every skill. Use judgment:
 
 ### When to invoke each phase in the workflow
 
-| Workflow Step | Skill Phase | Who |
+| Workflow Step | Skills Invoked | Purpose |
 |---|---|---|
-| `spec-driven-delivery.md` Step 2 (Specify) | Phase 1: Design Direction | Spec author |
-| `feature-development.md` Step 3 (Design) | Phase 1: Design Direction | Designer/planner |
-| `tdd-pipeline.md` Step 4 (Agent 2 - Implement) | Phase 2: Build & Refine | Implementer |
-| `tdd-pipeline.md` Step 7 (Agent 3 - Review) | Phase 3: Quality Gate | Reviewer |
-| `feature-development.md` Step 9 (Validate) | Phase 3: Quality Gate | Validator |
-| `ui-qa-critic.md` Step 2 (Critic Pass) | Phase 3: Quality Gate | QA critic |
-| `feature-development.md` Step 9 (pack-closing) | Phase 4: Final Polish | Polish pass |
+| `design-phase.md` Step 1 (Understand) | `extract`, `normalize` | Catalog existing patterns |
+| `design-phase.md` Step 2 (Define) | `frontend-design`, `interface-design`, `emil-design-eng`, `baseline-ui` | Set visual direction |
+| `design-phase.md` Step 3 (Compose) | `clarify`, `distill`, `typeset`, `colorize`, `arrange`, `adapt` | Concrete design decisions |
+| `design-phase.md` Step 4 (Animate) | `animate`, `delight`, `quieter` | Motion plan |
+| `design-phase.md` Step 5 (Harden) | `harden`, `onboard` | Edge cases and first-run |
+| `design-phase.md` Step 6 (Review) | `critique`, `normalize` | Self-critique before handoff |
+| `tdd-pipeline.md` Agent 2 (Implement) | `typeset`, `colorize`, `arrange`, `animate`, `bolder` | Guide CSS/component coding |
+| `tdd-pipeline.md` Agent 3 (Review) | `critique`, `audit`, `fixing-accessibility`, `fixing-motion-performance` | Quality gate |
+| `feature-development.md` Step 9 (Validate) | `audit`, `fixing-accessibility`, `fixing-motion-performance` | Compliance |
+| `ui-qa-critic.md` Step 2 (Critic) | `critique`, `audit`, `fixing-accessibility`, `fixing-motion-performance` | Evidence-based QA |
+| `feature-development.md` Step 9 (pack-closing) | `polish`, `overdrive` | Final refinement |
+| On-demand | `optimize`, `fixing-metadata` | Performance and SEO |
 
-The skill chain is not just for spec-building — it produces the best results when skills are invoked **during implementation and review**, where they guide concrete CSS/component decisions rather than abstract spec language.
+All 27 installed skills are now wired. The design phase (`design-phase.md`) is the primary invocation point — it runs between spec and TDD and produces a concrete design brief that the implementer and reviewer read.
 - Story finish: use `.ai/workflows/story-handoff.md`; when the story changes traced AI/runtime behavior, run `.ai/workflows/langsmith-finish-check.md` before the completion gate; unless the user explicitly asks to pause or choose a different merge path, continue through `.ai/workflows/git-finalization.md` automatically after the completion gate, and treat the story as incomplete until it is merged to `main` on GitHub.
 
 ## Route By Task Type
