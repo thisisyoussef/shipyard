@@ -572,6 +572,7 @@ export async function startUiRuntimeServer(
   let activeInstruction: Promise<void> | null = null;
   let activeInstructionController: AbortController | null = null;
   let previewStarted = false;
+  let isClosing = false;
   let enrichmentRunSequence = 0;
   let activeEnrichmentRun:
     | {
@@ -771,6 +772,7 @@ export async function startUiRuntimeServer(
     runId: number,
     targetPath: string,
   ): boolean =>
+    isClosing ||
     activeEnrichmentRun?.runId !== runId ||
     activeEnrichmentRun.targetPath !== targetPath ||
     sessionState.activePhase !== "code" ||
@@ -1393,6 +1395,9 @@ export async function startUiRuntimeServer(
     workspaceDirectory,
     portResolution,
     async close(): Promise<void> {
+      isClosing = true;
+      activeEnrichmentRun = null;
+
       if (activeInstructionController !== null) {
         abortTurn(activeInstructionController);
       }

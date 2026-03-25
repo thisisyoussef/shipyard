@@ -1280,6 +1280,89 @@ describe("ui runtime contract", () => {
     }
   });
 
+  it("does not surface late background enrichment errors after UI shutdown", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-close-enrich-");
+    await writeFile(
+      path.join(targetDirectory, "README.md"),
+      "# Close Enrichment Test\n",
+      "utf8",
+    );
+    const discovery = await discoverTarget(targetDirectory);
+
+    let resolveEnrichment: (value: { text: string; model: string }) => void = (
+      _value,
+    ) => {
+      throw new Error("Expected the delayed enrichment resolver to be set.");
+    };
+    const enrichmentResult = new Promise<{ text: string; model: string }>(
+      (resolve) => {
+        resolveEnrichment = resolve;
+      },
+    );
+
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-close-enrich-session",
+        targetDirectory,
+        targetsDirectory: path.dirname(targetDirectory),
+        activePhase: "code",
+        discovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      targetEnrichmentInvoker: async () => enrichmentResult,
+    });
+    let closed = false;
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+
+      try {
+        await waitForSocketOpen(socket);
+        await collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "target:enrichment_progress" &&
+                message.status === "queued",
+            ),
+        );
+      } finally {
+        socket.close();
+      }
+
+      await runtime.close();
+      closed = true;
+      resolveEnrichment({
+        text: JSON.stringify({
+          name: "close-enrich-target",
+          description: "Should never be persisted after shutdown.",
+          purpose: "Verify UI shutdown cancels late session writes.",
+          stack: ["TypeScript"],
+          architecture: "Single package workspace",
+          keyPatterns: ["target-manager state"],
+          complexity: "small",
+          suggestedAgentsRules: "# AGENTS.md\nKeep changes focused.",
+          suggestedScripts: {
+            test: "vitest run",
+          },
+          taskSuggestions: ["Add a README"],
+        }),
+        model: "test-model",
+      });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
+    } finally {
+      if (!closed) {
+        await runtime.close();
+      }
+    }
+  });
+
   it("streams ordered tool activity, surfaces file edits, and reconnects with the current session snapshot", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-runtime-");
     const packageJsonContents = `${JSON.stringify(
