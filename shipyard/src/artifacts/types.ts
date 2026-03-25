@@ -17,6 +17,28 @@ export interface ExecutionSpec {
 
 export type PlanningMode = "lightweight" | "planner";
 
+export type PlanTaskStatus = "pending" | "in_progress" | "done" | "failed";
+
+export interface PlanTask {
+  id: string;
+  description: string;
+  status: PlanTaskStatus;
+  targetFilePaths?: string[];
+  specRefs?: string[];
+}
+
+export interface PersistedTaskQueue {
+  planId: string;
+  instruction: string;
+  goal: string;
+  planningMode: PlanningMode;
+  createdAt: string;
+  updatedAt: string;
+  executionSpec: ExecutionSpec;
+  loadedSpecRefs: string[];
+  tasks: PlanTask[];
+}
+
 export interface ContextFinding {
   filePath: string;
   excerpt: string;
