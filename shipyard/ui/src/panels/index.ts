@@ -22,6 +22,10 @@ export {
   type FilePanelProps,
 } from "./FilePanel.js";
 export {
+  PreviewPanel,
+  type PreviewPanelProps,
+} from "./PreviewPanel.js";
+export {
   OutputPanel,
   type OutputPanelProps,
 } from "./OutputPanel.js";

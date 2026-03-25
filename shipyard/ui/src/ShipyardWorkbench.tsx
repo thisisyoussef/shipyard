@@ -11,6 +11,7 @@ import {
   ComposerPanel,
   ContextPanel,
   FilePanel,
+  PreviewPanel,
   OutputPanel,
   SessionPanel,
 } from "./panels/index.js";
@@ -212,6 +213,8 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             agentBusy={props.connectionState === "agent-busy"}
             notice={props.composerNotice}
           />
+
+          <PreviewPanel preview={props.previewState} />
 
           <div className="workbench-main-activity">
             <ActivityFeed turns={props.turns} />
