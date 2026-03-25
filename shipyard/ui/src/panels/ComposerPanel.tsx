@@ -121,8 +121,8 @@ export function ComposerPanel({
         </div>
       )}
 
-      {/* Textarea container */}
-      <div className="composer-textarea-container">
+      {/* Textarea container with integrated submit */}
+      <form onSubmit={onSubmit} className="composer-textarea-container">
         <textarea
           ref={textareaRef}
           className="composer-textarea"
@@ -169,10 +169,8 @@ export function ComposerPanel({
             ))}
           </div>
         )}
-      </div>
 
-      {/* Actions row */}
-      <form onSubmit={onSubmit} className="composer-actions">
+        {/* Submit button attached to textarea */}
         <button
           type="submit"
           className="composer-submit"
@@ -181,10 +179,12 @@ export function ComposerPanel({
         >
           {submitLabel}
         </button>
-        <span className="composer-keyboard-hint">
-          Cmd+Enter to send / Up/Down for history
-        </span>
       </form>
+
+      {/* Keyboard hint below */}
+      <span className="composer-keyboard-hint">
+        Cmd+Enter to send · Up/Down for history
+      </span>
     </div>
   );
 }
