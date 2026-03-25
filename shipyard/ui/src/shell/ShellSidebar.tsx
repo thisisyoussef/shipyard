@@ -1,9 +1,10 @@
 /**
- * ShellSidebar — Collapsible sidebar wrapper.
- * UIV3-S02 · Shell Layout
+ * ShellSidebar — Drawer content wrapper.
+ * Art Deco Command · Conversation-First Layout
  *
- * Wraps sidebar content with collapse/expand behavior.
- * Shows IconRail when collapsed, full content when expanded.
+ * Always renders children (drawer content is hidden via CSS
+ * transform, not unmounting). IconRail is hidden in the
+ * conversation-first layout.
  */
 
 import type { ReactNode } from "react";
@@ -11,11 +12,11 @@ import type { ReactNode } from "react";
 import { IconRail, type IconRailItem } from "./IconRail.js";
 
 export interface ShellSidebarProps {
-  /** Whether the sidebar is collapsed */
+  /** Whether the sidebar/drawer is collapsed */
   collapsed: boolean;
-  /** Icon rail items shown when collapsed */
+  /** Icon rail items (hidden in conversation-first layout) */
   railItems: IconRailItem[];
-  /** Full content shown when expanded */
+  /** Drawer content — always rendered */
   children: ReactNode;
 }
 
@@ -24,9 +25,10 @@ export function ShellSidebar({
   railItems,
   children,
 }: ShellSidebarProps) {
-  if (collapsed) {
-    return <IconRail items={railItems} />;
-  }
-
-  return <div className="sidebar-content">{children}</div>;
+  return (
+    <>
+      {collapsed && railItems.length > 0 ? <IconRail items={railItems} /> : null}
+      <div className="sidebar-content">{children}</div>
+    </>
+  );
 }

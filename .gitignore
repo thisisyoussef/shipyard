@@ -16,3 +16,4 @@ test-targets/tic-tac-toe/*
 !test-targets/tic-tac-toe/.gitignore
 !test-targets/tic-tac-toe/AGENTS.md
 !test-targets/tic-tac-toe/README.md
+.gstack/

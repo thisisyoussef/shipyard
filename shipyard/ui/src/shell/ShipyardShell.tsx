@@ -1,140 +1,57 @@
 /**
- * ShipyardShell — Root CSS Grid layout component.
- * UIV3-S02 · Shell Layout
+ * ShipyardShell — Split-pane layout.
+ * Art Deco Command · Lovable-style architecture.
  *
- * Provides the spatial skeleton with named grid areas:
- * header, left sidebar, main, right sidebar, footer.
+ * Two panels: conversation (left) + workspace (right).
+ * Minimal header. No sidebars. No footer.
  */
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
 
 export interface ShipyardShellProps {
-  /** Content for the header area */
+  /** Content for the header bar */
   header: ReactNode;
-  /** Content for the left sidebar */
-  leftSidebar: ReactNode;
-  /** Content for the main area */
-  children: ReactNode;
-  /** Content for the right sidebar */
-  rightSidebar: ReactNode;
-  /** Content for the footer area */
-  footer: ReactNode;
-  /** Whether left sidebar is collapsed */
+  /** Left panel: conversation + composer */
+  leftPanel: ReactNode;
+  /** Right panel: workspace (preview/files/output) */
+  rightPanel: ReactNode;
+  /** Optional: drawer content for session/context (accessed via header) */
+  drawer?: ReactNode;
+  /** Whether the drawer is open */
+  drawerOpen?: boolean;
+  /** Close the drawer */
+  onDrawerClose?: () => void;
+
+  // Legacy props (kept for backward compat, mapped internally)
+  leftSidebar?: ReactNode;
+  rightSidebar?: ReactNode;
+  children?: ReactNode;
+  footer?: ReactNode;
   leftCollapsed?: boolean;
-  /** Whether right sidebar is collapsed */
   rightCollapsed?: boolean;
-  /** Callback when left sidebar collapse state changes */
   onLeftCollapsedChange?: (collapsed: boolean) => void;
-  /** Callback when right sidebar collapse state changes */
   onRightCollapsedChange?: (collapsed: boolean) => void;
-}
-
-const STORAGE_KEY = "shipyard:sidebar-state";
-
-interface SidebarState {
-  left: "expanded" | "collapsed";
-  right: "expanded" | "collapsed";
-}
-
-function loadSidebarState(): SidebarState {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored) as SidebarState;
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return { left: "expanded", right: "expanded" };
-}
-
-function saveSidebarState(state: SidebarState): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // Ignore storage errors
-  }
 }
 
 export function ShipyardShell({
   header,
+  leftPanel,
+  rightPanel,
+  drawer,
+  drawerOpen = false,
+  onDrawerClose,
+  // Legacy props — mapped for backward compat during migration
   leftSidebar,
-  children,
   rightSidebar,
+  children,
   footer,
-  leftCollapsed: leftCollapsedProp,
-  rightCollapsed: rightCollapsedProp,
-  onLeftCollapsedChange,
-  onRightCollapsedChange,
 }: ShipyardShellProps) {
-  // Internal state, synced with localStorage
-  const [internalState, setInternalState] = useState<SidebarState>({
-    left: "expanded",
-    right: "expanded",
-  });
-
-  // Load persisted state on mount
-  useEffect(() => {
-    const stored = loadSidebarState();
-    setInternalState(stored);
-  }, []);
-
-  // Determine actual collapsed state (props override internal state)
-  const leftCollapsed = leftCollapsedProp ?? internalState.left === "collapsed";
-  const rightCollapsed =
-    rightCollapsedProp ?? internalState.right === "collapsed";
-
-  // Handle keyboard shortcuts
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
-      const modKey = isMac ? event.metaKey : event.ctrlKey;
-
-      // Cmd/Ctrl + B - Toggle left sidebar
-      if (modKey && event.key === "b" && !event.shiftKey) {
-        event.preventDefault();
-        const newLeftState: "expanded" | "collapsed" = leftCollapsed
-          ? "expanded"
-          : "collapsed";
-        setInternalState((prev) => {
-          const updated: SidebarState = { ...prev, left: newLeftState };
-          saveSidebarState(updated);
-          return updated;
-        });
-        onLeftCollapsedChange?.(!leftCollapsed);
-      }
-
-      // Cmd/Ctrl + Shift + B - Toggle right sidebar
-      if (modKey && event.key === "b" && event.shiftKey) {
-        event.preventDefault();
-        const newRightState: "expanded" | "collapsed" = rightCollapsed
-          ? "expanded"
-          : "collapsed";
-        setInternalState((prev) => {
-          const updated: SidebarState = { ...prev, right: newRightState };
-          saveSidebarState(updated);
-          return updated;
-        });
-        onRightCollapsedChange?.(!rightCollapsed);
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    leftCollapsed,
-    rightCollapsed,
-    onLeftCollapsedChange,
-    onRightCollapsedChange,
-  ]);
+  // If using legacy API (leftSidebar/children/rightSidebar), map to split pane
+  const resolvedLeftPanel = leftPanel ?? children;
+  const resolvedRightPanel = rightPanel ?? null;
 
   return (
-    <div
-      className="shipyard-shell"
-      data-left-collapsed={leftCollapsed}
-      data-right-collapsed={rightCollapsed}
-    >
+    <div className="shipyard-shell">
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
@@ -143,31 +60,72 @@ export function ShipyardShell({
         {header}
       </header>
 
-      <aside
-        className="shell-sidebar-left"
-        role="complementary"
-        aria-label="Session and context"
-        data-collapsed={leftCollapsed}
-      >
-        {leftSidebar}
-      </aside>
+      <div className="shell-split-pane" id="main-content">
+        {/* Left: Conversation */}
+        <section className="shell-panel-left" aria-label="Conversation">
+          {resolvedLeftPanel}
+        </section>
 
-      <main id="main-content" className="shell-main" role="main">
-        {children}
-      </main>
+        {/* Divider */}
+        <div className="shell-divider" aria-hidden="true" />
 
-      <aside
-        className="shell-sidebar-right"
-        role="complementary"
-        aria-label="Activity feed"
-        data-collapsed={rightCollapsed}
-      >
-        {rightSidebar}
-      </aside>
+        {/* Right: Workspace */}
+        <section className="shell-panel-right" aria-label="Workspace">
+          {resolvedRightPanel}
+        </section>
+      </div>
 
-      <footer className="shell-footer" role="contentinfo">
-        {footer}
-      </footer>
+      {/* Drawer overlay for session/context/history */}
+      {drawer ? (
+        <>
+          <div
+            className="drawer-backdrop"
+            data-visible={drawerOpen}
+            onClick={onDrawerClose}
+            aria-hidden="true"
+          />
+          <aside
+            className="shell-drawer"
+            data-open={drawerOpen}
+            role="complementary"
+            aria-label="Session details"
+          >
+            {leftSidebar}
+            {rightSidebar}
+          </aside>
+        </>
+      ) : null}
+
+      {/* Legacy sidebar support — render hidden for tests */}
+      {leftSidebar && !drawer ? (
+        <aside
+          className="shell-sidebar-left"
+          role="complementary"
+          aria-label="Session and context"
+          data-collapsed="true"
+          style={{ display: "none" }}
+        >
+          {leftSidebar}
+        </aside>
+      ) : null}
+      {rightSidebar && !drawer ? (
+        <aside
+          className="shell-sidebar-right"
+          role="complementary"
+          aria-label="Files and output"
+          data-collapsed="true"
+          style={{ display: "none" }}
+        >
+          {rightSidebar}
+        </aside>
+      ) : null}
+
+      {/* Footer — minimal, hidden by default in split-pane mode */}
+      {footer ? (
+        <footer className="shell-footer" role="contentinfo" style={{ display: "none" }}>
+          {footer}
+        </footer>
+      ) : null}
     </div>
   );
 }

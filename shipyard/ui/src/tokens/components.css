@@ -1,6 +1,6 @@
 /* ───────────────────────────────────────────────
    Component Design Tokens
-   UIV3-S01 · Design System Rebuild
+   Art Deco Command · Design System
 
    Indirection layer between primitive tokens and
    component implementations. Every component
@@ -10,7 +10,7 @@
 
 :root {
   /* ═══════════════════════════════════════════════
-     SHELL (S02)
+     SHELL
      ═══════════════════════════════════════════════ */
   --shell-header-h:         48px;
   --shell-footer-h:         32px;
@@ -18,14 +18,18 @@
   --sidebar-left-collapsed-w: 48px;
   --sidebar-right-w:        280px;
   --sidebar-right-collapsed-w: 0px;
-  --sidebar-transition:     var(--duration-slow) var(--ease-smooth);
+  --sidebar-transition:     var(--duration-slow) var(--ease-out);
   --shell-gutter:           var(--space-3);
 
+  /* Shell-specific surfaces — Art Deco gold-edged chrome */
+  --surface-shell:          var(--surface-card);
+  --blur-shell:             none; /* no glassmorphism */
+
   /* ═══════════════════════════════════════════════
-     HEADER (S03)
+     HEADER — gold-bordered Art Deco bar
      ═══════════════════════════════════════════════ */
   --header-bg:        var(--surface-card-strong);
-  --header-border:    var(--border-subtle);
+  --header-border:    var(--amber-5);  /* gold hairline */
   --header-icon-size: 18px;
   --header-btn-size:  32px;
 
@@ -36,91 +40,91 @@
   --card-bg-hover: var(--surface-card-strong);
   --card-border:  var(--border-subtle);
   --card-padding: var(--pad-card);
-  --card-radius:  var(--radius-xl);
-  --card-shadow:  var(--elevation-3), var(--shadow-inner);
-  --card-blur:    var(--blur-md);
+  --card-radius:  var(--radius-md);  /* tighter, more architectural */
+  --card-shadow:  var(--elevation-2);
+  --card-blur:    none; /* no glassmorphism */
 
   /* ═══════════════════════════════════════════════
-     BADGE — per-tone tokens
+     BADGE — gem-cut hexagonal (Art Deco)
      ═══════════════════════════════════════════════ */
 
   /* Neutral */
-  --badge-neutral-bg:     rgba(255, 255, 255, 0.04);
+  --badge-neutral-bg:     rgba(148, 163, 184, 0.06);
   --badge-neutral-text:   var(--text-default);
   --badge-neutral-border: var(--border-subtle);
 
-  /* Accent */
-  --badge-accent-bg:      var(--accent-soft);
+  /* Accent — gold */
+  --badge-accent-bg:      var(--amber-1);
   --badge-accent-text:    var(--accent-strong);
   --badge-accent-border:  var(--accent-border);
 
-  /* Success */
+  /* Success — emerald */
   --badge-success-bg:     var(--success-soft);
   --badge-success-text:   var(--success-strong);
-  --badge-success-border: var(--border-success);
+  --badge-success-border: var(--success-border);
 
-  /* Danger */
+  /* Danger — ruby */
   --badge-danger-bg:      var(--danger-soft);
   --badge-danger-text:    var(--danger-strong);
-  --badge-danger-border:  var(--border-danger);
+  --badge-danger-border:  var(--danger-border);
 
-  /* Warning */
+  /* Warning — amber */
   --badge-warning-bg:     var(--warning-soft);
   --badge-warning-text:   var(--warning-strong);
-  --badge-warning-border: var(--border-warning);
+  --badge-warning-border: var(--warning-border);
 
   /* Badge sizing */
-  --badge-padding-y: 0.42rem;
-  --badge-padding-x: 0.8rem;
-  --badge-radius:    var(--radius-full);
+  --badge-padding-y: 0.25rem;
+  --badge-padding-x: 0.6rem;
+  --badge-radius:    var(--radius-xs);  /* slight rounding instead of pill */
   --badge-font-size: var(--text-xs);
   --badge-font-weight: var(--weight-semibold);
-  --badge-min-height: 2rem;
+  --badge-min-height: 1.75rem;
 
   /* ═══════════════════════════════════════════════
      INPUT / TEXTAREA
      ═══════════════════════════════════════════════ */
-  --input-bg:          var(--surface-inset);
-  --input-bg-hover:    rgba(6, 11, 15, 0.82);
+  --input-bg:          var(--surface-canvas);
+  --input-bg-hover:    var(--surface-inset);
   --input-border:      var(--border-subtle);
-  --input-border-focus: var(--accent-strong);
-  --input-focus-ring:  rgba(213, 140, 83, 0.35);
+  --input-border-focus: var(--amber-7);  /* gold focus */
+  --input-focus-ring:  rgba(212, 168, 67, 0.15);
   --input-text:        var(--text-strong);
   --input-placeholder: var(--text-faint);
-  --input-radius:      var(--radius-lg);
+  --input-radius:      var(--radius-sm);  /* tighter */
   --input-padding:     var(--space-4);
   --input-font-size:   var(--text-body);
   --input-line-height: var(--leading-relaxed);
 
   /* ═══════════════════════════════════════════════
-     BUTTON — per-variant tokens
+     BUTTON — Art Deco gold gradient primary
      ═══════════════════════════════════════════════ */
 
-  /* Primary */
-  --btn-primary-bg:      linear-gradient(135deg, var(--accent-strong), #f0b071);
-  --btn-primary-bg-hover: linear-gradient(135deg, #e09560, #f5c088);
-  --btn-primary-text:    var(--text-inverse);
-  --btn-primary-border:  rgba(213, 140, 83, 0.35);
-  --btn-primary-shadow:  0 12px 24px rgba(213, 140, 83, 0.18);
-  --btn-primary-radius:  var(--radius-full);
-  --btn-primary-padding: 0.82rem 1.15rem;
+  /* Primary — gold gradient */
+  --btn-primary-bg:      linear-gradient(135deg, #D4A843, #C2956B);
+  --btn-primary-bg-hover: linear-gradient(135deg, #E0BE6A, #D4A843);
+  --btn-primary-text:    var(--gray-1);
+  --btn-primary-border:  rgba(212, 168, 67, 0.35);
+  --btn-primary-shadow:  0 4px 16px rgba(212, 168, 67, 0.2);
+  --btn-primary-radius:  var(--radius-sm);  /* architectural, not pill */
+  --btn-primary-padding: 0.6rem 1.2rem;
   --btn-primary-weight:  var(--weight-bold);
 
-  /* Ghost */
-  --btn-ghost-bg:        rgba(255, 255, 255, 0.03);
-  --btn-ghost-bg-hover:  rgba(255, 255, 255, 0.06);
+  /* Ghost — gold-bordered */
+  --btn-ghost-bg:        transparent;
+  --btn-ghost-bg-hover:  var(--amber-1);
   --btn-ghost-text:      var(--text-strong);
-  --btn-ghost-border:    var(--border-subtle);
-  --btn-ghost-radius:    var(--radius-full);
-  --btn-ghost-padding:   0.56rem 0.88rem;
+  --btn-ghost-border:    var(--amber-5);
+  --btn-ghost-radius:    var(--radius-sm);
+  --btn-ghost-padding:   0.5rem 0.9rem;
 
-  /* Danger */
+  /* Danger — ruby */
   --btn-danger-bg:       var(--danger-soft);
-  --btn-danger-bg-hover: rgba(236, 129, 112, 0.22);
+  --btn-danger-bg-hover: rgba(244, 63, 94, 0.2);
   --btn-danger-text:     var(--danger-strong);
-  --btn-danger-border:   var(--border-danger);
-  --btn-danger-radius:   var(--radius-full);
-  --btn-danger-padding:  0.56rem 0.88rem;
+  --btn-danger-border:   var(--danger-border);
+  --btn-danger-radius:   var(--radius-sm);
+  --btn-danger-padding:  0.5rem 0.9rem;
 
   /* Shared button */
   --btn-disabled-opacity: 0.5;
@@ -129,16 +133,23 @@
      STATUS DOT
      ═══════════════════════════════════════════════ */
   --status-idle:    var(--text-muted);
-  --status-running: var(--accent-strong);
+  --status-running: var(--amber-7);  /* gold pulse */
   --status-success: var(--success-strong);
   --status-error:   var(--danger-strong);
   --status-warning: var(--warning-strong);
-  --status-size:    0.65rem;
+  --status-size:    0.5rem;
 
   /* ═══════════════════════════════════════════════
      FOCUS
      ═══════════════════════════════════════════════ */
-  --focus-ring-color:  rgba(213, 140, 83, 0.7);
+  --focus-ring-color:  var(--amber-7);
   --focus-ring-width:  2px;
   --focus-ring-offset: 2px;
+
+  /* ═══════════════════════════════════════════════
+     ART DECO ORNAMENTAL
+     ═══════════════════════════════════════════════ */
+  --deco-hairline:    1px solid var(--amber-5);
+  --deco-double-gap:  3px;
+  --deco-gold-fade:   linear-gradient(90deg, transparent, var(--amber-5), transparent);
 }

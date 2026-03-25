@@ -1,190 +1,218 @@
 /* ───────────────────────────────────────────────
-   Shell Layout Styles
-   UIV3-S02 · Shell Layout
+   Shell Layout — Split-Pane Architecture
+   Art Deco Command · Lovable-style layout
 
-   CSS Grid-based shell with named areas.
-   Sidebars collapse via grid column changes.
+   Two panels: conversation (left) + workspace (right).
+   Minimal header. No permanent sidebars. No footer.
    ─────────────────────────────────────────────── */
 
 /* ═══════════════════════════════════════════════
-   SHELL ROOT
+   SHELL ROOT — header + split pane
    ═══════════════════════════════════════════════ */
 
 .shipyard-shell {
-  display: grid;
-  grid-template-rows: var(--shell-header-h) 1fr var(--shell-footer-h);
-  grid-template-columns:
-    [left-start] var(--sidebar-left-w)
-    [left-end main-start] 1fr
-    [main-end right-start] var(--sidebar-right-w)
-    [right-end];
-  grid-template-areas:
-    "header  header  header"
-    "left    main    right"
-    "footer  footer  footer";
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
   background: var(--surface-canvas);
 }
 
-/* Collapsed states via CSS custom properties */
-.shipyard-shell[data-left-collapsed="true"] {
-  grid-template-columns:
-    [left-start] var(--sidebar-left-collapsed-w)
-    [left-end main-start] 1fr
-    [main-end right-start] var(--sidebar-right-w)
-    [right-end];
-}
-
-.shipyard-shell[data-right-collapsed="true"] {
-  grid-template-columns:
-    [left-start] var(--sidebar-left-w)
-    [left-end main-start] 1fr
-    [main-end right-start] var(--sidebar-right-collapsed-w)
-    [right-end];
-}
-
-.shipyard-shell[data-left-collapsed="true"][data-right-collapsed="true"] {
-  grid-template-columns:
-    [left-start] var(--sidebar-left-collapsed-w)
-    [left-end main-start] 1fr
-    [main-end right-start] var(--sidebar-right-collapsed-w)
-    [right-end];
-}
-
 /* ═══════════════════════════════════════════════
-   GRID AREAS
+   SPLIT PANE — the core layout
    ═══════════════════════════════════════════════ */
 
-.shell-header {
-  grid-area: header;
-  z-index: 10;
+.shell-split-pane {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.shell-sidebar-left {
-  grid-area: left;
+/* Left panel: conversation */
+.shell-panel-left {
+  flex: 0 0 420px;
+  max-width: 520px;
+  min-width: 320px;
   display: flex;
   flex-direction: column;
-  gap: var(--gap-stack);
-  padding: var(--shell-gutter);
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   background: var(--surface-card);
-  border-right: 1px solid var(--border-subtle);
-  backdrop-filter: var(--blur-md);
-  transition: width var(--sidebar-transition);
+  border-right: 1px solid var(--amber-5);
 }
 
-.shell-main {
-  grid-area: main;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: var(--shell-gutter);
+/* Divider between panels */
+.shell-divider {
+  width: 1px;
+  background: var(--amber-5);
+  flex-shrink: 0;
+  cursor: col-resize;
 }
 
-.shell-sidebar-right {
-  grid-area: right;
+/* Right panel: workspace */
+.shell-panel-right {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--gap-stack);
-  padding: var(--shell-gutter);
+  overflow: hidden;
+  background: var(--surface-canvas);
+}
+
+/* ═══════════════════════════════════════════════
+   CONVERSATION PANE (left)
+   ═══════════════════════════════════════════════ */
+
+.conversation-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.conversation-scroll {
+  flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  padding: var(--space-4);
+}
+
+/* Composer sticks to bottom of conversation */
+.conversation-pane .composer-shell {
+  flex-shrink: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+/* ═══════════════════════════════════════════════
+   WORKSPACE PANE (right)
+   ═══════════════════════════════════════════════ */
+
+.workspace-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.workspace-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 var(--space-4);
   background: var(--surface-card);
-  border-left: 1px solid var(--border-subtle);
-  backdrop-filter: var(--blur-md);
-  transition: width var(--sidebar-transition);
+  border-bottom: 1px solid var(--amber-5);
+  flex-shrink: 0;
 }
 
-.shell-footer {
-  grid-area: footer;
-  z-index: 10;
-}
-
-/* ═══════════════════════════════════════════════
-   SIDEBAR COLLAPSED STATES
-   ═══════════════════════════════════════════════ */
-
-.shell-sidebar-left[data-collapsed="true"] {
-  padding: var(--space-1);
-}
-
-.shell-sidebar-left[data-collapsed="true"] .sidebar-content {
-  display: none;
-}
-
-.shell-sidebar-right[data-collapsed="true"] {
-  padding: 0;
-  border-left: none;
-}
-
-.shell-sidebar-right[data-collapsed="true"] .sidebar-content {
-  display: none;
-}
-
-/* ═══════════════════════════════════════════════
-   ICON RAIL (collapsed sidebar)
-   ═══════════════════════════════════════════════ */
-
-.icon-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-}
-
-.icon-rail-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
+.workspace-tab {
+  padding: var(--space-3) var(--space-5);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
   color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
   cursor: pointer;
   transition:
-    background var(--duration-fast) var(--ease-default),
-    color var(--duration-fast) var(--ease-default);
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
 }
 
-.icon-rail-btn:hover {
-  background: var(--surface-muted);
+.workspace-tab:hover {
   color: var(--text-strong);
 }
 
-.icon-rail-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
+.workspace-tab[data-active="true"] {
+  color: var(--amber-7);
+  border-bottom-color: var(--amber-7);
 }
 
-.icon-rail-btn[data-active="true"] {
-  color: var(--accent-strong);
+/* Workspace content fills available space — no padding for full-bleed preview */
+.workspace-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
 }
 
-.icon-rail-btn svg {
-  width: 20px;
-  height: 20px;
+/* Add padding when showing non-preview content (files, output) */
+.workspace-content > :not(.preview-panel) {
+  padding: var(--space-4);
 }
 
 /* ═══════════════════════════════════════════════
-   HEADER STRIP (S03)
+   DRAWER (session/context — overlay)
+   ═══════════════════════════════════════════════ */
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  background: rgba(15, 23, 42, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-slow) var(--ease-out);
+}
+
+.drawer-backdrop[data-visible="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.shell-drawer {
+  position: fixed;
+  top: var(--shell-header-h);
+  left: 0;
+  bottom: 0;
+  width: min(400px, 85vw);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-stack);
+  padding: var(--space-4);
+  overflow-y: auto;
+  background: var(--surface-card);
+  border-right: 1px solid var(--amber-5);
+  box-shadow: var(--elevation-4);
+  transform: translateX(-100%);
+  transition: transform var(--duration-slow) var(--ease-out);
+}
+
+.shell-drawer[data-open="true"] {
+  transform: translateX(0);
+}
+
+.drawer-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-section);
+}
+
+/* Legacy sidebar compat (hidden, for test markup) */
+.shell-sidebar-left,
+.shell-sidebar-right {
+  display: none;
+}
+
+/* Icon rail hidden */
+.icon-rail { display: none; }
+.icon-rail-btn { display: none; }
+
+/* ═══════════════════════════════════════════════
+   HEADER STRIP — Art Deco gold-bordered bar
    ═══════════════════════════════════════════════ */
 
 .header-strip {
   display: flex;
   align-items: center;
   height: var(--shell-header-h);
-  padding: 0 var(--space-3);
-  gap: var(--space-2);
-  background: var(--header-bg);
-  border-bottom: 1px solid var(--header-border);
-  backdrop-filter: var(--blur-md);
-  box-shadow: var(--shadow-inner);
+  padding: 0 var(--space-4);
+  gap: var(--space-3);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--amber-5);
+  flex-shrink: 0;
 }
 
 .header-brand {
@@ -201,8 +229,8 @@
   width: 24px;
   height: 24px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--amber-7), var(--amber-5));
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(135deg, var(--amber-7), var(--amber-9));
+  border: 1px solid rgba(212, 168, 67, 0.3);
   color: var(--text-inverse);
   font-size: 12px;
   font-weight: var(--weight-bold);
@@ -212,16 +240,16 @@
 .header-wordmark {
   font-family: var(--font-body);
   font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  color: var(--text-muted);
-  letter-spacing: var(--tracking-wider);
+  font-weight: var(--weight-bold);
+  color: var(--amber-7);
+  letter-spacing: var(--tracking-widest);
   text-transform: uppercase;
 }
 
 .header-divider {
   width: 1px;
   height: 20px;
-  background: var(--border-subtle);
+  background: var(--amber-5);
   flex-shrink: 0;
 }
 
@@ -260,13 +288,9 @@
   max-width: 140px;
 }
 
-.header-spacer {
-  flex: 1;
-}
+.header-spacer { flex: 1; }
 
-.header-connection-badge {
-  flex-shrink: 0;
-}
+.header-connection-badge { flex-shrink: 0; }
 
 .header-connection-label {
   font-family: var(--font-body);
@@ -300,14 +324,12 @@
 }
 
 .header-icon-btn:hover {
-  background: var(--surface-muted);
-  color: var(--text-strong);
-  border-color: var(--border-subtle);
+  background: var(--amber-1);
+  color: var(--amber-7);
+  border-color: var(--amber-5);
 }
 
-.header-icon-btn:active {
-  transform: scale(0.95);
-}
+.header-icon-btn:active { transform: scale(0.95); }
 
 .header-icon-btn:focus-visible {
   outline: none;
@@ -315,9 +337,9 @@
 }
 
 .header-icon-btn[data-active="true"] {
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-  border-color: var(--accent-border);
+  color: var(--amber-7);
+  background: var(--amber-1);
+  border-color: var(--amber-5);
 }
 
 .header-icon-btn svg {
@@ -325,33 +347,20 @@
   height: var(--header-icon-size);
 }
 
-/* Header responsive breakpoints */
+/* Header responsive */
 @media (max-width: 768px) {
-  .header-wordmark {
-    display: none;
-  }
-
-  .header-target {
-    display: none;
-  }
-
-  .header-connection-label {
-    display: none;
-  }
+  .header-wordmark { display: none; }
+  .header-target { display: none; }
+  .header-connection-label { display: none; }
 }
 
 @media (max-width: 375px) {
-  .header-location {
-    display: none;
-  }
-
-  .header-divider {
-    display: none;
-  }
+  .header-location { display: none; }
+  .header-divider { display: none; }
 }
 
 /* ═══════════════════════════════════════════════
-   FOOTER BAR
+   FOOTER — hidden in split-pane mode
    ═══════════════════════════════════════════════ */
 
 .shell-footer-bar {
@@ -360,8 +369,8 @@
   justify-content: space-between;
   height: 100%;
   padding: 0 var(--space-4);
-  background: var(--surface-card-strong);
-  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-card);
+  border-top: 1px solid var(--amber-5);
 }
 
 .shell-footer-left,
@@ -388,44 +397,38 @@
 }
 
 /* ═══════════════════════════════════════════════
-   CUSTOM SCROLLBARS
+   SCROLLBARS
    ═══════════════════════════════════════════════ */
 
-.shell-main::-webkit-scrollbar,
-.shell-sidebar-left::-webkit-scrollbar,
-.shell-sidebar-right::-webkit-scrollbar {
+.conversation-scroll::-webkit-scrollbar,
+.workspace-content::-webkit-scrollbar {
   width: 6px;
 }
 
-.shell-main::-webkit-scrollbar-track,
-.shell-sidebar-left::-webkit-scrollbar-track,
-.shell-sidebar-right::-webkit-scrollbar-track {
+.conversation-scroll::-webkit-scrollbar-track,
+.workspace-content::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.shell-main::-webkit-scrollbar-thumb,
-.shell-sidebar-left::-webkit-scrollbar-thumb,
-.shell-sidebar-right::-webkit-scrollbar-thumb {
+.conversation-scroll::-webkit-scrollbar-thumb,
+.workspace-content::-webkit-scrollbar-thumb {
   background: var(--gray-5);
   border-radius: var(--radius-pill);
 }
 
-.shell-main::-webkit-scrollbar-thumb:hover,
-.shell-sidebar-left::-webkit-scrollbar-thumb:hover,
-.shell-sidebar-right::-webkit-scrollbar-thumb:hover {
+.conversation-scroll::-webkit-scrollbar-thumb:hover,
+.workspace-content::-webkit-scrollbar-thumb:hover {
   background: var(--gray-6);
 }
 
-/* Firefox scrollbar */
-.shell-main,
-.shell-sidebar-left,
-.shell-sidebar-right {
+.conversation-scroll,
+.workspace-content {
   scrollbar-width: thin;
   scrollbar-color: var(--gray-5) transparent;
 }
 
 /* ═══════════════════════════════════════════════
-   SKIP LINK (accessibility)
+   SKIP LINK
    ═══════════════════════════════════════════════ */
 
 .skip-link {
@@ -434,7 +437,7 @@
   left: 0;
   z-index: 100;
   padding: var(--space-2) var(--space-4);
-  background: var(--accent-strong);
+  background: var(--amber-7);
   color: var(--text-inverse);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
@@ -449,46 +452,28 @@
 }
 
 /* ═══════════════════════════════════════════════
-   RESPONSIVE BREAKPOINTS
+   RESPONSIVE — mobile stacks vertically
    ═══════════════════════════════════════════════ */
 
-/* 1024px - Right sidebar auto-collapses */
-@media (max-width: 1024px) {
-  .shipyard-shell {
-    grid-template-columns: var(--sidebar-left-w) 1fr 0px;
-  }
-
-  .shipyard-shell[data-right-expanded="true"] .shell-sidebar-right {
-    position: absolute;
-    right: 0;
-    top: var(--shell-header-h);
-    bottom: var(--shell-footer-h);
-    width: var(--sidebar-right-w);
-    z-index: 20;
-    box-shadow: var(--elevation-3);
-  }
-}
-
-/* 768px - Left sidebar auto-collapses to icon rail */
 @media (max-width: 768px) {
-  .shipyard-shell {
-    grid-template-columns: var(--sidebar-left-collapsed-w) 1fr 0px;
+  .shell-split-pane {
+    flex-direction: column;
   }
 
-  .shell-sidebar-left .sidebar-content {
+  .shell-panel-left {
+    flex: 0 0 50%;
+    max-width: none;
+    min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--amber-5);
+  }
+
+  .shell-divider {
     display: none;
   }
-}
 
-/* 375px - Both sidebars hidden */
-@media (max-width: 375px) {
-  .shipyard-shell {
-    grid-template-columns: 0px 1fr 0px;
-    grid-template-rows: var(--shell-header-h) 1fr var(--shell-footer-h);
-  }
-
-  .shell-sidebar-left {
-    display: none;
+  .shell-panel-right {
+    flex: 1;
   }
 }
 
@@ -497,8 +482,67 @@
    ═══════════════════════════════════════════════ */
 
 @media (prefers-reduced-motion: reduce) {
-  .shell-sidebar-left,
-  .shell-sidebar-right {
+  .shell-drawer,
+  .drawer-backdrop {
     transition: none;
   }
+}
+
+/* ═══════════════════════════════════════════════
+   LEGACY COMPAT — classes still referenced
+   ═══════════════════════════════════════════════ */
+
+.workbench-main-stack {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.workbench-main-activity {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.workbench-primary-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Legacy tab styles (mapped to workspace-tabs) */
+.workbench-primary-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 var(--space-4);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--amber-5);
+  flex-shrink: 0;
+}
+
+.workbench-primary-tab {
+  padding: var(--space-3) var(--space-5);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.workbench-primary-tab:hover {
+  color: var(--text-strong);
+}
+
+.workbench-primary-tab[data-active="true"] {
+  color: var(--amber-7);
+  border-bottom-color: var(--amber-7);
 }
