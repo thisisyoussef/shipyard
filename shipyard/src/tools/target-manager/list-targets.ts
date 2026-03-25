@@ -20,6 +20,18 @@ const NOISY_DIRECTORY_NAMES = new Set([
   "build",
 ]);
 
+function isIgnorableDirectoryError(
+  error: unknown,
+): error is NodeJS.ErrnoException {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ENOENT" ||
+      error.code === "EACCES" ||
+      error.code === "EPERM")
+  );
+}
+
 export interface TargetListEntry {
   name: string;
   path: string;
@@ -70,13 +82,34 @@ export async function listTargetsTool(
     }
 
     const targetPath = path.join(input.targetsDir, entry.name);
-    const discovery = await discoverTarget(targetPath);
+    let discovery: Awaited<ReturnType<typeof discoverTarget>>;
+
+    try {
+      discovery = await discoverTarget(targetPath);
+    } catch (error) {
+      if (isIgnorableDirectoryError(error)) {
+        continue;
+      }
+
+      throw error;
+    }
 
     if (!looksLikeTarget(discovery)) {
       continue;
     }
 
-    const targetProfile = await loadTargetProfile(targetPath);
+    let targetProfile = null;
+
+    try {
+      targetProfile = await loadTargetProfile(targetPath);
+    } catch (error) {
+      if (isIgnorableDirectoryError(error)) {
+        continue;
+      }
+
+      throw error;
+    }
+
     targets.push({
       name: entry.name,
       path: targetPath,

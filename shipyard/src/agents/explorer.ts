@@ -7,6 +7,7 @@ import {
   type RawToolExecution,
   type RawToolLoopOptions,
 } from "../engine/raw-loop.js";
+import { createTurnCancelledError } from "../engine/cancellation.js";
 
 export const EXPLORER_TOOL_NAMES = [
   "read_file",
@@ -66,7 +67,10 @@ Rules:
 `.trim();
 
 export interface ExplorerRunOptions
-  extends Pick<RawToolLoopOptions, "client" | "logger" | "maxIterations"> {}
+  extends Pick<
+    RawToolLoopOptions,
+    "client" | "logger" | "maxIterations" | "signal"
+  > {}
 
 function ensureNonBlankQuery(query: string): string {
   const trimmed = query.trim();
@@ -232,8 +236,13 @@ export async function runExplorerSubagent(
       client: options.client,
       logger: options.logger,
       maxIterations: options.maxIterations,
+      signal: options.signal,
     },
   );
+
+  if (result.status === "cancelled") {
+    throw createTurnCancelledError(result.finalText);
+  }
 
   throwIfUnauthorizedToolWasRequested(result.toolExecutions);
 

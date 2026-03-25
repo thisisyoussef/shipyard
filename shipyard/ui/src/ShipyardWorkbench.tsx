@@ -67,6 +67,7 @@ export interface ShipyardWorkbenchProps {
   onContextKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onClearContext: () => void;
   onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
+  onCancelInstruction: () => void;
   onRequestSessionResume: (sessionId: string) => void;
   onRequestTargetSwitch: (targetPath: string) => void;
   onRequestTargetCreate: (input: {
@@ -219,6 +220,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             instruction={props.instruction}
             onInstructionChange={props.onInstructionChange}
             onSubmit={props.onSubmitInstruction}
+            onCancel={props.onCancelInstruction}
             onKeyDown={props.onInstructionKeyDown}
             textareaRef={props.instructionInputRef}
             agentBusy={props.connectionState === "agent-busy"}

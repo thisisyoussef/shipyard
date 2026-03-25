@@ -605,6 +605,23 @@ describe("search and command tools", () => {
     expect(result.exitCode).not.toBe(0);
   });
 
+  it("aborts long-running commands when the active turn signal is cancelled", async () => {
+    const directory = await createTempProject();
+    const controller = new AbortController();
+    const pendingResult = runCommand({
+      targetDirectory: directory,
+      command: "node -e \"setTimeout(() => console.log('done'), 5000)\"",
+      timeout_seconds: 10,
+      signal: controller.signal,
+    });
+
+    setTimeout(() => {
+      controller.abort("Operator interrupted the active turn.");
+    }, 50).unref();
+
+    await expect(pendingResult).rejects.toThrow(/interrupted|cancelled|aborted/i);
+  });
+
   it("git_diff reports a non-git directory clearly", async () => {
     const directory = await createTempProject();
     const tool = getTool("git_diff") as ToolDefinition<{

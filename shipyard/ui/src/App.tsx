@@ -214,7 +214,36 @@ export function App() {
     });
   }
 
+  function handleCancelInstruction(): void {
+    const sent = sendMessage({
+      type: "cancel",
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Cancel unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before interrupting the current turn.",
+      });
+      return;
+    }
+
+    queueComposerNotice({
+      tone: "neutral",
+      title: "Stopping current turn",
+      detail:
+        "Shipyard is interrupting the active turn. Your draft stays in place so you can send it as soon as the session is ready.",
+    });
+    focusInstructionInput();
+  }
+
   function submitInstruction(): void {
+    if (viewState.connectionState === "agent-busy") {
+      handleCancelInstruction();
+      return;
+    }
+
     const contextValidationError = validateContextDraft(contextDraft);
 
     if (contextValidationError) {
@@ -452,6 +481,7 @@ export function App() {
       onContextKeyDown={handleComposerKeyDown}
       onClearContext={handleClearContext}
       onSubmitInstruction={handleInstructionSubmit}
+      onCancelInstruction={handleCancelInstruction}
       onRequestSessionResume={handleSessionResume}
       onRequestTargetSwitch={handleTargetSwitch}
       onRequestTargetCreate={handleTargetCreate}

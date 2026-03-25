@@ -20,8 +20,11 @@ import { getTargetManagerToolDefinitions } from "../phases/target-manager/index.
 import {
   createInstructionRuntimeState,
   executeInstructionTurn,
+  type ExecuteInstructionTurnOptions,
   type InstructionRuntimeMode,
+  type InstructionTurnResult,
 } from "./turn.js";
+import { abortTurn } from "./cancellation.js";
 import {
   ToolError,
   gitDiffTool,
@@ -40,6 +43,10 @@ export interface RunShipyardLoopOptions {
   injectedContext?: string[];
   runtimeMode?: InstructionRuntimeMode;
   runtimeDependencies?: AgentRuntimeDependencies;
+  executeTurn?: (
+    options: ExecuteInstructionTurnOptions,
+  ) => Promise<InstructionTurnResult>;
+  createReadlineInterface?: () => ReturnType<typeof readline.createInterface>;
 }
 
 function printDivider(): void {
@@ -63,6 +70,8 @@ function printHelp(): void {
   console.log("  run <command>         Run a shell command in the target");
   console.log("  diff [staged] [path]  Run git diff inside the target");
   console.log("  exit | quit           Save the session and quit");
+  printDivider();
+  console.log("Press Ctrl+C during an active turn to cancel it and keep the session alive.");
   printDivider();
   console.log("Any other input is treated as a Shipyard instruction.");
 }
@@ -175,6 +184,7 @@ export async function runShipyardLoop(
   options: RunShipyardLoopOptions,
 ): Promise<void> {
   const state = options.sessionState;
+  const executeTurn = options.executeTurn ?? executeInstructionTurn;
   const runtimeState = createInstructionRuntimeState({
     projectRules: await loadProjectRules(state.targetDirectory),
     baseInjectedContext: options.injectedContext ?? [],
@@ -186,11 +196,12 @@ export async function runShipyardLoop(
     state.sessionId,
   );
   const langSmith = getLangSmithConfig();
-  const rl = readline.createInterface({
+  const rl = options.createReadlineInterface?.() ?? readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     terminal: process.stdin.isTTY && process.stdout.isTTY,
   });
+  let activeTurnController: AbortController | null = null;
   rl.setPrompt("shipyard > ");
 
   console.log("Shipyard booted.");
@@ -227,6 +238,28 @@ export async function runShipyardLoop(
       reason,
     });
   };
+
+  const handleSigint = (): void => {
+    if (activeTurnController === null) {
+      console.log("No active Shipyard turn is running.");
+      rl.prompt();
+      return;
+    }
+
+    if (activeTurnController.signal.aborted) {
+      console.log(
+        "Cancellation already requested. Waiting for Shipyard to stop the current turn...",
+      );
+      return;
+    }
+
+    console.log(
+      "Interrupt requested. Waiting for Shipyard to stop the current turn...",
+    );
+    abortTurn(activeTurnController);
+  };
+
+  rl.on("SIGINT", handleSigint);
 
   try {
     rl.prompt();
@@ -352,14 +385,23 @@ export async function runShipyardLoop(
             );
           }
         } else {
-          const turnResult = await executeInstructionTurn({
+          const turnController = new AbortController();
+          activeTurnController = turnController;
+          const turnResult = await executeTurn({
             sessionState: state,
             runtimeState,
             instruction: line,
+            signal: turnController.signal,
           });
+          activeTurnController = null;
+          const turnStatusLabel = turnResult.status === "success"
+            ? "finished"
+            : turnResult.status === "cancelled"
+              ? "cancelled"
+              : "stopped";
 
           console.log(
-            `Turn ${state.turnCount} finished in phase "${turnResult.phaseName}" via ${turnResult.runtimeMode} runtime.`,
+            `Turn ${state.turnCount} ${turnStatusLabel} in phase "${turnResult.phaseName}" via ${turnResult.runtimeMode} runtime.`,
           );
           console.log(JSON.stringify(turnResult.taskPlan, null, 2));
           printDivider();
@@ -400,6 +442,7 @@ export async function runShipyardLoop(
           message,
         });
       } finally {
+        activeTurnController = null;
         await saveSessionState(state);
 
         if (shouldPromptAgain) {
@@ -408,6 +451,7 @@ export async function runShipyardLoop(
       }
     }
   } finally {
+    rl.off("SIGINT", handleSigint);
     rl.close();
   }
 }

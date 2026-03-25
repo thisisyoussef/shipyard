@@ -20,7 +20,10 @@ const createdDirectories: string[] = [];
 
 interface MockAnthropicClient {
   messages: {
-    create: (request: MessageCreateParamsNonStreaming) => Promise<Message>;
+    create: (
+      request: MessageCreateParamsNonStreaming,
+      options?: Record<string, unknown>,
+    ) => Promise<Message>;
   };
   calls: MessageCreateParamsNonStreaming[];
 }
@@ -69,6 +72,53 @@ function createMockAnthropicClient(
         }
 
         return response;
+      },
+    },
+  };
+}
+
+function createAbortAwareMockAnthropicClient(options?: {
+  finalText?: string;
+}): MockAnthropicClient {
+  const calls: MessageCreateParamsNonStreaming[] = [];
+
+  return {
+    calls,
+    messages: {
+      async create(request, requestOptions) {
+        calls.push(request);
+
+        if (calls.length === 1) {
+          const signal = requestOptions?.signal instanceof AbortSignal
+            ? requestOptions.signal
+            : undefined;
+
+          return await new Promise<Message>((_resolve, reject) => {
+            const rejectAsAborted = () => {
+              const error = new Error("The operation was aborted.");
+              error.name = "AbortError";
+              reject(error);
+            };
+
+            if (signal?.aborted) {
+              rejectAsAborted();
+              return;
+            }
+
+            signal?.addEventListener("abort", rejectAsAborted, { once: true });
+          });
+        }
+
+        return createAssistantMessage({
+          stopReason: "end_turn",
+          content: [
+            {
+              type: "text",
+              text: options?.finalText ?? "Follow-up turn complete.",
+              citations: null,
+            },
+          ],
+        });
       },
     },
   };
@@ -222,6 +272,98 @@ describe("instruction runtime handoff", () => {
     expect(runActingLoop).toHaveBeenCalledTimes(1);
     expect(sessionState.rollingSummary).toContain("create a README");
     expect(sessionState.rollingSummary).toContain("completed via fallback");
+  });
+
+  it("treats operator cancellation as a first-class turn outcome and allows a follow-up turn", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-turn-cancel-");
+    const sessionState = createSessionState({
+      sessionId: "turn-cancel-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: [],
+        topLevelDirectories: [],
+        projectName: null,
+      },
+    });
+    const client = createAbortAwareMockAnthropicClient({
+      finalText: "Follow-up turn complete.",
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      runtimeDependencies: {
+        createRawLoopOptions: () => ({
+          client,
+          logger: {
+            log() {},
+          },
+        }),
+      },
+    });
+    const doneEvents: Array<{
+      status: "success" | "error" | "cancelled";
+      summary: string;
+    }> = [];
+    const textEvents: string[] = [];
+    const errorEvents: string[] = [];
+    const cancellationController = new AbortController();
+
+    const cancelledTurnPromise = executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "inspect the repo until I interrupt you",
+      signal: cancellationController.signal,
+      reporter: {
+        onDone(event) {
+          doneEvents.push(event);
+        },
+        onText(text) {
+          textEvents.push(text);
+        },
+        onError(message) {
+          errorEvents.push(message);
+        },
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(client.calls).toHaveLength(1);
+    });
+    cancellationController.abort("Operator interrupted the active turn.");
+
+    const cancelledTurn = await cancelledTurnPromise;
+
+    expect(cancelledTurn.status).toBe("cancelled");
+    expect(cancelledTurn.finalText).toContain("Turn 1 cancelled");
+    expect(cancelledTurn.finalText).toContain(
+      "Operator interrupted the active turn.",
+    );
+    expect(doneEvents[0]).toMatchObject({
+      status: "cancelled",
+      summary: "Operator interrupted the active turn.",
+    });
+    expect(errorEvents).toEqual([]);
+    expect(textEvents[0]).toContain("Turn 1 cancelled");
+    expect(sessionState.rollingSummary).toContain("cancelled via graph");
+
+    const followUpTurn = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "summarize the repo now",
+    });
+
+    expect(followUpTurn.status).toBe("success");
+    expect(followUpTurn.finalText).toBe("Follow-up turn complete.");
+    expect(sessionState.turnCount).toBe(2);
+    expect(sessionState.rollingSummary).toContain(
+      "Turn 2: summarize the repo now ->",
+    );
   });
 
   it("carries forward recent session history while keeping the rolling summary bounded", async () => {

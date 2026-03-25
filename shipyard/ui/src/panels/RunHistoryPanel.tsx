@@ -27,6 +27,8 @@ function getRunTone(
   switch (status) {
     case "success":
       return "success";
+    case "cancelled":
+      return "neutral";
     case "error":
       return "danger";
     case "working":

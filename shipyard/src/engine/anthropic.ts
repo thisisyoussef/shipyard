@@ -12,6 +12,7 @@ import { wrapAnthropic } from "langsmith/wrappers/anthropic";
 
 import type { AnthropicToolDefinition, ToolResult } from "../tools/registry.js";
 import { getLangSmithConfig } from "../tracing/langsmith.js";
+import { toTurnCancelledError } from "./cancellation.js";
 
 export const DEFAULT_ANTHROPIC_MODEL: Model = "claude-sonnet-4-5";
 export const DEFAULT_ANTHROPIC_MAX_TOKENS = 4_096;
@@ -46,7 +47,10 @@ export interface ClaudeRequestInput {
 
 export interface AnthropicMessagesClient {
   messages: {
-    create: (request: MessageCreateParamsNonStreaming) => Promise<Message>;
+    create: (
+      request: MessageCreateParamsNonStreaming,
+      options?: Anthropic.RequestOptions,
+    ) => Promise<Message>;
   };
 }
 
@@ -322,12 +326,22 @@ export function buildAnthropicMessageRequest(
 export async function createAnthropicMessage(
   client: AnthropicMessagesClient,
   input: ClaudeRequestInput,
+  requestOptions?: Anthropic.RequestOptions,
 ): Promise<Message> {
   const request = buildAnthropicMessageRequest(input);
 
   try {
-    return await client.messages.create(request);
+    return await client.messages.create(request, requestOptions);
   } catch (error) {
+    const cancelledError = toTurnCancelledError(
+      error,
+      requestOptions?.signal ?? undefined,
+    );
+
+    if (cancelledError) {
+      throw cancelledError;
+    }
+
     throw new Error(
       `Anthropic API request failed during message creation: ${getErrorMessage(error)}`,
     );

@@ -28,7 +28,10 @@ const workspaceDirectory = path.resolve(process.cwd(), "..");
 
 interface MockAnthropicClient {
   messages: {
-    create: (request: MessageCreateParamsNonStreaming) => Promise<Message>;
+    create: (
+      request: MessageCreateParamsNonStreaming,
+      options?: Record<string, unknown>,
+    ) => Promise<Message>;
   };
 }
 
@@ -159,6 +162,52 @@ function createMockAnthropicClient(responses: Message[]): MockAnthropicClient {
         }
 
         return response;
+      },
+    },
+  };
+}
+
+function createAbortAwareMockAnthropicClient(options?: {
+  followUpText?: string;
+}): MockAnthropicClient {
+  let callIndex = 0;
+
+  return {
+    messages: {
+      async create(_request, requestOptions) {
+        callIndex += 1;
+
+        if (callIndex === 1) {
+          const signal = requestOptions?.signal instanceof AbortSignal
+            ? requestOptions.signal
+            : undefined;
+
+          return await new Promise<Message>((_resolve, reject) => {
+            const rejectAsAborted = () => {
+              const error = new Error("The operation was aborted.");
+              error.name = "AbortError";
+              reject(error);
+            };
+
+            if (signal?.aborted) {
+              rejectAsAborted();
+              return;
+            }
+
+            signal?.addEventListener("abort", rejectAsAborted, { once: true });
+          });
+        }
+
+        return createAssistantMessage({
+          stopReason: "end_turn",
+          content: [
+            {
+              type: "text",
+              text: options?.followUpText ?? "Follow-up browser turn complete.",
+              citations: null,
+            },
+          ],
+        });
       },
     },
   };
@@ -1504,6 +1553,138 @@ describe("ui runtime contract", () => {
           type: "session:state",
           sessionId: "ui-error-session",
         });
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("cancels an active browser turn and allows a follow-up instruction in the same session", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-runtime-cancel-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-cancel-session",
+      targetDirectory,
+      discovery,
+    });
+    const client = createAbortAwareMockAnthropicClient({
+      followUpText: "Follow-up browser turn complete.",
+    });
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            client,
+          };
+        },
+      },
+    });
+    const tracePath = path.join(
+      targetDirectory,
+      ".shipyard",
+      "traces",
+      "ui-cancel-session.jsonl",
+    );
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialStatePromise;
+
+        const cancelledSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "agent:done" &&
+                message.status === "cancelled",
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "session:state" &&
+                message.connectionState === "ready" &&
+                message.turnCount === 1,
+            ),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "inspect the repo until I interrupt you",
+          }),
+        );
+        await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "session:state" &&
+            message.connectionState === "agent-busy",
+        );
+        socket.send(JSON.stringify({ type: "cancel" }));
+
+        const cancelledSequence = await cancelledSequencePromise;
+        const cancelledDone = cancelledSequence.find(
+          (message) => message.type === "agent:done",
+        );
+        const cancelledError = cancelledSequence.find(
+          (message) => message.type === "agent:error",
+        );
+
+        expect(cancelledDone).toMatchObject({
+          type: "agent:done",
+          status: "cancelled",
+          summary: "Operator interrupted the active turn.",
+        });
+        expect(cancelledError).toBeUndefined();
+
+        const followUpSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "agent:done" &&
+                message.status === "success",
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "session:state" &&
+                message.connectionState === "ready" &&
+                message.turnCount === 2,
+            ),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "summarize the repo now",
+          }),
+        );
+
+        const followUpSequence = await followUpSequencePromise;
+        const followUpDone = followUpSequence.find(
+          (message) => message.type === "agent:done",
+        );
+
+        expect(followUpDone).toMatchObject({
+          type: "agent:done",
+          status: "success",
+          summary: expect.stringContaining("completed"),
+        });
+
+        const traceContents = await readFile(tracePath, "utf8");
+        expect(traceContents).toContain('"status":"cancelled"');
+        expect(traceContents).toContain('"instruction":"inspect the repo until I interrupt you"');
+        expect(traceContents).toContain('"instruction":"summarize the repo now"');
       } finally {
         socket.close();
       }

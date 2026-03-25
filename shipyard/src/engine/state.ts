@@ -76,7 +76,7 @@ export interface SessionRunSummary {
   turnCount: number;
   latestInstruction: string | null;
   latestSummary: string | null;
-  latestStatus: "working" | "success" | "error" | "idle" | null;
+  latestStatus: "working" | "success" | "error" | "cancelled" | "idle" | null;
   isCurrent: boolean;
 }
 

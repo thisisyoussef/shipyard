@@ -26,6 +26,8 @@ The current runtime now has two operator modes:
 - stepwise live-run playback that shows tool progress, sequential edits, before/after previews, and trace links while the run is still in flight
 - target discovery for existing or greenfield repositories
 - a shared instruction executor used by both terminal and browser mode
+- active-turn interruption via `Ctrl+C` in the terminal REPL and `Cancel turn`
+  in the browser workbench
 - typed read, write, edit, list, search, command, and git-diff tools
 - checkpoint-backed recovery for surgical edits
 - local JSONL tracing with optional LangSmith trace export
@@ -59,6 +61,14 @@ node dist/bin/shipyard.js --target ../test-targets/tic-tac-toe
 ```
 
 Once you want a bare `shipyard` command outside the repo, link the package with your preferred global package-manager workflow.
+
+## Operator Controls
+
+- In terminal mode, press `Ctrl+C` while a turn is running to cancel the active
+  turn without closing Shipyard.
+- In browser mode, use the composer's `Cancel turn` control to interrupt the
+  active run. The composer keeps your draft so you can send the next
+  instruction as soon as the session returns to ready.
 
 ## Repo Map
 

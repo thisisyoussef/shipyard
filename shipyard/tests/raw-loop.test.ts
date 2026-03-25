@@ -11,6 +11,7 @@ import {
 import {
   RAW_LOOP_MAX_ITERATIONS,
   runRawToolLoop,
+  runRawToolLoopDetailed,
 } from "../src/engine/raw-loop.js";
 import "../src/tools/index.js";
 import {
@@ -24,7 +25,10 @@ const LOGGER_TEST_TOOL_NAME = "loop_logger_test_tool";
 
 interface MockAnthropicClient {
   messages: {
-    create: (request: MessageCreateParamsNonStreaming) => Promise<Message>;
+    create: (
+      request: MessageCreateParamsNonStreaming,
+      options?: Record<string, unknown>,
+    ) => Promise<Message>;
   };
   calls: MessageCreateParamsNonStreaming[];
 }
@@ -87,6 +91,12 @@ async function createTempProject(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "shipyard-raw-loop-"));
   createdDirectories.push(directory);
   return directory;
+}
+
+function createAbortError(): Error {
+  const error = new Error("The operation was aborted.");
+  error.name = "AbortError";
+  return error;
 }
 
 function getLastUserToolResultMessage(
@@ -463,6 +473,47 @@ describe("raw Claude tool loop", () => {
         error: 'Tool "totally_unknown_tool" is not available in this loop.',
       },
     });
+  });
+
+  it("returns a cancelled result when the active turn signal aborts the model request", async () => {
+    const controller = new AbortController();
+    const client = createMockAnthropicClient((_request, _turnNumber) =>
+      new Promise<Message>((_resolve, reject) => {
+        const rejectAsAborted = () => reject(createAbortError());
+
+        if (controller.signal.aborted) {
+          rejectAsAborted();
+          return;
+        }
+
+        controller.signal.addEventListener("abort", rejectAsAborted, {
+          once: true,
+        });
+      }),
+    );
+    const pendingResult = runRawToolLoopDetailed(
+      "You are Shipyard.",
+      "Keep working until I interrupt you.",
+      [],
+      process.cwd(),
+      {
+        client,
+        logger: {
+          log() {},
+        },
+        signal: controller.signal,
+      },
+    );
+
+    await Promise.resolve();
+    controller.abort("Operator interrupted the active turn.");
+
+    const result = await pendingResult;
+
+    expect(result.status).toBe("cancelled");
+    expect(result.finalText).toContain("Operator interrupted the active turn.");
+    expect(result.didEdit).toBe(false);
+    expect(client.calls).toHaveLength(1);
   });
 
   it("logs truncated tool inputs and outputs", async () => {

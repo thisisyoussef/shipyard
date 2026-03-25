@@ -46,6 +46,10 @@ import {
   runWithLangSmithTrace,
   type LangSmithTraceReference,
 } from "../tracing/langsmith.js";
+import {
+  getTurnCancellationReason,
+  toTurnCancelledError,
+} from "./cancellation.js";
 
 export type AgentRuntimeStatus =
   | "planning"
@@ -53,6 +57,7 @@ export type AgentRuntimeStatus =
   | "verifying"
   | "recovering"
   | "responding"
+  | "cancelled"
   | "done"
   | "failed";
 
@@ -101,6 +106,7 @@ export interface CreateAgentGraphStateOptions {
 }
 
 export interface ActingLoopResult {
+  status?: "completed" | "cancelled";
   finalText: string;
   messageHistory: MessageParam[];
   iterations: number;
@@ -140,6 +146,7 @@ export interface AgentRuntimeDependencies {
 export interface AgentRuntimeOptions {
   mode?: "graph" | "fallback";
   maxRecoveriesPerFile?: number;
+  signal?: AbortSignal;
   dependencies?: AgentRuntimeDependencies;
 }
 
@@ -218,7 +225,10 @@ function getRelativeToolPath(input: unknown): string | null {
 async function createSubagentLoopOptions(
   state: AgentGraphState,
   dependencies: AgentRuntimeDependencies,
-): Promise<Pick<RawToolLoopOptions, "client" | "logger" | "maxIterations">> {
+  signal?: AbortSignal,
+): Promise<
+  Pick<RawToolLoopOptions, "client" | "logger" | "maxIterations" | "signal">
+> {
   const rawLoopOptions =
     await dependencies.createRawLoopOptions?.(state)
     ?? {};
@@ -227,6 +237,7 @@ async function createSubagentLoopOptions(
     client: rawLoopOptions.client,
     logger: rawLoopOptions.logger,
     maxIterations: rawLoopOptions.maxIterations,
+    signal,
   };
 }
 
@@ -276,6 +287,7 @@ function createDefaultVerificationReport(
 async function maybeExploreContext(
   state: AgentGraphState,
   dependencies: AgentRuntimeDependencies,
+  signal?: AbortSignal,
 ): Promise<ContextReport | null> {
   if (
     !shouldCoordinatorUseExplorer({
@@ -294,7 +306,7 @@ async function maybeExploreContext(
   return runExplorerSubagent(
     createExplorerQuery(state.currentInstruction),
     state.targetDirectory,
-    await createSubagentLoopOptions(state, dependencies),
+    await createSubagentLoopOptions(state, dependencies, signal),
   );
 }
 
@@ -313,6 +325,7 @@ function createDefaultTaskPlan(
 async function defaultVerifyState(
   state: AgentGraphState,
   dependencies: AgentRuntimeDependencies,
+  signal?: AbortSignal,
 ): Promise<VerificationReport> {
   if (!state.lastEditedFile) {
     return createDefaultVerificationReport(state);
@@ -324,13 +337,14 @@ async function defaultVerifyState(
   return runVerifierSubagent(
     createVerificationCommand(state.contextEnvelope),
     state.targetDirectory,
-    await createSubagentLoopOptions(state, dependencies),
+    await createSubagentLoopOptions(state, dependencies, signal),
   );
 }
 
 async function defaultActingLoop(
   state: AgentGraphState,
   dependencies: AgentRuntimeDependencies,
+  signal?: AbortSignal,
 ): Promise<ActingLoopResult> {
   const rawLoopOptions =
     await dependencies.createRawLoopOptions?.(state)
@@ -344,6 +358,7 @@ async function defaultActingLoop(
     state.targetDirectory,
     {
       ...rawLoopOptions,
+      signal,
       maxIterations: rawLoopOptions.maxIterations ?? RAW_LOOP_MAX_ITERATIONS,
       beforeToolExecution: async (context) => {
         await checkpointBeforeEdit(context, checkpointManager);
@@ -353,6 +368,7 @@ async function defaultActingLoop(
   );
 
   return {
+    status: result.status === "cancelled" ? "cancelled" : "completed",
     finalText: result.finalText,
     messageHistory: result.messageHistory,
     iterations: result.iterations,
@@ -417,6 +433,58 @@ function createRuntimeTraceMetadata(
   };
 }
 
+function createCancellationUpdate(
+  signal?: AbortSignal,
+): Partial<AgentGraphState> | null {
+  const reason = getTurnCancellationReason(signal);
+
+  if (!reason) {
+    return null;
+  }
+
+  return {
+    status: "cancelled",
+    finalResult: reason,
+    lastError: null,
+  };
+}
+
+function createCancellationUpdateFromError(
+  error: unknown,
+  signal?: AbortSignal,
+): Partial<AgentGraphState> | null {
+  const cancelledError = toTurnCancelledError(error, signal);
+
+  if (!cancelledError) {
+    return null;
+  }
+
+  return {
+    status: "cancelled",
+    finalResult: cancelledError.message,
+    lastError: null,
+  };
+}
+
+export function routeAfterPlan(
+  state: Pick<AgentGraphState, "status">,
+): "act" | "respond" {
+  if (state.status === "acting") {
+    return "act";
+  }
+
+  if (
+    state.status === "cancelled" ||
+    state.status === "responding" ||
+    state.status === "failed" ||
+    state.status === "done"
+  ) {
+    return "respond";
+  }
+
+  throw new Error(`Unsupported post-plan status: ${state.status}`);
+}
+
 export function routeAfterAct(
   state: Pick<AgentGraphState, "status">,
 ): "verify" | "respond" {
@@ -425,6 +493,7 @@ export function routeAfterAct(
   }
 
   if (
+    state.status === "cancelled" ||
     state.status === "responding" ||
     state.status === "failed" ||
     state.status === "done"
@@ -443,6 +512,7 @@ export function routeAfterVerify(
   }
 
   if (
+    state.status === "cancelled" ||
     state.status === "responding" ||
     state.status === "failed" ||
     state.status === "done"
@@ -461,6 +531,7 @@ export function routeAfterRecover(
   }
 
   if (
+    state.status === "cancelled" ||
     state.status === "responding" ||
     state.status === "failed" ||
     state.status === "done"
@@ -478,27 +549,74 @@ export function createAgentRuntimeNodes(
   const maxRecoveriesPerFile = ensureValidRecoveries(
     options.maxRecoveriesPerFile ?? DEFAULT_MAX_RECOVERIES_PER_FILE,
   );
+  const signal = options.signal;
 
   return {
     async plan(state) {
-      const contextReport = await maybeExploreContext(state, dependencies);
-      const taskPlan = await (dependencies.createTaskPlan
-        ? dependencies.createTaskPlan(state, contextReport)
-        : createDefaultTaskPlan(state, contextReport));
+      const cancelledBeforePlan = createCancellationUpdate(signal);
 
-      return {
-        taskPlan,
-        contextReport,
-        status: "acting",
-        lastError: null,
-        verificationReport: null,
-      };
+      if (cancelledBeforePlan) {
+        return cancelledBeforePlan;
+      }
+
+      try {
+        const contextReport = await maybeExploreContext(state, dependencies, signal);
+        const cancelledAfterExplore = createCancellationUpdate(signal);
+
+        if (cancelledAfterExplore) {
+          return cancelledAfterExplore;
+        }
+
+        const taskPlan = await (dependencies.createTaskPlan
+          ? dependencies.createTaskPlan(state, contextReport)
+          : createDefaultTaskPlan(state, contextReport));
+        const cancelledAfterPlan = createCancellationUpdate(signal);
+
+        if (cancelledAfterPlan) {
+          return cancelledAfterPlan;
+        }
+
+        return {
+          taskPlan,
+          contextReport,
+          status: "acting",
+          lastError: null,
+          verificationReport: null,
+        };
+      } catch (error) {
+        const cancelledUpdate = createCancellationUpdateFromError(error, signal);
+
+        if (cancelledUpdate) {
+          return cancelledUpdate;
+        }
+
+        throw error;
+      }
     },
     async act(state) {
+      const cancelledBeforeAct = createCancellationUpdate(signal);
+
+      if (cancelledBeforeAct) {
+        return cancelledBeforeAct;
+      }
+
       try {
         const actingLoop = await (dependencies.runActingLoop
           ? dependencies.runActingLoop(state)
-          : defaultActingLoop(state, dependencies));
+          : defaultActingLoop(state, dependencies, signal));
+        const cancelledAfterAct = createCancellationUpdate(signal);
+
+        if (actingLoop.status === "cancelled" || cancelledAfterAct) {
+          return {
+            messageHistory: actingLoop.messageHistory,
+            actingIterations: actingLoop.iterations,
+            lastEditedFile: actingLoop.lastEditedFile,
+            finalResult:
+              cancelledAfterAct?.finalResult ?? actingLoop.finalText,
+            status: "cancelled",
+            lastError: null,
+          };
+        }
 
         return {
           messageHistory: actingLoop.messageHistory,
@@ -509,6 +627,12 @@ export function createAgentRuntimeNodes(
           lastError: null,
         };
       } catch (error) {
+        const cancelledUpdate = createCancellationUpdateFromError(error, signal);
+
+        if (cancelledUpdate) {
+          return cancelledUpdate;
+        }
+
         const message = toErrorMessage(error);
         const limitHit = message.includes(String(RAW_LOOP_MAX_ITERATIONS));
 
@@ -523,19 +647,49 @@ export function createAgentRuntimeNodes(
       }
     },
     async verify(state) {
-      const verificationReport = await (dependencies.verifyState
-        ? dependencies.verifyState(state)
-        : defaultVerifyState(state, dependencies));
+      const cancelledBeforeVerify = createCancellationUpdate(signal);
 
-      return {
-        verificationReport,
-        status: verificationReport.passed ? "responding" : "recovering",
-        lastError: verificationReport.passed
-          ? null
-          : verificationReport.summary,
-      };
+      if (cancelledBeforeVerify) {
+        return cancelledBeforeVerify;
+      }
+
+      try {
+        const verificationReport = await (dependencies.verifyState
+          ? dependencies.verifyState(state)
+          : defaultVerifyState(state, dependencies, signal));
+        const cancelledAfterVerify = createCancellationUpdate(signal);
+
+        if (cancelledAfterVerify) {
+          return {
+            verificationReport,
+            ...cancelledAfterVerify,
+          };
+        }
+
+        return {
+          verificationReport,
+          status: verificationReport.passed ? "responding" : "recovering",
+          lastError: verificationReport.passed
+            ? null
+            : verificationReport.summary,
+        };
+      } catch (error) {
+        const cancelledUpdate = createCancellationUpdateFromError(error, signal);
+
+        if (cancelledUpdate) {
+          return cancelledUpdate;
+        }
+
+        throw error;
+      }
     },
     async recover(state) {
+      const cancelledBeforeRecover = createCancellationUpdate(signal);
+
+      if (cancelledBeforeRecover) {
+        return cancelledBeforeRecover;
+      }
+
       if (!state.lastEditedFile) {
         return {
           status: "failed",
@@ -567,6 +721,15 @@ export function createAgentRuntimeNodes(
         };
       }
 
+      const cancelledAfterRestore = createCancellationUpdate(signal);
+
+      if (cancelledAfterRestore) {
+        return {
+          retryCountsByFile,
+          ...cancelledAfterRestore,
+        };
+      }
+
       let rereadHashUpdate: Partial<AgentGraphState>;
 
       try {
@@ -589,6 +752,16 @@ export function createAgentRuntimeNodes(
           status: "failed",
           finalResult: message,
           lastError: message,
+        };
+      }
+
+      const cancelledAfterReread = createCancellationUpdate(signal);
+
+      if (cancelledAfterReread) {
+        return {
+          ...rereadHashUpdate,
+          retryCountsByFile,
+          ...cancelledAfterReread,
         };
       }
 
@@ -624,7 +797,12 @@ export function createAgentRuntimeNodes(
     },
     async respond(state) {
       return {
-        status: state.status === "failed" ? "failed" : "done",
+        status:
+          state.status === "failed"
+            ? "failed"
+            : state.status === "cancelled"
+              ? "cancelled"
+              : "done",
         finalResult:
           state.finalResult ??
           state.lastError ??
@@ -646,7 +824,10 @@ export function createAgentRuntimeGraph(
     .addNode("recover", nodes.recover)
     .addNode("respond", nodes.respond)
     .addEdge(START, "plan")
-    .addEdge("plan", "act")
+    .addConditionalEdges("plan", routeAfterPlan, {
+      act: "act",
+      respond: "respond",
+    })
     .addConditionalEdges("act", routeAfterAct, {
       verify: "verify",
       respond: "respond",
@@ -679,7 +860,7 @@ export async function runFallbackRuntime(
   while (true) {
     if (nextNode === "plan") {
       state = applyStateUpdate(state, await nodes.plan(state));
-      nextNode = "act";
+      nextNode = routeAfterPlan(state);
       continue;
     }
 

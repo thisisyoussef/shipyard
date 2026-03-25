@@ -24,11 +24,19 @@ export interface ToolInputSchema {
   additionalProperties?: boolean;
 }
 
+export interface ToolExecutionContext {
+  signal?: AbortSignal;
+}
+
 export interface ToolDefinition<Input = any> {
   name: string;
   description: string;
   inputSchema: ToolInputSchema;
-  execute: (input: Input, targetDirectory: string) => Promise<ToolResult>;
+  execute: (
+    input: Input,
+    targetDirectory: string,
+    context?: ToolExecutionContext,
+  ) => Promise<ToolResult>;
 }
 
 export interface AnthropicToolDefinition {

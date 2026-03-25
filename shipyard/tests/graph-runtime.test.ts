@@ -10,6 +10,7 @@ import type {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
+import { createTurnCancelledError } from "../src/engine/cancellation.js";
 import type { ContextEnvelope } from "../src/engine/state.js";
 import {
   createAgentGraphState,
@@ -280,6 +281,33 @@ describe("Phase 4 graph runtime contract", () => {
         targetFilePaths: ["src/app.ts"],
       }),
     );
+  });
+
+  it("plan node converts explorer cancellation into a cancelled update", async () => {
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        async runExplorerSubagent() {
+          throw createTurnCancelledError(
+            "Operator interrupted the active turn.",
+          );
+        },
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Fix the auth flow",
+      contextEnvelope: createContextEnvelope(),
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+    });
+
+    const update = await nodes.plan(state);
+
+    expect(update).toMatchObject({
+      status: "cancelled",
+      finalResult: "Operator interrupted the active turn.",
+      lastError: null,
+    });
   });
 
   it("act node checkpoints before edit_block runs", async () => {
