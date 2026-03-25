@@ -93,6 +93,8 @@ flowchart TD
   prompt context envelope, including target `AGENTS.md` rules when present.
 - `src/engine/` owns the persistent loop, shared turn execution path, graph
   runtime, fallback raw loop, and session persistence.
+- `src/agents/` holds the coordinator-only write boundary plus isolated
+  read-only helpers such as the explorer runtime.
 - `src/tools/` exposes the bounded file/search/command primitives available to
   the code phase.
 - `src/checkpoints/` snapshots files before `edit_block` writes so recovery can
