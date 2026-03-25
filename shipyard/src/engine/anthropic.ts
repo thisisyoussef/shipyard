@@ -254,6 +254,7 @@ export function createToolResultPayload(result: ToolResult): string {
       success: result.success,
       output: result.output,
       ...(result.error ? { error: result.error } : {}),
+      ...(result.data === undefined ? {} : { data: result.data }),
     },
     null,
     2,

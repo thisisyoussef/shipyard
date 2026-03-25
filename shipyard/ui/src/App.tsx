@@ -353,9 +353,63 @@ export function App() {
     });
   }
 
+  function handleTargetSwitch(targetPath: string): void {
+    const sent = sendMessage({
+      type: "target:switch_request",
+      targetPath,
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Target switch unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before switching targets.",
+      });
+    }
+  }
+
+  function handleTargetCreate(input: {
+    name: string;
+    description: string;
+    scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
+  }): void {
+    const sent = sendMessage({
+      type: "target:create_request",
+      name: input.name,
+      description: input.description,
+      scaffoldType: input.scaffoldType,
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Target creation unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before creating a target.",
+      });
+    }
+  }
+
+  function handleTargetEnrich(): void {
+    const sent = sendMessage({
+      type: "target:enrich_request",
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Enrichment unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before enriching the current target.",
+      });
+    }
+  }
+
   return (
     <ShipyardWorkbench
       sessionState={viewState.sessionState}
+      targetManager={viewState.targetManager}
       turns={deferredTurns}
       fileEvents={deferredFileEvents}
       previewState={viewState.previewState}
@@ -373,6 +427,9 @@ export function App() {
       onContextKeyDown={handleComposerKeyDown}
       onClearContext={handleClearContext}
       onSubmitInstruction={handleInstructionSubmit}
+      onRequestTargetSwitch={handleTargetSwitch}
+      onRequestTargetCreate={handleTargetCreate}
+      onRequestTargetEnrich={handleTargetEnrich}
       onRefreshStatus={() => sendMessage({ type: "status" })}
       onCopyTracePath={handleCopyTracePath}
       traceButtonLabel={traceButtonLabel}

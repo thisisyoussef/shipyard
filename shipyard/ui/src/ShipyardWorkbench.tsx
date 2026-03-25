@@ -14,6 +14,9 @@ import {
   SessionPanel,
 } from "./panels/index.js";
 import type { BadgeTone } from "./primitives.js";
+import { TargetCreationDialog } from "./TargetCreationDialog.js";
+import { TargetHeader } from "./TargetHeader.js";
+import { TargetSwitcher } from "./TargetSwitcher.js";
 import {
   HeaderStrip,
   ShellFooter,
@@ -25,6 +28,7 @@ import type {
   FileEventViewModel,
   PreviewStateViewModel,
   SessionStateViewModel,
+  TargetManagerViewModel,
   TurnViewModel,
   WorkbenchConnectionState,
 } from "./view-models.js";
@@ -39,6 +43,7 @@ interface ComposerNotice {
 
 export interface ShipyardWorkbenchProps {
   sessionState: SessionStateViewModel | null;
+  targetManager: TargetManagerViewModel | null;
   turns: TurnViewModel[];
   fileEvents: FileEventViewModel[];
   previewState: PreviewStateViewModel;
@@ -56,6 +61,13 @@ export interface ShipyardWorkbenchProps {
   onContextKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onClearContext: () => void;
   onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
+  onRequestTargetSwitch: (targetPath: string) => void;
+  onRequestTargetCreate: (input: {
+    name: string;
+    description: string;
+    scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
+  }) => void;
+  onRequestTargetEnrich: () => void;
   onRefreshStatus: () => void;
   onCopyTracePath: () => void;
   traceButtonLabel: string;
@@ -90,14 +102,18 @@ function ContextIcon() {
 /* ── Main Component ──────────────────────────── */
 
 export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
+  const [targetSwitcherOpen, setTargetSwitcherOpen] = useState(false);
+  const [targetCreationOpen, setTargetCreationOpen] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(!props.leftSidebarOpen);
   const [rightCollapsed, setRightCollapsed] = useState(!props.rightSidebarOpen);
 
-  // Extract workspace/target names from paths
   const workspaceName = props.sessionState?.workspaceDirectory?.split("/").pop();
-  const targetName = props.sessionState?.targetLabel;
+  const activePhase = props.sessionState?.activePhase ?? "target-manager";
+  const targetName =
+    props.targetManager?.currentTarget.name ?? props.sessionState?.targetLabel;
+  const targetPath =
+    props.targetManager?.currentTarget.path ?? props.sessionState?.targetDirectory;
 
-  // Rail items for collapsed sidebar
   const leftRailItems = [
     {
       id: "session",
@@ -114,84 +130,118 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
   ];
 
   const handleLeftToggle = () => {
-    const newState = !leftCollapsed;
-    setLeftCollapsed(newState);
+    const nextState = !leftCollapsed;
+    setLeftCollapsed(nextState);
     props.onToggleLeftSidebar();
   };
 
   const handleRightToggle = () => {
-    const newState = !rightCollapsed;
-    setRightCollapsed(newState);
+    const nextState = !rightCollapsed;
+    setRightCollapsed(nextState);
     props.onToggleRightSidebar();
   };
 
   return (
-    <ShipyardShell
-      leftCollapsed={leftCollapsed}
-      rightCollapsed={rightCollapsed}
-      onLeftCollapsedChange={setLeftCollapsed}
-      onRightCollapsedChange={setRightCollapsed}
-      header={
-        <HeaderStrip
-          workspaceName={workspaceName}
-          workspacePath={props.sessionState?.workspaceDirectory}
-          targetName={targetName}
-          targetPath={props.sessionState?.targetDirectory}
-          connectionState={props.connectionState}
-          leftSidebarOpen={!leftCollapsed}
-          rightSidebarOpen={!rightCollapsed}
-          onCopyTracePath={props.onCopyTracePath}
-          onRefresh={props.onRefreshStatus}
-          onToggleLeftSidebar={handleLeftToggle}
-          onToggleRightSidebar={handleRightToggle}
-          traceButtonLabel={props.traceButtonLabel}
-        />
-      }
-      leftSidebar={
-        <ShellSidebar collapsed={leftCollapsed} railItems={leftRailItems}>
-          <SessionPanel session={props.sessionState} />
-          <ContextPanel
-            history={props.contextHistory}
-            draft={props.contextDraft}
-            onDraftChange={props.onContextChange}
-            onKeyDown={props.onContextKeyDown}
-            onClear={props.onClearContext}
-            textareaRef={props.contextInputRef}
+    <>
+      <ShipyardShell
+        leftCollapsed={leftCollapsed}
+        rightCollapsed={rightCollapsed}
+        onLeftCollapsedChange={setLeftCollapsed}
+        onRightCollapsedChange={setRightCollapsed}
+        header={
+          <HeaderStrip
+            workspaceName={workspaceName}
+            workspacePath={props.sessionState?.workspaceDirectory}
+            targetName={targetName}
+            targetPath={targetPath}
+            connectionState={props.connectionState}
+            leftSidebarOpen={!leftCollapsed}
+            rightSidebarOpen={!rightCollapsed}
+            onCopyTracePath={props.onCopyTracePath}
+            onRefresh={props.onRefreshStatus}
+            onToggleLeftSidebar={handleLeftToggle}
+            onToggleRightSidebar={handleRightToggle}
+            traceButtonLabel={props.traceButtonLabel}
           />
-        </ShellSidebar>
-      }
-      rightSidebar={
-        <ShellSidebar collapsed={rightCollapsed} railItems={[]}>
-          <FilePanel fileEvents={props.fileEvents} />
-        </ShellSidebar>
-      }
-      footer={
-        <ShellFooter
-          connectionState={props.connectionState}
-          sessionId={props.sessionState?.sessionId}
-          workspacePath={props.sessionState?.workspaceDirectory}
-          agentStatus={props.agentStatus}
-        />
-      }
-    >
-      {/* Main content area */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", height: "100%" }}>
-        {/* Composer at top */}
-        <ComposerPanel
-          instruction={props.instruction}
-          onInstructionChange={props.onInstructionChange}
-          onSubmit={props.onSubmitInstruction}
-          onKeyDown={props.onInstructionKeyDown}
-          textareaRef={props.instructionInputRef}
-          agentBusy={props.connectionState === "agent-busy"}
-          notice={props.composerNotice}
-        />
+        }
+        leftSidebar={
+          <ShellSidebar collapsed={leftCollapsed} railItems={leftRailItems}>
+            <SessionPanel session={props.sessionState} />
+            <ContextPanel
+              history={props.contextHistory}
+              draft={props.contextDraft}
+              onDraftChange={props.onContextChange}
+              onKeyDown={props.onContextKeyDown}
+              onClear={props.onClearContext}
+              textareaRef={props.contextInputRef}
+            />
+          </ShellSidebar>
+        }
+        rightSidebar={
+          <ShellSidebar collapsed={rightCollapsed} railItems={[]}>
+            <FilePanel fileEvents={props.fileEvents} />
+          </ShellSidebar>
+        }
+        footer={
+          <ShellFooter
+            connectionState={props.connectionState}
+            sessionId={props.sessionState?.sessionId}
+            workspacePath={props.sessionState?.workspaceDirectory}
+            agentStatus={props.agentStatus}
+          />
+        }
+      >
+        <div className="workbench-main-stack">
+          {props.targetManager ? (
+            <TargetHeader
+              activePhase={activePhase}
+              targetManager={props.targetManager}
+              onOpenSwitcher={() => setTargetSwitcherOpen(true)}
+              onRequestEnrichment={props.onRequestTargetEnrich}
+            />
+          ) : null}
 
-        {/* Activity feed below */}
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-          <ActivityFeed turns={props.turns} />
+          <ComposerPanel
+            instruction={props.instruction}
+            onInstructionChange={props.onInstructionChange}
+            onSubmit={props.onSubmitInstruction}
+            onKeyDown={props.onInstructionKeyDown}
+            textareaRef={props.instructionInputRef}
+            agentBusy={props.connectionState === "agent-busy"}
+            notice={props.composerNotice}
+          />
+
+          <div className="workbench-main-activity">
+            <ActivityFeed turns={props.turns} />
+          </div>
         </div>
-      </div>
-    </ShipyardShell>
+      </ShipyardShell>
+
+      {props.targetManager ? (
+        <TargetSwitcher
+          activePhase={activePhase}
+          open={targetSwitcherOpen}
+          targetManager={props.targetManager}
+          onClose={() => setTargetSwitcherOpen(false)}
+          onCreateNew={() => {
+            setTargetSwitcherOpen(false);
+            setTargetCreationOpen(true);
+          }}
+          onSwitchTarget={(nextTargetPath) => {
+            setTargetSwitcherOpen(false);
+            props.onRequestTargetSwitch(nextTargetPath);
+          }}
+        />
+      ) : null}
+
+      <TargetCreationDialog
+        open={targetCreationOpen}
+        onClose={() => setTargetCreationOpen(false)}
+        onCreateTarget={(input) => {
+          setTargetCreationOpen(false);
+          props.onRequestTargetCreate(input);
+        }}
+      />
+    </>
   );
 }

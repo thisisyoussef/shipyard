@@ -3,11 +3,20 @@ import process from "node:process";
 
 import type { AgentRuntimeDependencies } from "./graph.js";
 import type { SessionState } from "./state.js";
-import { createSessionSnapshot, saveSessionState } from "./state.js";
+import {
+  createSessionSnapshot,
+  saveSessionState,
+  switchTarget,
+} from "./state.js";
+import {
+  applySessionSwitchToRuntime,
+} from "./runtime-context.js";
+import { handleTargetCommand } from "./target-command.js";
 import { loadProjectRules } from "../context/envelope.js";
 import {
   getCodePhaseToolDefinitions,
 } from "../phases/code/index.js";
+import { getTargetManagerToolDefinitions } from "../phases/target-manager/index.js";
 import {
   createInstructionRuntimeState,
   executeInstructionTurn,
@@ -43,6 +52,11 @@ function printHelp(): void {
   console.log("  status                Show the current session snapshot");
   console.log("  discover              Refresh project rules and discovery");
   console.log("  tools                 List registered tools");
+  console.log("  target                Show current target info");
+  console.log("  target switch         List targets and switch");
+  console.log("  target create         Create a new target");
+  console.log("  target enrich         Re-run AI enrichment");
+  console.log("  target profile        Print full TargetProfile JSON");
   console.log("  read <path>           Read a file relative to the target");
   console.log("  list [path]           List visible files in the target");
   console.log("  search <pattern>      Search the target with ripgrep");
@@ -55,6 +69,12 @@ function printHelp(): void {
 
 function printStatus(state: SessionState): void {
   console.log(JSON.stringify(createSessionSnapshot(state), null, 2));
+}
+
+function getPhaseToolDefinitions(state: SessionState) {
+  return state.activePhase === "target-manager"
+    ? getTargetManagerToolDefinitions()
+    : getCodePhaseToolDefinitions();
 }
 
 function rememberRecent(
@@ -161,7 +181,7 @@ export async function runShipyardLoop(
     runtimeMode: options.runtimeMode,
     runtimeDependencies: options.runtimeDependencies,
   });
-  const traceLogger = await createLocalTraceLogger(
+  let traceLogger = await createLocalTraceLogger(
     state.targetDirectory,
     state.sessionId,
   );
@@ -176,6 +196,7 @@ export async function runShipyardLoop(
   console.log("Shipyard booted.");
   console.log(`Session: ${state.sessionId}`);
   console.log(`Target: ${state.targetDirectory}`);
+  console.log(`Phase: ${state.activePhase}`);
   console.log(`Local trace log: ${traceLogger.filePath}`);
   console.log(
     `LangSmith: ${langSmith.enabled ? "configured" : "not configured"}`,
@@ -186,8 +207,26 @@ export async function runShipyardLoop(
     sessionId: state.sessionId,
     targetDirectory: state.targetDirectory,
     discovery: state.discovery,
-    phase: "code",
+    phase: state.activePhase,
   });
+
+  const applySwitchedSessionState = async (
+    nextState: SessionState,
+    reason: string,
+  ): Promise<void> => {
+    Object.assign(state, nextState);
+    await applySessionSwitchToRuntime(state, runtimeState);
+    traceLogger = await createLocalTraceLogger(
+      state.targetDirectory,
+      state.sessionId,
+    );
+    await traceLogger.log("session.switch", {
+      sessionId: state.sessionId,
+      targetDirectory: state.targetDirectory,
+      phase: state.activePhase,
+      reason,
+    });
+  };
 
   try {
     rl.prompt();
@@ -209,17 +248,23 @@ export async function runShipyardLoop(
         } else if (line === "status") {
           printStatus(state);
         } else if (line === "tools") {
-          for (const tool of getCodePhaseToolDefinitions()) {
+          for (const tool of getPhaseToolDefinitions(state)) {
             console.log(`${tool.name}: ${tool.description}`);
           }
         } else if (line === "discover") {
-          const { discoverTarget, formatDiscoverySummary } = await import(
-            "../context/discovery.js"
-          );
-          state.discovery = await discoverTarget(state.targetDirectory);
-          runtimeState.projectRules = await loadProjectRules(state.targetDirectory);
-          console.log(`Discovery refreshed: ${formatDiscoverySummary(state.discovery)}`);
-          await traceLogger.log("discovery.refresh", state.discovery);
+          if (state.activePhase === "target-manager") {
+            console.log(
+              "Target manager mode does not use project discovery. Select or create a target first.",
+            );
+          } else {
+            const { discoverTarget, formatDiscoverySummary } = await import(
+              "../context/discovery.js"
+            );
+            state.discovery = await discoverTarget(state.targetDirectory);
+            runtimeState.projectRules = await loadProjectRules(state.targetDirectory);
+            console.log(`Discovery refreshed: ${formatDiscoverySummary(state.discovery)}`);
+            await traceLogger.log("discovery.refresh", state.discovery);
+          }
         } else if (line === "exit" || line === "quit") {
           await saveSessionState(state);
           console.log("Shipyard session closed.");
@@ -288,6 +333,24 @@ export async function runShipyardLoop(
 
           rememberRecent(runtimeState.recentToolOutputs, "git_diff");
           await printCommandResult(result);
+        } else if (line === "target" || line.startsWith("target ")) {
+          const subcommand = line === "target" ? "" : line.slice(7).trim();
+          const result = await handleTargetCommand(subcommand, {
+            rl,
+            state,
+            runtimeState,
+          });
+
+          if (result.nextState) {
+            await applySwitchedSessionState(
+              result.nextState,
+              `repl:${subcommand || "status"}`,
+            );
+            printDivider();
+            console.log(
+              `Switched to ${state.targetDirectory} and entered phase "${state.activePhase}".`,
+            );
+          }
         } else {
           const turnResult = await executeInstructionTurn({
             sessionState: state,
@@ -315,6 +378,15 @@ export async function runShipyardLoop(
             summary: turnResult.summary,
             langSmithTrace: turnResult.langSmithTrace,
           });
+
+          if (turnResult.selectedTargetPath) {
+            const nextState = await switchTarget(state, turnResult.selectedTargetPath);
+            await applySwitchedSessionState(nextState, "tool:select_target");
+            printDivider();
+            console.log(
+              `Target selected. Shipyard switched to ${state.targetDirectory} and entered phase "${state.activePhase}".`,
+            );
+          }
         }
       } catch (error) {
         const message =

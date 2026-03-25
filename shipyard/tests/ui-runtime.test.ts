@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -15,6 +15,7 @@ import { discoverTarget } from "../src/context/discovery.js";
 import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
 import { createSessionState } from "../src/engine/state.js";
 import { formatUiStartupLines, parseArgs } from "../src/bin/shipyard.js";
+import { createUnavailablePreviewCapability } from "../src/preview/contracts.js";
 import type { BackendToFrontendMessage } from "../src/ui/contracts.js";
 import { startUiRuntimeServer } from "../src/ui/server.js";
 import { scaffoldPreviewableTarget } from "./support/preview-target.js";
@@ -96,6 +97,24 @@ async function initializeGitRepository(cwd: string): Promise<void> {
   await expectRawCommandSuccess(cwd, "git init");
   await expectRawCommandSuccess(cwd, "git config user.email shipyard@example.com");
   await expectRawCommandSuccess(cwd, "git config user.name 'Shipyard Tests'");
+}
+
+function createTargetManagerDiscovery(targetsDirectory: string) {
+  return {
+    isGreenfield: true,
+    language: null,
+    framework: null,
+    packageManager: null,
+    scripts: {},
+    hasReadme: false,
+    hasAgentsMd: false,
+    topLevelFiles: [],
+    topLevelDirectories: [],
+    projectName: path.basename(targetsDirectory) || "targets",
+    previewCapability: createUnavailablePreviewCapability(
+      "Target manager mode does not start a preview until a target is selected.",
+    ),
+  };
 }
 
 function createAssistantMessage(options: {
@@ -304,6 +323,7 @@ describe("ui runtime contract", () => {
 
     expect(options).toEqual({
       targetPath: "./demo",
+      targetsDir: "./test-targets",
       sessionId: undefined,
       ui: true,
     });
@@ -393,6 +413,311 @@ describe("ui runtime contract", () => {
       }
 
       await firstRuntime.close();
+    }
+  });
+
+  it("publishes target manager state on connect and switches targets from the browser", async () => {
+    const targetsDirectory = await createTempDirectory("shipyard-ui-targets-");
+    const alphaTargetDirectory = path.join(targetsDirectory, "alpha-app");
+    const betaTargetDirectory = path.join(targetsDirectory, "beta-app");
+    await mkdir(alphaTargetDirectory, { recursive: true });
+    await mkdir(betaTargetDirectory, { recursive: true });
+    await writeFile(
+      path.join(alphaTargetDirectory, "package.json"),
+      JSON.stringify({ name: "alpha-app" }, null, 2),
+      "utf8",
+    );
+    await writeFile(
+      path.join(betaTargetDirectory, "package.json"),
+      JSON.stringify({ name: "beta-app" }, null, 2),
+      "utf8",
+    );
+
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-target-manager-session",
+        targetDirectory: targetsDirectory,
+        targetsDirectory,
+        activePhase: "target-manager",
+        discovery: createTargetManagerDiscovery(targetsDirectory),
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialSessionStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+      const initialTargetStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "target:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+
+        const initialSessionState = await initialSessionStatePromise;
+        const initialTargetState = await initialTargetStatePromise;
+
+        expect(initialSessionState).toMatchObject({
+          type: "session:state",
+          activePhase: "target-manager",
+          targetDirectory: targetsDirectory,
+        });
+        expect(initialTargetState).toMatchObject({
+          type: "target:state",
+          state: {
+            currentTarget: {
+              name: "No target selected",
+            },
+            availableTargets: [
+              {
+                name: "alpha-app",
+              },
+              {
+                name: "beta-app",
+              },
+            ],
+          },
+        });
+
+        const switchSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.activePhase === "code" &&
+              message.targetDirectory === betaTargetDirectory
+            ),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "target:switch_request",
+            targetPath: betaTargetDirectory,
+          }),
+        );
+
+        const switchSequence = await switchSequencePromise;
+        const switchComplete = switchSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "target:switch_complete" }
+          > => message.type === "target:switch_complete",
+        );
+
+        expect(switchComplete).toMatchObject({
+          type: "target:switch_complete",
+          success: true,
+          state: {
+            currentTarget: {
+              path: betaTargetDirectory,
+              name: "beta-app",
+            },
+          },
+        });
+        expect(
+          switchSequence.some((message) =>
+            message.type === "session:state" &&
+            message.activePhase === "code" &&
+            message.targetDirectory === betaTargetDirectory
+          ),
+        ).toBe(true);
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("creates a new target from the browser and switches the session into code mode", async () => {
+    const targetsDirectory = await createTempDirectory(
+      "shipyard-ui-create-target-",
+    );
+    const createdTargetDirectory = path.join(targetsDirectory, "gamma-app");
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-target-create-session",
+        targetDirectory: targetsDirectory,
+        targetsDirectory,
+        activePhase: "target-manager",
+        discovery: createTargetManagerDiscovery(targetsDirectory),
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialTargetStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "target:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialTargetStatePromise;
+
+        const createSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.activePhase === "code" &&
+              message.targetDirectory === createdTargetDirectory
+            ),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "target:create_request",
+            name: "gamma app",
+            description: "Created from the browser workbench.",
+            scaffoldType: "react-ts",
+          }),
+        );
+
+        const createSequence = await createSequencePromise;
+        const switchComplete = createSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "target:switch_complete" }
+          > => message.type === "target:switch_complete",
+        );
+
+        expect(switchComplete).toMatchObject({
+          type: "target:switch_complete",
+          success: true,
+          state: {
+            currentTarget: {
+              path: createdTargetDirectory,
+              name: "gamma-app",
+            },
+          },
+        });
+        await expect(
+          readFile(path.join(createdTargetDirectory, "README.md"), "utf8"),
+        ).resolves.toContain("Created from the browser workbench.");
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("streams browser enrichment progress and publishes the updated target profile", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-enrich-");
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify({ name: "browser-enrich-target" }, null, 2),
+      "utf8",
+    );
+    const discovery = await discoverTarget(targetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-enrich-session",
+        targetDirectory,
+        targetsDirectory: path.dirname(targetDirectory),
+        activePhase: "code",
+        discovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      targetEnrichmentInvoker: async () => ({
+        text: JSON.stringify({
+          name: "browser-enrich-target",
+          description: "AI summary for browser enrichment.",
+          purpose: "Verify browser enrichment flows.",
+          stack: ["TypeScript"],
+          architecture: "Single package workspace",
+          keyPatterns: ["target-manager state"],
+          complexity: "small",
+          suggestedAgentsRules: "# AGENTS.md\nKeep changes focused.",
+          suggestedScripts: {
+            test: "vitest run",
+          },
+          taskSuggestions: ["Add a README"],
+        }),
+        model: "test-model",
+      }),
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialTargetStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "target:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialTargetStatePromise;
+
+        const enrichmentSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "target:state" &&
+              message.state.currentTarget.hasProfile
+            ),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "target:enrich_request",
+          }),
+        );
+
+        const enrichmentSequence = await enrichmentSequencePromise;
+        const progressStatuses = enrichmentSequence.flatMap((message) =>
+          message.type === "target:enrichment_progress"
+            ? [message.status]
+            : [],
+        );
+        const updatedTargetState = enrichmentSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "target:state" }
+          > =>
+            message.type === "target:state" &&
+            message.state.currentTarget.hasProfile,
+        );
+
+        expect(progressStatuses).toContain("started");
+        expect(progressStatuses).toContain("in-progress");
+        expect(progressStatuses).toContain("complete");
+        expect(updatedTargetState).toMatchObject({
+          type: "target:state",
+          state: {
+            currentTarget: {
+              path: targetDirectory,
+              hasProfile: true,
+              description: "AI summary for browser enrichment.",
+            },
+          },
+        });
+        await expect(
+          readFile(path.join(targetDirectory, ".shipyard", "profile.json"), "utf8"),
+        ).resolves.toContain("AI summary for browser enrichment.");
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
     }
   });
 
@@ -1148,7 +1473,7 @@ describe("ui runtime contract", () => {
         expect(invalidMessageError).toMatchObject({
           type: "agent:error",
           message:
-            "Invalid client message type: bogus. Expected instruction, cancel, or status.",
+            "Invalid client message type: bogus. Expected instruction, cancel, status, target:switch_request, target:create_request, or target:enrich_request.",
         });
       } finally {
         socket.close();

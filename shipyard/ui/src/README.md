@@ -8,11 +8,16 @@ Shipyard browser workbench.
 - `main.tsx`: bootstraps React into the Vite root element
 - `App.tsx`: manages the WebSocket lifecycle, transport state, and instruction
   submission flow
-- `ShipyardWorkbench.tsx`: renders the operator-facing workbench UI
+- `ShipyardWorkbench.tsx`: composes the shell, panels, and target-manager
+  overlays into the operator-facing workbench
 - `view-models.ts`: re-exports the shared workbench view-model helpers from the
   backend-side UI module
 - `primitives.tsx`: local UI primitives
-- `styles.css` and `tokens.css`: visual system and styling tokens
+- `shell/`: shell layout, header strip, sidebars, and footer
+- `panels/`: composer, activity, session, context, and file panels
+- `TargetHeader.tsx`, `TargetSwitcher.tsx`, `TargetCreationDialog.tsx`,
+  `EnrichmentIndicator.tsx`: target-manager browser controls
+- `styles.css` and `tokens/`: visual system and styling tokens
 - `vite-env.d.ts`: Vite typing support
 
 ## Diagram
@@ -24,8 +29,11 @@ flowchart LR
   Socket["WebSocket transport"]
   Vm["view-models.ts"]
   Workbench["ShipyardWorkbench.tsx"]
+  Shell["shell/*"]
+  Panels["panels/*"]
+  TargetUi["Target* / EnrichmentIndicator"]
   Primitives["primitives.tsx"]
-  Styles["styles.css / tokens.css"]
+  Styles["styles.css / tokens/*"]
   Backend["../../src/ui/*"]
 
   Main --> App
@@ -33,6 +41,9 @@ flowchart LR
   Socket <--> Backend
   App --> Vm
   Vm --> Workbench
+  Workbench --> Shell
+  Workbench --> Panels
+  Workbench --> TargetUi
   Workbench --> Primitives
   Workbench --> Styles
 ```

@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { createSessionState } from "../src/engine/state.js";
 import {
+  parseFrontendMessage,
+  serializeBackendMessage,
+} from "../src/ui/contracts.js";
+import {
   createSessionStateMessage,
   createUiInstructionReporter,
 } from "../src/ui/events.js";
@@ -130,5 +134,77 @@ describe("ui event helpers", () => {
         summary: "Turn finished.",
       },
     ]);
+  });
+
+  it("validates the target manager websocket contracts", () => {
+    expect(
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "target:switch_request",
+          targetPath: "/tmp/demo-target",
+        }),
+      ),
+    ).toEqual({
+      type: "target:switch_request",
+      targetPath: "/tmp/demo-target",
+    });
+
+    expect(
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "target:create_request",
+          name: "alpha app",
+          description: "Create a demo target.",
+          scaffoldType: "react-ts",
+        }),
+      ),
+    ).toEqual({
+      type: "target:create_request",
+      name: "alpha app",
+      description: "Create a demo target.",
+      scaffoldType: "react-ts",
+    });
+
+    expect(() =>
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "target:create_request",
+          name: "",
+          description: "invalid",
+        }),
+      ),
+    ).toThrow('Invalid client message payload for "target:create_request".');
+
+    const serialized = serializeBackendMessage({
+      type: "target:state",
+      state: {
+        currentTarget: {
+          path: "/tmp/demo-target",
+          name: "demo-target",
+          description: "Demo target summary.",
+          language: "typescript",
+          framework: "React",
+          hasProfile: true,
+        },
+        availableTargets: [],
+        enrichmentStatus: {
+          status: "complete",
+          message: "Target profile saved.",
+        },
+      },
+    });
+
+    expect(JSON.parse(serialized)).toMatchObject({
+      type: "target:state",
+      state: {
+        currentTarget: {
+          name: "demo-target",
+          hasProfile: true,
+        },
+        enrichmentStatus: {
+          status: "complete",
+        },
+      },
+    });
   });
 });

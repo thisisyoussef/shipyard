@@ -548,6 +548,125 @@ describe("shipyard CLI loop", () => {
   );
 
   it(
+    "starts in target manager mode and can create a target without restarting",
+    async () => {
+      const targetsDirectory = await createTempDirectory("shipyard-cli-targets-");
+      const createdTargetDirectory = path.join(targetsDirectory, "alpha-app");
+      const runner = startCli(["--targets-dir", targetsDirectory], LIVE_RUNTIME_ENV);
+      let cursor = 0;
+
+      try {
+        cursor = await waitForText(
+          runner,
+          "Shipyard target manager mode is active.",
+          {
+            cursor,
+            label: "target manager startup banner",
+          },
+        );
+        cursor = await waitForText(
+          runner,
+          `Targets directory: ${targetsDirectory}`,
+          {
+            cursor,
+            label: "target manager targets directory banner",
+          },
+        );
+        cursor = await waitForPrompt(
+          runner,
+          cursor,
+          "initial prompt for target manager mode",
+        );
+
+        sendLine(runner, "status");
+        cursor = await waitForText(
+          runner,
+          `"targetsDirectory": "${targetsDirectory}"`,
+          {
+            cursor,
+            label: "target manager targets directory status output",
+          },
+        );
+        cursor = await waitForText(runner, '"activePhase": "target-manager"', {
+          cursor,
+          label: "target manager phase status output",
+        });
+        cursor = await waitForPrompt(
+          runner,
+          cursor,
+          "prompt after target manager status",
+        );
+
+        sendLine(runner, "target create");
+        cursor = await waitForText(runner, "Target name: ", {
+          cursor,
+          label: "target create name prompt",
+        });
+        sendLine(runner, "alpha app");
+        cursor = await waitForText(runner, "Description: ", {
+          cursor,
+          label: "target create description prompt",
+        });
+        sendLine(runner, "Demo alpha target");
+        cursor = await waitForText(runner, "Scaffold type [", {
+          cursor,
+          label: "target create scaffold prompt",
+        });
+        sendLine(runner, "react-ts");
+        cursor = await waitForText(runner, "Created and selected alpha app.", {
+          cursor,
+          label: "target create completion output",
+        });
+        cursor = await waitForText(
+          runner,
+          `Switched to ${createdTargetDirectory} and entered phase "code".`,
+          {
+            cursor,
+            label: "target create phase switch output",
+          },
+        );
+        cursor = await waitForPrompt(
+          runner,
+          cursor,
+          "prompt after target create switch",
+        );
+
+        sendLine(runner, "status");
+        cursor = await waitForText(
+          runner,
+          `"targetDirectory": "${createdTargetDirectory}"`,
+          {
+            cursor,
+            label: "selected target directory status output",
+          },
+        );
+        cursor = await waitForText(runner, '"activePhase": "code"', {
+          cursor,
+          label: "code phase status output after target create",
+        });
+        cursor = await waitForPrompt(
+          runner,
+          cursor,
+          "prompt after created target status",
+        );
+
+        sendLine(runner, "exit");
+        cursor = await waitForText(runner, "Shipyard session closed.", {
+          cursor,
+          label: "target manager close text",
+        });
+        await waitForProcessExit(
+          runner,
+          "process exit after target manager close",
+        );
+      } finally {
+        await stopCli(runner);
+      }
+    },
+    CLI_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "detects an existing project target",
     async () => {
       const targetDirectory = await createTempDirectory("shipyard-cli-existing-");

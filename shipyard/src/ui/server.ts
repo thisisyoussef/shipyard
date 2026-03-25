@@ -22,9 +22,18 @@ import {
   type TurnStateEvent,
 } from "../engine/turn.js";
 import type { AgentRuntimeDependencies } from "../engine/graph.js";
-import { saveSessionState, type SessionState } from "../engine/state.js";
+import {
+  saveSessionState,
+  switchTarget,
+  type SessionState,
+} from "../engine/state.js";
+import { applySessionSwitchToRuntime } from "../engine/runtime-context.js";
 import { createPreviewSupervisor } from "../preview/supervisor.js";
-import type { BackendToFrontendMessage } from "./contracts.js";
+import type {
+  BackendToFrontendMessage,
+  TargetEnrichmentState,
+  TargetManagerState,
+} from "./contracts.js";
 import {
   parseFrontendMessage,
   serializeBackendMessage,
@@ -38,6 +47,9 @@ import {
   queueInstructionTurn,
 } from "./workbench-state.js";
 import { createLocalTraceLogger } from "../tracing/local-log.js";
+import { buildTargetManagerState, IDLE_TARGET_ENRICHMENT_STATE } from "./target-manager.js";
+import { createTargetTool } from "../tools/target-manager/create-target.js";
+import { enrichTargetTool } from "../tools/target-manager/enrich-target.js";
 
 export interface StartUiRuntimeServerOptions {
   sessionState: SessionState;
@@ -46,6 +58,12 @@ export interface StartUiRuntimeServerOptions {
   projectRules: string;
   projectRulesLoaded: boolean;
   baseInjectedContext?: string[];
+  targetEnrichmentInvoker?: (
+    prompt: string,
+  ) => Promise<{
+    text: string;
+    model: string;
+  }>;
   runtimeMode?: InstructionRuntimeMode;
   runtimeDependencies?: AgentRuntimeDependencies;
 }
@@ -301,7 +319,10 @@ function createFallbackUiHtml(sessionState: SessionState): string {
           <pre>{
   "instruction": { "text": "string", "injectedContext": ["string"] },
   "cancel": { "requestId": "string?" },
-  "status": {}
+  "status": {},
+  "target:switch_request": { "targetPath": "string" },
+  "target:create_request": { "name": "string", "description": "string", "scaffoldType": "empty|react-ts|express-ts|python|go?" },
+  "target:enrich_request": { "userDescription": "string?" }
 }</pre>
         </div>
       </section>
@@ -477,24 +498,30 @@ export async function startUiRuntimeServer(
   options: StartUiRuntimeServerOptions,
 ): Promise<UiRuntimeServer> {
   const host = options.host ?? "127.0.0.1";
-  const fallbackHtml = createFallbackUiHtml(options.sessionState);
+  const sessionState = options.sessionState;
+  const fallbackHtml = createFallbackUiHtml(sessionState);
   const runtimeState = createInstructionRuntimeState({
     projectRules: options.projectRules,
     baseInjectedContext: options.baseInjectedContext,
+    targetEnrichmentInvoker: options.targetEnrichmentInvoker,
     runtimeMode: options.runtimeMode,
     runtimeDependencies: options.runtimeDependencies,
   });
-  const traceLogger = await createLocalTraceLogger(
-    options.sessionState.targetDirectory,
-    options.sessionState.sessionId,
+  let projectRulesLoaded = options.projectRulesLoaded;
+  let traceLogger = await createLocalTraceLogger(
+    sessionState.targetDirectory,
+    sessionState.sessionId,
   );
+  let targetManagerState = await buildTargetManagerState(sessionState);
+  sessionState.workbenchState.targetManager = targetManagerState;
   await traceLogger.log("session.start", {
-    sessionId: options.sessionState.sessionId,
-    targetDirectory: options.sessionState.targetDirectory,
-    discovery: options.sessionState.discovery,
-    phase: "code",
+    sessionId: sessionState.sessionId,
+    targetDirectory: sessionState.targetDirectory,
+    discovery: sessionState.discovery,
+    phase: sessionState.activePhase,
     runtimeMode: "ui",
   });
+  await saveSessionState(sessionState);
   const httpServer = createServer(
     async (request: IncomingMessage, response: ServerResponse) => {
       const requestUrl = request.url ?? "/";
@@ -505,7 +532,7 @@ export async function startUiRuntimeServer(
         });
         response.end(
           JSON.stringify(
-            createHealthResponse(options.sessionState),
+            createHealthResponse(sessionState),
           ),
         );
         return;
@@ -543,50 +570,163 @@ export async function startUiRuntimeServer(
       [...sockets].map((socket) => sendToSocket(socket, message)),
     );
   };
-  const previewSupervisor = createPreviewSupervisor({
-    targetDirectory: options.sessionState.targetDirectory,
-    capability: options.sessionState.discovery.previewCapability,
-    async onState(previewState) {
-      options.sessionState.workbenchState = applyBackendMessage(
-        options.sessionState.workbenchState,
-        {
+
+  const broadcastBrowserMessage = async (
+    message: BackendToFrontendMessage,
+  ): Promise<void> => {
+    sessionState.workbenchState =
+      message.type === "session:state"
+        ? message.workbenchState
+        : applyBackendMessage(sessionState.workbenchState, message);
+
+    await broadcast(message);
+  };
+
+  const currentEnrichmentState = (): TargetEnrichmentState =>
+    sessionState.workbenchState.targetManager?.enrichmentStatus ??
+    IDLE_TARGET_ENRICHMENT_STATE;
+
+  const syncTargetManagerState = async (
+    enrichmentState: TargetEnrichmentState = currentEnrichmentState(),
+  ): Promise<TargetManagerState> => {
+    targetManagerState = await buildTargetManagerState(
+      sessionState,
+      enrichmentState,
+    );
+    sessionState.workbenchState.targetManager = targetManagerState;
+    return targetManagerState;
+  };
+
+  const createPreviewBridge = () =>
+    createPreviewSupervisor({
+      targetDirectory: sessionState.targetDirectory,
+      capability: sessionState.discovery.previewCapability,
+      async onState(previewState) {
+        sessionState.workbenchState = applyBackendMessage(
+          sessionState.workbenchState,
+          {
+            type: "preview:state",
+            preview: previewState,
+          },
+        );
+
+        await traceLogger.log("preview.state", {
+          sessionId: sessionState.sessionId,
+          preview: previewState,
+        });
+        await saveSessionState(sessionState);
+        await broadcast({
           type: "preview:state",
           preview: previewState,
-        },
-      );
+        });
+      },
+    });
 
-      await traceLogger.log("preview.state", {
-        sessionId: options.sessionState.sessionId,
-        preview: previewState,
-      });
-      await saveSessionState(options.sessionState);
-      await broadcast({
-        type: "preview:state",
-        preview: previewState,
-      });
-    },
-  });
+  let previewSupervisor = createPreviewBridge();
 
   const sendSessionState = async (socket: WebSocket): Promise<void> => {
+    await syncTargetManagerState();
     await sendToSocket(
       socket,
       createSessionStateMessage({
-        sessionState: options.sessionState,
+        sessionState,
         connectionState: connectionState(),
-        projectRulesLoaded: options.projectRulesLoaded,
+        projectRulesLoaded,
         workspaceDirectory,
       }),
     );
   };
-  const broadcastBrowserMessage = async (
-    message: BackendToFrontendMessage,
-  ): Promise<void> => {
-    options.sessionState.workbenchState =
-      message.type === "session:state"
-        ? message.workbenchState
-        : applyBackendMessage(options.sessionState.workbenchState, message);
 
-    await broadcast(message);
+  const broadcastSessionState = async (): Promise<void> => {
+    await syncTargetManagerState();
+    await broadcastBrowserMessage(
+      createSessionStateMessage({
+        sessionState,
+        connectionState: connectionState(),
+        projectRulesLoaded,
+        workspaceDirectory,
+      }),
+    );
+    await saveSessionState(sessionState);
+  };
+
+  const sendTargetState = async (socket: WebSocket): Promise<void> => {
+    const nextTargetManagerState = await syncTargetManagerState();
+    await sendToSocket(socket, {
+      type: "target:state",
+      state: nextTargetManagerState,
+    });
+  };
+
+  const broadcastTargetState = async (
+    enrichmentState: TargetEnrichmentState = currentEnrichmentState(),
+  ): Promise<TargetManagerState> => {
+    const nextTargetManagerState = await syncTargetManagerState(enrichmentState);
+    await broadcastBrowserMessage({
+      type: "target:state",
+      state: nextTargetManagerState,
+    });
+    await saveSessionState(sessionState);
+    return nextTargetManagerState;
+  };
+
+  const broadcastTargetSwitchComplete = async (
+    success: boolean,
+    message: string,
+    nextTargetManagerState: TargetManagerState,
+  ): Promise<void> => {
+    await broadcastBrowserMessage({
+      type: "target:switch_complete",
+      success,
+      message,
+      state: nextTargetManagerState,
+    });
+    await saveSessionState(sessionState);
+  };
+
+  const broadcastEnrichmentProgress = async (
+    status: "started" | "in-progress" | "complete" | "error",
+    message: string,
+  ): Promise<void> => {
+    await broadcastBrowserMessage({
+      type: "target:enrichment_progress",
+      status,
+      message,
+    });
+    await saveSessionState(sessionState);
+  };
+
+  const refreshPreviewSupervisor = async (): Promise<void> => {
+    await previewSupervisor.stop();
+    previewStarted = false;
+    previewSupervisor = createPreviewBridge();
+
+    if (sockets.size > 0) {
+      previewStarted = true;
+      void previewSupervisor.start();
+    }
+  };
+
+  const applySwitchedSessionState = async (
+    nextState: SessionState,
+    reason: string,
+  ): Promise<TargetManagerState> => {
+    Object.assign(sessionState, nextState);
+    await applySessionSwitchToRuntime(sessionState, runtimeState);
+    projectRulesLoaded = Boolean(runtimeState.projectRules);
+    traceLogger = await createLocalTraceLogger(
+      sessionState.targetDirectory,
+      sessionState.sessionId,
+    );
+    await traceLogger.log("session.switch", {
+      sessionId: sessionState.sessionId,
+      targetDirectory: sessionState.targetDirectory,
+      phase: sessionState.activePhase,
+      reason,
+      runtimeMode: "ui",
+    });
+    await refreshPreviewSupervisor();
+    return syncTargetManagerState();
   };
 
   const runBrowserInstruction = async (
@@ -595,7 +735,7 @@ export async function startUiRuntimeServer(
   ): Promise<void> => {
     const baseReporter = createUiInstructionReporter({
       send: broadcastBrowserMessage,
-      projectRulesLoaded: options.projectRulesLoaded,
+      projectRulesLoaded,
       workspaceDirectory,
     });
     let pendingTurnState: TurnStateEvent | null = null;
@@ -616,7 +756,7 @@ export async function startUiRuntimeServer(
     };
 
     const turnResult = await executeInstructionTurn({
-      sessionState: options.sessionState,
+      sessionState,
       runtimeState,
       instruction,
       injectedContext,
@@ -633,7 +773,21 @@ export async function startUiRuntimeServer(
       langSmithTrace: turnResult.langSmithTrace,
       runtimeSurface: "ui",
     });
-    await saveSessionState(options.sessionState);
+    await saveSessionState(sessionState);
+
+    if (turnResult.selectedTargetPath) {
+      const nextState = await switchTarget(sessionState, turnResult.selectedTargetPath);
+      const nextTargetManagerState = await applySwitchedSessionState(
+        nextState,
+        "tool:select_target",
+      );
+      await broadcastTargetSwitchComplete(
+        true,
+        `Switched to ${nextTargetManagerState.currentTarget.name}.`,
+        nextTargetManagerState,
+      );
+      await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
+    }
 
     if (pendingTurnState) {
       await baseReporter.onTurnState?.(pendingTurnState);
@@ -642,7 +796,10 @@ export async function startUiRuntimeServer(
 
   socketServer.on("connection", (socket) => {
     sockets.add(socket);
-    void sendSessionState(socket);
+    void (async () => {
+      await sendSessionState(socket);
+      await sendTargetState(socket);
+    })();
 
     if (!previewStarted) {
       previewStarted = true;
@@ -663,6 +820,7 @@ export async function startUiRuntimeServer(
         switch (message.type) {
           case "status":
             await sendSessionState(socket);
+            await sendTargetState(socket);
             break;
           case "cancel":
             await sendToSocket(
@@ -674,6 +832,147 @@ export async function startUiRuntimeServer(
               ),
             );
             break;
+          case "target:switch_request": {
+            if (activeInstruction !== null) {
+              await sendToSocket(
+                socket,
+                createErrorMessage(
+                  "Finish the current browser instruction before switching targets.",
+                ),
+              );
+              break;
+            }
+
+            try {
+              const nextState = await switchTarget(
+                sessionState,
+                message.targetPath,
+              );
+              const nextTargetManagerState = await applySwitchedSessionState(
+                nextState,
+                `browser:switch:${message.targetPath}`,
+              );
+              await broadcastTargetSwitchComplete(
+                true,
+                `Switched to ${nextTargetManagerState.currentTarget.name}.`,
+                nextTargetManagerState,
+              );
+              await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
+              await broadcastSessionState();
+            } catch (error) {
+              const errorMessage = error instanceof Error
+                ? error.message
+                : "Target switch failed.";
+              const nextTargetManagerState = await syncTargetManagerState();
+              await broadcastTargetSwitchComplete(
+                false,
+                errorMessage,
+                nextTargetManagerState,
+              );
+            }
+            break;
+          }
+          case "target:create_request": {
+            if (activeInstruction !== null) {
+              await sendToSocket(
+                socket,
+                createErrorMessage(
+                  "Finish the current browser instruction before creating a target.",
+                ),
+              );
+              break;
+            }
+
+            try {
+              const createdTarget = await createTargetTool({
+                name: message.name,
+                description: message.description,
+                targetsDir: sessionState.targetsDirectory,
+                scaffoldType: message.scaffoldType,
+              });
+              const nextState = await switchTarget(
+                sessionState,
+                createdTarget.path,
+              );
+              const nextTargetManagerState = await applySwitchedSessionState(
+                nextState,
+                `browser:create:${createdTarget.path}`,
+              );
+              await broadcastTargetSwitchComplete(
+                true,
+                `Created and selected ${nextTargetManagerState.currentTarget.name}.`,
+                nextTargetManagerState,
+              );
+              await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
+              await broadcastSessionState();
+            } catch (error) {
+              const errorMessage = error instanceof Error
+                ? error.message
+                : "Target creation failed.";
+              const nextTargetManagerState = await syncTargetManagerState();
+              await broadcastTargetSwitchComplete(
+                false,
+                errorMessage,
+                nextTargetManagerState,
+              );
+            }
+            break;
+          }
+          case "target:enrich_request": {
+            if (activeInstruction !== null) {
+              await sendToSocket(
+                socket,
+                createErrorMessage(
+                  "Finish the current browser instruction before enriching a target.",
+                ),
+              );
+              break;
+            }
+
+            if (sessionState.activePhase !== "code") {
+              await sendToSocket(
+                socket,
+                createErrorMessage(
+                  "Select or create a target before running enrichment.",
+                ),
+              );
+              break;
+            }
+
+            try {
+              const profile = await enrichTargetTool(
+                {
+                  targetPath: sessionState.targetDirectory,
+                  userDescription: message.userDescription,
+                },
+                {
+                  invokeModel: runtimeState.targetEnrichmentInvoker,
+                  async onProgress(event) {
+                    await broadcastEnrichmentProgress(
+                      event.status,
+                      event.message,
+                    );
+                  },
+                },
+              );
+              sessionState.targetProfile = profile;
+              await broadcastTargetState({
+                status: "complete",
+                message: "Target profile saved.",
+              });
+              await broadcastSessionState();
+            } catch (error) {
+              const errorMessage = error instanceof Error
+                ? error.message
+                : "Target enrichment failed.";
+              await broadcastTargetState({
+                status: "error",
+                message: errorMessage,
+              });
+              await broadcastSessionState();
+            }
+            break;
+          }
           case "instruction":
             if (activeInstruction !== null) {
               await sendToSocket(
@@ -685,12 +984,12 @@ export async function startUiRuntimeServer(
               break;
             }
 
-            options.sessionState.workbenchState = queueInstructionTurn(
-              options.sessionState.workbenchState,
+            sessionState.workbenchState = queueInstructionTurn(
+              sessionState.workbenchState,
               message.text,
               message.injectedContext ?? [],
             );
-            await saveSessionState(options.sessionState);
+            await saveSessionState(sessionState);
             activeInstruction = runBrowserInstruction(
               message.text,
               message.injectedContext,

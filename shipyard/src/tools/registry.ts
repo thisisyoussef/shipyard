@@ -2,6 +2,7 @@ export interface ToolResult {
   success: boolean;
   output: string;
   error?: string;
+  data?: unknown;
 }
 
 export interface JsonSchemaProperty {
@@ -124,20 +125,28 @@ export function getAnthropicTools(names: string[]): AnthropicToolDefinition[] {
   }));
 }
 
-export function createToolSuccessResult(output: unknown): ToolResult {
+export function createToolSuccessResult(
+  output: unknown,
+  data?: unknown,
+): ToolResult {
   return {
     success: true,
     output:
       typeof output === "string" ? output : JSON.stringify(output, null, 2),
+    ...(data === undefined ? {} : { data }),
   };
 }
 
-export function createToolErrorResult(error: unknown): ToolResult {
+export function createToolErrorResult(
+  error: unknown,
+  data?: unknown,
+): ToolResult {
   const message = error instanceof Error ? error.message : String(error);
 
   return {
     success: false,
     output: "",
     error: message,
+    ...(data === undefined ? {} : { data }),
   };
 }

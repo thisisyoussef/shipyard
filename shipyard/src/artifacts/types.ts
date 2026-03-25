@@ -77,3 +77,19 @@ export interface DiscoveryReport {
   projectName: string | null;
   previewCapability: PreviewCapabilityReport;
 }
+
+export interface TargetProfile {
+  name: string;
+  description: string;
+  purpose: string;
+  stack: string[];
+  architecture: string;
+  keyPatterns: string[];
+  complexity: "trivial" | "small" | "medium" | "large";
+  suggestedAgentsRules: string;
+  suggestedScripts: Record<string, string>;
+  taskSuggestions: string[];
+  enrichedAt: string;
+  enrichmentModel: string;
+  discoverySnapshot: DiscoveryReport;
+}
