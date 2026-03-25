@@ -12,6 +12,7 @@
   - `git status -sb`
   - `git branch -vv`
 - If this is a new story, create or switch to a fresh `codex/<short-task-name>` branch before any edits.
+- When that story starts in a fresh branch or worktree, carry over the required local `.env*` files before running project commands, and keep them untracked.
 - Do not continue a new story on the previous story's branch.
 
 ### Step 0.2: Run Story Preflight
