@@ -659,7 +659,12 @@ export async function executeInstructionTurn(
   const runtimeState = options.runtimeState;
   runtimeState.pendingTargetSelectionPath = null;
   const explicitFilePath = extractExplicitFilePath(options.instruction);
-  const targetFilePaths = explicitFilePath ? [explicitFilePath] : [];
+  const targetFilePaths = [
+    ...(explicitFilePath ? [explicitFilePath] : []),
+    ...(state.activeTask?.status === "in_progress"
+      ? state.activeTask.targetFilePaths
+      : []),
+  ];
   const mergedInjectedContext = [
     ...runtimeState.baseInjectedContext,
     ...(options.injectedContext ?? []),
@@ -701,6 +706,7 @@ export async function executeInstructionTurn(
     retryCountsByFile: runtimeState.retryCountsByFile,
     blockedFiles: runtimeState.blockedFiles,
     latestHandoff: loadedHandoff,
+    activeTask: state.activeTask,
   });
 
   runtimeState.projectRules = contextEnvelope.stable.projectRules;

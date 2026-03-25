@@ -16,6 +16,10 @@ import type {
   ExecutePlanningTurnOptions,
   PlanningTurnResult,
 } from "../src/plans/turn.js";
+import type {
+  ExecuteTaskRunnerTurnOptions,
+  TaskRunnerTurnResult,
+} from "../src/plans/task-runner.js";
 
 const createdDirectories: string[] = [];
 
@@ -74,6 +78,7 @@ function createTurnResult(
         retryCountsByFile: {},
         blockedFiles: [],
         latestHandoff: null,
+        activeTask: null,
       },
     },
     summary: options.finalText,
@@ -196,6 +201,7 @@ function createPlanningTurnResult(
         retryCountsByFile: {},
         blockedFiles: [],
         latestHandoff: null,
+        activeTask: null,
       },
     },
     executionSpec: {
@@ -523,6 +529,95 @@ describe("terminal loop interrupts", () => {
     );
     expect(traceContents).toContain('"iteration-threshold"');
     expect(logSpy).toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("routes next and continue through the task-runner executor", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-loop-task-runner-");
+    const sessionState = createSessionState({
+      sessionId: "loop-task-runner-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: [],
+        topLevelDirectories: [],
+        projectName: null,
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
+      },
+    });
+    const fakeReadline = new FakeReadline();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const executeTurn = vi.fn(async (): Promise<InstructionTurnResult> => {
+      throw new Error(
+        "Normal instruction executor should not run for task-runner commands.",
+      );
+    });
+    const executeTaskTurn = vi.fn(
+      async (
+        options: ExecuteTaskRunnerTurnOptions,
+      ): Promise<TaskRunnerTurnResult> => {
+        options.sessionState.turnCount += 1;
+
+        return {
+          phaseName: "code",
+          runtimeMode: "graph",
+          planningMode: "lightweight",
+          contextEnvelope: null,
+          taskPlan: null,
+          executionSpec: null,
+          status: "success",
+          summary: `Handled ${options.instruction}`,
+          finalText: `Handled ${options.instruction}`,
+          selectedTargetPath: null,
+          langSmithTrace: null,
+          plan: null,
+          planId: "plan-test",
+          taskId: options.instruction === "next" ? "task-1" : "task-2",
+          route: options.instruction === "next"
+            ? "next-pending"
+            : "continue-fallback",
+          command: options.instruction === "next" ? "next" : "continue",
+          loadedSpecRefs: [],
+          taskTransition: null,
+        };
+      },
+    );
+
+    const loopPromise = runShipyardLoop({
+      sessionState,
+      executeTurn,
+      executeTaskTurn,
+      createReadlineInterface: () =>
+        fakeReadline as unknown as ReturnType<typeof import("node:readline").createInterface>,
+    });
+
+    fakeReadline.pushLine("next");
+    await vi.waitFor(() => {
+      expect(executeTaskTurn).toHaveBeenCalledTimes(1);
+    });
+
+    fakeReadline.pushLine("continue");
+    await vi.waitFor(() => {
+      expect(executeTaskTurn).toHaveBeenCalledTimes(2);
+    });
+
+    fakeReadline.pushLine("exit");
+    await loopPromise;
+
+    expect(executeTurn).not.toHaveBeenCalled();
+    expect(executeTaskTurn.mock.calls[0]?.[0].instruction).toBe("next");
+    expect(executeTaskTurn.mock.calls[1]?.[0].instruction).toBe("continue");
+    expect(logSpy.mock.calls.flat()).toContain("Handled next");
+    expect(logSpy.mock.calls.flat()).toContain("Handled continue");
     expect(errorSpy).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { DiscoveryReport, LoadedExecutionHandoff } from "../artifacts/types.js";
+import type {
+  ActiveTaskContext,
+  DiscoveryReport,
+  LoadedExecutionHandoff,
+} from "../artifacts/types.js";
 import type { ContextEnvelope } from "../engine/state.js";
 
 export interface BuildContextEnvelopeOptions {
@@ -17,6 +21,7 @@ export interface BuildContextEnvelopeOptions {
   retryCountsByFile?: Record<string, number>;
   blockedFiles?: string[];
   latestHandoff?: LoadedExecutionHandoff | null;
+  activeTask?: ActiveTaskContext | null;
   projectRules?: string;
 }
 
@@ -84,6 +89,39 @@ function formatLatestHandoff(handoff: LoadedExecutionHandoff | null): string {
   ].join("\n");
 }
 
+function formatActiveTask(activeTask: ActiveTaskContext | null): string {
+  if (activeTask === null) {
+    return "(none)";
+  }
+
+  const lines = [
+    `Plan: ${activeTask.planId}`,
+    `Task: ${activeTask.taskId} [${activeTask.status}] ${activeTask.title}`,
+    `Instruction: ${activeTask.instruction}`,
+  ];
+
+  if (activeTask.targetFilePaths.length > 0) {
+    lines.push(`Target Files: ${activeTask.targetFilePaths.join(", ")}`);
+  }
+
+  if (activeTask.specRefs.length > 0) {
+    lines.push(`Spec Refs: ${activeTask.specRefs.join(", ")}`);
+  }
+
+  if (activeTask.summary?.trim()) {
+    lines.push(`Summary: ${activeTask.summary.trim()}`);
+  }
+
+  if (activeTask.checklist.length > 0) {
+    lines.push(
+      "Checklist:",
+      ...activeTask.checklist.map((item) => `- ${item}`),
+    );
+  }
+
+  return lines.join("\n");
+}
+
 export async function loadProjectRules(targetDirectory: string): Promise<string> {
   const agentsPath = path.join(targetDirectory, "AGENTS.md");
 
@@ -121,6 +159,7 @@ export async function buildContextEnvelope(
       retryCountsByFile: { ...(options.retryCountsByFile ?? {}) },
       blockedFiles: [...(options.blockedFiles ?? [])],
       latestHandoff: options.latestHandoff ?? null,
+      activeTask: options.activeTask ?? null,
     },
   };
 }
@@ -160,6 +199,7 @@ export function serializeContextEnvelope(
     formatRetryList(envelope.session.retryCountsByFile),
   ].join("\n");
   const latestHandoffBody = formatLatestHandoff(envelope.session.latestHandoff);
+  const activeTaskBody = formatActiveTask(envelope.session.activeTask);
   const recentErrorsBody = formatList(envelope.runtime.recentErrors);
   const blockedFilesBody = formatList(envelope.session.blockedFiles);
 
@@ -178,6 +218,8 @@ export function serializeContextEnvelope(
     "",
     "Latest Handoff",
     latestHandoffBody,
+    "Active Task",
+    activeTaskBody,
     "",
     "Recent Errors",
     recentErrorsBody,

@@ -79,13 +79,14 @@ function createContextEnvelope(): ContextEnvelope {
       recentErrors: [],
       currentGitDiff: null,
     },
-      session: {
-        rollingSummary: "",
-        retryCountsByFile: {},
-        blockedFiles: [],
-        latestHandoff: null,
-      },
-    };
+    session: {
+      rollingSummary: "",
+      retryCountsByFile: {},
+      blockedFiles: [],
+      latestHandoff: null,
+      activeTask: null,
+    },
+  };
 }
 
 function createAssistantMessage(options: {
