@@ -14,7 +14,6 @@ import {
   ComposerPanel,
   ContextPanel,
   FilePanel,
-  LiveViewPanel,
   RunHistoryPanel,
   PreviewPanel,
   OutputPanel,
