@@ -6,7 +6,6 @@ interface TargetHeaderProps {
   activePhase: "code" | "target-manager";
   targetManager: TargetManagerViewModel;
   onOpenSwitcher: () => void;
-  onRequestEnrichment: () => void;
 }
 
 function createTargetDescription(
@@ -21,7 +20,7 @@ function createTargetDescription(
     return "Select an existing project or create a new scaffold to begin.";
   }
 
-  return "Target selected. Run enrichment to generate a richer project summary.";
+  return "Target selected. Shipyard will analyze it automatically when enough context is available.";
 }
 
 export function TargetHeader(props: TargetHeaderProps) {
@@ -70,7 +69,6 @@ export function TargetHeader(props: TargetHeaderProps) {
           message={props.targetManager.enrichmentStatus.message}
           hasProfile={props.targetManager.currentTarget.hasProfile}
           canEnrich={hasSelectedTarget}
-          onRequestEnrichment={props.onRequestEnrichment}
         />
         <button
           type="button"

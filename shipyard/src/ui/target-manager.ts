@@ -58,8 +58,8 @@ function createCurrentTargetSummary(
     description:
       sessionState.targetProfile?.description ??
       (sessionState.discovery.isGreenfield
-        ? "Greenfield target waiting for the first implementation pass."
-        : "Project selected. Run enrichment to add an AI-authored summary."),
+        ? "Greenfield target ready for the first implementation pass."
+        : "Project selected. Shipyard will analyze it automatically when enough context is available."),
     language: sessionState.discovery.language,
     framework: sessionState.discovery.framework,
     hasProfile: Boolean(sessionState.targetProfile),
