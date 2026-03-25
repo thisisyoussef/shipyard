@@ -129,10 +129,13 @@ If the story touches user-visible UI, run `.ai/workflows/design-phase.md` after 
 
 The design phase:
 - Takes the feature spec and task breakdown as input
+- Starts from `node scripts/generate-design-brief.mjs --story <story-id>` unless `design-phase.md` says otherwise for the story
 - Runs all 6 design steps (Understand → Define → Compose → Animate → Harden → Review)
 - Invokes 19 skills across the steps (see design-phase.md for the full mapping)
 - Produces a design brief at `.ai/state/design-brief/<story-id>/brief.md`
 - The brief becomes allowed context for the TDD pipeline
+
+The bridge is Claude-first by default and only falls back to Codex when Claude is unavailable or errors.
 
 Do not skip this for UI stories. The design brief prevents the implementer from inventing visual decisions under test pressure.
 

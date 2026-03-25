@@ -32,6 +32,23 @@ Skip only for:
 - Existing token system: `shipyard/ui/src/tokens/`
 - Existing components: `shipyard/ui/src/primitives.tsx` and extracted components
 
+## Default Execution
+
+Codex should treat the repo bridge below as the default way to start design work for every visible UI story:
+
+```bash
+node scripts/generate-design-brief.mjs --story <story-id>
+```
+
+Notes:
+- The script auto-discovers `feature-spec.md` under `shipyard/docs/specs/**/<story-id>/` when possible.
+- Use `--spec <path>` when auto-discovery is ambiguous.
+- Use `--context-path <path>` to include extra files or directories in the prompt.
+- The bridge writes `.ai/state/design-brief/<story-id>/brief.md`.
+- The bridge is Claude-first by default and falls back to Codex only when Claude is unavailable or returns an error.
+
+After the initial draft is written, continue the full review/refinement loop below rather than treating the first output as final by default.
+
 ---
 
 ## Output
@@ -62,6 +79,7 @@ Before making any design decisions, understand what exists.
 - `normalize` — audit current UI for design drift and inconsistency
 
 **Actions:**
+0. If the brief does not exist yet, generate the first draft with `node scripts/generate-design-brief.mjs --story <story-id>` before refining it.
 1. Read the feature spec's acceptance criteria and UI requirements.
 2. Run `extract` on the affected UI surface to catalog existing patterns.
 3. Run `normalize` to identify any design drift in the area being modified.

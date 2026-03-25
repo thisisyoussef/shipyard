@@ -25,11 +25,17 @@ Then use as needed:
 - Feature stories: use `.ai/workflows/spec-driven-delivery.md` and `.ai/skills/spec-driven-development.md`.
 - AI or harness changes: use `.ai/workflows/ai-architecture-change.md` and keep `.ai/` aligned with the real repo layout.
 - Behavior changes: use `.ai/workflows/tdd-pipeline.md`; if repo-owned helper scripts exist, use them, otherwise keep the same staged boundaries manually.
-- Visible UI work: run `.ai/workflows/design-phase.md` between spec and TDD, then use `.ai/workflows/ui-qa-critic.md` after implementation. See the UI Skill Chain below for which skills fire at each step.
+- Visible UI work: run `.ai/workflows/design-phase.md` between spec and TDD, then use `.ai/workflows/ui-qa-critic.md` after implementation. The default design delegate is `node scripts/generate-design-brief.mjs --story <story-id>`; it uses Claude first and falls back to Codex if Claude is unavailable or errors. See the UI Skill Chain below for which skills fire at each step.
 
 ## UI Skill Chain (Design → Build → Critique → Polish)
 
 When a story touches visible UI, invoke these skills in order:
+
+### Default Design Delegate
+- Start UI stories by running `node scripts/generate-design-brief.mjs --story <story-id>`.
+- Pass `--spec <path>` when auto-discovery is ambiguous, and `--context-path <path>` for extra files the brief should consider.
+- Treat Claude as the default design engine. Only rely on the Codex-generated brief when the bridge reports a Claude failure or unavailability.
+- The bridge writes `.ai/state/design-brief/<story-id>/brief.md`, which remains the handoff artifact for TDD and UI QA.
 
 ### Phase 1: Design Direction
 - `.agents/skills/frontend-design/SKILL.md` — set visual direction, avoid AI slop

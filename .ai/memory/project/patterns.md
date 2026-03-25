@@ -32,3 +32,8 @@ Capture repeatable patterns that match how this workspace actually works.
 - Repo rules and harness truth live at the root.
 - Product-specific implementation docs stay under `shipyard/`.
 - Durable workflow notes go in `.ai/memory/project/`; current-task notes go in `.ai/memory/session/`.
+
+## UI Workflow Pattern
+
+- Visible UI stories default to `node scripts/generate-design-brief.mjs --story <story-id>` before TDD.
+- The design brief bridge is Claude-first and falls back to Codex only when Claude is unavailable or errors.
