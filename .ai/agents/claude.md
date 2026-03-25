@@ -40,6 +40,12 @@ When a story touches visible UI, Claude should follow the same skill chain defin
 
 Skills are in `.agents/skills/`. Not every story requires every skill — see codex.md for guidance.
 
+**When to invoke during implementation (not just spec-building):**
+- **Design (Step 3)**: Phase 1 skills set visual direction before coding
+- **Implement (TDD Agent 2)**: Phase 2 skills guide CSS/component decisions during coding
+- **Review (TDD Agent 3)**: Phase 3 skills evaluate quality and fix gaps during refactor
+- **Validate (Step 9)**: Phase 3 skills run final audit; Phase 4 for pack-closing polish
+
 ## Compatibility Notes
 
 - Product code lives under `shipyard/`.

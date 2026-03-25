@@ -60,6 +60,20 @@ Not every story requires every skill. Use judgment:
 - Token/style-only changes → Phase 1 + Phase 3
 - New components/pages → Phase 1 + Phase 2 + Phase 3 + Phase 4
 - Full UI overhaul → all phases, all skills
+
+### When to invoke each phase in the workflow
+
+| Workflow Step | Skill Phase | Who |
+|---|---|---|
+| `spec-driven-delivery.md` Step 2 (Specify) | Phase 1: Design Direction | Spec author |
+| `feature-development.md` Step 3 (Design) | Phase 1: Design Direction | Designer/planner |
+| `tdd-pipeline.md` Step 4 (Agent 2 - Implement) | Phase 2: Build & Refine | Implementer |
+| `tdd-pipeline.md` Step 7 (Agent 3 - Review) | Phase 3: Quality Gate | Reviewer |
+| `feature-development.md` Step 9 (Validate) | Phase 3: Quality Gate | Validator |
+| `ui-qa-critic.md` Step 2 (Critic Pass) | Phase 3: Quality Gate | QA critic |
+| `feature-development.md` Step 9 (pack-closing) | Phase 4: Final Polish | Polish pass |
+
+The skill chain is not just for spec-building — it produces the best results when skills are invoked **during implementation and review**, where they guide concrete CSS/component decisions rather than abstract spec language.
 - Story finish: use `.ai/workflows/story-handoff.md`; when the story changes traced AI/runtime behavior, run `.ai/workflows/langsmith-finish-check.md` before the completion gate; unless the user explicitly asks to pause or choose a different merge path, continue through `.ai/workflows/git-finalization.md` automatically after the completion gate, and treat the story as incomplete until it is merged to `main` on GitHub.
 
 ## Route By Task Type

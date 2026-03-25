@@ -80,6 +80,15 @@ Allowed context:
 - full repo codebase,
 - story spec.
 
+For UI implementation stories, Agent 2 should apply the **UI Skill Chain Phase 2** (Build & Refine) from `.ai/codex.md`:
+- `typeset` — typography hierarchy and font loading
+- `colorize` — strategic color introduction
+- `arrange` — layout, spacing, visual rhythm
+- `animate` — entrance, micro-interactions, state transitions
+- `bolder` — amplify visual impact when design feels safe/generic
+
+These skills guide implementation decisions, not spec decisions. Use them to make concrete CSS/component choices that match the design direction established in Phase 1 during spec-driven-delivery.
+
 Forbidden behavior:
 - modifying Agent 1 test files,
 - silently weakening the contract.
@@ -140,13 +149,22 @@ Allowed context:
 - coverage and mutation output,
 - story spec.
 
+For UI implementation stories, Agent 3 should apply the **UI Skill Chain Phase 3** (Quality Gate) from `.ai/codex.md`:
+- `critique` — structured design evaluation
+- `audit` — accessibility, performance, theming, responsive audit
+- `fixing-accessibility` — WCAG compliance fixes
+- `fixing-motion-performance` — animation perf fixes
+
+These skills guide the refactor pass: Agent 3 uses critique/audit output to identify quality gaps, then fixes them while keeping tests green.
+
 Forbidden context:
 - Agent 2 debugging history or false starts.
 
 Required outputs:
 - refactored implementation when warranted,
 - missing-test recommendations,
-- `agent3-quality.json` with coverage/mutation/code-smell notes.
+- `agent3-quality.json` with coverage/mutation/code-smell notes,
+- for UI stories: critique/audit skill output summary.
 
 Loop limit:
 - maximum 2 failed refactor attempts before escalation.

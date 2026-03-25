@@ -83,6 +83,11 @@ Do not assume defaults that have not been recorded.
 - Reuse existing patterns where possible
 - Keep boundaries explicit
 - For UI scope, define typography/layout/color/motion constraints, not vague design adjectives
+- For UI scope, run the **UI Skill Chain Phase 1** (Design Direction) from `.ai/codex.md`:
+  - `frontend-design` — set visual direction, avoid AI slop
+  - `interface-design` — dashboard/panel/tool interface patterns
+  - `emil-design-eng` — taste, unseen details, animation decisions
+  - `baseline-ui` — enforce component baseline standards
 
 ### Step 3.5: Establish an Inspectable UI Surface Early
 - For stories that change visible product behavior, establish or extend the minimum inspectable UI surface early in the implementation sequence.
@@ -112,6 +117,12 @@ Do not assume defaults that have not been recorded.
 ### Step 6: RED -> GREEN -> REFACTOR Through the Pipeline
 - Agent 1: write the smallest failing behavior contract from the spec and public API surface only
 - Agent 2: implement the minimum code to pass without editing Agent 1 tests
+  - For UI scope, Agent 2 should apply **UI Skill Chain Phase 2** (Build & Refine) during implementation:
+    - `typeset` — typography hierarchy and font loading
+    - `colorize` — strategic color introduction
+    - `arrange` — layout, spacing, visual rhythm
+    - `animate` — entrance, micro-interactions, state transitions
+    - `bolder` — amplify visual impact when design feels safe
 - Agent 3: review/refactor while keeping the suite green
 - Use `bash scripts/tdd_handoff.sh check ...` for RED/GREEN enforcement
 
@@ -127,6 +138,14 @@ Run the project-specific commands defined during setup and required by the activ
 - Eval comparison for AI behavior changes
 - Accessibility and visual regression for UI work
 - Performance checks if the feature changes critical paths
+- For UI scope, run **UI Skill Chain Phase 3** (Quality Gate):
+  - `critique` — structured design evaluation (hierarchy, composition, typography, color, states)
+  - `audit` — accessibility, performance, theming, responsive audit
+  - `fixing-accessibility` — WCAG 2.2 AA compliance fixes
+  - `fixing-motion-performance` — animation perf fixes (compositor-only verification)
+- For UI scope on pack-closing or high-impact stories, also run **Phase 4** (Final Polish):
+  - `polish` — alignment, spacing, consistency, edge cases
+  - `overdrive` — ambitious implementations when appropriate (View Transitions, scroll-driven, etc.)
 
 ### Step 9.5: Run the UI QA Critic for Visible Stories
 - If the story changed visible UI behavior, run `.ai/workflows/ui-qa-critic.md`
