@@ -7,6 +7,7 @@ Use `docs/specs/` for story packs and phased implementation plans.
 ## Start Here
 
 - [`../README.md`](../README.md): product overview, quick start, and operator-facing commands
+- [`demo/mvp-demo-script.md`](./demo/mvp-demo-script.md): short recorded walkthrough for the current MVP
 - [`architecture/README.md`](./architecture/README.md): system diagrams and runtime flow
 - [`../src/README.md`](../src/README.md): source tree map and ownership guide
 - [`../ui/README.md`](../ui/README.md): React SPA source guide

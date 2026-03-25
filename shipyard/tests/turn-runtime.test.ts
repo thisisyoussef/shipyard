@@ -224,6 +224,81 @@ describe("instruction runtime handoff", () => {
     expect(sessionState.rollingSummary).toContain("completed via fallback");
   });
 
+  it("carries forward recent session history while keeping the rolling summary bounded", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-turn-history-");
+    const sessionState = createSessionState({
+      sessionId: "turn-history-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: [],
+        topLevelDirectories: [],
+        projectName: null,
+      },
+    });
+    const client = createMockAnthropicClient(
+      Array.from({ length: 10 }, (_, index) =>
+        createAssistantMessage({
+          stopReason: "end_turn",
+          content: [
+            {
+              type: "text",
+              text: `Handled turn ${String(index + 1)}.`,
+              citations: null,
+            },
+          ],
+        })),
+    );
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      baseInjectedContext: ["Base context for every turn."],
+      runtimeDependencies: {
+        createRawLoopOptions: () => ({
+          client,
+          logger: {
+            log() {},
+          },
+        }),
+      },
+    });
+
+    for (let turn = 1; turn <= 10; turn += 1) {
+      const result = await executeInstructionTurn({
+        sessionState,
+        runtimeState,
+        instruction: `inspect file ${String(turn)}`,
+        injectedContext: [`Context for turn ${String(turn)}`],
+      });
+
+      expect(result.status).toBe("success");
+    }
+
+    expect(sessionState.turnCount).toBe(10);
+    expect(client.calls).toHaveLength(10);
+
+    const finalSystemPrompt = client.calls[9]?.system ?? "";
+
+    expect(finalSystemPrompt).toContain("Base context for every turn.");
+    expect(finalSystemPrompt).toContain("Context for turn 10");
+    expect(finalSystemPrompt).not.toContain("Context for turn 9");
+    expect(finalSystemPrompt).toContain("Turn 2: inspect file 2 ->");
+    expect(finalSystemPrompt).toContain("Turn 9: inspect file 9 ->");
+    expect(finalSystemPrompt).not.toContain("Turn 1: inspect file 1 ->");
+
+    const rollingSummaryLines = sessionState.rollingSummary.split("\n");
+
+    expect(rollingSummaryLines).toHaveLength(8);
+    expect(sessionState.rollingSummary).toContain("Turn 3: inspect file 3 ->");
+    expect(sessionState.rollingSummary).toContain("Turn 10: inspect file 10 ->");
+    expect(sessionState.rollingSummary).not.toContain("Turn 2: inspect file 2 ->");
+  });
+
   it("fails clearly instead of using the offline preview path when ANTHROPIC_API_KEY is missing", async () => {
     const targetDirectory = await createTempDirectory("shipyard-turn-missing-key-");
     const sessionState = createSessionState({

@@ -39,20 +39,26 @@
 ## Requirement Matrix
 
 - Persistent loop:
-  - smoke: multiple instructions in one process, with `status` between turns
-  - stress: longer turn sequence plus restart and resume
+  - smoke: `tests/cli-loop.test.ts` runs multiple instructions in one process, with `status` between turns
+  - stress: `tests/cli-loop.test.ts` covers restart and `--session` resume after persisted turn state
 - Surgical editing:
-  - smoke: successful unique-anchor edit
-  - stress: repeated edits to one file, stale-read rejection, ambiguous anchor rejection, not-found rejection, large-diff rejection
+  - smoke: `tests/tooling.test.ts` covers successful unique-anchor edits
+  - stress: `tests/tooling.test.ts` covers repeated edits to one file, stale-read rejection, ambiguous anchor rejection, not-found rejection, and large-diff rejection
 - Context injection:
-  - smoke: injected context appears in turn behavior and session summary
-  - stress: multi-turn context carry-forward and bounded rolling summary
+  - smoke: `tests/context-envelope.test.ts` validates injected-context placement in the serialized envelope
+  - stress: `tests/turn-runtime.test.ts` exercises multi-turn context carry-forward and bounded rolling summary
 - Browser UI:
-  - smoke: local UI instruction, streamed events, visible completion
-  - stress: reconnect or error case with session state recovery
+  - smoke: `tests/ui-runtime.test.ts` covers local UI instruction handling, streamed events, edit previews, and visible completion
+  - stress: `tests/ui-runtime.test.ts` covers reconnect plus error recovery with session-state continuity
 - Tracing:
-  - smoke: one successful trace emitted
-  - stress: one failure trace emitted and linked to the failed turn path
+  - smoke: `tests/ui-runtime.test.ts` verifies local JSONL trace entries for a successful turn
+  - stress: `tests/ui-runtime.test.ts` verifies local JSONL failure traces, and `tests/graph-runtime.test.ts` verifies graph or fallback trace metadata wiring
+
+## Matrix Entry Points
+
+- Fast rerun: `pnpm --dir shipyard test:smoke`
+- Full suite: `pnpm --dir shipyard test`
+- Manual follow-up: `shipyard/tests/manual/README.md`
 
 ## Dependency Plan
 
@@ -91,6 +97,7 @@
 
 ## Validation Commands
 ```bash
+pnpm --dir shipyard test:smoke
 pnpm --dir shipyard test
 pnpm --dir shipyard typecheck
 pnpm --dir shipyard build

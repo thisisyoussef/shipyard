@@ -442,6 +442,21 @@ pre,
   font-size: var(--text-base);
 }
 
+.context-input::placeholder,
+.instruction-input::placeholder {
+  color: var(--text-faint);
+}
+
+.context-input:disabled,
+.instruction-input:disabled,
+.top-action:disabled,
+.ghost-action:disabled,
+.primary-action:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .instruction-form,
 .composer-actions,
 .context-history-block {
