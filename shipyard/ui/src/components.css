@@ -110,29 +110,6 @@
   min-height: 100%;
 }
 
-.workbench-operator-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.18fr) minmax(20rem, 0.82fr);
-  gap: var(--space-4);
-  align-items: start;
-}
-
-.workbench-focus-column,
-.workbench-support-column {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.workbench-focus-column {
-  align-content: start;
-  min-height: 0;
-}
-
-.workbench-support-column {
-  align-content: start;
-}
-
 .workbench-main-activity {
   flex: 1 1 auto;
   min-height: 0;
@@ -888,12 +865,6 @@ textarea:focus-visible {
 }
 
 /* ── Target manager responsive adjustments ───── */
-
-@media (max-width: 1400px) {
-  .workbench-operator-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 
 @media (max-width: 1180px) {
   .target-header {

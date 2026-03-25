@@ -86,15 +86,15 @@ even begins. The operator chooses the project from inside the workbench."
 - Description: `Build a browser-based tic-tac-toe game from scratch.`
 - Scaffold type: `React + TypeScript`
 [Click `Create target`]
-[Wait for the preview panel to reach `Running`]
-[Click `Open preview` once, then return to the workbench]
+[Switch to the `Local preview` tab and wait for it to reach `Running`]
+[Click `Open preview` once, then return to the `Chat` tab]
 
 "For this story I’m creating a fresh `tic-tac-toe-demo` target inside the
 browser. Shipyard scaffolds the React + TypeScript project, switches into code
 phase, and brings up the local preview automatically."
 
-"Now I have visible ground truth. The target exists, the preview is live, and I
-can verify every change on camera."
+"Now I have visible ground truth. The target exists, the preview is live in its
+own workbench tab, and I can verify every change on camera."
 
 4. Land the first visible result
 [Submit the first instruction]
@@ -103,8 +103,8 @@ can verify every change on camera."
 Turn this starter React app into a simple 3x3 tic-tac-toe board. Show a heading, a status line that starts with "Current player: X", and nine clickable squares laid out in a grid. Keep the first version self-contained in src/App.tsx and a small src/App.css file if needed.
 ```
 
-[After the turn finishes, point at the preview panel, `Chat`, `Live view`, and
-the file/output sidebars]
+[After the turn finishes, point at the `Chat`, `Local preview`, and `Live
+view` tabs plus the file/output sidebars]
 
 "The first turn turns a blank scaffold into a visible 3x3 board. What matters
 here is not just that Shipyard answered a prompt. The preview shows the result

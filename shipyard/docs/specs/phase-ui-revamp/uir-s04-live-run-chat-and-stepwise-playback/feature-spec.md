@@ -68,7 +68,8 @@ flip to a simpler chat-first view for conversational iteration.
 
 ## UI Requirements
 
-- The main workspace surface uses clearly labeled `Chat` and `Live view` tabs.
+- The main workspace surface uses clearly labeled `Chat`, `Local preview`, and
+  `Live view` tabs.
 - `Live view` presents a left-to-right progression from timeline to detail
   pane.
 - Edit evidence uses distinct `Before`, `After`, and `Diff` headings.
@@ -90,19 +91,20 @@ flip to a simpler chat-first view for conversational iteration.
 
 ## Implementation Evidence
 
-- `shipyard/ui/src/ShipyardWorkbench.tsx`: the normal desktop workbench now
-  uses a focus/support grid so the composer plus `Chat`/`Live view` stay in the
-  primary column while local preview moves to a support column.
+- `shipyard/ui/src/ShipyardWorkbench.tsx`: the center workbench now keeps
+  `Chat`, `Local preview`, and `Live view` inside one primary tab set so
+  operators can switch surfaces without losing vertical space to a second
+  preview column.
 
   ```tsx
-  <div className="workbench-operator-grid">
-    <div className="workbench-focus-column">
-      <ComposerPanel ... />
-      <div className="workbench-primary-shell">...</div>
-    </div>
-    <div className="workbench-support-column">
+  <div className="workbench-primary-shell">
+    <button ...>Chat</button>
+    <button ...>Local preview</button>
+    <button ...>Live view</button>
+
+    {primaryView === "preview" ? (
       <PreviewPanel preview={props.previewState} />
-    </div>
+    ) : null}
   </div>
   ```
 
@@ -118,25 +120,26 @@ flip to a simpler chat-first view for conversational iteration.
   ```
 
 - `shipyard/ui/src/panels/panels.css` and `shipyard/ui/src/styles.css`: the
-  center workspace keeps a bounded desktop height while the preview frame is
-  shortened in the support column so both surfaces remain visible together.
+  center workspace keeps a bounded desktop height, and the preview panel now
+  participates in the same primary-shell sizing contract as `Chat` and
+  `Live view`.
 
   ```css
   .workbench-primary-shell {
     min-height: clamp(24rem, calc(100vh - 17rem), 44rem);
   }
 
-  .workbench-support-column .preview-frame-shell {
-    height: clamp(15rem, 34vh, 22rem);
+  .workbench-primary-shell > .preview-panel {
+    flex: 1 1 auto;
+    min-height: 0;
   }
   ```
 
 - `shipyard/tests/ui-workbench.test.ts`: the render test now asserts the new
-  layout scaffold and keeps `Latest conversation` ahead of `Local preview` in
-  the rendered workbench markup.
+  primary tab label and renders preview states by selecting the preview tab
+  explicitly.
 
   ```ts
-  expect(markup.indexOf("Latest conversation")).toBeLessThan(
-    markup.indexOf("Local preview"),
-  );
+  const markup = renderWorkbench({ primaryView: "preview" });
+  expect(markup).toContain("Preview is running on loopback.");
   ```

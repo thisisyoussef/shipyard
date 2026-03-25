@@ -222,6 +222,7 @@ function renderWorkbench(overrides?: {
   connectionState?: "connecting" | "ready" | "agent-busy" | "disconnected" | "error";
   agentStatus?: string;
   contextDraft?: string;
+  primaryView?: "chat" | "preview" | "live";
   previewState?: PreviewStateViewModel;
   leftSidebarOpen?: boolean;
   rightSidebarOpen?: boolean;
@@ -258,6 +259,7 @@ function renderWorkbench(overrides?: {
       traceButtonLabel: "Copy trace path",
       leftSidebarOpen: overrides?.leftSidebarOpen ?? true,
       rightSidebarOpen: overrides?.rightSidebarOpen ?? true,
+      initialPrimaryView: overrides?.primaryView,
       onToggleLeftSidebar: () => undefined,
       onToggleRightSidebar: () => undefined,
     }),
@@ -276,21 +278,18 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("Previous runs");
     expect(markup).toContain("fix the failing preview");
     expect(markup).toContain(">Chat<");
+    expect(markup).toContain("Local preview");
     expect(markup).toContain("Live view");
     expect(markup).toContain("Latest conversation");
     expect(markup).toContain("inspect package.json");
     expect(markup).toContain("Open trace");
     expect(markup).toContain('aria-label="Current location"');
-    expect(markup).toContain('class="workbench-operator-grid"');
-    expect(markup).toContain('class="workbench-focus-column"');
-    expect(markup).toContain('class="workbench-support-column"');
-    expect(markup.indexOf("Latest conversation")).toBeLessThan(
-      markup.indexOf("Local preview"),
-    );
   });
 
   it("renders preview status, inline result, and a direct preview link", () => {
-    const markup = renderWorkbench();
+    const markup = renderWorkbench({
+      primaryView: "preview",
+    });
 
     expect(markup).toContain("Local preview");
     expect(markup).toContain("Preview is running on loopback.");
@@ -346,6 +345,7 @@ describe("ShipyardWorkbench", () => {
   // SKIP: UIV3 rebuild - preview panel reimplemented in S07
   it("renders an explicit unavailable preview state instead of guessing", () => {
     const markup = renderWorkbench({
+      primaryView: "preview",
       previewState: {
         status: "unavailable",
         summary: "Preview unavailable for this target.",

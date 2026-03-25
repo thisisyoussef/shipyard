@@ -17,9 +17,9 @@
 
 - The left sidebar shows the active session, saved runs for the current target,
   and injected-context history in separate panels.
-- The center workspace now has `Chat` and `Live view` tabs so operators can
-  flip between a conversation-first transcript and a step-by-step execution
-  playback without leaving the current session.
+- The center workspace now has `Chat`, `Local preview`, and `Live view` tabs
+  so operators can switch between the conversation, the rendered target, and
+  step-by-step execution playback without leaving the current session.
 - `Live view` keeps streamed tool activity, immediate edit steps, terminal-like
   detail, and before/after diff evidence visible while the run is still
   progressing.
