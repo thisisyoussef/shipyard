@@ -22,10 +22,6 @@ export {
   type FilePanelProps,
 } from "./FilePanel.js";
 export {
-  OutputPanel,
-  type OutputPanelProps,
-} from "./OutputPanel.js";
-export {
   SessionPanel,
   type SessionPanelProps,
 } from "./SessionPanel.js";
