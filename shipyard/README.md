@@ -128,7 +128,7 @@ already holding the original port.
 
 Phase 9 introduces a hosted Railway path for the existing browser runtime.
 
-- Keep the runtime in browser mode: `pnpm --dir shipyard start -- --ui`
+- Keep the runtime in browser mode: `pnpm start -- --ui`
 - Set `SHIPYARD_TARGETS_DIR=/app/workspace`
 - Set `SHIPYARD_UI_HOST=0.0.0.0`
 - Let Railway provide `PORT`; Shipyard falls back to it when
@@ -140,7 +140,8 @@ Phase 9 introduces a hosted Railway path for the existing browser runtime.
 - Set `VERCEL_TOKEN` to enable the first-class deploy action and the
   `deploy_target` tool
 - Use `/api/health` for the service health check
-- Point Railway config-as-code at [`railway.json`](./railway.json)
+- If Railway is connected to the full repo, set the service root directory to
+  `shipyard/` and point config-as-code at [`railway.json`](./railway.json)
 
 Hosted Phase 9 also adds browser-side reference-file upload and a dedicated
 deploy surface that keeps the hosted Shipyard URL, local preview URL, and

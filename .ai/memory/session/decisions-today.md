@@ -17,3 +17,7 @@
 - 2026-03-25: Expanded the design bridge context so Claude reads `.ai/agents/claude.md` and `.claude/CLAUDE.md` and follows the same imperative design skill chain Codex uses.
 - 2026-03-25: Added `scripts/run-ui-phase-bridge.mjs` plus the `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES` flag so UI implementation, QA, critic, and final polish can use Claude first without changing the phase skill contracts.
 - 2026-03-25: Added a shared `ts-pnpm-workspace` scaffold preset plus `bootstrap_target`, so both target creation and already-selected empty targets reuse the same greenfield generator instead of repeated `write_file` boilerplate.
+- 2026-03-25: Corrected the hosted Railway contract so the nested `shipyard/`
+  app deploys from its own root; `shipyard/railway.json` now uses `pnpm build`
+  and `pnpm start -- --ui`, and the public Railway service lives at
+  `shipyard-production-f2e5.up.railway.app` behind the shared access gate.

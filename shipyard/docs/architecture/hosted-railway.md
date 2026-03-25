@@ -8,8 +8,8 @@ path from the workbench.
 ## Service Contract
 
 - Runtime mode: `shipyard --ui`
-- Build command: `pnpm install --frozen-lockfile && pnpm --dir shipyard build`
-- Start command: `pnpm --dir shipyard start -- --ui`
+- Build command: `pnpm install --frozen-lockfile && pnpm build`
+- Start command: `pnpm start -- --ui`
 - Health check path: `/api/health`
 - Fixed hosted targets directory: `/app/workspace`
 - Recommended volume mount path: `/app/workspace`
@@ -74,7 +74,12 @@ path from the workbench.
 
 ## Railway Setup Notes
 
-- Point Railway's config-as-code path at `/shipyard/railway.json`.
+- If Railway is connected to the full repo, set the service root directory to
+  `shipyard/` so `package.json`, `pnpm-lock.yaml`, and `railway.json` resolve
+  together.
+- Point Railway's config-as-code path at `/shipyard/railway.json` when the
+  provider is watching the full repo, or keep `railway.json` at the uploaded
+  app root when deploying only the `shipyard/` directory.
 - If you configure service settings directly in the Railway dashboard, use the
   build and start commands above.
 - Attach a persistent volume at `/app/workspace` before enabling
