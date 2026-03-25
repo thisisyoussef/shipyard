@@ -22,6 +22,9 @@ import { ComposerPanel } from "./ComposerPanel.js";
 import { ContextPanel } from "./ContextPanel.js";
 import { FilePanel } from "./FilePanel.js";
 import { HeaderStrip } from "./HeaderStrip.js";
+import { TargetCreationDialog } from "./TargetCreationDialog.js";
+import { TargetHeader } from "./TargetHeader.js";
+import { TargetSwitcher } from "./TargetSwitcher.js";
 import {
   Badge,
   SectionHeader,
@@ -34,6 +37,7 @@ import type {
   FileEventViewModel,
   PreviewStateViewModel,
   SessionStateViewModel,
+  TargetManagerViewModel,
   TurnViewModel,
   WorkbenchConnectionState,
 } from "./view-models.js";
@@ -48,6 +52,7 @@ interface ComposerNotice {
 
 export interface ShipyardWorkbenchProps {
   sessionState: SessionStateViewModel | null;
+  targetManager: TargetManagerViewModel | null;
   turns: TurnViewModel[];
   fileEvents: FileEventViewModel[];
   previewState: PreviewStateViewModel;
@@ -65,6 +70,13 @@ export interface ShipyardWorkbenchProps {
   onContextKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onClearContext: () => void;
   onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
+  onRequestTargetSwitch: (targetPath: string) => void;
+  onRequestTargetCreate: (input: {
+    name: string;
+    description: string;
+    scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
+  }) => void;
+  onRequestTargetEnrich: () => void;
   onRefreshStatus: () => void;
   onCopyTracePath: () => void;
   traceButtonLabel: string;
@@ -132,11 +144,14 @@ function formatWorkspaceLabel(workspaceDirectory: string): string {
 
 export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
   const [activityScope, setActivityScope] = useState<ActivityScope>("latest");
+  const [targetSwitcherOpen, setTargetSwitcherOpen] = useState(false);
+  const [targetCreationOpen, setTargetCreationOpen] = useState(false);
 
   const hasSession = props.sessionState !== null;
   const surfaceState = formatSurfaceState(props.connectionState, hasSession);
   const connectionLabel = formatConnectionLabel(props.connectionState, hasSession);
   const connectionTone = getConnectionTone(surfaceState);
+  const activePhase = props.sessionState?.activePhase ?? "target-manager";
 
   const visibleTurns = selectVisibleTurns(props.turns, activityScope);
   const visibleFileEvents = selectVisibleFileEvents(
@@ -220,6 +235,15 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
       </aside>
 
       <main className="shell-main" role="main" aria-label="Agent activity">
+        {props.targetManager ? (
+          <TargetHeader
+            activePhase={activePhase}
+            targetManager={props.targetManager}
+            onOpenSwitcher={() => setTargetSwitcherOpen(true)}
+            onRequestEnrichment={props.onRequestTargetEnrich}
+          />
+        ) : null}
+
         <ComposerPanel
           instruction={props.instruction}
           contextDraft={props.contextDraft}
@@ -336,6 +360,32 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
           <span>{props.sessionState?.tracePath ?? "Trace path pending"}</span>
         </div>
       </footer>
+
+      {props.targetManager ? (
+        <TargetSwitcher
+          activePhase={activePhase}
+          open={targetSwitcherOpen}
+          targetManager={props.targetManager}
+          onClose={() => setTargetSwitcherOpen(false)}
+          onCreateNew={() => {
+            setTargetSwitcherOpen(false);
+            setTargetCreationOpen(true);
+          }}
+          onSwitchTarget={(targetPath) => {
+            setTargetSwitcherOpen(false);
+            props.onRequestTargetSwitch(targetPath);
+          }}
+        />
+      ) : null}
+
+      <TargetCreationDialog
+        open={targetCreationOpen}
+        onClose={() => setTargetCreationOpen(false)}
+        onCreateTarget={(input) => {
+          setTargetCreationOpen(false);
+          props.onRequestTargetCreate(input);
+        }}
+      />
     </div>
   );
 }

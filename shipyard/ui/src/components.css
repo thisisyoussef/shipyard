@@ -103,6 +103,282 @@
   border-color: var(--accent-border);
 }
 
+/* ═══════════════════════════════════════════════
+   TARGET MANAGER (PTM-S03)
+   Target context bar, switcher, and creation dialog
+   ═══════════════════════════════════════════════ */
+
+.target-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid rgba(213, 140, 83, 0.16);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
+    var(--surface-shell);
+}
+
+.target-header-summary {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.target-header-copy {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.target-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.target-header-row strong {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  color: var(--text-strong);
+  letter-spacing: var(--tracking-tight);
+}
+
+.target-header-summary p {
+  margin: 0;
+  color: var(--text-body);
+  line-height: var(--leading-relaxed);
+}
+
+.target-header-hint {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.target-header-actions {
+  display: grid;
+  align-content: space-between;
+  justify-items: end;
+  gap: var(--space-3);
+}
+
+.target-primary-action,
+.target-inline-action,
+.target-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--space-9);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-medium);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-strong);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.target-primary-action {
+  border-color: rgba(213, 140, 83, 0.28);
+  background: rgba(213, 140, 83, 0.14);
+  color: var(--accent-strong);
+}
+
+.target-inline-action-danger {
+  border-color: rgba(236, 129, 112, 0.24);
+  color: var(--danger-strong);
+}
+
+.target-primary-action:hover,
+.target-inline-action:hover,
+.target-close:hover {
+  border-color: var(--accent-border);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.target-enrichment-pill {
+  gap: var(--space-2);
+}
+
+.target-spinner {
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1.4px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: target-spin 0.8s linear infinite;
+}
+
+@keyframes target-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.target-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: rgba(4, 8, 12, 0.74);
+}
+
+.target-switcher,
+.target-dialog {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid rgba(186, 197, 207, 0.14);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+    rgba(11, 17, 22, 0.98);
+  box-shadow: var(--elevation-4), var(--shadow-inner);
+}
+
+.target-switcher-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.target-switcher-header h2 {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  letter-spacing: var(--tracking-tight);
+}
+
+.target-card-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.target-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid rgba(186, 197, 207, 0.14);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.target-card:hover:not(:disabled) {
+  border-color: rgba(213, 140, 83, 0.28);
+  background: rgba(213, 140, 83, 0.08);
+  transform: translateY(-1px);
+}
+
+.target-card:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.target-card-header,
+.target-card-badges,
+.target-switcher-footer,
+.target-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.target-card-header {
+  justify-content: space-between;
+}
+
+.target-card strong {
+  font-size: var(--text-lg);
+  color: var(--text-strong);
+}
+
+.target-card p,
+.target-empty-state p {
+  margin: 0;
+  color: var(--text-body);
+  line-height: var(--leading-relaxed);
+}
+
+.target-empty-state {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border: 1px dashed rgba(186, 197, 207, 0.2);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.target-dialog-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.target-field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.target-field span {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.target-field input,
+.target-field textarea,
+.target-field select {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-strong);
+  font: inherit;
+}
+
+.target-field textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+
+.target-form-error {
+  margin: 0;
+  color: var(--danger-strong);
+}
+
+.target-header-summary:focus-visible,
+.target-primary-action:focus-visible,
+.target-inline-action:focus-visible,
+.target-close:focus-visible,
+.target-card:focus-visible,
+.target-field input:focus-visible,
+.target-field textarea:focus-visible,
+.target-field select:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 
 /* ═══════════════════════════════════════════════
    COLLAPSIBLE SHELL (UIV2-S02)
@@ -558,6 +834,38 @@ textarea:focus-visible {
   box-shadow:
     0 0 0 var(--focus-ring-width) var(--focus-ring-color);
   transition: box-shadow var(--focus-duration) var(--ease-out);
+}
+
+/* ── Target manager responsive adjustments ───── */
+
+@media (max-width: 1180px) {
+  .target-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .target-header-actions {
+    justify-items: start;
+  }
+}
+
+@media (max-width: 760px) {
+  .target-overlay {
+    padding: var(--space-2);
+  }
+
+  .target-switcher,
+  .target-dialog {
+    width: min(100vw - 1rem, 42rem);
+    padding: var(--space-4);
+  }
+
+  .target-header-row,
+  .target-switcher-header,
+  .target-card-header,
+  .target-dialog-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 /* ── Reduced motion catch-all ────────────────── */

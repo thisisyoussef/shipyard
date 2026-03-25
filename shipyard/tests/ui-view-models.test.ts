@@ -167,6 +167,7 @@ describe("ui view models", () => {
       sessionId: "session-restore",
       targetLabel: "shipyard",
       targetDirectory: "/tmp/shipyard",
+      activePhase: "code",
       workspaceDirectory: "/tmp/shipyard-workspace",
       turnCount: 1,
       startedAt: "2026-03-24T12:00:00.000Z",
@@ -211,6 +212,7 @@ describe("ui view models", () => {
       sessionId: "session-ready",
       targetLabel: "shipyard",
       targetDirectory: "/tmp/shipyard",
+      activePhase: "target-manager",
       workspaceDirectory: "/tmp/shipyard-workspace",
       turnCount: 0,
       startedAt: "2026-03-24T12:00:00.000Z",
@@ -261,5 +263,59 @@ describe("ui view models", () => {
       logTail: ["VITE v5.0.8 ready in 145 ms"],
       lastRestartReason: null,
     });
+  });
+
+  it("tracks target manager state and enrichment progress in the reducer", () => {
+    let state = createInitialWorkbenchState();
+
+    state = applyBackendMessage(state, {
+      type: "target:state",
+      state: {
+        currentTarget: {
+          path: "/tmp/targets",
+          name: "No target selected",
+          description: "Select or create a target to begin.",
+          language: null,
+          framework: null,
+          hasProfile: false,
+        },
+        availableTargets: [
+          {
+            path: "/tmp/targets/alpha-app",
+            name: "alpha-app",
+            description: "React sandbox",
+            language: "typescript",
+            framework: "React",
+            hasProfile: true,
+          },
+        ],
+        enrichmentStatus: {
+          status: "idle",
+          message: null,
+        },
+      },
+    });
+    state = applyBackendMessage(state, {
+      type: "target:enrichment_progress",
+      status: "in-progress",
+      message: "Analyzing project structure.",
+    });
+
+    expect(state.targetManager).toMatchObject({
+      currentTarget: {
+        name: "No target selected",
+      },
+      availableTargets: [
+        {
+          name: "alpha-app",
+          framework: "React",
+        },
+      ],
+      enrichmentStatus: {
+        status: "in-progress",
+        message: "Analyzing project structure.",
+      },
+    });
+    expect(state.agentStatus).toBe("Analyzing project structure.");
   });
 });

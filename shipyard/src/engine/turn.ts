@@ -1,12 +1,13 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
 
-import type { TaskPlan } from "../artifacts/types.js";
+import type { TargetProfile, TaskPlan } from "../artifacts/types.js";
 import {
   buildContextEnvelope,
   composeSystemPrompt,
 } from "../context/envelope.js";
 import { createCodePhase } from "../phases/code/index.js";
+import { createTargetManagerPhase } from "../phases/target-manager/index.js";
 import { gitDiffTool } from "../tools/index.js";
 import type { ToolResult } from "../tools/registry.js";
 import type { RunCommandResult } from "../tools/run-command.js";
@@ -26,6 +27,7 @@ import {
   type SessionState,
 } from "./state.js";
 import type { LangSmithTraceReference } from "../tracing/langsmith.js";
+import { configureTargetManagerEnrichmentInvoker } from "../tools/target-manager/enrich-target.js";
 
 export type InstructionRuntimeMode = "graph" | "fallback";
 
@@ -36,6 +38,13 @@ export interface InstructionRuntimeState {
   recentErrors: string[];
   retryCountsByFile: Record<string, number>;
   blockedFiles: string[];
+  pendingTargetSelectionPath: string | null;
+  targetEnrichmentInvoker?: (
+    prompt: string,
+  ) => Promise<{
+    text: string;
+    model: string;
+  }>;
   runtimeMode: InstructionRuntimeMode;
   runtimeDependencies?: AgentRuntimeDependencies;
 }
@@ -96,6 +105,7 @@ export interface InstructionTurnResult {
   status: "success" | "error";
   summary: string;
   finalText: string;
+  selectedTargetPath: string | null;
   langSmithTrace: LangSmithTraceReference | null;
 }
 
@@ -252,6 +262,31 @@ function summarizeToolResult(result: ToolResult): string {
   return truncateText(result.error ?? result.output ?? "Tool failed.", 220);
 }
 
+function isTargetSelectionData(value: unknown): value is { path: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "path" in value &&
+    typeof value.path === "string" &&
+    value.path.trim().length > 0
+  );
+}
+
+function isTargetProfileData(
+  value: unknown,
+): value is TargetProfile {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    "description" in value &&
+    typeof value.description === "string" &&
+    "enrichedAt" in value &&
+    typeof value.enrichedAt === "string"
+  );
+}
+
 async function emitDiffPreviewIfAvailable(
   reporter: InstructionTurnReporter | undefined,
   targetDirectory: string,
@@ -299,6 +334,7 @@ function createTurnSummary(
 }
 
 function createRuntimeDependencies(
+  sessionState: SessionState,
   runtimeState: InstructionRuntimeState,
   reporter: InstructionTurnReporter | undefined,
 ): AgentRuntimeDependencies {
@@ -344,6 +380,22 @@ function createRuntimeDependencies(
             success: context.result.success,
             summary,
           });
+
+          if (
+            context.result.success &&
+            context.toolUse.name === "select_target" &&
+            isTargetSelectionData(context.result.data)
+          ) {
+            runtimeState.pendingTargetSelectionPath = context.result.data.path;
+          }
+
+          if (
+            context.result.success &&
+            context.toolUse.name === "enrich_target" &&
+            isTargetProfileData(context.result.data)
+          ) {
+            sessionState.targetProfile = context.result.data;
+          }
         },
       };
     },
@@ -354,6 +406,12 @@ export function createInstructionRuntimeState(
   options: {
     projectRules: string;
     baseInjectedContext?: string[];
+    targetEnrichmentInvoker?: (
+      prompt: string,
+    ) => Promise<{
+      text: string;
+      model: string;
+    }>;
     runtimeMode?: InstructionRuntimeMode;
     runtimeDependencies?: AgentRuntimeDependencies;
   },
@@ -365,6 +423,8 @@ export function createInstructionRuntimeState(
     recentErrors: [],
     retryCountsByFile: {},
     blockedFiles: [],
+    pendingTargetSelectionPath: null,
+    targetEnrichmentInvoker: options.targetEnrichmentInvoker,
     runtimeMode: options.runtimeMode ?? "graph",
     runtimeDependencies: options.runtimeDependencies,
   };
@@ -373,9 +433,12 @@ export function createInstructionRuntimeState(
 export async function executeInstructionTurn(
   options: ExecuteInstructionTurnOptions,
 ): Promise<InstructionTurnResult> {
-  const phase = createCodePhase();
+  const phase = options.sessionState.activePhase === "target-manager"
+    ? createTargetManagerPhase()
+    : createCodePhase();
   const state = options.sessionState;
   const runtimeState = options.runtimeState;
+  runtimeState.pendingTargetSelectionPath = null;
   const explicitFilePath = extractExplicitFilePath(options.instruction);
   const targetFilePaths = explicitFilePath ? [explicitFilePath] : [];
   const mergedInjectedContext = [
@@ -420,9 +483,12 @@ export async function executeInstructionTurn(
     blockedFiles: runtimeState.blockedFiles,
   });
   const runtimeDependencies = createRuntimeDependencies(
+    state,
     runtimeState,
     options.reporter,
   );
+
+  configureTargetManagerEnrichmentInvoker(runtimeState.targetEnrichmentInvoker ?? null);
 
   try {
     const finalState = await runAgentRuntime(initialState, {
@@ -487,6 +553,7 @@ export async function executeInstructionTurn(
         status: "error",
         summary: errorMessage,
         finalText: failedTurnText,
+        selectedTargetPath: null,
         langSmithTrace: finalState.langSmithTrace,
       };
     }
@@ -514,6 +581,7 @@ export async function executeInstructionTurn(
       status: "success",
       summary,
       finalText,
+      selectedTargetPath: runtimeState.pendingTargetSelectionPath,
       langSmithTrace: finalState.langSmithTrace,
     };
   } catch (error) {
@@ -555,9 +623,11 @@ export async function executeInstructionTurn(
       status: "error",
       summary: message,
       finalText,
+      selectedTargetPath: null,
       langSmithTrace: null,
     };
   } finally {
+    configureTargetManagerEnrichmentInvoker(null);
     await saveSessionState(state);
   }
 }

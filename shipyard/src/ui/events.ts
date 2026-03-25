@@ -52,6 +52,7 @@ export function createSessionStateMessage(
     sessionId: options.sessionState.sessionId,
     targetLabel: createTargetLabel(options.sessionState.targetDirectory),
     targetDirectory: options.sessionState.targetDirectory,
+    activePhase: options.sessionState.activePhase,
     workspaceDirectory: options.workspaceDirectory,
     turnCount: options.sessionState.turnCount,
     startedAt: options.sessionState.startedAt,

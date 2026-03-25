@@ -1,22 +1,29 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { nanoid } from "nanoid";
 
-import type { DiscoveryReport } from "../artifacts/types.js";
-import { normalizeDiscoveryReport } from "../context/discovery.js";
+import type { DiscoveryReport, TargetProfile } from "../artifacts/types.js";
+import { discoverTarget, normalizeDiscoveryReport } from "../context/discovery.js";
 import { createPreviewStateFromCapability } from "../preview/contracts.js";
+import { loadTargetProfile } from "../tools/target-manager/profile-io.js";
 import {
   createInitialWorkbenchState,
   type WorkbenchViewState,
 } from "../ui/workbench-state.js";
 
+export type SessionPhase = "code" | "target-manager";
+
 export interface SessionState {
   sessionId: string;
   targetDirectory: string;
+  targetsDirectory: string;
   startedAt: string;
   lastActiveAt: string;
   turnCount: number;
   rollingSummary: string;
   discovery: DiscoveryReport;
+  activePhase: SessionPhase;
+  targetProfile?: TargetProfile;
   workbenchState: WorkbenchViewState;
 }
 
@@ -48,18 +55,24 @@ export type FileHashMap = Record<string, string>;
 export interface SessionSnapshot {
   sessionId: string;
   targetDirectory: string;
+  targetsDirectory: string;
   startedAt: string;
   lastActiveAt: string;
   turnCount: number;
   rollingSummary: string;
   discovery: DiscoveryReport;
+  activePhase: SessionPhase;
+  targetProfile?: TargetProfile;
   workbenchState: WorkbenchViewState;
 }
 
 export interface CreateSessionStateOptions {
   sessionId: string;
   targetDirectory: string;
+  targetsDirectory?: string;
   discovery: Partial<DiscoveryReport> | DiscoveryReport;
+  activePhase?: SessionPhase;
+  targetProfile?: TargetProfile;
 }
 
 export function createSessionState(
@@ -75,11 +88,15 @@ export function createSessionState(
   return {
     sessionId: options.sessionId,
     targetDirectory: options.targetDirectory,
+    targetsDirectory:
+      options.targetsDirectory ?? path.dirname(options.targetDirectory),
     startedAt: now,
     lastActiveAt: now,
     turnCount: 0,
     rollingSummary: "",
     discovery,
+    activePhase: options.activePhase ?? "code",
+    targetProfile: options.targetProfile,
     workbenchState,
   };
 }
@@ -88,11 +105,14 @@ export function createSessionSnapshot(state: SessionState): SessionSnapshot {
   return {
     sessionId: state.sessionId,
     targetDirectory: state.targetDirectory,
+    targetsDirectory: state.targetsDirectory,
     startedAt: state.startedAt,
     lastActiveAt: state.lastActiveAt,
     turnCount: state.turnCount,
     rollingSummary: state.rollingSummary,
     discovery: state.discovery,
+    activePhase: state.activePhase,
+    targetProfile: state.targetProfile,
     workbenchState: state.workbenchState,
   };
 }
@@ -153,7 +173,8 @@ export async function loadSessionState(
   }
 
   const contents = await readFile(sessionFilePath, "utf8");
-  const parsed = JSON.parse(contents) as Partial<SessionState> & Omit<SessionState, "workbenchState">;
+  const parsed = JSON.parse(contents) as Partial<SessionState> &
+    Omit<SessionState, "workbenchState">;
   const discovery = normalizeDiscoveryReport(parsed.discovery);
   const workbenchState = parsed.workbenchState ?? createInitialWorkbenchState();
 
@@ -166,6 +187,90 @@ export async function loadSessionState(
   return {
     ...parsed,
     discovery,
+    targetsDirectory:
+      parsed.targetsDirectory ?? path.dirname(targetDirectory),
+    activePhase: parsed.activePhase ?? "code",
+    targetProfile: parsed.targetProfile,
     workbenchState,
   } as SessionState;
+}
+
+export async function loadLatestSessionState(
+  targetDirectory: string,
+): Promise<SessionState | null> {
+  let entries: string[];
+
+  try {
+    entries = await readdir(getSessionDirectory(targetDirectory));
+  } catch {
+    return null;
+  }
+
+  const sessionIds = entries
+    .filter((entry) => entry.endsWith(".json"))
+    .map((entry) => entry.replace(/\.json$/u, ""))
+    .filter(Boolean);
+
+  const sessions = (
+    await Promise.all(
+      sessionIds.map((sessionId) => loadSessionState(targetDirectory, sessionId)),
+    )
+  ).filter((session): session is SessionState => session !== null);
+
+  if (sessions.length === 0) {
+    return null;
+  }
+
+  return [...sessions].sort((left, right) =>
+    Date.parse(right.lastActiveAt) - Date.parse(left.lastActiveAt)
+  )[0] ?? null;
+}
+
+export async function switchTarget(
+  currentState: SessionState,
+  newTargetPath: string,
+): Promise<SessionState> {
+  const resolvedTargetPath = path.resolve(newTargetPath);
+  const sameTarget = resolvedTargetPath === currentState.targetDirectory;
+
+  if (sameTarget && currentState.activePhase === "code") {
+    currentState.lastActiveAt = new Date().toISOString();
+    await saveSessionState(currentState);
+    return currentState;
+  }
+
+  await saveSessionState(currentState);
+  await mkdir(resolvedTargetPath, { recursive: true });
+  await ensureShipyardDirectories(resolvedTargetPath);
+
+  const discovery = await discoverTarget(resolvedTargetPath);
+  const targetProfile = await loadTargetProfile(resolvedTargetPath);
+  const resumedSession = await loadLatestSessionState(resolvedTargetPath);
+
+  const nextState =
+    resumedSession ??
+    createSessionState({
+      sessionId: nanoid(),
+      targetDirectory: resolvedTargetPath,
+      targetsDirectory: currentState.targetsDirectory,
+      discovery,
+      activePhase: "code",
+      targetProfile: targetProfile ?? undefined,
+    });
+
+  nextState.targetDirectory = resolvedTargetPath;
+  nextState.targetsDirectory = currentState.targetsDirectory;
+  nextState.discovery = discovery;
+  nextState.activePhase = "code";
+  nextState.targetProfile = targetProfile ?? nextState.targetProfile;
+  nextState.lastActiveAt = new Date().toISOString();
+
+  if (!nextState.workbenchState.previewState) {
+    nextState.workbenchState.previewState = createPreviewStateFromCapability(
+      discovery.previewCapability,
+    );
+  }
+
+  await saveSessionState(nextState);
+  return nextState;
 }

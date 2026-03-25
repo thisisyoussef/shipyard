@@ -3,7 +3,12 @@ import {
   createIdlePreviewState,
   createPreviewStateFromCapability,
 } from "../preview/contracts.js";
-import type { BackendToFrontendMessage } from "./contracts.js";
+import type {
+  BackendToFrontendMessage,
+  TargetEnrichmentState,
+  TargetManagerState,
+  TargetSummary,
+} from "./contracts.js";
 
 export type WorkbenchConnectionState =
   | "connecting"
@@ -16,6 +21,7 @@ export interface SessionStateViewModel {
   sessionId: string;
   targetLabel: string;
   targetDirectory: string;
+  activePhase: "code" | "target-manager";
   workspaceDirectory: string;
   turnCount: number;
   startedAt: string;
@@ -80,6 +86,12 @@ export interface PendingToolCall {
 
 export interface PreviewStateViewModel extends PreviewState {}
 
+export interface TargetSummaryViewModel extends TargetSummary {}
+
+export interface TargetEnrichmentStateViewModel extends TargetEnrichmentState {}
+
+export interface TargetManagerViewModel extends TargetManagerState {}
+
 export interface WorkbenchViewState {
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
@@ -94,6 +106,7 @@ export interface WorkbenchViewState {
   nextFileEventNumber: number;
   contextHistory: ContextReceiptViewModel[];
   previewState: PreviewStateViewModel;
+  targetManager: TargetManagerViewModel | null;
 }
 
 export interface PreparedInstructionSubmission {
@@ -178,6 +191,7 @@ function createSessionStateViewModel(
     sessionId: message.sessionId,
     targetLabel: message.targetLabel,
     targetDirectory: message.targetDirectory,
+    activePhase: message.activePhase,
     workspaceDirectory: message.workspaceDirectory,
     turnCount: message.turnCount,
     startedAt: message.startedAt,
@@ -187,6 +201,26 @@ function createSessionStateViewModel(
     projectRulesLoaded: message.projectRulesLoaded,
     tracePath: createTracePath(message.targetDirectory, message.sessionId),
   };
+}
+
+function createTargetManagerAgentStatus(
+  targetManager: TargetManagerViewModel | null,
+): string | null {
+  if (!targetManager) {
+    return null;
+  }
+
+  const { currentTarget, enrichmentStatus } = targetManager;
+
+  if (enrichmentStatus.status === "started" || enrichmentStatus.status === "in-progress") {
+    return enrichmentStatus.message ?? `Enriching ${currentTarget.name}...`;
+  }
+
+  if (enrichmentStatus.status === "error") {
+    return enrichmentStatus.message ?? `Failed to enrich ${currentTarget.name}.`;
+  }
+
+  return `Active target: ${currentTarget.name}`;
 }
 
 function ensureActiveTurn(
@@ -303,6 +337,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     previewState: createIdlePreviewState(
       "Waiting for Shipyard to publish preview state.",
     ),
+    targetManager: null,
   };
 }
 
@@ -364,8 +399,12 @@ export function applySessionSnapshot(
     ...recoveredState,
     sessionState: createSessionStateViewModel(message),
     connectionState: nextConnectionState,
-    agentStatus: nextAgentStatus,
+    agentStatus:
+      createTargetManagerAgentStatus(
+        recoveredState.targetManager ?? state.targetManager,
+      ) ?? nextAgentStatus,
     previewState,
+    targetManager: recoveredState.targetManager ?? state.targetManager ?? null,
   };
 }
 
@@ -598,5 +637,47 @@ export function applyBackendMessage(
         ...state,
         previewState: message.preview,
       };
+
+    case "target:state":
+      return {
+        ...state,
+        targetManager: message.state,
+        latestError:
+          message.state.enrichmentStatus.status === "error"
+            ? message.state.enrichmentStatus.message
+            : null,
+        agentStatus:
+          createTargetManagerAgentStatus(message.state) ?? state.agentStatus,
+      };
+
+    case "target:switch_complete":
+      return {
+        ...state,
+        targetManager: message.state,
+        latestError: message.success ? null : message.message,
+        agentStatus:
+          message.message ??
+          createTargetManagerAgentStatus(message.state) ??
+          state.agentStatus,
+      };
+
+    case "target:enrichment_progress": {
+      const targetManager = state.targetManager
+        ? {
+            ...state.targetManager,
+            enrichmentStatus: {
+              status: message.status,
+              message: message.message,
+            },
+          }
+        : state.targetManager;
+
+      return {
+        ...state,
+        targetManager,
+        latestError: message.status === "error" ? message.message : null,
+        agentStatus: message.message,
+      };
+    }
   }
 }

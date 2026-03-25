@@ -15,6 +15,7 @@ const sessionState: SessionStateViewModel = {
   sessionId: "session-ui-123",
   targetLabel: "shipyard",
   targetDirectory: "/tmp/shipyard-demo",
+  activePhase: "code",
   workspaceDirectory: "/tmp/shipyard-workspace",
   turnCount: 2,
   startedAt: "2026-03-24T12:00:00.000Z",
@@ -46,6 +47,39 @@ const sessionState: SessionStateViewModel = {
   },
   projectRulesLoaded: true,
   tracePath: "/tmp/shipyard-demo/.shipyard/traces/session-ui-123.jsonl",
+};
+
+const targetManager = {
+  currentTarget: {
+    path: "/tmp/shipyard-demo",
+    name: "shipyard",
+    description: "The active React workspace.",
+    language: "typescript",
+    framework: "React",
+    hasProfile: true,
+  },
+  availableTargets: [
+    {
+      path: "/tmp/shipyard-demo",
+      name: "shipyard",
+      description: "The active React workspace.",
+      language: "typescript",
+      framework: "React",
+      hasProfile: true,
+    },
+    {
+      path: "/tmp/shipyard-demo-alt",
+      name: "shipyard-demo-alt",
+      description: "An alternate demo target.",
+      language: "typescript",
+      framework: "Express",
+      hasProfile: false,
+    },
+  ],
+  enrichmentStatus: {
+    status: "complete" as const,
+    message: "Target profile saved.",
+  },
 };
 
 const runningPreviewState: PreviewStateViewModel = {
@@ -157,6 +191,7 @@ function renderWorkbench(overrides?: {
   return renderToStaticMarkup(
     createElement(ShipyardWorkbench, {
       sessionState,
+      targetManager,
       turns,
       fileEvents,
       previewState: overrides?.previewState ?? runningPreviewState,
@@ -174,6 +209,9 @@ function renderWorkbench(overrides?: {
       onContextKeyDown: () => undefined,
       onClearContext: () => undefined,
       onSubmitInstruction: () => undefined,
+      onRequestTargetSwitch: () => undefined,
+      onRequestTargetCreate: () => undefined,
+      onRequestTargetEnrich: () => undefined,
       onRefreshStatus: () => undefined,
       onCopyTracePath: () => undefined,
       traceButtonLabel: "Copy trace path",
@@ -190,6 +228,9 @@ describe("ShipyardWorkbench", () => {
     const markup = renderWorkbench();
 
     expect(markup).toContain("Connected to shipyard-workspace");
+    expect(markup).toContain("The active React workspace.");
+    expect(markup).toContain("Change target");
+    expect(markup).toContain("Enriched");
     expect(markup).toContain("Inject guidance");
     expect(markup).toContain("Cmd/Ctrl+Enter");
     expect(markup).toContain("Project signals");

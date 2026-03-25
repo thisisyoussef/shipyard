@@ -38,6 +38,20 @@ const previewStatusSchema = z.enum([
   "exited",
   "unavailable",
 ]);
+const scaffoldTypeSchema = z.enum([
+  "react-ts",
+  "express-ts",
+  "python",
+  "go",
+  "empty",
+]);
+const enrichmentStatusSchema = z.enum([
+  "idle",
+  "started",
+  "in-progress",
+  "complete",
+  "error",
+]);
 
 const nonEmptyTextSchema = z.string().trim().min(1);
 const discoverySchema = z.object({
@@ -72,6 +86,7 @@ const sessionStateViewModelSchema = z.object({
   sessionId: z.string(),
   targetLabel: z.string(),
   targetDirectory: z.string(),
+  activePhase: z.enum(["code", "target-manager"]),
   workspaceDirectory: z.string(),
   turnCount: z.number().int().nonnegative(),
   startedAt: z.string(),
@@ -127,6 +142,23 @@ const pendingToolCallSchema = z.object({
   fileEventId: z.string().optional(),
   toolName: z.string(),
 });
+export const targetSummarySchema = z.object({
+  path: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  language: z.string().nullable(),
+  framework: z.string().nullable(),
+  hasProfile: z.boolean(),
+});
+export const targetEnrichmentStateSchema = z.object({
+  status: enrichmentStatusSchema,
+  message: z.string().nullable(),
+});
+export const targetManagerStateSchema = z.object({
+  currentTarget: targetSummarySchema,
+  availableTargets: z.array(targetSummarySchema),
+  enrichmentStatus: targetEnrichmentStateSchema,
+});
 export const workbenchStateSchema = z.object({
   connectionState: uiConnectionStateSchema,
   agentStatus: z.string(),
@@ -141,6 +173,7 @@ export const workbenchStateSchema = z.object({
   nextFileEventNumber: z.number().int().nonnegative(),
   contextHistory: z.array(contextReceiptSchema),
   previewState: previewStateSchema,
+  targetManager: targetManagerStateSchema.nullable(),
 });
 
 export const instructionMessageSchema = z.object({
@@ -158,10 +191,30 @@ export const statusMessageSchema = z.object({
   type: z.literal("status"),
 });
 
+export const targetSwitchRequestMessageSchema = z.object({
+  type: z.literal("target:switch_request"),
+  targetPath: nonEmptyTextSchema,
+});
+
+export const targetCreateRequestMessageSchema = z.object({
+  type: z.literal("target:create_request"),
+  name: nonEmptyTextSchema,
+  description: nonEmptyTextSchema,
+  scaffoldType: scaffoldTypeSchema.optional(),
+});
+
+export const targetEnrichRequestMessageSchema = z.object({
+  type: z.literal("target:enrich_request"),
+  userDescription: z.string().trim().optional(),
+});
+
 export const frontendToBackendMessageSchema = z.discriminatedUnion("type", [
   instructionMessageSchema,
   cancelMessageSchema,
   statusMessageSchema,
+  targetSwitchRequestMessageSchema,
+  targetCreateRequestMessageSchema,
+  targetEnrichRequestMessageSchema,
 ]);
 
 export type FrontendToBackendMessage = z.infer<
@@ -175,6 +228,7 @@ export const sessionStateMessageSchema = z.object({
   sessionId: z.string(),
   targetLabel: z.string(),
   targetDirectory: z.string(),
+  activePhase: z.enum(["code", "target-manager"]),
   workspaceDirectory: z.string(),
   turnCount: z.number().int().nonnegative(),
   startedAt: z.string(),
@@ -233,6 +287,24 @@ export const previewStateMessageSchema = z.object({
   preview: previewStateSchema,
 });
 
+export const targetStateMessageSchema = z.object({
+  type: z.literal("target:state"),
+  state: targetManagerStateSchema,
+});
+
+export const targetSwitchCompleteMessageSchema = z.object({
+  type: z.literal("target:switch_complete"),
+  success: z.boolean(),
+  message: z.string().nullable(),
+  state: targetManagerStateSchema,
+});
+
+export const targetEnrichmentProgressMessageSchema = z.object({
+  type: z.literal("target:enrichment_progress"),
+  status: z.enum(["started", "in-progress", "complete", "error"]),
+  message: z.string(),
+});
+
 export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   sessionStateMessageSchema,
   agentThinkingMessageSchema,
@@ -243,10 +315,18 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   agentDoneMessageSchema,
   agentErrorMessageSchema,
   previewStateMessageSchema,
+  targetStateMessageSchema,
+  targetSwitchCompleteMessageSchema,
+  targetEnrichmentProgressMessageSchema,
 ]);
 
 export type BackendToFrontendMessage = z.infer<
   typeof backendToFrontendMessageSchema
+>;
+export type TargetManagerState = z.infer<typeof targetManagerStateSchema>;
+export type TargetSummary = z.infer<typeof targetSummarySchema>;
+export type TargetEnrichmentState = z.infer<
+  typeof targetEnrichmentStateSchema
 >;
 
 function hasMessageType(value: unknown): value is { type: string } {
@@ -275,24 +355,29 @@ export function parseFrontendMessage(
     return validated.data;
   }
 
+  const knownMessageTypes = new Set([
+    "instruction",
+    "cancel",
+    "status",
+    "target:switch_request",
+    "target:create_request",
+    "target:enrich_request",
+  ]);
+
   if (hasMessageType(parsed)) {
-    if (
-      parsed.type === "instruction" ||
-      parsed.type === "cancel" ||
-      parsed.type === "status"
-    ) {
+    if (knownMessageTypes.has(parsed.type)) {
       throw new Error(
         `Invalid client message payload for "${parsed.type}".`,
       );
     }
 
     throw new Error(
-      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, or status.`,
+      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, target:switch_request, target:create_request, or target:enrich_request.`,
     );
   }
 
   throw new Error(
-    "Invalid client message: expected instruction, cancel, or status.",
+    "Invalid client message: expected instruction, cancel, status, target:switch_request, target:create_request, or target:enrich_request.",
   );
 }
 

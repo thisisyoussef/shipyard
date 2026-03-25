@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -297,6 +297,90 @@ describe("instruction runtime handoff", () => {
     expect(sessionState.rollingSummary).toContain("Turn 3: inspect file 3 ->");
     expect(sessionState.rollingSummary).toContain("Turn 10: inspect file 10 ->");
     expect(sessionState.rollingSummary).not.toContain("Turn 2: inspect file 2 ->");
+  });
+
+  it("captures a selected target path when the target manager phase uses select_target", async () => {
+    const targetsDirectory = await createTempDirectory(
+      "shipyard-turn-target-manager-",
+    );
+    const selectedTargetDirectory = path.join(targetsDirectory, "alpha-app");
+    await mkdir(selectedTargetDirectory, { recursive: true });
+    await writeFile(
+      path.join(selectedTargetDirectory, "package.json"),
+      JSON.stringify({ name: "alpha-app" }, null, 2),
+      "utf8",
+    );
+    const sessionState = createSessionState({
+      sessionId: "turn-target-manager-session",
+      targetDirectory: targetsDirectory,
+      targetsDirectory,
+      activePhase: "target-manager",
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: [],
+        topLevelDirectories: [],
+        projectName: "targets",
+      },
+    });
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "tool-select-1",
+            name: "select_target",
+            input: {
+              target_path: selectedTargetDirectory,
+            },
+            caller: {
+              type: "assistant",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Selected alpha-app and prepared the coding session.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      baseInjectedContext: [`Targets directory: ${targetsDirectory}`],
+      runtimeDependencies: {
+        createRawLoopOptions: () => ({
+          client,
+          logger: {
+            log() {},
+          },
+        }),
+      },
+    });
+
+    const result = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "Open the alpha-app target.",
+    });
+
+    expect(result.phaseName).toBe("target-manager");
+    expect(result.status).toBe("success");
+    expect(result.selectedTargetPath).toBe(selectedTargetDirectory);
+    expect(runtimeState.pendingTargetSelectionPath).toBe(selectedTargetDirectory);
+    expect(client.calls[0]?.system).toContain("target-manager mode");
+    expect(client.calls[0]?.system).toContain("select_target");
   });
 
   it("fails clearly instead of using the offline preview path when ANTHROPIC_API_KEY is missing", async () => {
