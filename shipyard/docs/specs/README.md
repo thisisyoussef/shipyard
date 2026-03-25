@@ -22,6 +22,7 @@ for durable onboarding and architecture reference.
 - [`phase-5/README.md`](./phase-5/README.md): local preview autorun and refresh behavior for previewable targets
 - [`phase-6/README.md`](./phase-6/README.md): subagents for exploration, verification, and coordinator routing
 - [`phase-7/README.md`](./phase-7/README.md): planner artifacts, richer evaluation, browser QA, and long-run handoff routing
+- [`phase-8/README.md`](./phase-8/README.md): spec-driven operator planning, next-task execution, and shared greenfield bootstrap presets
 - [`phase-stress-validation/README.md`](./phase-stress-validation/README.md): stress matrix, UI error-stream alignment, and loop flakiness hardening
 - [`phase-ui-revamp/README.md`](./phase-ui-revamp/README.md): visual system, activity/diff polish, and session UX refinements
 
