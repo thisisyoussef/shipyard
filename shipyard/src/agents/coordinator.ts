@@ -1,5 +1,6 @@
 import type {
   ContextReport,
+  EvaluationPlan,
   ExecutionSpec,
   TaskPlan,
 } from "../artifacts/types.js";
@@ -238,6 +239,28 @@ export function createVerificationCommand(
   }
 
   return "git diff --stat";
+}
+
+export function createVerificationPlan(options: {
+  contextEnvelope: ContextEnvelope;
+  executionSpec?: ExecutionSpec | null;
+}): EvaluationPlan {
+  const command = createVerificationCommand(options.contextEnvelope);
+
+  return {
+    summary:
+      options.executionSpec?.verificationIntent[0]
+      ?? "Run the verification command.",
+    checks: [
+      {
+        id: "check-1",
+        label: `Run ${command}`,
+        kind: "command",
+        command,
+        required: true,
+      },
+    ],
+  };
 }
 
 export const coordinatorAgent = {

@@ -420,8 +420,11 @@ describe("Phase 4 graph runtime contract", () => {
 
   it("verify node delegates post-edit checks to the verifier helper", async () => {
     const runVerifierSubagent = vi.fn(
-      async (command: string) => ({
-        command,
+      async (input: string | {
+        summary: string;
+        checks: Array<{ command: string }>;
+      }) => ({
+        command: typeof input === "string" ? input : input.checks[0]?.command ?? "",
         exitCode: 0,
         passed: true,
         stdout: "",
@@ -449,7 +452,18 @@ describe("Phase 4 graph runtime contract", () => {
       | undefined;
 
     expect(runVerifierSubagent).toHaveBeenCalledTimes(1);
-    expect(verifierCall?.[0]).toBe("pnpm test");
+    expect(verifierCall?.[0]).toEqual({
+      summary: "Run the verification command.",
+      checks: [
+        {
+          id: "check-1",
+          label: "Run pnpm test",
+          kind: "command",
+          command: "pnpm test",
+          required: true,
+        },
+      ],
+    });
     expect(verifierCall?.[1]).toBe("/tmp/shipyard-graph");
     expect(update.verificationReport).toEqual({
       command: "pnpm test",
@@ -592,8 +606,11 @@ describe("Phase 4 graph runtime contract", () => {
       didEdit: true,
       lastEditedFile: "src/app.ts",
     }));
-    const runVerifierSubagent = vi.fn(async (command: string) => ({
-      command,
+    const runVerifierSubagent = vi.fn(async (input: string | {
+      summary: string;
+      checks: Array<{ command: string }>;
+    }) => ({
+      command: typeof input === "string" ? input : input.checks[0]?.command ?? "",
       exitCode: 1,
       passed: false,
       stdout: "",

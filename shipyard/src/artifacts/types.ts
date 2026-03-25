@@ -35,6 +35,40 @@ export interface EditIntent {
   reason: string;
 }
 
+export interface EvaluationCheck {
+  id: string;
+  label: string;
+  kind: "command";
+  command: string;
+  required: boolean;
+}
+
+export interface EvaluationPlan {
+  summary: string;
+  checks: EvaluationCheck[];
+}
+
+export type VerificationCheckStatus = "passed" | "failed" | "skipped";
+
+export interface VerificationCheckResult {
+  checkId: string;
+  label: string;
+  kind: "command";
+  command: string;
+  required: boolean;
+  status: VerificationCheckStatus;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  summary: string;
+}
+
+export interface VerificationHardFailure {
+  checkId: string;
+  label: string;
+  command: string;
+}
+
 export interface VerificationReport {
   command: string;
   exitCode: number | null;
@@ -42,6 +76,9 @@ export interface VerificationReport {
   stdout: string;
   stderr: string;
   summary: string;
+  evaluationPlan?: EvaluationPlan;
+  checks?: VerificationCheckResult[];
+  firstHardFailure?: VerificationHardFailure | null;
 }
 
 export type PreviewCapabilityStatus = "available" | "unavailable";

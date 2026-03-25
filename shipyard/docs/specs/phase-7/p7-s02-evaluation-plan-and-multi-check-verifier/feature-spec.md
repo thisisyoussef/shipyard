@@ -51,3 +51,61 @@ Shipyard's current verifier can execute one command and return a compact `Verifi
 
 ## Done Definition
 - Shipyard can describe evaluation as explicit ordered checks with hard failure semantics instead of only a single generic verification command.
+
+## Code References
+
+- [`../../../../src/artifacts/types.ts`](../../../../src/artifacts/types.ts):
+  defines `EvaluationPlan`, `VerificationCheckResult`,
+  `VerificationHardFailure`, and the richer `VerificationReport` shape that
+  carries per-check evidence while preserving the legacy top-level fields.
+- [`../../../../src/agents/verifier.ts`](../../../../src/agents/verifier.ts):
+  validates and normalizes evaluation plans, keeps the verifier command-only,
+  executes checks in order, skips trailing checks after the first required
+  failure, and composes the final multi-check summary.
+- [`../../../../src/agents/coordinator.ts`](../../../../src/agents/coordinator.ts):
+  adds the coordinator-side helper that derives a default one-check
+  `EvaluationPlan` from the current context and optional
+  `ExecutionSpec.verificationIntent`.
+- [`../../../../src/engine/graph.ts`](../../../../src/engine/graph.ts):
+  routes post-edit verification through `createVerificationPlan` and preserves
+  a fallback report shape when the graph has no edited file to verify yet.
+- [`../../../../tests/verifier-subagent.test.ts`](../../../../tests/verifier-subagent.test.ts)
+  and [`../../../../tests/graph-runtime.test.ts`](../../../../tests/graph-runtime.test.ts):
+  cover evaluation-plan validation, one-check backward compatibility, ordered
+  multi-check execution, required-check hard failures, optional-check behavior,
+  and graph/runtime wiring.
+
+## Representative Snippets
+
+```ts
+export interface EvaluationPlan {
+  summary: string;
+  checks: EvaluationCheck[];
+}
+```
+
+```ts
+for (const check of evaluationPlan.checks) {
+  if (firstHardFailure) {
+    checks.push(createSkippedCheckResult(check, firstHardFailure.label));
+    continue;
+  }
+
+  const report = await runSingleVerificationCommand(
+    check.command,
+    targetDirectory,
+    options,
+  );
+  const result = toEvaluationCheckResult(check, report);
+
+  checks.push(result);
+
+  if (check.required && result.status === "failed") {
+    firstHardFailure = {
+      checkId: result.checkId,
+      label: result.label,
+      command: result.command,
+    };
+  }
+}
+```
