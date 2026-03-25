@@ -64,12 +64,22 @@ import {
 } from "./events.js";
 import {
   applyBackendMessage,
+  consumePendingUploadsForInstruction,
+  appendPendingUploadReceipts,
   queueInstructionTurn,
+  removePendingUploadReceipt,
 } from "./workbench-state.js";
 import { createLocalTraceLogger } from "../tracing/local-log.js";
 import { buildTargetManagerState, IDLE_TARGET_ENRICHMENT_STATE } from "./target-manager.js";
 import { createTargetTool } from "../tools/target-manager/create-target.js";
 import { enrichTargetTool } from "../tools/target-manager/enrich-target.js";
+import {
+  deleteStoredUpload,
+  MAX_UPLOAD_REQUEST_BYTES,
+  readRequestBodyWithLimit,
+  storeUploadCandidates,
+  UploadValidationError,
+} from "./uploads.js";
 
 const CLOSE_ENRICHMENT_DRAIN_TIMEOUT_MS = 100;
 
@@ -156,6 +166,87 @@ function createHealthResponse(
   };
 }
 
+function sendJson(
+  response: ServerResponse,
+  statusCode: number,
+  payload: unknown,
+): void {
+  response.writeHead(statusCode, {
+    "content-type": "application/json; charset=utf-8",
+  });
+  response.end(JSON.stringify(payload));
+}
+
+function toHeaders(request: IncomingMessage): Headers {
+  const headers = new Headers();
+
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => headers.append(name, entry));
+      continue;
+    }
+
+    if (value !== undefined) {
+      headers.set(name, value);
+    }
+  }
+
+  return headers;
+}
+
+function readCookie(
+  request: IncomingMessage,
+  name: string,
+): string | null {
+  const cookieHeader = request.headers.cookie;
+
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const cookieEntries = cookieHeader.split(";").map((entry) => entry.trim());
+
+  for (const cookieEntry of cookieEntries) {
+    if (!cookieEntry.startsWith(`${name}=`)) {
+      continue;
+    }
+
+    return decodeURIComponent(cookieEntry.slice(name.length + 1));
+  }
+
+  return null;
+}
+
+function readAccessToken(request: IncomingMessage): string | null {
+  const authorizationHeader = request.headers.authorization;
+
+  if (typeof authorizationHeader === "string") {
+    const bearerMatch = authorizationHeader.match(/^Bearer\s+(.+)$/i);
+
+    if (bearerMatch?.[1]?.trim()) {
+      return bearerMatch[1].trim();
+    }
+  }
+
+  const tokenHeader = request.headers["x-shipyard-access-token"];
+
+  if (typeof tokenHeader === "string" && tokenHeader.trim()) {
+    return tokenHeader.trim();
+  }
+
+  return readCookie(request, "shipyard_access_token");
+}
+
+function requestIsAuthorized(request: IncomingMessage): boolean {
+  const expectedToken = process.env.SHIPYARD_ACCESS_TOKEN?.trim();
+
+  if (!expectedToken) {
+    return true;
+  }
+
+  return readAccessToken(request) === expectedToken;
+}
+
 function isRecord(
   value: unknown,
 ): value is Record<string, unknown> {
@@ -180,6 +271,14 @@ function isPortInUseError(error: unknown): error is NodeJS.ErrnoException {
     error instanceof Error &&
     "code" in error &&
     error.code === "EADDRINUSE"
+  );
+}
+
+function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "ENOENT"
   );
 }
 
@@ -570,21 +669,28 @@ export async function startUiRuntimeServer(
   await saveSessionState(sessionState);
   const httpServer = createServer(
     async (request: IncomingMessage, response: ServerResponse) => {
-      const requestUrl = request.url ?? "/";
+      const requestLocation = new URL(
+        request.url ?? "/",
+        `http://${host}`,
+      );
+      const requestPath = requestLocation.pathname;
 
-      if (requestUrl === "/api/health") {
-        response.writeHead(200, {
-          "content-type": "application/json; charset=utf-8",
-        });
-        response.end(
-          JSON.stringify(
-            createHealthResponse(sessionState),
-          ),
-        );
+      if (requestPath === "/api/health") {
+        sendJson(response, 200, createHealthResponse(sessionState));
         return;
       }
 
-      await serveBuiltUi(requestUrl, response, fallbackHtml);
+      if (requestPath === "/api/uploads") {
+        await handleUploadRequest(request, response, requestLocation);
+        return;
+      }
+
+      if (requestPath.startsWith("/api/uploads/")) {
+        await handleUploadDeleteRequest(request, response, requestLocation);
+        return;
+      }
+
+      await serveBuiltUi(requestPath, response, fallbackHtml);
     },
   );
   const socketServer = new WebSocketServer({ noServer: true });
@@ -721,6 +827,233 @@ export async function startUiRuntimeServer(
       }),
     );
     await saveSessionState(sessionState);
+  };
+
+  const logUploadTrace = async (
+    event: "upload.accepted" | "upload.rejected" | "upload.removed" | "upload.handoff",
+    payload: Record<string, unknown>,
+  ): Promise<void> => {
+    await traceLogger.log(event, {
+      sessionId: sessionState.sessionId,
+      targetDirectory: sessionState.targetDirectory,
+      runtimeMode: "ui",
+      ...payload,
+    });
+  };
+
+  const parseUploadRequest = async (
+    request: IncomingMessage,
+    requestLocation: URL,
+  ): Promise<{
+    sessionId: string;
+    candidates: Array<{
+      originalName: string;
+      mediaType: string;
+      contents: Buffer;
+    }>;
+  }> => {
+    const requestBody = await readRequestBodyWithLimit(
+      request as AsyncIterable<string | Buffer>,
+      MAX_UPLOAD_REQUEST_BYTES,
+    );
+    const multipartRequest = new Request(requestLocation, {
+      method: request.method ?? "POST",
+      headers: toHeaders(request),
+      body: new Uint8Array(requestBody),
+    });
+    const formData = await multipartRequest.formData();
+    const sessionId = formData.get("sessionId");
+
+    if (typeof sessionId !== "string" || !sessionId.trim()) {
+      throw new UploadValidationError(
+        "Upload requests must include the active session id.",
+        400,
+      );
+    }
+
+    const files = formData.getAll("files").filter((value): value is File =>
+      value instanceof File
+    );
+
+    if (files.length === 0) {
+      throw new UploadValidationError("Attach at least one file before uploading.", 400);
+    }
+
+    const candidates = await Promise.all(
+      files.map(async (file) => ({
+        originalName: file.name,
+        mediaType: file.type || "text/plain",
+        contents: Buffer.from(await file.arrayBuffer()),
+      })),
+    );
+
+    return {
+      sessionId: sessionId.trim(),
+      candidates,
+    };
+  };
+
+  const handleUploadRequest = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    requestLocation: URL,
+  ): Promise<void> => {
+    try {
+      if (!requestIsAuthorized(request)) {
+        sendJson(response, 401, {
+          error: "Upload access token is missing or invalid.",
+        });
+        return;
+      }
+
+      if (request.method !== "POST") {
+        sendJson(response, 405, {
+          error: "Uploads require POST.",
+        });
+        return;
+      }
+
+      const { sessionId, candidates } = await parseUploadRequest(
+        request,
+        requestLocation,
+      );
+
+      if (sessionId !== sessionState.sessionId) {
+        throw new UploadValidationError(
+          "The requested upload session does not match the active browser session.",
+          409,
+        );
+      }
+
+      const receipts = await storeUploadCandidates({
+        sessionId,
+        targetDirectory: sessionState.targetDirectory,
+        existingReceipts: sessionState.workbenchState.pendingUploads,
+        candidates,
+      });
+
+      sessionState.workbenchState = appendPendingUploadReceipts(
+        sessionState.workbenchState,
+        receipts,
+      );
+      await saveSessionState(sessionState);
+      await broadcastSessionState();
+      await logUploadTrace("upload.accepted", {
+        files: receipts.map((receipt) => ({
+          id: receipt.id,
+          originalName: receipt.originalName,
+          storedRelativePath: receipt.storedRelativePath,
+          sizeBytes: receipt.sizeBytes,
+          mediaType: receipt.mediaType,
+        })),
+      });
+      sendJson(response, 201, {
+        receipts,
+      });
+    } catch (error) {
+      const statusCode = error instanceof UploadValidationError
+        ? error.statusCode
+        : 400;
+      const message = error instanceof Error
+        ? error.message
+        : "Upload request failed.";
+      await logUploadTrace("upload.rejected", {
+        message,
+        path: requestLocation.pathname,
+      });
+      sendJson(response, statusCode, {
+        error: message,
+      });
+    }
+  };
+
+  const handleUploadDeleteRequest = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    requestLocation: URL,
+  ): Promise<void> => {
+    try {
+      if (!requestIsAuthorized(request)) {
+        sendJson(response, 401, {
+          error: "Upload access token is missing or invalid.",
+        });
+        return;
+      }
+
+      if (request.method !== "DELETE") {
+        sendJson(response, 405, {
+          error: "Upload removal requires DELETE.",
+        });
+        return;
+      }
+
+      const sessionId = requestLocation.searchParams.get("sessionId")?.trim();
+
+      if (!sessionId) {
+        throw new UploadValidationError(
+          "Upload removal requires the active session id.",
+          400,
+        );
+      }
+
+      if (sessionId !== sessionState.sessionId) {
+        throw new UploadValidationError(
+          "The requested upload session does not match the active browser session.",
+          409,
+        );
+      }
+
+      const uploadId = requestLocation.pathname.replace("/api/uploads/", "").trim();
+
+      if (!uploadId) {
+        throw new UploadValidationError("Upload removal requires an upload id.", 400);
+      }
+
+      const receipt = sessionState.workbenchState.pendingUploads.find(
+        (pendingUpload) => pendingUpload.id === uploadId,
+      );
+
+      if (!receipt) {
+        sendJson(response, 404, {
+          error: `Pending upload ${uploadId} was not found.`,
+        });
+        return;
+      }
+
+      await deleteStoredUpload({
+        sessionId,
+        targetDirectory: sessionState.targetDirectory,
+        receipt,
+      });
+      sessionState.workbenchState = removePendingUploadReceipt(
+        sessionState.workbenchState,
+        uploadId,
+      );
+      await saveSessionState(sessionState);
+      await broadcastSessionState();
+      await logUploadTrace("upload.removed", {
+        id: receipt.id,
+        originalName: receipt.originalName,
+        storedRelativePath: receipt.storedRelativePath,
+      });
+      sendJson(response, 200, {
+        removedId: uploadId,
+      });
+    } catch (error) {
+      const statusCode = error instanceof UploadValidationError
+        ? error.statusCode
+        : 400;
+      const message = error instanceof Error
+        ? error.message
+        : "Upload removal failed.";
+      await logUploadTrace("upload.rejected", {
+        message,
+        path: requestLocation.pathname,
+      });
+      sendJson(response, statusCode, {
+        error: message,
+      });
+    }
   };
 
   const sendTargetState = async (socket: WebSocket): Promise<void> => {
@@ -893,6 +1226,10 @@ export async function startUiRuntimeServer(
       reason: string;
     },
   ): Promise<void> => {
+    if (isClosing) {
+      return;
+    }
+
     if (sessionState.activePhase !== "code") {
       return;
     }
@@ -1165,13 +1502,24 @@ export async function startUiRuntimeServer(
   socketServer.on("connection", (socket) => {
     sockets.add(socket);
     void (async () => {
-      await sendSessionState(socket);
-      await sendTargetState(socket);
+      try {
+        await sendSessionState(socket);
+        await sendTargetState(socket);
 
-      if (sockets.size === 1) {
-        await maybeAutoEnrichBrowserTarget({
-          reason: "browser:initial-sync",
-        });
+        if (sockets.size === 1) {
+          await maybeAutoEnrichBrowserTarget({
+            reason: "browser:initial-sync",
+          });
+        }
+      } catch (error) {
+        if (isClosing || isMissingFileError(error)) {
+          return;
+        }
+
+        const message = error instanceof Error
+          ? error.message
+          : "Failed to finish the initial browser sync.";
+        await sendToSocket(socket, createErrorMessage(message));
       }
     })();
 
@@ -1425,17 +1773,35 @@ export async function startUiRuntimeServer(
               break;
             }
 
-            sessionState.workbenchState = queueInstructionTurn(
+            const pendingUploads = sessionState.workbenchState.pendingUploads;
+            const handoff = consumePendingUploadsForInstruction(
               sessionState.workbenchState,
-              message.text,
-              message.injectedContext ?? [],
+              message.injectedContext,
             );
+
+            sessionState.workbenchState = queueInstructionTurn(
+              handoff.nextState,
+              message.text,
+              handoff.contextPreview,
+            );
+
+            if (pendingUploads.length > 0) {
+              await logUploadTrace("upload.handoff", {
+                instruction: message.text,
+                files: pendingUploads.map((receipt) => ({
+                  id: receipt.id,
+                  originalName: receipt.originalName,
+                  storedRelativePath: receipt.storedRelativePath,
+                })),
+              });
+            }
+
             await saveSessionState(sessionState);
             const turnController = new AbortController();
             activeInstructionController = turnController;
             activeInstruction = runBrowserInstruction(
               message.text,
-              message.injectedContext,
+              handoff.injectedContext,
               turnController.signal,
             );
 

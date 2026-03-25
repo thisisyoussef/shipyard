@@ -91,6 +91,17 @@ export interface ContextReceiptViewModel {
   turnId: string;
 }
 
+export interface UploadReceiptViewModel {
+  id: string;
+  originalName: string;
+  storedRelativePath: string;
+  sizeBytes: number;
+  mediaType: string;
+  previewText: string;
+  previewSummary: string;
+  uploadedAt: string;
+}
+
 export interface PendingToolCall {
   turnId: string;
   fileEventId?: string;
@@ -121,6 +132,7 @@ export interface WorkbenchViewState {
   nextEventNumber: number;
   nextFileEventNumber: number;
   contextHistory: ContextReceiptViewModel[];
+  pendingUploads: UploadReceiptViewModel[];
   previewState: PreviewStateViewModel;
   targetManager: TargetManagerViewModel | null;
 }
@@ -128,6 +140,7 @@ export interface WorkbenchViewState {
 export interface PreparedInstructionSubmission {
   instruction: string;
   injectedContext?: string[];
+  contextPreview: string[];
   clearedContextDraft: string;
 }
 
@@ -337,8 +350,35 @@ function hasRecoveredHistory(state: WorkbenchViewState): boolean {
   return (
     state.turns.length > 0 ||
     state.fileEvents.length > 0 ||
-    state.contextHistory.length > 0
+    state.contextHistory.length > 0 ||
+    state.pendingUploads.length > 0
   );
+}
+
+export function createUploadContextPreview(
+  receipt: UploadReceiptViewModel,
+): string {
+  return `Upload: ${receipt.originalName} -> ${receipt.storedRelativePath}`;
+}
+
+export function createUploadInjectedContext(
+  receipt: UploadReceiptViewModel,
+): string {
+  const previewBody = receipt.previewText.trim()
+    ? receipt.previewText.trim()
+    : "(empty file)";
+
+  return [
+    "Uploaded file reference",
+    `Original filename: ${receipt.originalName}`,
+    `Stored path: ${receipt.storedRelativePath}`,
+    `Media type: ${receipt.mediaType}`,
+    `Size: ${String(receipt.sizeBytes)} bytes`,
+    `Summary: ${receipt.previewSummary}`,
+    "Preview:",
+    previewBody,
+    "Use read_file on the stored path if you need the full contents.",
+  ].join("\n");
 }
 
 function createDoneTone(
@@ -373,6 +413,27 @@ function createTurnStatusFromDone(
   }
 }
 
+export function ensureWorkbenchStateDefaults(
+  state: Partial<WorkbenchViewState> | WorkbenchViewState,
+): WorkbenchViewState {
+  const initialState = createInitialWorkbenchState();
+
+  return {
+    ...initialState,
+    ...state,
+    sessionHistory: [...(state.sessionHistory ?? initialState.sessionHistory)],
+    turns: [...(state.turns ?? initialState.turns)],
+    fileEvents: [...(state.fileEvents ?? initialState.fileEvents)],
+    pendingToolCalls: {
+      ...(state.pendingToolCalls ?? initialState.pendingToolCalls),
+    },
+    contextHistory: [...(state.contextHistory ?? initialState.contextHistory)],
+    pendingUploads: [...(state.pendingUploads ?? [])],
+    previewState: state.previewState ?? initialState.previewState,
+    targetManager: state.targetManager ?? initialState.targetManager,
+  };
+}
+
 export function createInitialWorkbenchState(): WorkbenchViewState {
   return {
     connectionState: "connecting",
@@ -388,6 +449,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     nextEventNumber: 1,
     nextFileEventNumber: 1,
     contextHistory: [],
+    pendingUploads: [],
     previewState: createIdlePreviewState(
       "Waiting for Shipyard to publish preview state.",
     ),
@@ -398,6 +460,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
 export function prepareInstructionSubmission(
   instructionDraft: string,
   contextDraft: string,
+  pendingUploads: UploadReceiptViewModel[] = [],
 ): PreparedInstructionSubmission | null {
   const instruction = instructionDraft.trim();
 
@@ -406,11 +469,70 @@ export function prepareInstructionSubmission(
   }
 
   const trimmedContext = contextDraft.trim();
+  const contextPreview = [
+    ...(trimmedContext ? [trimmedContext] : []),
+    ...pendingUploads.map(createUploadContextPreview),
+  ];
 
   return {
     instruction,
     injectedContext: trimmedContext ? [trimmedContext] : undefined,
+    contextPreview,
     clearedContextDraft: "",
+  };
+}
+
+export function appendPendingUploadReceipts(
+  state: WorkbenchViewState,
+  receipts: UploadReceiptViewModel[],
+): WorkbenchViewState {
+  return {
+    ...state,
+    pendingUploads: [
+      ...receipts,
+      ...state.pendingUploads.filter((existingReceipt) =>
+        !receipts.some((receipt) => receipt.id === existingReceipt.id)
+      ),
+    ],
+  };
+}
+
+export function removePendingUploadReceipt(
+  state: WorkbenchViewState,
+  receiptId: string,
+): WorkbenchViewState {
+  return {
+    ...state,
+    pendingUploads: state.pendingUploads.filter((receipt) => receipt.id !== receiptId),
+  };
+}
+
+export function consumePendingUploadsForInstruction(
+  state: WorkbenchViewState,
+  injectedContext: string[] | undefined,
+): {
+  nextState: WorkbenchViewState;
+  injectedContext?: string[];
+  contextPreview: string[];
+} {
+  const nextInjectedContext = [
+    ...(injectedContext ?? []),
+    ...state.pendingUploads.map(createUploadInjectedContext),
+  ];
+  const contextPreview = [
+    ...(injectedContext ?? []),
+    ...state.pendingUploads.map(createUploadContextPreview),
+  ];
+
+  return {
+    nextState: {
+      ...state,
+      pendingUploads: [],
+    },
+    injectedContext: nextInjectedContext.length > 0
+      ? nextInjectedContext
+      : undefined,
+    contextPreview,
   };
 }
 
@@ -430,7 +552,7 @@ export function applySessionSnapshot(
   state: WorkbenchViewState,
   message: Extract<BackendToFrontendMessage, { type: "session:state" }>,
 ): WorkbenchViewState {
-  const recoveredState = message.workbenchState ?? state;
+  const recoveredState = ensureWorkbenchStateDefaults(message.workbenchState ?? state);
   const previewState = recoveredState.previewState ??
     createInitialPreviewState({
       activePhase: message.activePhase,

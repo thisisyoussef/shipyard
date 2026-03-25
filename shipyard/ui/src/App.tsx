@@ -13,24 +13,49 @@ import {
 import type {
   BackendToFrontendMessage,
   FrontendToBackendMessage,
+  UploadDeleteResponse,
+  UploadErrorResponse,
+  UploadReceiptsResponse,
 } from "../../src/ui/contracts.js";
-import { backendToFrontendMessageSchema } from "../../src/ui/contracts.js";
+import {
+  backendToFrontendMessageSchema,
+  uploadDeleteResponseSchema,
+  uploadErrorResponseSchema,
+  uploadReceiptsResponseSchema,
+} from "../../src/ui/contracts.js";
 import { validateContextDraft } from "./context-ui.js";
 import type { BadgeTone } from "./primitives.js";
 import { ShipyardWorkbench } from "./ShipyardWorkbench.js";
+import type { ComposerAttachment } from "./panels/ComposerPanel.js";
 import { createSocketManager, type SocketManager } from "./socket-manager.js";
 import {
   applyBackendMessage,
+  appendPendingUploadReceipts,
   createInitialWorkbenchState,
   prepareInstructionSubmission,
   queueInstructionTurn,
+  removePendingUploadReceipt,
   setTransportState,
+  type UploadReceiptViewModel,
 } from "./view-models.js";
 
 interface ComposerNotice {
   tone: BadgeTone;
   title: string;
   detail: string;
+}
+
+function createAttachmentDetail(receipt: UploadReceiptViewModel): string {
+  return `${receipt.storedRelativePath} · ${receipt.previewSummary}`;
+}
+
+function createUploadErrorMessage(
+  payload: unknown,
+  fallback: string,
+): string {
+  const parsed = uploadErrorResponseSchema.safeParse(payload);
+
+  return parsed.success ? parsed.data.error : fallback;
 }
 
 function createSocketUrl(): string {
@@ -61,6 +86,7 @@ export function App() {
   const [viewState, setViewState] = useState(createInitialWorkbenchState);
   const [instruction, setInstruction] = useState("");
   const [contextDraft, setContextDraft] = useState("");
+  const [localUploads, setLocalUploads] = useState<ComposerAttachment[]>([]);
   const [composerNotice, setComposerNotice] = useState<ComposerNotice | null>(
     null,
   );
@@ -73,6 +99,7 @@ export function App() {
   );
   const socketManagerRef = useRef<SocketManager | null>(null);
   const hasSessionRef = useRef(false);
+  const lastSessionIdRef = useRef<string | null>(null);
   const instructionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const contextInputRef = useRef<HTMLTextAreaElement | null>(null);
   const deferredTurns = useDeferredValue(viewState.turns);
@@ -198,6 +225,17 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const nextSessionId = viewState.sessionState?.sessionId ?? null;
+
+    if (nextSessionId === lastSessionIdRef.current) {
+      return;
+    }
+
+    lastSessionIdRef.current = nextSessionId;
+    setLocalUploads([]);
+  }, [viewState.sessionState?.sessionId]);
+
   /* ── Messaging ────────────────────────────── */
 
   function sendMessage(message: FrontendToBackendMessage): boolean {
@@ -212,6 +250,223 @@ export function App() {
     window.requestAnimationFrame(() => {
       instructionInputRef.current?.focus();
     });
+  }
+
+  async function handleAttachFiles(files: File[]): Promise<void> {
+    const sessionId = viewState.sessionState?.sessionId;
+
+    if (!sessionId) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Uploads unavailable",
+        detail:
+          "Wait for the browser runtime to finish connecting before attaching files.",
+      });
+      return;
+    }
+
+    const uniqueFiles: File[] = [];
+    const duplicateNames: string[] = [];
+    const seenNames = new Set(
+      [
+        ...viewState.pendingUploads.map((receipt) => receipt.originalName),
+        ...localUploads
+          .filter((upload) => upload.status !== "rejected")
+          .map((upload) => upload.label),
+      ].map((name) => name.trim().toLowerCase()),
+    );
+
+    for (const file of files) {
+      const normalizedName = file.name.trim().toLowerCase();
+
+      if (seenNames.has(normalizedName)) {
+        duplicateNames.push(file.name);
+        continue;
+      }
+
+      seenNames.add(normalizedName);
+      uniqueFiles.push(file);
+    }
+
+    if (duplicateNames.length > 0) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Duplicate attachment",
+        detail: `${duplicateNames.join(", ")} is already attached for this session.`,
+      });
+    }
+
+    if (uniqueFiles.length === 0) {
+      return;
+    }
+
+    const uploadingBadges: ComposerAttachment[] = uniqueFiles.map((file) => ({
+      id: `upload-local-${globalThis.crypto.randomUUID()}`,
+      label: file.name,
+      detail: "Uploading to Shipyard...",
+      status: "uploading",
+    }));
+    const uploadingIds = new Set(uploadingBadges.map((badge) => badge.id));
+
+    setLocalUploads((currentUploads) => [
+      ...uploadingBadges,
+      ...currentUploads,
+    ]);
+
+    try {
+      const uploadForm = new FormData();
+      uploadForm.set("sessionId", sessionId);
+      uniqueFiles.forEach((file) => {
+        uploadForm.append("files", file);
+      });
+
+      const uploadResponse = await fetch("/api/uploads", {
+        method: "POST",
+        body: uploadForm,
+        credentials: "same-origin",
+      });
+      const responseBody = await uploadResponse.json().catch(() => null);
+
+      if (!uploadResponse.ok) {
+        const errorMessage = createUploadErrorMessage(
+          responseBody,
+          "Upload failed before Shipyard accepted the files.",
+        );
+
+        setLocalUploads((currentUploads) =>
+          currentUploads.map((upload) =>
+            uploadingIds.has(upload.id)
+              ? {
+                  ...upload,
+                  detail: `Upload failed: ${errorMessage}`,
+                  status: "rejected",
+                  error: errorMessage,
+                }
+              : upload
+          ),
+        );
+        queueComposerNotice({
+          tone: "danger",
+          title: "Upload rejected",
+          detail: errorMessage,
+        });
+        return;
+      }
+
+      const parsed = uploadReceiptsResponseSchema.safeParse(responseBody);
+
+      if (!parsed.success) {
+        throw new Error("Shipyard returned an invalid upload receipt payload.");
+      }
+
+      startTransition(() => {
+        setViewState((currentState) =>
+          appendPendingUploadReceipts(currentState, parsed.data.receipts),
+        );
+      });
+      setLocalUploads((currentUploads) =>
+        currentUploads.filter((upload) => !uploadingIds.has(upload.id))
+      );
+      queueComposerNotice({
+        tone: "success",
+        title: "Files attached",
+        detail: `Attached ${String(parsed.data.receipts.length)} file${parsed.data.receipts.length === 1 ? "" : "s"} to the next turn.`,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : "Upload failed before Shipyard accepted the files.";
+
+      setLocalUploads((currentUploads) =>
+        currentUploads.map((upload) =>
+          uploadingIds.has(upload.id)
+            ? {
+                ...upload,
+                detail: `Upload failed: ${errorMessage}`,
+                status: "rejected",
+                error: errorMessage,
+              }
+            : upload
+        ),
+      );
+      queueComposerNotice({
+        tone: "danger",
+        title: "Upload failed",
+        detail: errorMessage,
+      });
+    }
+  }
+
+  async function handleRemoveAttachment(attachmentId: string): Promise<void> {
+    const localAttachment = localUploads.find((upload) => upload.id === attachmentId);
+
+    if (localAttachment) {
+      setLocalUploads((currentUploads) =>
+        currentUploads.filter((upload) => upload.id !== attachmentId)
+      );
+      return;
+    }
+
+    const sessionId = viewState.sessionState?.sessionId;
+
+    if (!sessionId) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Remove unavailable",
+        detail:
+          "Wait for the browser runtime to reconnect before removing an attached file.",
+      });
+      return;
+    }
+
+    try {
+      const deleteResponse = await fetch(
+        `/api/uploads/${encodeURIComponent(attachmentId)}?sessionId=${encodeURIComponent(sessionId)}`,
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+        },
+      );
+      const responseBody = await deleteResponse.json().catch(() => null);
+
+      if (!deleteResponse.ok) {
+        queueComposerNotice({
+          tone: "danger",
+          title: "Remove failed",
+          detail: createUploadErrorMessage(
+            responseBody,
+            "Shipyard could not remove the pending upload.",
+          ),
+        });
+        return;
+      }
+
+      const parsed = uploadDeleteResponseSchema.safeParse(responseBody);
+
+      if (!parsed.success) {
+        throw new Error("Shipyard returned an invalid upload removal payload.");
+      }
+
+      startTransition(() => {
+        setViewState((currentState) =>
+          removePendingUploadReceipt(currentState, parsed.data.removedId),
+        );
+      });
+      queueComposerNotice({
+        tone: "neutral",
+        title: "Attachment removed",
+        detail:
+          "Shipyard removed the pending upload from this session before the next turn.",
+      });
+    } catch (error) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Remove failed",
+        detail: error instanceof Error
+          ? error.message
+          : "Shipyard could not remove the pending upload.",
+      });
+    }
   }
 
   function handleCancelInstruction(): void {
@@ -256,7 +511,11 @@ export function App() {
       return;
     }
 
-    const submission = prepareInstructionSubmission(instruction, contextDraft);
+    const submission = prepareInstructionSubmission(
+      instruction,
+      contextDraft,
+      viewState.pendingUploads,
+    );
 
     if (submission === null) {
       queueComposerNotice({
@@ -289,18 +548,20 @@ export function App() {
         queueInstructionTurn(
           currentState,
           submission.instruction,
-          submission.injectedContext ?? [],
+          submission.contextPreview,
         ),
       );
     });
     setInstruction("");
     setContextDraft(submission.clearedContextDraft);
+    const attachedUploadCount = viewState.pendingUploads.length;
+    const explicitContextCount = submission.injectedContext?.length ?? 0;
     queueComposerNotice(
-      submission.injectedContext?.length
+      attachedUploadCount > 0 || explicitContextCount > 0
         ? {
             tone: "success",
-            title: "Context attached",
-            detail: `Attached ${String(submission.injectedContext.length)} context note to the next turn.`,
+            title: attachedUploadCount > 0 ? "Attachments queued" : "Context attached",
+            detail: `Attached ${String(attachedUploadCount + explicitContextCount)} context item${(attachedUploadCount + explicitContextCount) === 1 ? "" : "s"} to the next turn.`,
           }
         : {
             tone: "accent",
@@ -444,6 +705,16 @@ export function App() {
     }
   }
 
+  const composerAttachments: ComposerAttachment[] = [
+    ...localUploads,
+    ...viewState.pendingUploads.map((receipt) => ({
+      id: receipt.id,
+      label: receipt.originalName,
+      detail: createAttachmentDetail(receipt),
+      status: "attached" as const,
+    })),
+  ];
+
   return (
     <ShipyardWorkbench
       sessionState={viewState.sessionState}
@@ -458,6 +729,7 @@ export function App() {
       instruction={instruction}
       contextDraft={contextDraft}
       composerNotice={composerNotice}
+      composerAttachments={composerAttachments}
       instructionInputRef={instructionInputRef}
       contextInputRef={contextInputRef}
       onInstructionChange={handleInstructionChange}
@@ -465,8 +737,10 @@ export function App() {
       onInstructionKeyDown={handleComposerKeyDown}
       onContextKeyDown={handleComposerKeyDown}
       onClearContext={handleClearContext}
+      onAttachFiles={handleAttachFiles}
       onSubmitInstruction={handleInstructionSubmit}
       onCancelInstruction={handleCancelInstruction}
+      onRemoveAttachment={handleRemoveAttachment}
       onRequestSessionResume={handleSessionResume}
       onRequestTargetSwitch={handleTargetSwitch}
       onRequestTargetCreate={handleTargetCreate}
