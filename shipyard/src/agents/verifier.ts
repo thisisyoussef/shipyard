@@ -95,17 +95,96 @@ function toVerificationReport(
   };
 }
 
+function* extractJsonObjectCandidates(rawText: string): Generator<string> {
+  let objectStart = -1;
+  let depth = 0;
+  let inString = false;
+  let isEscaped = false;
+
+  for (let index = 0; index < rawText.length; index += 1) {
+    const character = rawText[index];
+
+    if (objectStart === -1) {
+      if (character === "{") {
+        objectStart = index;
+        depth = 1;
+        inString = false;
+        isEscaped = false;
+      }
+
+      continue;
+    }
+
+    if (inString) {
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+
+      if (character === "\\") {
+        isEscaped = true;
+        continue;
+      }
+
+      if (character === "\"") {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (character === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (character === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (character !== "}") {
+      continue;
+    }
+
+    depth -= 1;
+
+    if (depth === 0) {
+      yield rawText.slice(objectStart, index + 1);
+      objectStart = -1;
+    }
+  }
+}
+
+function parseStructuredJson(rawText: string): unknown {
+  const candidates = [rawText.trim()];
+
+  for (const candidate of extractJsonObjectCandidates(rawText)) {
+    const trimmedCandidate = candidate.trim();
+
+    if (!trimmedCandidate || candidates.includes(trimmedCandidate)) {
+      continue;
+    }
+
+    candidates.push(trimmedCandidate);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error("Verifier must return valid JSON matching VerificationReport.");
+}
+
 export function parseVerificationReport(
   rawText: string,
   expectedCommand?: string,
 ): VerificationReport {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(rawText);
-  } catch {
-    throw new Error("Verifier must return valid JSON matching VerificationReport.");
-  }
+  const parsed = parseStructuredJson(rawText);
 
   const validated = verificationReportSchema.safeParse(parsed);
 

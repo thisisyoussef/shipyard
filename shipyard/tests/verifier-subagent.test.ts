@@ -313,6 +313,35 @@ describe("verifier subagent", () => {
     ).toThrow(/json|verificationreport/i);
   });
 
+  it("accepts valid report JSON wrapped in prose and markdown fences", () => {
+    const result = parseVerificationReport(
+      [
+        "Verification complete.",
+        "",
+        "```json",
+        JSON.stringify({
+          command: "pnpm test",
+          exitCode: 0,
+          passed: true,
+          stdout: "ok\n",
+          stderr: "",
+          summary: "Verification passed.",
+        }, null, 2),
+        "```",
+      ].join("\n"),
+      "pnpm test",
+    );
+
+    expect(result).toEqual({
+      command: "pnpm test",
+      exitCode: 0,
+      passed: true,
+      stdout: "ok\n",
+      stderr: "",
+      summary: "Verification passed.",
+    });
+  });
+
   it("returns a structured failure report for a failing command", async () => {
     const directory = await createTempProject();
     const client = createMockAnthropicClient([
