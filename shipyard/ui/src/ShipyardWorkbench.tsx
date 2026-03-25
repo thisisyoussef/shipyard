@@ -11,6 +11,7 @@ import {
   ComposerPanel,
   ContextPanel,
   FilePanel,
+  OutputPanel,
   SessionPanel,
 } from "./panels/index.js";
 import type { BadgeTone } from "./primitives.js";
@@ -180,6 +181,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         rightSidebar={
           <ShellSidebar collapsed={rightCollapsed} railItems={[]}>
             <FilePanel fileEvents={props.fileEvents} />
+            <OutputPanel turns={props.turns} />
           </ShellSidebar>
         }
         footer={
