@@ -32,6 +32,7 @@
 ## Pack Cohesion and Sequencing (for phase packs or multi-story planning)
 - Higher-level pack objectives:
   - hosted Railway runtime
+  - durable hosted workspace
   - lightweight access token gate
   - typed production deploy flow
   - trustworthy two-URL UX

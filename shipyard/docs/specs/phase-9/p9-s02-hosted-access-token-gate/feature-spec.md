@@ -23,6 +23,8 @@ strong enough to prevent accidental open use of API credits.
   from inside the target directory.
 - Objective 4: Make the hosted Shipyard URL and deployed target-app URL
   clearly distinct in the UX.
+- Objective 5: Persist hosted project files across sessions, service restarts,
+  and Railway redeploys, starting with a mounted volume at `/app/workspace`.
 - How this story or pack contributes to the overall objective set: This story
   protects the public Shipyard surface so the hosted runtime is safe enough to
   share for demos and grading.
