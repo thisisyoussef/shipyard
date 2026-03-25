@@ -56,6 +56,11 @@ describe("ui view models", () => {
       toolName: "read_file",
       success: true,
       summary: "Read package.json (12 lines, hash abcd1234).",
+      detail: [
+        "Read package.json",
+        "Lines: 12",
+        "Hash: abcd1234",
+      ].join("\n"),
     });
 
     expect(state.activeTurnId).toBe("turn-1");
@@ -80,6 +85,7 @@ describe("ui view models", () => {
           tone: "success",
           toolName: "read_file",
           callId: "call-read",
+          detailBody: "Read package.json\nLines: 12\nHash: abcd1234",
         },
       ],
     });
@@ -101,7 +107,7 @@ describe("ui view models", () => {
     state = applyBackendMessage(state, {
       type: "agent:edit",
       path: "src/app.ts",
-      summary: "Updated the greeting copy.",
+      summary: "Applied targeted edit to src/app.ts",
       diff: [
         "diff --git a/src/app.ts b/src/app.ts",
         "@@ -1,3 +1,3 @@",
@@ -110,14 +116,30 @@ describe("ui view models", () => {
         "+  return 'after';",
         " }",
       ].join("\n"),
+      beforePreview: "return 'before';",
+      afterPreview: "return 'after';",
+      addedLines: 1,
+      removedLines: 1,
     });
 
+    expect(state.turns[0]?.activity[0]).toMatchObject({
+      kind: "edit",
+      title: "src/app.ts",
+      detail: "Applied targeted edit to src/app.ts",
+      path: "src/app.ts",
+      beforePreview: "return 'before';",
+      afterPreview: "return 'after';",
+      addedLines: 1,
+      removedLines: 1,
+    });
     expect(state.fileEvents[0]).toMatchObject({
       path: "src/app.ts",
       status: "diff",
       title: "Diff preview",
-      summary: "Updated the greeting copy.",
+      summary: "Applied targeted edit to src/app.ts",
       turnId: "turn-1",
+      beforePreview: "return 'before';",
+      afterPreview: "return 'after';",
     });
     expect(state.fileEvents[0]?.diffLines).toEqual([
       {
@@ -151,6 +173,32 @@ describe("ui view models", () => {
         text: " }",
       },
     ]);
+  });
+
+  it("stores LangSmith trace metadata on the completed turn when present", () => {
+    let state = createInitialWorkbenchState();
+
+    state = queueInstructionTurn(state, "inspect package.json", []);
+    state = applyBackendMessage(state, {
+      type: "agent:done",
+      status: "success",
+      summary: "Turn finished cleanly.",
+      langSmithTrace: {
+        projectName: "shipyard",
+        runId: "run-123",
+        traceUrl: "https://smith.langchain.com/runs/run-123",
+        projectUrl: "https://smith.langchain.com/projects/shipyard",
+      },
+    });
+
+    expect(state.turns[0]).toMatchObject({
+      status: "success",
+      summary: "Turn finished cleanly.",
+      langSmithTrace: {
+        runId: "run-123",
+        traceUrl: "https://smith.langchain.com/runs/run-123",
+      },
+    });
   });
 
   it("page reload restores the same session snapshot", () => {

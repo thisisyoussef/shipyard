@@ -82,6 +82,12 @@ export const previewStateSchema = z.object({
   logTail: z.array(z.string()),
   lastRestartReason: z.string().nullable(),
 });
+export const langSmithTraceReferenceSchema = z.object({
+  projectName: z.string().nullable(),
+  runId: z.string().nullable(),
+  traceUrl: z.string().nullable(),
+  projectUrl: z.string().nullable(),
+});
 const sessionStateViewModelSchema = z.object({
   sessionId: z.string(),
   targetLabel: z.string(),
@@ -117,6 +123,14 @@ const activityItemSchema = z.object({
   tone: activityToneSchema,
   toolName: z.string().optional(),
   callId: z.string().optional(),
+  detailBody: z.string().optional(),
+  path: z.string().optional(),
+  diff: z.string().optional(),
+  beforePreview: z.string().nullable().optional(),
+  afterPreview: z.string().nullable().optional(),
+  addedLines: z.number().int().nonnegative().optional(),
+  removedLines: z.number().int().nonnegative().optional(),
+  command: z.string().optional(),
 });
 const turnViewModelSchema = z.object({
   id: z.string(),
@@ -126,6 +140,7 @@ const turnViewModelSchema = z.object({
   summary: z.string(),
   contextPreview: z.array(z.string()),
   agentMessages: z.array(z.string()),
+  langSmithTrace: langSmithTraceReferenceSchema.nullable().optional().default(null),
   activity: z.array(activityItemSchema),
 });
 const diffLineSchema = z.object({
@@ -143,6 +158,8 @@ const fileEventSchema = z.object({
   callId: z.string().optional(),
   turnId: z.string(),
   diffLines: z.array(diffLineSchema),
+  beforePreview: z.string().nullable().optional(),
+  afterPreview: z.string().nullable().optional(),
 });
 const contextReceiptSchema = z.object({
   id: z.string(),
@@ -278,6 +295,8 @@ export const agentToolResultMessageSchema = z.object({
   toolName: z.string(),
   success: z.boolean(),
   summary: z.string(),
+  detail: z.string().optional(),
+  command: z.string().optional(),
 });
 
 export const agentTextMessageSchema = z.object({
@@ -290,12 +309,17 @@ export const agentEditMessageSchema = z.object({
   path: z.string(),
   summary: z.string(),
   diff: z.string(),
+  beforePreview: z.string().nullable().optional(),
+  afterPreview: z.string().nullable().optional(),
+  addedLines: z.number().int().nonnegative().optional(),
+  removedLines: z.number().int().nonnegative().optional(),
 });
 
 export const agentDoneMessageSchema = z.object({
   type: z.literal("agent:done"),
   status: z.enum(["success", "error", "cancelled"]),
   summary: z.string(),
+  langSmithTrace: langSmithTraceReferenceSchema.nullable().optional(),
 });
 
 export const agentErrorMessageSchema = z.object({
@@ -343,6 +367,9 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
 
 export type BackendToFrontendMessage = z.infer<
   typeof backendToFrontendMessageSchema
+>;
+export type UiLangSmithTraceReference = z.infer<
+  typeof langSmithTraceReferenceSchema
 >;
 export type SessionRunSummary = z.infer<typeof sessionRunSummarySchema>;
 export type TargetManagerState = z.infer<typeof targetManagerStateSchema>;

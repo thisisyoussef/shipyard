@@ -3,13 +3,14 @@
 - Pack: UI Revamp (Supplemental)
 - Estimate: 4-6 hours
 - Date: 2026-03-24
-- Status: Backlog
+- Status: Active
 
 ## Pack Objectives
 
 1. Raise the visual and interaction quality of the Shipyard browser UI so it feels like a professional developer tool, not a demo shell.
 2. Make tool activity, file diffs, and status feedback easier to scan and trust at a glance.
 3. Improve the context and session workflows so the UI supports day-to-day development without friction.
+4. Add a conversation-first workspace plus stepwise live playback so operators can understand runs while they happen.
 
 ## Shared Constraints
 
@@ -18,7 +19,9 @@
 - Keep the WebSocket contract stable unless a breaking change is explicitly agreed.
 - Preserve local-first behavior; no auth, hosting, or multi-user work is required here.
 - Follow the repo design philosophy and keep the UI diff-forward.
-- UI changes should not change engine behavior or tool execution.
+- UI changes should not change engine behavior or tool execution semantics, but
+  backward-compatible UI contract extensions are acceptable when needed for
+  better operator evidence.
 
 ## Planned Stories
 
@@ -27,16 +30,18 @@
 | UIR-S01 | Visual System and Layout Refresh | Establish a cohesive visual system, layout grid, and base components for a more professional console. | Phase Pre-2 implementation |
 | UIR-S02 | Activity and Diff Experience Overhaul | Rework tool activity and diff presentation so surgical edits are unmistakable and fast to read. | UIR-S01 |
 | UIR-S03 | Context and Session UX Polish | Improve context injection, session rehydration, error states, and keyboard flow. | UIR-S01, UIR-S02 |
+| UIR-S04 | Live Run Chat and Stepwise Playback | Add a chat-first workspace, in-flight live playback, and richer per-edit evidence for the current or saved run. | UIR-S02, UIR-S03 |
 
 ## Sequencing Rationale
 
 - `UIR-S01` defines the design system and layout structure so later stories are consistent and not patchy.
 - `UIR-S02` focuses on the core trust surfaces (activity + diffs) once the base visual language is in place.
 - `UIR-S03` polishes the remaining workflows and error handling for day-to-day use.
+- `UIR-S04` builds on those surfaces by making the run understandable both as a conversation and as a live evidence trail while it is still executing.
 
 ## Whole-Pack Success Signal
 
 - The browser UI looks and feels like a polished developer tool.
 - Activity, diffs, and status are scannable in seconds, even under high tool traffic.
 - Context injection and session rehydration are obvious and reliable for local workflows.
-- No changes are required to engine logic or tool contracts to benefit from the UI improvements.
+- The operator can choose between chat-first and evidence-first views without losing persistent session context.

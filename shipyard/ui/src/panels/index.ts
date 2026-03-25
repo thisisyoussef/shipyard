@@ -14,6 +14,10 @@ export {
   type ComposerState,
 } from "./ComposerPanel.js";
 export {
+  ChatWorkspace,
+  type ChatWorkspaceProps,
+} from "./ChatWorkspace.js";
+export {
   ContextPanel,
   type ContextPanelProps,
 } from "./ContextPanel.js";
@@ -25,6 +29,10 @@ export {
   RunHistoryPanel,
   type RunHistoryPanelProps,
 } from "./RunHistoryPanel.js";
+export {
+  LiveViewPanel,
+  type LiveViewPanelProps,
+} from "./LiveViewPanel.js";
 export {
   PreviewPanel,
   type PreviewPanelProps,

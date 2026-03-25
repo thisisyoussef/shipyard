@@ -20,6 +20,7 @@ const turns: TurnViewModel[] = [
     summary: "Patched the component.",
     contextPreview: [],
     agentMessages: [],
+    langSmithTrace: null,
     activity: [
       {
         id: "event-1",
@@ -74,6 +75,7 @@ const turns: TurnViewModel[] = [
     summary: "Failed to inspect the package.",
     contextPreview: [],
     agentMessages: [],
+    langSmithTrace: null,
     activity: [],
   },
 ];

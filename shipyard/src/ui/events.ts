@@ -117,6 +117,8 @@ function createToolResultMessage(
     toolName: event.toolName,
     success: event.success,
     summary: event.summary,
+    detail: event.detail,
+    command: event.command,
   };
 }
 
@@ -126,6 +128,10 @@ function createEditMessage(event: EditEvent): BackendToFrontendMessage {
     path: event.path,
     summary: event.summary,
     diff: event.diff,
+    beforePreview: event.beforePreview,
+    afterPreview: event.afterPreview,
+    addedLines: event.addedLines,
+    removedLines: event.removedLines,
   };
 }
 
@@ -134,6 +140,7 @@ function createDoneMessage(event: DoneEvent): BackendToFrontendMessage {
     type: "agent:done",
     status: event.status,
     summary: event.summary,
+    langSmithTrace: event.langSmithTrace ?? null,
   };
 }
 

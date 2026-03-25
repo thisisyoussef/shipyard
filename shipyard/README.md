@@ -10,7 +10,7 @@ The current runtime now has two operator modes:
 ## Docs Map
 
 - [`docs/README.md`](./docs/README.md): durable docs hub
-- [`docs/demo/mvp-demo-script.md`](./docs/demo/mvp-demo-script.md): 3-5 minute presenter script for the current target-manager and preview workflow
+- [`docs/demo/mvp-demo-script.md`](./docs/demo/mvp-demo-script.md): 3-5 minute presenter script for the current target-manager, chat/live-run, and preview workflow
 - [`docs/architecture/README.md`](./docs/architecture/README.md): architecture diagrams and runtime flow
 - [`src/README.md`](./src/README.md): source tree guide
 - [`ui/README.md`](./ui/README.md): React frontend guide
@@ -22,7 +22,8 @@ The current runtime now has two operator modes:
 
 - persistent per-target sessions stored under `target/.shipyard/`
 - browser workbench saved-run history with one-click resume for the current target
-- grouped activity playback with `Latest run` / `All runs` filtering and human-language step summaries
+- chat-first browser workbench with a Lovable-style transcript view for multi-turn iteration
+- stepwise live-run playback that shows tool progress, sequential edits, before/after previews, and trace links while the run is still in flight
 - target discovery for existing or greenfield repositories
 - a shared instruction executor used by both terminal and browser mode
 - typed read, write, edit, list, search, command, and git-diff tools
@@ -93,8 +94,9 @@ The pre-2 developer UI uses:
 - Node's built-in `http` server plus `ws` for the local backend transport
 - a single React SPA built with Vite into `shipyard/dist/ui`
 - the same persisted Shipyard session and engine state used by terminal mode
-- a live event bridge that streams thinking, tool calls, tool results, errors, and session snapshots over one WebSocket session
+- a live event bridge that streams thinking, tool calls, tool results, immediate edit previews, trace metadata, errors, and session snapshots over one WebSocket session
 - browser-visible context injection receipts and reload-safe session rehydration for the active `--ui` session
+- a two-surface center workspace: `Chat` for the conversation transcript and `Live view` for step-by-step playback of the current or saved run
 
 The backend half of this mode lives in `src/ui/`. The frontend shell lives in
 `ui/`. Both are documented in the local README files for those directories.

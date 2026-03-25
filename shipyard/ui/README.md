@@ -17,10 +17,15 @@
 
 - The left sidebar shows the active session, saved runs for the current target,
   and injected-context history in separate panels.
-- The center activity feed groups raw tool events into plain-language steps and
-  can focus on the latest run or expand to all recorded turns.
-- The right sidebar keeps diff previews and file-level change evidence visible
-  while the center feed explains what Shipyard is doing in human language.
+- The center workspace now has `Chat` and `Live view` tabs so operators can
+  flip between a conversation-first transcript and a step-by-step execution
+  playback without leaving the current session.
+- `Live view` keeps streamed tool activity, immediate edit steps, terminal-like
+  detail, and before/after diff evidence visible while the run is still
+  progressing.
+- The right sidebar keeps file-level change evidence visible and preserves
+  repeated edits to the same path as separate timeline entries rather than
+  collapsing them together.
 
 ## Build Contract
 

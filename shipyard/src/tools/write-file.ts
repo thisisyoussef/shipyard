@@ -18,6 +18,12 @@ export interface WriteFileInput {
   overwrite?: boolean;
 }
 
+export interface WriteFilePreviewData {
+  path: string;
+  totalLines: number;
+  afterPreview: string;
+}
+
 const writeFileInputSchema = {
   type: "object",
   properties: {
@@ -59,6 +65,23 @@ function toWriteToolError(pathLabel: string, error: unknown): ToolError {
   }
 
   return new ToolError(`Failed to write ${pathLabel}.`);
+}
+
+function truncatePreview(contents: string): string {
+  const normalized = contents.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+
+  if (lines.at(-1) === "") {
+    lines.pop();
+  }
+
+  const preview = lines.slice(0, 12).join("\n");
+
+  if (lines.length > 12) {
+    return `${preview}\n...`;
+  }
+
+  return preview || "(empty)";
 }
 
 export async function writeFileTool(
@@ -137,6 +160,11 @@ export const writeFileDefinition: ToolDefinition<Omit<WriteFileInput, "targetDir
           countLines(result.contents),
           input.overwrite ?? false,
         ),
+        {
+          path: result.path,
+          totalLines: countLines(result.contents),
+          afterPreview: truncatePreview(result.contents),
+        } satisfies WriteFilePreviewData,
       );
     } catch (error) {
       return createToolErrorResult(error);
