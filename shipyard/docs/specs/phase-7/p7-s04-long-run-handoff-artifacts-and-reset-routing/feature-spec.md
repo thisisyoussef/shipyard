@@ -22,12 +22,12 @@ Shipyard currently persists sessions and a bounded rolling summary, but that is 
 - As a developer, I want reset reasons and resume state to be explicit so long-running failures are debuggable instead of mysterious.
 
 ## Acceptance Criteria
-- [ ] AC-1: Shipyard can persist a typed handoff artifact under `.shipyard/` with execution state such as completed work, remaining work, touched files, latest evaluation outcome, and next recommended action.
-- [ ] AC-2: The runtime can decide to emit and use a handoff artifact when a run crosses configured long-run thresholds such as loop iterations or repeated recoveries.
-- [ ] AC-3: A subsequent run can reload the latest handoff artifact and use it as structured context instead of relying only on the rolling summary.
-- [ ] AC-4: Short or trivial turns continue to use the lightweight summary path without mandatory handoff emission.
-- [ ] AC-5: Reset reasons are recorded in local logs and trace metadata.
-- [ ] AC-6: Handoff persistence and resume logic preserve the coordinator-only write boundary.
+- [x] AC-1: Shipyard can persist a typed handoff artifact under `.shipyard/` with execution state such as completed work, remaining work, touched files, latest evaluation outcome, and next recommended action.
+- [x] AC-2: The runtime can decide to emit and use a handoff artifact when a run crosses configured long-run thresholds such as loop iterations or repeated recoveries.
+- [x] AC-3: A subsequent run can reload the latest handoff artifact and use it as structured context instead of relying only on the rolling summary.
+- [x] AC-4: Short or trivial turns continue to use the lightweight summary path without mandatory handoff emission.
+- [x] AC-5: Reset reasons are recorded in local logs and trace metadata.
+- [x] AC-6: Handoff persistence and resume logic preserve the coordinator-only write boundary.
 
 ## Edge Cases
 - Empty/null inputs: missing handoff artifacts are treated as absent state, not fatal corruption.
@@ -51,3 +51,61 @@ Shipyard currently persists sessions and a bounded rolling summary, but that is 
 
 ## Done Definition
 - Shipyard can emit and reload durable handoff artifacts for large or unstable runs while preserving the lightweight behavior of short turns.
+
+## Implementation Evidence
+
+- `shipyard/src/artifacts/types.ts` and `shipyard/src/artifacts/handoff.ts`:
+  define the typed `ExecutionHandoff` payload, validate persisted JSON with
+  Zod, reject malformed reloads explicitly, and save artifacts under
+  `.shipyard/artifacts/<sessionId>/`.
+
+  ```ts
+  const executionHandoffSchema = z.object({
+    version: z.literal(1),
+    sessionId: z.string().trim().min(1),
+    turnCount: z.number().int().positive(),
+    // ...
+  });
+  ```
+
+- `shipyard/src/engine/state.ts`, `shipyard/src/context/envelope.ts`, and
+  `shipyard/src/engine/turn.ts`: keep only `activeHandoffPath` in persisted
+  session state, inject `latestHandoff` into the serialized prompt as a
+  dedicated `Latest Handoff` block, and clear the pointer again after a
+  successful resumed turn that does not need another reset.
+
+  ```ts
+  if (loadedHandoff && !emittedHandoff && finalStatus === "success") {
+    state.activeHandoffPath = null;
+  }
+  ```
+
+- `shipyard/src/engine/graph.ts`, `shipyard/src/engine/loop.ts`, and
+  `shipyard/src/ui/server.ts`: expose reset routing in observability by logging
+  the structured handoff payload locally and tagging traces with
+  `handoffLoaded`, `handoffPath`, and `handoffReason`.
+
+  ```ts
+  return {
+    // ...
+    handoffLoaded: latestHandoff !== null,
+    handoffPath: latestHandoff?.artifactPath ?? null,
+    handoffReason: latestHandoff?.handoff.resetReason.kind ?? null,
+  };
+  ```
+
+- `shipyard/src/tracing/langsmith.ts`: keeps trace-reference lookup
+  best-effort so live LangSmith indexing lag does not convert a successful
+  handoff turn into an `error` outcome during finish-stage verification.
+
+- `shipyard/tests/handoff-artifacts.test.ts`,
+  `shipyard/tests/context-envelope.test.ts`,
+  `shipyard/tests/graph-runtime.test.ts`, and
+  `shipyard/tests/loop-runtime.test.ts`: cover save/load round-trips, malformed
+  fallback, threshold gating, resumed-turn context injection, and local/remote
+  observability.
+
+- This first landing persists the current `TaskPlan` plus latest verification
+  outcome as the planning payload on `main`, which keeps handoff routing
+  shippable now while leaving room for later Phase 7 planner work to deepen the
+  same artifact instead of replacing the reset path.

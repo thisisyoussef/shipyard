@@ -16,6 +16,18 @@ when credentials are configured.
   variables are present.
 - Runtime code should pass structured metadata into tracing helpers instead of
   formatting opaque strings as late as possible.
+- Long-run reset stories should record structured handoff facts in both local
+  logs and remote metadata, not bury them in free-form summary text.
+- Trace URL lookup is best-effort. If LangSmith has not indexed the run URL
+  yet, Shipyard should keep the turn successful and return the root `runId`
+  plus any available project link instead of failing the runtime path.
+
+## Current Handoff Fields
+
+- Local `instruction.plan` JSONL events can include a `handoff` payload with
+  loaded, emitted, and load-error state.
+- LangSmith trace metadata currently records `handoffLoaded`, `handoffPath`,
+  and `handoffReason` so reset routing is visible without opening raw prompts.
 
 ## Operational Verification
 

@@ -132,29 +132,30 @@ export async function resolveLangSmithTraceReference(
   for (let attempt = 1; attempt <= TRACE_LOOKUP_ATTEMPTS; attempt += 1) {
     try {
       traceUrl = await client.getRunUrl({ runId });
-
-      if (projectName) {
-        projectUrl = await client.getProjectUrl({
-          projectName,
-        });
-      }
-
-      return {
-        projectName,
-        runId,
-        traceUrl,
-        projectUrl,
-      };
+      break;
     } catch (error) {
-      if (attempt === TRACE_LOOKUP_ATTEMPTS) {
-        throw error;
+      if (attempt < TRACE_LOOKUP_ATTEMPTS) {
+        await delay(TRACE_LOOKUP_DELAY_MS);
       }
-
-      await delay(TRACE_LOOKUP_DELAY_MS);
     }
   }
 
-  return null;
+  if (projectName) {
+    try {
+      projectUrl = await client.getProjectUrl({
+        projectName,
+      });
+    } catch {
+      projectUrl = null;
+    }
+  }
+
+  return {
+    projectName,
+    runId,
+    traceUrl,
+    projectUrl,
+  };
 }
 
 export async function runWithLangSmithTrace<

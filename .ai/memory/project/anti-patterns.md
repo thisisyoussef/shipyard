@@ -38,6 +38,11 @@ Capture failures so they are not repeated.
 - **Why it failed**: Prompt state becomes noisy, unstable, and hard for later plan/task flows to reference reliably.
 - **Prevention rule**: Use named, bounded spec-loading paths and keep `rollingSummary` compact.
 
+- **Problem**: Using `rollingSummary` or loose notes as the primary long-run reset state
+- **Example**: Carrying recovery-heavy turn state in free-form summary lines instead of persisting a typed handoff artifact under `.shipyard/artifacts/`
+- **Why it failed**: Resume behavior becomes lossy, hard to validate, and nearly impossible to inspect in traces when something goes wrong.
+- **Prevention rule**: Persist typed handoff artifacts, keep only the active artifact path in session state, and inject structured handoff context on resume.
+
 - **Problem**: Routing Claude into later UI phases without preserving the Codex skill chain
 - **Example**: Turning on a Claude bridge for UI implementation or QA but dropping the exact `typeset`/`colorize`/`arrange` or `critique`/`audit` skill contracts from the prompt
 - **Why it failed**: Provider swaps changed the actual design process instead of only changing who executed it.

@@ -68,3 +68,10 @@ Record durable workspace decisions here.
 - **Decision**: Keep the scaffold catalog in `shipyard/src/tools/target-manager/scaffolds.ts` as the single source of truth, and route both `create_target` and `bootstrap_target` through one shared materialization helper.
 - **Alternatives Considered**: Add a second project-scaffolder tool; keep relying on repeated `write_file` calls for boilerplate.
 - **Consequences**: New presets must be added once and reused across both flows, and code-phase guidance should prefer the shared bootstrap tool for standard workspace starters.
+
+- **ADR-ID**: ADR-0008
+- **Date**: 2026-03-25
+- **Context**: Long-running or recovery-heavy turns need more durable resume state than an eight-line rolling summary, but the richer planner artifact is not yet merged on `main`.
+- **Decision**: Persist typed `ExecutionHandoff` artifacts under `shipyard/.shipyard/artifacts/<sessionId>/` and keep only the active artifact path in session state, with the first landing anchored to the current `TaskPlan` plus latest verification outcome.
+- **Alternatives Considered**: Stretch `rollingSummary`; write ad hoc notes blobs; block the story on the unmerged planner branch.
+- **Consequences**: Resume state stays structured and target-local today, traces/logs must expose handoff metadata, and later planner work can enrich the existing handoff contract instead of inventing a second reset path.

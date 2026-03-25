@@ -64,6 +64,7 @@ export interface EnrichTargetOptions {
     prompt: string,
   ) => Promise<EnrichmentInvocationResult>;
   onProgress?: (event: EnrichmentProgressEvent) => Promise<void> | void;
+  shouldCancel?: () => boolean;
 }
 
 const enrichTargetInputSchema = {
@@ -298,6 +299,7 @@ export async function enrichTargetTool(
   options: EnrichTargetOptions = {},
 ): Promise<TargetProfile> {
   const onProgress = options.onProgress;
+  const shouldCancel = options.shouldCancel;
   const invokeModel =
     options.invokeModel ??
     configuredInvokeModel ??
@@ -324,6 +326,10 @@ export async function enrichTargetTool(
       context.discovery,
       response.model,
     );
+
+    if (shouldCancel?.()) {
+      return profile;
+    }
 
     await saveTargetProfile(input.targetPath, profile);
     await onProgress?.({
