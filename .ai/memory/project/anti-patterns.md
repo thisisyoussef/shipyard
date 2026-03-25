@@ -37,3 +37,8 @@ Capture failures so they are not repeated.
 - **Example**: Copying long `feature-spec.md` contents into `rollingSummary` or relying on manual paste-only context for spec-driven stories
 - **Why it failed**: Prompt state becomes noisy, unstable, and hard for later plan/task flows to reference reliably.
 - **Prevention rule**: Use named, bounded spec-loading paths and keep `rollingSummary` compact.
+
+- **Problem**: Routing Claude into later UI phases without preserving the Codex skill chain
+- **Example**: Turning on a Claude bridge for UI implementation or QA but dropping the exact `typeset`/`colorize`/`arrange` or `critique`/`audit` skill contracts from the prompt
+- **Why it failed**: Provider swaps changed the actual design process instead of only changing who executed it.
+- **Prevention rule**: Any Claude UI phase bridge must carry the exact same phase skill chain Codex uses, and later-phase Claude routing must stay behind `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES`.

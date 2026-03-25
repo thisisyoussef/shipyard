@@ -88,6 +88,12 @@ For UI implementation stories, Agent 2 should read the design brief first, then 
 - `animate` — entrance, micro-interactions, state transitions
 - `bolder` — amplify visual impact when design feels safe/generic
 
+If you want a scripted delegate for this phase instead of manual execution, run:
+
+```bash
+node scripts/run-ui-phase-bridge.mjs --phase ui --story <story-id>
+```
+
 These skills guide implementation decisions, not spec decisions. Use them to make concrete CSS/component choices that match the design direction established in Phase 1 during spec-driven-delivery.
 
 Forbidden behavior:
@@ -155,6 +161,12 @@ For UI implementation stories, Agent 3 should apply the **UI Skill Chain Phase 3
 - `audit` — accessibility, performance, theming, responsive audit
 - `fixing-accessibility` — WCAG compliance fixes
 - `fixing-motion-performance` — animation perf fixes
+
+If you want a scripted delegate for this phase instead of manual execution, run:
+
+```bash
+node scripts/run-ui-phase-bridge.mjs --phase qa --story <story-id>
+```
 
 These skills guide the refactor pass: Agent 3 uses critique/audit output to identify quality gaps, then fixes them while keeping tests green.
 
