@@ -235,6 +235,20 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain('aria-label="Current location"');
   });
 
+  it("renders preview status, inline result, and a direct preview link", () => {
+    const markup = renderWorkbench();
+
+    expect(markup).toContain("Local preview");
+    expect(markup).toContain("Preview is running on loopback.");
+    expect(markup).toContain("Open preview");
+    expect(markup).toContain('href="http://127.0.0.1:4173"');
+    expect(markup).toContain('target="_blank"');
+    expect(markup).toContain('rel="noreferrer"');
+    expect(markup).toContain('title="Local preview"');
+    expect(markup).toContain('src="http://127.0.0.1:4173"');
+    expect(markup).toContain("VITE v5.0.8 ready in 145 ms");
+  });
+
   // SKIP: UIV3 rebuild - full panel rendering reimplemented in S02-S08
   it.skip("renders the current session, context, preview, activity, and file sidebars", () => {
     const markup = renderWorkbench();
@@ -276,7 +290,7 @@ describe("ShipyardWorkbench", () => {
   });
 
   // SKIP: UIV3 rebuild - preview panel reimplemented in S07
-  it.skip("renders an explicit unavailable preview state instead of guessing", () => {
+  it("renders an explicit unavailable preview state instead of guessing", () => {
     const markup = renderWorkbench({
       previewState: {
         status: "unavailable",
@@ -292,5 +306,6 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain(
       "No package.json was found, so Shipyard cannot infer a supported local preview command.",
     );
+    expect(markup).not.toContain("Open preview");
   });
 });

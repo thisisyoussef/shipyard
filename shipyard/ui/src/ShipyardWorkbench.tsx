@@ -11,6 +11,7 @@ import {
   ComposerPanel,
   ContextPanel,
   FilePanel,
+  PreviewPanel,
   SessionPanel,
 } from "./panels/index.js";
 import type { BadgeTone } from "./primitives.js";
@@ -210,6 +211,8 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             agentBusy={props.connectionState === "agent-busy"}
             notice={props.composerNotice}
           />
+
+          <PreviewPanel preview={props.previewState} />
 
           <div className="workbench-main-activity">
             <ActivityFeed turns={props.turns} />
