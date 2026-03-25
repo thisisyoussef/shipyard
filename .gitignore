@@ -1,5 +1,6 @@
 .DS_Store
 .env
+.mcp.json
 shipyard/.env
 .ai/state/flight-lock.json
 .ai/state/correction-triage.json

@@ -41,6 +41,7 @@ Read relevant internal docs first:
 9. For UI stories: design language reference `.ai/docs/design/DESIGN_PHILOSOPHY_AND_LANGUAGE.md`
 10. For UI stories: frontend prompting skill `.ai/skills/frontend-design.md`
 11. For UI stories: reusable prompt brief `.ai/templates/spec/UI_PROMPT_BRIEF_TEMPLATE.md`
+12. For UI stories: Refero workflow reference `.ai/docs/references/refero-mcp.md`
 
 Capture reusable patterns and constraints from local docs.
 
@@ -82,6 +83,10 @@ For UI stories, include best practices for:
 - whitespace/layout composition,
 - semantic color/depth systems,
 - when to use a short WIRE brief versus a fuller WIRE+FRAME brief.
+- When Refero is configured, also gather a reference pack from real products:
+  - 3-6 relevant screens
+  - 1-2 relevant flows when the story changes a user journey
+  - concrete notes on what to borrow and what to avoid
 
 ---
 
@@ -98,7 +103,8 @@ Deliver a concise lookup brief before any code/test edits:
 7. Eval implications for AI behavior (objective, dataset, metrics, regression plan)
 8. Spec implications (what to update in constitution/spec/plan/tasks artifacts)
 9. For UI scope: design-ambiguity implications, selected principle tie-breakers, and prompt/spec constraints that prevent generic output
-10. Story sizing recommendation: `lane: trivial` or `lane: standard`, plus the reason `.ai/workflows/story-sizing.md` should land there next
+10. For UI scope when Refero is available: the selected reference set and the extracted product patterns
+11. Story sizing recommendation: `lane: trivial` or `lane: standard`, plus the reason `.ai/workflows/story-sizing.md` should land there next
 
 If lookup is incomplete, do not start implementation.
 

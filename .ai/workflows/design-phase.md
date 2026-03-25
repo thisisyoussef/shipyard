@@ -31,6 +31,7 @@ Skip only for:
 - Design philosophy: `.ai/docs/design/DESIGN_PHILOSOPHY_AND_LANGUAGE.md`
 - Existing token system: `shipyard/ui/src/tokens/`
 - Existing components: `shipyard/ui/src/primitives.tsx` and extracted components
+- Refero workflow reference: `.ai/docs/references/refero-mcp.md`
 
 ## Default Execution
 
@@ -45,7 +46,7 @@ Notes:
 - Use `--spec <path>` when auto-discovery is ambiguous.
 - Use `--context-path <path>` to include extra files or directories in the prompt.
 - The bridge writes `.ai/state/design-brief/<story-id>/brief.md`.
-- The bridge is Claude-first by default and falls back to Codex only when Claude is unavailable or returns an error.
+- The bridge is Claude-first by default, uses Refero for brainstorming/reference research when configured, and falls back to Codex only when Claude is unavailable or returns an error.
 
 After the initial draft is written, continue the full review/refinement loop below rather than treating the first output as final by default.
 
@@ -54,6 +55,7 @@ After the initial draft is written, continue the full review/refinement loop bel
 ## Output
 
 A design brief saved to `.ai/state/design-brief/<story-id>/brief.md` containing:
+- reference research (real-product screens/flows, what to borrow, what to avoid)
 - visual direction and mood
 - component inventory (new components, modified components)
 - token selections (which existing tokens to use, any new tokens needed)
@@ -80,6 +82,7 @@ Before making any design decisions, understand what exists.
 
 **Actions:**
 0. If the brief does not exist yet, generate the first draft with `node scripts/generate-design-brief.mjs --story <story-id>` before refining it.
+0.5. When Refero is configured, verify the draft includes a useful reference-research section before refining the rest of the brief.
 1. Read the feature spec's acceptance criteria and UI requirements.
 2. Run `extract` on the affected UI surface to catalog existing patterns.
 3. Run `normalize` to identify any design drift in the area being modified.
@@ -232,6 +235,7 @@ Skills invoked later in the workflow (not in design phase):
 ## Exit Criteria
 
 - Design brief exists at `.ai/state/design-brief/<story-id>/brief.md`
+- Reference research is included or the absence of Refero is explicitly called out
 - All 6 steps completed
 - Critique scores 7+ on all dimensions (or findings addressed)
 - Token selections reference existing tokens (no invented names)
