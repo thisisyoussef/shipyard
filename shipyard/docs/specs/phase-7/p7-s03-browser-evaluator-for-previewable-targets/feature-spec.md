@@ -51,3 +51,47 @@ Shipyard can already start and refresh a local preview for previewable targets, 
 
 ## Done Definition
 - Shipyard can gather structured browser evidence from its existing preview surface and use that evidence without giving write access to the evaluator.
+
+## Code References
+
+- [`../../../../src/artifacts/types.ts`](../../../../src/artifacts/types.ts):
+  defines `BrowserEvaluationTarget`, `BrowserEvaluationPlan`,
+  `BrowserEvaluationStep`, `BrowserEvaluationReport`, failure metadata, and
+  artifact references so browser evidence follows the same typed artifact
+  pattern as the rest of Phase 7.
+- [`../../../../src/agents/browser-evaluator.ts`](../../../../src/agents/browser-evaluator.ts):
+  validates browser plans, maps `PreviewState` into an evaluator target,
+  launches Chromium in a bounded helper flow, blocks non-loopback requests,
+  captures console and page errors, and persists failure screenshots when an
+  artifact directory is configured.
+- [`../../../../package.json`](../../../../package.json) and
+  [`../../../../pnpm-workspace.yaml`](../../../../pnpm-workspace.yaml):
+  add the Playwright browser dependency and allow the exact install scripts
+  needed for Chromium provisioning in this repo's pnpm setup.
+- [`../../../../tests/browser-evaluator.test.ts`](../../../../tests/browser-evaluator.test.ts)
+  and [`../../../../tests/manual/phase7-browser-evaluator-smoke.ts`](../../../../tests/manual/phase7-browser-evaluator-smoke.ts):
+  cover malformed-plan rejection, preview-unavailable handling, a passing
+  interactive preview run, console-error failure, selector/action failure, and
+  bounded artifact capture.
+
+## Representative Snippets
+
+```ts
+export interface BrowserEvaluationPlan {
+  summary: string;
+  target: BrowserEvaluationTarget;
+  steps: BrowserEvaluationStep[];
+  captureArtifacts?: "none" | "on-failure";
+}
+```
+
+```ts
+await context.route("**/*", async (route) => {
+  if (isAllowedBrowserRequestUrl(route.request().url())) {
+    await route.continue();
+    return;
+  }
+
+  await route.abort();
+});
+```
