@@ -33,3 +33,17 @@ Record durable workspace decisions here.
 - **Decision**: Reset imported backlog/history files and keep only repo-generic workflows, templates, and memory slots.
 - **Alternatives Considered**: Keep the imported memory and rename it; rebuild the harness from scratch.
 - **Consequences**: The harness starts clean, but future tasks must maintain the new generic baseline intentionally.
+
+- **ADR-ID**: ADR-0004
+- **Date**: 2026-03-25
+- **Context**: Broad Shipyard instructions need more structure than the
+  lightweight `TaskPlan`, but the runtime still needs to stay fast for
+  exact-path and other narrow work.
+- **Decision**: Add a read-only planner helper that emits a typed
+  `ExecutionSpec` for broad code-phase instructions, while keeping a lightweight
+  fallback spec for trivial, greenfield, and target-manager paths.
+- **Alternatives Considered**: Keep stretching `TaskPlan`; make planner mode the
+  default for every instruction.
+- **Consequences**: Planner output becomes reusable by later evaluation and plan
+  mode stories, and route metadata must clearly distinguish planner-backed vs
+  lightweight runs.

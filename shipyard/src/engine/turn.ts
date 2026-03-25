@@ -1,7 +1,12 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
 
-import type { TargetProfile, TaskPlan } from "../artifacts/types.js";
+import type {
+  ExecutionSpec,
+  PlanningMode,
+  TargetProfile,
+  TaskPlan,
+} from "../artifacts/types.js";
 import {
   buildContextEnvelope,
   composeSystemPrompt,
@@ -116,6 +121,8 @@ export interface InstructionTurnResult {
   phaseName: string;
   runtimeMode: InstructionRuntimeMode;
   taskPlan: TaskPlan;
+  executionSpec: ExecutionSpec | null;
+  planningMode: PlanningMode;
   contextEnvelope: ContextEnvelope;
   status: "success" | "error" | "cancelled";
   summary: string;
@@ -639,6 +646,7 @@ export async function executeInstructionTurn(
     sessionId: state.sessionId,
     instruction: options.instruction,
     contextEnvelope,
+    targetProfile: state.targetProfile ?? null,
     targetDirectory: state.targetDirectory,
     phaseConfig: {
       ...phase,
@@ -674,6 +682,8 @@ export async function executeInstructionTurn(
         "Verify the result after the edit.",
       ],
     };
+    const executionSpec = finalState.executionSpec ?? null;
+    const planningMode = finalState.planningMode;
     const finalText = finalState.finalResult
       ?? "Shipyard finished without a final response.";
     const finalStateStatus = finalState.status === "failed"
@@ -725,6 +735,8 @@ export async function executeInstructionTurn(
         phaseName: phase.name,
         runtimeMode: runtimeState.runtimeMode,
         taskPlan,
+        executionSpec,
+        planningMode,
         contextEnvelope,
         status: "cancelled",
         summary: cancellationReason,
@@ -758,6 +770,8 @@ export async function executeInstructionTurn(
         phaseName: phase.name,
         runtimeMode: runtimeState.runtimeMode,
         taskPlan,
+        executionSpec,
+        planningMode,
         contextEnvelope,
         status: "error",
         summary: errorMessage,
@@ -787,6 +801,8 @@ export async function executeInstructionTurn(
       phaseName: phase.name,
       runtimeMode: runtimeState.runtimeMode,
       taskPlan,
+      executionSpec,
+      planningMode,
       contextEnvelope,
       status: "success",
       summary,
@@ -833,6 +849,8 @@ export async function executeInstructionTurn(
           targetFilePaths,
           plannedSteps: [],
         },
+        executionSpec: null,
+        planningMode: "lightweight",
         contextEnvelope,
         status: "cancelled",
         summary: cancellationReason,
@@ -877,6 +895,8 @@ export async function executeInstructionTurn(
         targetFilePaths,
         plannedSteps: [],
       },
+      executionSpec: null,
+      planningMode: "lightweight",
       contextEnvelope,
       status: "error",
       summary: message,

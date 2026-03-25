@@ -7,9 +7,12 @@ runtimes behind those roles.
 ## Files
 
 - `coordinator.ts`: the only write-capable role; owns the task plan and the
-  final execution path plus delegation heuristics for explorer and verifier
+  final execution path plus delegation heuristics for explorer, planner, and
+  verifier
 - `explorer.ts`: read-only search role plus the isolated explorer helper that
   returns `ContextReport`
+- `planner.ts`: read-only planning role that turns broad instructions into
+  typed `ExecutionSpec` artifacts
 - `verifier.ts`: read-only validation role for tests, lint, and structured
   verification reports; now also exposes the isolated verifier helper runtime
 
@@ -26,15 +29,20 @@ flowchart LR
   Instruction["Instruction"]
   Coordinator["coordinator"]
   Explorer["explorer"]
+  Planner["planner"]
   Verifier["verifier"]
   Writes["write operations"]
   Checks["checks and evidence"]
+  Spec["ExecutionSpec"]
 
   Instruction --> Coordinator
   Coordinator --> Explorer
+  Coordinator --> Planner
   Coordinator --> Verifier
   Coordinator --> Writes
   Explorer --> Checks
+  Planner --> Spec
+  Spec --> Coordinator
   Verifier --> Checks
   Checks --> Coordinator
 ```

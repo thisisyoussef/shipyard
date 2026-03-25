@@ -1,8 +1,8 @@
 # Shipyard Workspace - Single Source of Truth
 
-**Last Updated**: 2026-03-24
-**Current Phase**: Day 1 foundation
-**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI
+**Last Updated**: 2026-03-25
+**Current Phase**: Phase 7 planner contract
+**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI and richer runtime artifacts
 **Project Status**: Active
 **Canonical App Directory**: `shipyard/`
 **Canonical Harness Directory**: `.ai/`
@@ -13,7 +13,7 @@
 
 ### Active Task
 
-- **Title**: Establish the nested workspace layout and import a generic `.ai` helper harness
+- **Title**: Land the Phase 7 `ExecutionSpec` planner contract while keeping the lightweight runtime path intact
 - **Status**: In progress
 - **Owner**: Codex
 
@@ -21,7 +21,7 @@
 
 1. Keep the harness aligned with the actual repo shape: `.ai/` beside `shipyard/`.
 2. Continue building the persistent CLI loop, typed tools, and tracing inside `shipyard/`.
-3. Expand tests as the tool surface and orchestration model grow.
+3. Expand tests and runtime artifacts as the orchestration model grows.
 
 ---
 

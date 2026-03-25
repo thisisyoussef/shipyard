@@ -23,3 +23,12 @@ Capture failures so they are not repeated.
 - **Example**: Accumulating long story histories under `.ai/memory/session/`
 - **Why it failed**: Current context becomes noisy and harder to trust.
 - **Prevention rule**: Move only durable truths into project memory and keep session notes concise.
+
+- **Problem**: Sending every instruction through the heavy planner path
+- **Example**: Running planner mode for target-manager actions, greenfield
+  bootstrap turns, or exact-path inspection/edit requests.
+- **Why it failed**: It adds avoidable model hops, complicates cancellation
+  flows, and makes narrow tasks more brittle without improving the result.
+- **Prevention rule**: Reserve planner mode for broad non-trivial code-phase
+  work, and keep lightweight execution as the default for narrow or non-code
+  turns.
