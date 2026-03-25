@@ -12,6 +12,7 @@ import { useState } from "react";
 import {
   ChatWorkspace,
   ComposerPanel,
+  type ComposerAttachment,
   ContextPanel,
   FilePanel,
   RunHistoryPanel,
@@ -65,6 +66,7 @@ export interface ShipyardWorkbenchProps {
   instruction: string;
   contextDraft: string;
   composerNotice: ComposerNotice | null;
+  composerAttachments: ComposerAttachment[];
   instructionInputRef: RefObject<HTMLTextAreaElement | null>;
   contextInputRef: RefObject<HTMLTextAreaElement | null>;
   onInstructionChange: (value: string) => void;
@@ -72,11 +74,11 @@ export interface ShipyardWorkbenchProps {
   onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onContextKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onClearContext: () => void;
+  onAttachFiles: (files: File[]) => void;
   onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
   onCancelInstruction: () => void;
-  onUploadFiles: (files: File[]) => void;
-  onRemovePendingUpload: (receiptId: string) => void;
   onRequestDeploy: () => void;
+  onRemoveAttachment: (attachmentId: string) => void;
   onRequestSessionResume: (sessionId: string) => void;
   onRequestTargetSwitch: (targetPath: string) => void;
   onRequestTargetCreate: (input: {
@@ -200,14 +202,13 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               onInstructionChange={props.onInstructionChange}
               onSubmit={props.onSubmitInstruction}
               onCancel={props.onCancelInstruction}
-              pendingUploads={props.pendingUploads}
-              uploadsDisabled={props.sessionState === null}
-              onUploadFiles={props.onUploadFiles}
-              onRemoveUpload={props.onRemovePendingUpload}
               onKeyDown={props.onInstructionKeyDown}
               textareaRef={props.instructionInputRef}
               agentBusy={props.connectionState === "agent-busy"}
               notice={props.composerNotice}
+              attachments={props.composerAttachments}
+              onAttachFiles={props.onAttachFiles}
+              onRemoveAttachment={props.onRemoveAttachment}
             />
           </div>
         }

@@ -93,7 +93,9 @@ export interface ContextReceiptViewModel {
   turnId: string;
 }
 
-export interface PendingUploadReceiptViewModel extends UploadReceipt {}
+export interface UploadReceiptViewModel extends UploadReceipt {}
+
+export interface PendingUploadReceiptViewModel extends UploadReceiptViewModel {}
 
 export interface LatestDeployViewModel extends DeploySummary {}
 
@@ -127,7 +129,7 @@ export interface WorkbenchViewState {
   nextEventNumber: number;
   nextFileEventNumber: number;
   contextHistory: ContextReceiptViewModel[];
-  pendingUploads: PendingUploadReceiptViewModel[];
+  pendingUploads: UploadReceiptViewModel[];
   latestDeploy: LatestDeployViewModel;
   previewState: PreviewStateViewModel;
   targetManager: TargetManagerViewModel | null;
@@ -136,6 +138,7 @@ export interface WorkbenchViewState {
 export interface PreparedInstructionSubmission {
   instruction: string;
   injectedContext?: string[];
+  contextPreview: string[];
   clearedContextDraft: string;
 }
 
@@ -363,8 +366,35 @@ function hasRecoveredHistory(state: WorkbenchViewState): boolean {
   return (
     state.turns.length > 0 ||
     state.fileEvents.length > 0 ||
-    state.contextHistory.length > 0
+    state.contextHistory.length > 0 ||
+    state.pendingUploads.length > 0
   );
+}
+
+export function createUploadContextPreview(
+  receipt: UploadReceiptViewModel,
+): string {
+  return `Upload: ${receipt.originalName} -> ${receipt.storedRelativePath}`;
+}
+
+export function createUploadInjectedContext(
+  receipt: UploadReceiptViewModel,
+): string {
+  const previewBody = receipt.previewText.trim()
+    ? receipt.previewText.trim()
+    : "(empty file)";
+
+  return [
+    "Uploaded file reference",
+    `Original filename: ${receipt.originalName}`,
+    `Stored path: ${receipt.storedRelativePath}`,
+    `Media type: ${receipt.mediaType}`,
+    `Size: ${String(receipt.sizeBytes)} bytes`,
+    `Summary: ${receipt.previewSummary}`,
+    "Preview:",
+    previewBody,
+    "Use read_file on the stored path if you need the full contents.",
+  ].join("\n");
 }
 
 function createDoneTone(
@@ -399,6 +429,28 @@ function createTurnStatusFromDone(
   }
 }
 
+export function ensureWorkbenchStateDefaults(
+  state: Partial<WorkbenchViewState> | WorkbenchViewState,
+): WorkbenchViewState {
+  const initialState = createInitialWorkbenchState();
+
+  return {
+    ...initialState,
+    ...state,
+    sessionHistory: [...(state.sessionHistory ?? initialState.sessionHistory)],
+    turns: [...(state.turns ?? initialState.turns)],
+    fileEvents: [...(state.fileEvents ?? initialState.fileEvents)],
+    pendingToolCalls: {
+      ...(state.pendingToolCalls ?? initialState.pendingToolCalls),
+    },
+    contextHistory: [...(state.contextHistory ?? initialState.contextHistory)],
+    pendingUploads: [...(state.pendingUploads ?? [])],
+    latestDeploy: state.latestDeploy ?? initialState.latestDeploy,
+    previewState: state.previewState ?? initialState.previewState,
+    targetManager: state.targetManager ?? initialState.targetManager,
+  };
+}
+
 export function createInitialWorkbenchState(): WorkbenchViewState {
   return {
     connectionState: "connecting",
@@ -427,29 +479,18 @@ export function addPendingUploads(
   state: WorkbenchViewState,
   uploads: PendingUploadReceiptViewModel[],
 ): WorkbenchViewState {
-  const readyUploads = uploads.filter((upload) => upload.status === "ready");
-
-  if (readyUploads.length === 0) {
+  if (uploads.length === 0) {
     return state;
   }
 
-  return {
-    ...state,
-    pendingUploads: [...readyUploads, ...state.pendingUploads].filter(
-      (upload, index, collection) =>
-        collection.findIndex((candidate) => candidate.id === upload.id) === index,
-    ),
-  };
+  return appendPendingUploadReceipts(state, uploads);
 }
 
 export function removePendingUpload(
   state: WorkbenchViewState,
   uploadId: string,
 ): WorkbenchViewState {
-  return {
-    ...state,
-    pendingUploads: state.pendingUploads.filter((upload) => upload.id !== uploadId),
-  };
+  return removePendingUploadReceipt(state, uploadId);
 }
 
 export function clearPendingUploads(
@@ -468,6 +509,7 @@ export function clearPendingUploads(
 export function prepareInstructionSubmission(
   instructionDraft: string,
   contextDraft: string,
+  pendingUploads: UploadReceiptViewModel[] = [],
 ): PreparedInstructionSubmission | null {
   const instruction = instructionDraft.trim();
 
@@ -476,11 +518,70 @@ export function prepareInstructionSubmission(
   }
 
   const trimmedContext = contextDraft.trim();
+  const contextPreview = [
+    ...(trimmedContext ? [trimmedContext] : []),
+    ...pendingUploads.map(createUploadContextPreview),
+  ];
 
   return {
     instruction,
     injectedContext: trimmedContext ? [trimmedContext] : undefined,
+    contextPreview,
     clearedContextDraft: "",
+  };
+}
+
+export function appendPendingUploadReceipts(
+  state: WorkbenchViewState,
+  receipts: UploadReceiptViewModel[],
+): WorkbenchViewState {
+  return {
+    ...state,
+    pendingUploads: [
+      ...receipts,
+      ...state.pendingUploads.filter((existingReceipt) =>
+        !receipts.some((receipt) => receipt.id === existingReceipt.id)
+      ),
+    ],
+  };
+}
+
+export function removePendingUploadReceipt(
+  state: WorkbenchViewState,
+  receiptId: string,
+): WorkbenchViewState {
+  return {
+    ...state,
+    pendingUploads: state.pendingUploads.filter((receipt) => receipt.id !== receiptId),
+  };
+}
+
+export function consumePendingUploadsForInstruction(
+  state: WorkbenchViewState,
+  injectedContext: string[] | undefined,
+): {
+  nextState: WorkbenchViewState;
+  injectedContext?: string[];
+  contextPreview: string[];
+} {
+  const nextInjectedContext = [
+    ...(injectedContext ?? []),
+    ...state.pendingUploads.map(createUploadInjectedContext),
+  ];
+  const contextPreview = [
+    ...(injectedContext ?? []),
+    ...state.pendingUploads.map(createUploadContextPreview),
+  ];
+
+  return {
+    nextState: {
+      ...state,
+      pendingUploads: [],
+    },
+    injectedContext: nextInjectedContext.length > 0
+      ? nextInjectedContext
+      : undefined,
+    contextPreview,
   };
 }
 
@@ -500,8 +601,7 @@ export function applySessionSnapshot(
   state: WorkbenchViewState,
   message: Extract<BackendToFrontendMessage, { type: "session:state" }>,
 ): WorkbenchViewState {
-  const recoveredState = message.workbenchState ?? state;
-  const latestDeploy = recoveredState.latestDeploy ?? createInitialDeploySummary();
+  const recoveredState = ensureWorkbenchStateDefaults(message.workbenchState ?? state);
   const previewState = recoveredState.previewState ??
     createInitialPreviewState({
       activePhase: message.activePhase,
@@ -532,7 +632,7 @@ export function applySessionSnapshot(
       createTargetManagerAgentStatus(
         recoveredState.targetManager ?? state.targetManager,
       ) ?? nextAgentStatus,
-    latestDeploy,
+    latestDeploy: recoveredState.latestDeploy,
     previewState,
     targetManager: recoveredState.targetManager ?? state.targetManager ?? null,
   };

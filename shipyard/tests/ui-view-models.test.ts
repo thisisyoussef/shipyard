@@ -5,11 +5,30 @@ import {
   addPendingUploads,
   applyBackendMessage,
   clearPendingUploads,
+  appendPendingUploadReceipts,
+  consumePendingUploadsForInstruction,
   createInitialWorkbenchState,
   prepareInstructionSubmission,
   queueInstructionTurn,
   removePendingUpload,
+  type UploadReceiptViewModel,
 } from "../ui/src/view-models.js";
+
+function createUploadReceipt(
+  overrides?: Partial<UploadReceiptViewModel>,
+): UploadReceiptViewModel {
+  return {
+    id: "upload-1",
+    originalName: "spec.md",
+    storedRelativePath: ".shipyard/uploads/session-restore/spec-abc123.md",
+    sizeBytes: 148,
+    mediaType: "text/markdown",
+    previewText: "# Hosted upload spec\n\nKeep edits narrow and explain tradeoffs.",
+    previewSummary: "Markdown preview available.",
+    uploadedAt: "2026-03-24T12:04:00.000Z",
+    ...overrides,
+  };
+}
 
 describe("ui view models", () => {
   it("injected context is attached to the next instruction and then cleared from draft state", () => {
@@ -21,6 +40,7 @@ describe("ui view models", () => {
     expect(submission).toEqual({
       instruction: "inspect package.json",
       injectedContext: ["Follow the package scripts before changing anything."],
+      contextPreview: ["Follow the package scripts before changing anything."],
       clearedContextDraft: "",
     });
 
@@ -28,7 +48,7 @@ describe("ui view models", () => {
     state = queueInstructionTurn(
       state,
       submission?.instruction ?? "",
-      submission?.injectedContext ?? [],
+      submission?.contextPreview ?? [],
     );
 
     expect(state.turns[0]).toMatchObject({
@@ -299,6 +319,89 @@ describe("ui view models", () => {
     expect(rehydrated.agentStatus).toBe("Recovered session history after reload.");
   });
 
+  it("rehydrates pending uploads and consumes them into the next instruction handoff", () => {
+    const uploadReceipt = createUploadReceipt();
+    const snapshot = appendPendingUploadReceipts(
+      createInitialWorkbenchState(),
+      [uploadReceipt],
+    );
+
+    const rehydrated = applyBackendMessage(createInitialWorkbenchState(), {
+      type: "session:state",
+      runtimeMode: "ui",
+      connectionState: "ready",
+      sessionId: "session-upload",
+      targetLabel: "shipyard",
+      targetDirectory: "/tmp/shipyard",
+      activePhase: "code",
+      workspaceDirectory: "/tmp/shipyard-workspace",
+      turnCount: 0,
+      startedAt: "2026-03-24T12:00:00.000Z",
+      lastActiveAt: "2026-03-24T12:05:00.000Z",
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: true,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: ["src"],
+        projectName: "shipyard",
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
+      },
+      discoverySummary: "typescript (React) via pnpm",
+      projectRulesLoaded: true,
+      sessionHistory: [],
+      workbenchState: snapshot,
+    });
+
+    expect(rehydrated.pendingUploads).toEqual([uploadReceipt]);
+
+    const submission = prepareInstructionSubmission(
+      "inspect the uploaded spec",
+      "  Honor the existing package scripts.  ",
+      rehydrated.pendingUploads,
+    );
+
+    expect(submission).toMatchObject({
+      instruction: "inspect the uploaded spec",
+      injectedContext: ["Honor the existing package scripts."],
+      contextPreview: [
+        "Honor the existing package scripts.",
+        `Upload: ${uploadReceipt.originalName} -> ${uploadReceipt.storedRelativePath}`,
+      ],
+      clearedContextDraft: "",
+    });
+
+    const consumed = consumePendingUploadsForInstruction(
+      rehydrated,
+      submission?.injectedContext,
+    );
+
+    expect(consumed.nextState.pendingUploads).toEqual([]);
+    expect(consumed.contextPreview).toEqual([
+      "Honor the existing package scripts.",
+      `Upload: ${uploadReceipt.originalName} -> ${uploadReceipt.storedRelativePath}`,
+    ]);
+    expect(consumed.injectedContext).toHaveLength(2);
+    expect(consumed.injectedContext?.[0]).toBe(
+      "Honor the existing package scripts.",
+    );
+    expect(consumed.injectedContext?.[1]).toContain(
+      `Original filename: ${uploadReceipt.originalName}`,
+    );
+    expect(consumed.injectedContext?.[1]).toContain(
+      `Stored path: ${uploadReceipt.storedRelativePath}`,
+    );
+    expect(consumed.injectedContext?.[1]).toContain(uploadReceipt.previewText);
+  });
+
   it("fresh ready snapshots replace the initial connecting placeholder", () => {
     const rehydrated = applyBackendMessage(createInitialWorkbenchState(), {
       type: "session:state",
@@ -494,20 +597,19 @@ describe("ui view models", () => {
       {
         id: "upload-1",
         originalName: "brief.md",
-        targetRelativePath: ".shipyard/uploads/session-1/brief.md",
-        mediaType: "text/markdown",
+        storedRelativePath: ".shipyard/uploads/session-1/brief.md",
         sizeBytes: 128,
+        mediaType: "text/markdown",
         previewText: "# Brief",
+        previewSummary: "Markdown preview available.",
         uploadedAt: "2026-03-25T10:00:00.000Z",
-        status: "ready",
-        errorMessage: null,
       },
     ]);
 
     expect(state.pendingUploads).toHaveLength(1);
     expect(state.pendingUploads[0]).toMatchObject({
       originalName: "brief.md",
-      status: "ready",
+      storedRelativePath: ".shipyard/uploads/session-1/brief.md",
     });
 
     state = removePendingUpload(state, "upload-1");
@@ -517,13 +619,12 @@ describe("ui view models", () => {
       {
         id: "upload-2",
         originalName: "notes.txt",
-        targetRelativePath: ".shipyard/uploads/session-1/notes.txt",
-        mediaType: "text/plain",
+        storedRelativePath: ".shipyard/uploads/session-1/notes.txt",
         sizeBytes: 64,
+        mediaType: "text/plain",
         previewText: "remember this",
+        previewSummary: "Text preview available.",
         uploadedAt: "2026-03-25T10:01:00.000Z",
-        status: "ready",
-        errorMessage: null,
       },
     ]);
     state = clearPendingUploads(state);

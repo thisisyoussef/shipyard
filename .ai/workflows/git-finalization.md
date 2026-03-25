@@ -14,6 +14,7 @@ Run this workflow only after:
 - the user has not explicitly paused finalization or requested a different merge path
 
 This workflow is execution-only. The user-facing review already happened in the combined completion gate.
+Do not treat "validation passed, but I left unrelated in-progress changes untouched so I did not stage, commit, or merge" as a successful stop state. Finalization owns finding the safest clean isolation path and carrying the story to merge.
 
 ---
 
@@ -52,22 +53,47 @@ If sync fails or a merge conflict appears, stop and route to `.ai/workflows/fina
 
 ---
 
-## Step 3: Review, Stage, and Commit Intentional Changes
+## Step 3: Isolate the Story Diff If Needed
+
+```bash
+git status --short
+git diff --stat
+```
+
+If the worktree already contains only the story's intentional changes, continue.
+
+If the worktree also contains unrelated or pre-existing changes:
+- do not stop at local validation
+- do not reset, stash, or otherwise disturb someone else's in-progress work just to make the tree look clean
+- prefer a clean worktree or fresh `codex/` branch from the latest base branch for finalization
+- replay only the story-owned diff there using the safest available path:
+  - cherry-pick owned commits
+  - apply a targeted patch for the owned paths
+  - or re-apply the change manually after re-reading and diffing
+- re-run the required validation commands on the isolated story diff before staging
+- continue the rest of finalization from that isolated branch/worktree
+
+If file ownership or overlapping hunks are ambiguous, stop and route to `.ai/workflows/finalization-recovery.md`.
+
+---
+
+## Step 4: Review, Stage, and Commit Intentional Changes
 
 ```bash
 git status --short
 git diff
-git add <intended-files>
+git add <story-owned-files>
 git commit -m "<type>(<scope>): <summary>"
 ```
 
 Use the commit message from the approved completion gate unless the user changed it.
+Stage only the story-owned files/hunks for the isolated story diff. If selective staging in the shared tree would still mix in unrelated WIP or hide overlapping edits, isolation is required before commit.
 
 If staging or commit fails, stop and route to `.ai/workflows/finalization-recovery.md`.
 
 ---
 
-## Step 4: Push and Open or Update the PR
+## Step 5: Push and Open or Update the PR
 
 ```bash
 git push
@@ -92,7 +118,7 @@ Before leaving this step, record the exact GitHub state:
 
 ---
 
-## Step 5: Run the Finalization Guard
+## Step 6: Run the Finalization Guard
 
 Run the repo's finalization guard if one exists. If no dedicated guard exists, run the validation commands captured in the approved completion gate plus `git diff --check`.
 
@@ -100,7 +126,7 @@ If it fails, stop and route to `.ai/workflows/finalization-recovery.md`.
 
 ---
 
-## Step 6: Merge With Visible PR Lineage
+## Step 7: Merge With Visible PR Lineage
 
 After approval and passing checks, merge with a normal merge commit by default:
 
@@ -114,12 +140,12 @@ If merge fails or GitHub reports conflicts/check failures, stop and route to `.a
 
 ---
 
-## Step 7: Refresh Local Refs and Cleanup
+## Step 8: Refresh Local Refs and Cleanup
 
 ```bash
 git fetch --all --prune
-git checkout master
-git pull --ff-only origin master
+git switch main
+git pull --ff-only origin main
 git branch -d <story-branch>
 ```
 
@@ -129,7 +155,7 @@ Clear any repo-owned correction or triage state before leaving the branch if the
 
 ---
 
-## Step 8: Run Post-Merge Deployment Work When Needed
+## Step 9: Run Post-Merge Deployment Work When Needed
 
 If the approved completion gate includes a real deployment step, run the repo-owned deployment workflow for the touched surface.
 
@@ -137,7 +163,7 @@ If deployment access is missing or the deploy fails, stop and route to `.ai/work
 
 ---
 
-## Step 9: Report Finalization Outcome
+## Step 10: Report Finalization Outcome
 
 Return a concise finalization update with:
 - branch name
@@ -156,6 +182,7 @@ Return a concise finalization update with:
 
 - User approved the combined completion gate
 - No user pause or alternate merge-path request is in effect
+- Shared-worktree ambiguity resolved by safe isolation or routed to recovery
 - Changes committed
 - Changes pushed to a writable remote
 - PR created or updated

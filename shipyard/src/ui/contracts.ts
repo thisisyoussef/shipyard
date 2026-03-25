@@ -62,7 +62,6 @@ const enrichmentStatusSchema = z.enum([
   "error",
 ]);
 const deployStatusSchema = z.enum(["idle", "deploying", "success", "error"]);
-const uploadReceiptStatusSchema = z.enum(["ready", "rejected"]);
 
 const nonEmptyTextSchema = z.string().trim().min(1);
 const discoverySchema = z.object({
@@ -181,19 +180,12 @@ const contextReceiptSchema = z.object({
 export const uploadReceiptSchema = z.object({
   id: z.string(),
   originalName: z.string(),
-  targetRelativePath: z.string().nullable(),
-  mediaType: z.string(),
+  storedRelativePath: z.string(),
   sizeBytes: z.number().int().nonnegative(),
-  previewText: z.string().nullable(),
+  mediaType: z.string(),
+  previewText: z.string(),
+  previewSummary: z.string(),
   uploadedAt: z.string(),
-  status: uploadReceiptStatusSchema,
-  errorMessage: z.string().nullable(),
-});
-export const uploadResponseSchema = z.object({
-  receipts: z.array(uploadReceiptSchema),
-});
-export const uploadDeleteResponseSchema = z.object({
-  removedId: z.string(),
 });
 export const deploySummarySchema = z.object({
   status: deployStatusSchema,
@@ -243,10 +235,22 @@ export const workbenchStateSchema = z.object({
   nextEventNumber: z.number().int().nonnegative(),
   nextFileEventNumber: z.number().int().nonnegative(),
   contextHistory: z.array(contextReceiptSchema),
-  pendingUploads: z.array(uploadReceiptSchema),
+  pendingUploads: z.array(uploadReceiptSchema).default([]),
   latestDeploy: deploySummarySchema,
   previewState: previewStateSchema,
   targetManager: targetManagerStateSchema.nullable(),
+});
+
+export const uploadReceiptsResponseSchema = z.object({
+  receipts: z.array(uploadReceiptSchema),
+});
+
+export const uploadDeleteResponseSchema = z.object({
+  removedId: z.string(),
+});
+
+export const uploadErrorResponseSchema = z.object({
+  error: z.string(),
 });
 
 export const instructionMessageSchema = z.object({
@@ -433,6 +437,9 @@ export type TargetEnrichmentState = z.infer<
 >;
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
 export type DeploySummary = z.infer<typeof deploySummarySchema>;
+export type UploadReceiptsResponse = z.infer<typeof uploadReceiptsResponseSchema>;
+export type UploadDeleteResponse = z.infer<typeof uploadDeleteResponseSchema>;
+export type UploadErrorResponse = z.infer<typeof uploadErrorResponseSchema>;
 
 function hasMessageType(value: unknown): value is { type: string } {
   return (

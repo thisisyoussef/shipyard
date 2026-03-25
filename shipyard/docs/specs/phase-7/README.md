@@ -3,7 +3,7 @@
 - Pack: Phase 7 Planner, Evaluator, and Long-Run Handoff
 - Estimate: 8-12 hours
 - Date: 2026-03-25
-- Status: Drafted for implementation
+- Status: Complete
 
 ## Pack Objectives
 
@@ -140,4 +140,177 @@ return runVerifierSubagent(
   state.targetDirectory,
   await createSubagentLoopOptions(state, dependencies, signal),
 );
+```
+
+### P7-S03
+
+#### Code References
+
+- `shipyard/src/artifacts/types.ts`: adds the shared browser-evaluation
+  contracts for preview targets, ordered browser steps, structured step
+  results, failure metadata, and artifact references.
+- `shipyard/src/agents/browser-evaluator.ts`: implements the read-only
+  Playwright-backed evaluator, loopback-only target validation, preview-state
+  handoff, console/page-error capture, non-loopback request blocking, and
+  optional failure screenshots.
+- `shipyard/package.json` and `shipyard/pnpm-workspace.yaml`: add the browser
+  runtime dependency and explicitly allow the pnpm install scripts needed for
+  Chromium provisioning.
+- `shipyard/tests/browser-evaluator.test.ts` and
+  `shipyard/tests/manual/phase7-browser-evaluator-smoke.ts`: verify malformed
+  plan rejection, preview-unavailable handling, passing interactive preview
+  evidence, console/selector failures, and bounded artifact capture.
+
+#### Representative Snippets
+
+```ts
+export interface BrowserEvaluationReport {
+  status: BrowserEvaluationStatus;
+  summary: string;
+  previewUrl: string | null;
+  browserEvaluationPlan: BrowserEvaluationPlan;
+  steps: BrowserEvaluationStepResult[];
+  consoleMessages: BrowserEvaluationConsoleMessage[];
+  pageErrors: string[];
+  artifacts: BrowserEvaluationArtifact[];
+  failure: BrowserEvaluationFailure | null;
+}
+```
+
+```ts
+if (previewState.status === "running" && previewState.url) {
+  return {
+    status: "available",
+    previewUrl: previewState.url,
+    reason: previewState.summary,
+  };
+}
+
+if (
+  previewState.status === "idle"
+  || previewState.status === "unavailable"
+) {
+  return {
+    status: "not_applicable",
+    previewUrl: null,
+    reason: previewState.summary,
+  };
+}
+```
+
+### P7-S04
+
+#### Code References
+
+- `shipyard/src/artifacts/types.ts` and `shipyard/src/artifacts/handoff.ts`:
+  add the typed `ExecutionHandoff` contract, threshold evaluation,
+  malformed-artifact rejection, and target-local save/load helpers under
+  `.shipyard/artifacts/<sessionId>/`.
+- `shipyard/src/engine/state.ts`, `shipyard/src/context/envelope.ts`, and
+  `shipyard/src/engine/turn.ts`: persist `activeHandoffPath`, inject the latest
+  loaded handoff into the shared context envelope, and emit or clear handoff
+  state without disturbing short-turn lightweight behavior.
+- `shipyard/src/engine/graph.ts`, `shipyard/src/engine/loop.ts`, and
+  `shipyard/src/ui/server.ts`: record reset reason, handoff path, and resume
+  state in LangSmith metadata plus local JSONL `instruction.plan` events.
+- `shipyard/src/tracing/langsmith.ts`: keeps LangSmith URL lookup best-effort
+  so fresh handoff traces can return a stable `runId` even when the hosted run
+  URL has not indexed yet, rather than turning observability lag into a failed
+  turn.
+- `shipyard/tests/handoff-artifacts.test.ts`,
+  `shipyard/tests/context-envelope.test.ts`,
+  `shipyard/tests/graph-runtime.test.ts`, and
+  `shipyard/tests/loop-runtime.test.ts`: cover persistence, threshold gating,
+  malformed fallback, prompt injection, and observability.
+
+#### Representative Snippets
+
+```ts
+if (options.actingIterations >= thresholds.actingIterations) {
+  return {
+    shouldPersist: true,
+    kind: "iteration-threshold",
+    summary:
+      `Shipyard used ${String(options.actingIterations)} acting ${label}, so the next turn should resume from a persisted handoff instead of continuing the same long-running loop.`,
+    thresholds,
+    metrics,
+  };
+}
+```
+
+```ts
+await writeFile(tempPath, `${JSON.stringify(handoff, null, 2)}\n`, "utf8");
+await rename(tempPath, absolutePath);
+```
+
+### P7-S05
+
+#### Code References
+
+- `shipyard/src/artifacts/types.ts`: adds the shared `HarnessRouteSummary`
+  contract and extends `VerificationReport` so browser-evaluator evidence can
+  travel with command verification.
+- `shipyard/src/agents/coordinator.ts`: upgrades the default verification plan
+  to ordered `test` / `typecheck` / `build` checks, adds conservative preview
+  heuristics for browser evaluation, and merges browser-evaluator failures into
+  the final verification verdict.
+- `shipyard/src/engine/graph.ts`: threads preview state into the graph,
+  maintains the selected harness route as runtime state, routes previewable
+  UI-facing work through the browser evaluator after command verification, and
+  exposes the final planner/verifier/browser decision set for tracing.
+- `shipyard/src/engine/turn.ts`, `shipyard/src/tracing/langsmith.ts`,
+  `shipyard/src/engine/loop.ts`, and `shipyard/src/ui/server.ts`: finalize the
+  handoff-aware route summary, attach the final route metadata before the
+  LangSmith turn trace patches, return the root turn trace reference, and
+  persist the same structured harness route in local JSONL logs for both
+  terminal and browser surfaces.
+- `shipyard/tests/graph-runtime.test.ts`,
+  `shipyard/tests/turn-runtime.test.ts`,
+  `shipyard/tests/loop-runtime.test.ts`,
+  `shipyard/tests/evaluator-calibration.test.ts`, and
+  `shipyard/tests/fixtures/evaluator-calibration.ts`: cover lightweight vs
+  planner-backed routing, preview-backed browser verification, reset-backed
+  trace metadata, and the golden scenario set for evaluator strictness.
+
+#### Representative Snippets
+
+```ts
+export interface HarnessRouteSummary {
+  selectedPath: HarnessSelectedPath;
+  usedExplorer: boolean;
+  usedPlanner: boolean;
+  usedVerifier: boolean;
+  verificationMode: HarnessVerificationMode;
+  verificationCheckCount: number;
+  usedBrowserEvaluator: boolean;
+  browserEvaluationStatus: BrowserEvaluationStatus | "not_run";
+  handoffLoaded: boolean;
+  handoffEmitted: boolean;
+  handoffReason: ExecutionHandoffResetKind | null;
+  firstHardFailure: VerificationHardFailure | null;
+}
+```
+
+```ts
+if (
+  verificationReport.passed &&
+  shouldCoordinatorUseBrowserEvaluator({
+    instruction: state.currentInstruction,
+    contextEnvelope: state.contextEnvelope,
+    previewState: state.previewState,
+    executionSpec: state.executionSpec,
+    contextReport: state.contextReport,
+  })
+) {
+  browserEvaluationReport = await runBrowserEvaluator(
+    createBrowserEvaluationPlan({
+      instruction: state.currentInstruction,
+      previewState: state.previewState,
+      executionSpec: state.executionSpec,
+    }),
+    {
+      artifactsDirectory: createBrowserArtifactsDirectory(state),
+    },
+  );
+}
 ```

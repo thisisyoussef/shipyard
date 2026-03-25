@@ -2,13 +2,19 @@ import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
 
-import type { DiscoveryReport, TargetProfile } from "../artifacts/types.js";
+import type {
+  ActiveTaskContext,
+  DiscoveryReport,
+  LoadedExecutionHandoff,
+  TargetProfile,
+} from "../artifacts/types.js";
 import { discoverTarget, normalizeDiscoveryReport } from "../context/discovery.js";
 import { createInitialPreviewState } from "../preview/contracts.js";
 import { loadTargetProfile } from "../tools/target-manager/profile-io.js";
 import {
   createInitialDeploySummary,
   createInitialWorkbenchState,
+  ensureWorkbenchStateDefaults,
   type WorkbenchViewState,
 } from "../ui/workbench-state.js";
 
@@ -22,9 +28,12 @@ export interface SessionState {
   lastActiveAt: string;
   turnCount: number;
   rollingSummary: string;
+  activeHandoffPath: string | null;
   discovery: DiscoveryReport;
   activePhase: SessionPhase;
   targetProfile?: TargetProfile;
+  activePlanId: string | null;
+  activeTask: ActiveTaskContext | null;
   workbenchState: WorkbenchViewState;
 }
 
@@ -48,6 +57,8 @@ export interface ContextEnvelope {
     rollingSummary: string;
     retryCountsByFile: Record<string, number>;
     blockedFiles: string[];
+    latestHandoff: LoadedExecutionHandoff | null;
+    activeTask: ActiveTaskContext | null;
   };
 }
 
@@ -61,9 +72,12 @@ export interface SessionSnapshot {
   lastActiveAt: string;
   turnCount: number;
   rollingSummary: string;
+  activeHandoffPath: string | null;
   discovery: DiscoveryReport;
   activePhase: SessionPhase;
   targetProfile?: TargetProfile;
+  activePlanId: string | null;
+  activeTask: ActiveTaskContext | null;
   workbenchState: WorkbenchViewState;
 }
 
@@ -111,9 +125,12 @@ export function createSessionState(
     lastActiveAt: now,
     turnCount: 0,
     rollingSummary: "",
+    activeHandoffPath: null,
     discovery,
     activePhase,
     targetProfile: options.targetProfile,
+    activePlanId: null,
+    activeTask: null,
     workbenchState,
   };
 }
@@ -127,9 +144,12 @@ export function createSessionSnapshot(state: SessionState): SessionSnapshot {
     lastActiveAt: state.lastActiveAt,
     turnCount: state.turnCount,
     rollingSummary: state.rollingSummary,
+    activeHandoffPath: state.activeHandoffPath,
     discovery: state.discovery,
     activePhase: state.activePhase,
     targetProfile: state.targetProfile,
+    activePlanId: state.activePlanId,
+    activeTask: state.activeTask,
     workbenchState: state.workbenchState,
   };
 }
@@ -150,8 +170,19 @@ export function getTraceDirectory(targetDirectory: string): string {
   return path.join(getShipyardDirectory(targetDirectory), "traces");
 }
 
+export function getArtifactDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "artifacts");
+}
+
 export function getPlanDirectory(targetDirectory: string): string {
   return path.join(getShipyardDirectory(targetDirectory), "plans");
+}
+
+export function getUploadDirectory(
+  targetDirectory: string,
+  sessionId: string,
+): string {
+  return path.join(getShipyardDirectory(targetDirectory), "uploads", sessionId);
 }
 
 export function getSessionFilePath(
@@ -199,6 +230,7 @@ export async function ensureShipyardDirectories(
   await mkdir(getCheckpointDirectory(targetDirectory), { recursive: true });
   await mkdir(getTraceDirectory(targetDirectory), { recursive: true });
   await mkdir(getPlanDirectory(targetDirectory), { recursive: true });
+  await mkdir(getArtifactDirectory(targetDirectory), { recursive: true });
 }
 
 export async function saveSessionState(state: SessionState): Promise<string> {
@@ -229,7 +261,9 @@ export async function loadSessionState(
   const parsed = JSON.parse(contents) as Partial<SessionState> &
     Omit<SessionState, "workbenchState">;
   const discovery = normalizeDiscoveryReport(parsed.discovery);
-  const workbenchState = parsed.workbenchState ?? createInitialWorkbenchState();
+  const workbenchState = ensureWorkbenchStateDefaults(
+    parsed.workbenchState ?? createInitialWorkbenchState(),
+  );
   const activePhase = parsed.activePhase ?? "code";
 
   if (!workbenchState.previewState) {
@@ -252,8 +286,11 @@ export async function loadSessionState(
     discovery,
     targetsDirectory:
       parsed.targetsDirectory ?? path.dirname(targetDirectory),
+    activeHandoffPath: parsed.activeHandoffPath ?? null,
     activePhase,
     targetProfile: parsed.targetProfile,
+    activePlanId: parsed.activePlanId ?? null,
+    activeTask: parsed.activeTask ?? null,
     workbenchState,
   } as SessionState;
 }

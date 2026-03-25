@@ -3,7 +3,7 @@
 - Pack: Phase 8 Spec-Driven Operator Workflow
 - Estimate: 10-14 hours
 - Date: 2026-03-25
-- Status: In progress (`P8-S01`, `P8-S02`, and `P8-S04` implemented; `P8-S03` still planned)
+- Status: Complete (`P8-S01`, `P8-S02`, `P8-S03`, and `P8-S04` implemented)
 
 ## Pack Objectives
 
@@ -90,7 +90,17 @@
   validate persisted queue storage, spec-ref capture, and terminal routing for
   `plan:`.
 
-- `P8-S03`: N/A in this changeset.
+- `shipyard/src/plans/task-runner.ts`, `shipyard/src/engine/state.ts`, and
+  `shipyard/src/context/envelope.ts`: `P8-S03` add active-plan resolution,
+  queued task execution, saved spec-source paths, and compact active-task
+  carry-forward on the shared session/context envelope.
+- `shipyard/src/engine/loop.ts`, `shipyard/src/ui/server.ts`, and
+  `shipyard/src/plans/store.ts`: `P8-S03` route `next` / `continue` through the
+  task runner, persist task summaries/status transitions, and capture plan/task
+  metadata in the existing trace event stream.
+- `shipyard/tests/task-runner.test.ts` and `shipyard/tests/loop-runtime.test.ts`:
+  validate resume vs fallback behavior, missing-spec failures, persisted task
+  outcomes, and terminal routing for the new commands.
 
 ### Representative Snippets
 
@@ -148,4 +158,28 @@ if (isPlanModeInstruction(line)) {
     signal: turnController.signal,
   });
 }
+```
+
+- `P8-S03` task-runner routing:
+
+```ts
+if (isTaskRunnerInstruction(line)) {
+  const taskTurnResult = await executeTaskTurn({
+    sessionState: state,
+    runtimeState,
+    instruction: line,
+    signal: turnController.signal,
+  });
+}
+```
+
+- `P8-S03` failed-task carry-forward:
+
+```ts
+state.activeTask = {
+  ...activeTask,
+  status: "failed",
+  updatedAt: new Date().toISOString(),
+  summary: outcomeSummary,
+};
 ```

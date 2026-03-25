@@ -23,6 +23,9 @@ The current runtime now has two operator modes:
 - persistent per-target sessions stored under `target/.shipyard/`
 - browser workbench saved-run history with one-click resume for the current target
 - chat-first browser workbench with a Lovable-style transcript view for multi-turn iteration
+- browser file attachments that store supported text files under
+  `target/.shipyard/uploads/<sessionId>/` and feed receipt-backed references
+  into the next turn
 - stepwise live-run playback that shows tool progress, sequential edits, before/after previews, and trace links while the run is still in flight
 - target discovery for existing or greenfield repositories
 - shared scaffold presets for new targets plus one-shot bootstrap of already-selected empty targets
@@ -107,6 +110,8 @@ The pre-2 developer UI uses:
 - the same persisted Shipyard session and engine state used by terminal mode
 - a live event bridge that streams thinking, tool calls, tool results, immediate edit previews, trace metadata, errors, and session snapshots over one WebSocket session
 - browser-visible context injection receipts and reload-safe session rehydration for the active `--ui` session
+- a dedicated `/api/uploads` intake that keeps pending upload receipts in the
+  session model and clears them after the next turn handoff
 - a three-tab center workspace: `Chat` for the conversation transcript,
   `Local preview` for the live target result, and `Live view` for step-by-step
   playback of the current or saved run

@@ -1,283 +1,327 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import type { IncomingMessage } from "node:http";
 import path from "node:path";
 import { nanoid } from "nanoid";
 
-import { getShipyardDirectory } from "../engine/state.js";
+import { getUploadDirectory } from "../engine/state.js";
 import type { UploadReceipt } from "./contracts.js";
 
-const MAX_UPLOAD_BYTES = 256 * 1024;
-const MAX_PREVIEW_CHARS = 1_200;
-const MAX_INJECTED_CONTEXT_PREVIEW_CHARS = 600;
-const TEXT_EXTENSIONS = new Set([
-  ".c",
-  ".cc",
-  ".conf",
-  ".cpp",
-  ".css",
-  ".csv",
-  ".env",
-  ".gitignore",
-  ".go",
-  ".graphql",
-  ".h",
-  ".html",
-  ".ini",
-  ".java",
-  ".js",
-  ".json",
-  ".jsx",
-  ".kt",
+const SUPPORTED_TEXT_EXTENSIONS = new Set([
+  ".txt",
   ".md",
   ".mdx",
-  ".mjs",
-  ".py",
-  ".rb",
-  ".rs",
-  ".sh",
-  ".sql",
-  ".svg",
-  ".toml",
-  ".ts",
-  ".tsx",
-  ".txt",
-  ".xml",
+  ".json",
   ".yaml",
   ".yml",
+  ".toml",
+  ".ini",
+  ".env",
+  ".csv",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".css",
+  ".html",
+  ".xml",
+  ".sh",
+  ".py",
+  ".go",
+  ".java",
+  ".rb",
+  ".php",
+  ".sql",
+  ".graphql",
+  ".gql",
 ]);
-const TEXT_MEDIA_TYPES = new Set([
-  "application/json",
-  "application/javascript",
-  "application/sql",
-  "application/xml",
-  "application/x-sh",
-  "application/x-yaml",
-  "image/svg+xml",
+const SUPPORTED_TEXT_FILENAMES = new Set([
+  "dockerfile",
+  "makefile",
+  ".env",
+  ".env.example",
 ]);
+const PREVIEW_CHAR_LIMIT = 600;
 
-interface ParsedUploadRequest {
-  sessionId: string;
-  files: File[];
+export const MAX_PENDING_UPLOADS = 4;
+export const MAX_UPLOAD_FILE_BYTES = 256 * 1024;
+export const MAX_UPLOAD_REQUEST_BYTES =
+  (MAX_PENDING_UPLOADS * MAX_UPLOAD_FILE_BYTES) + (64 * 1024);
+
+export interface UploadCandidate {
+  originalName: string;
+  mediaType: string;
+  contents: Buffer;
 }
 
-function clipText(value: string, limit: number): string {
-  if (value.length <= limit) {
-    return value;
-  }
+export class UploadValidationError extends Error {
+  readonly statusCode: number;
 
-  return `${value.slice(0, Math.max(0, limit - 16))}\n...[truncated]`;
-}
-
-function createRejectedReceipt(
-  originalName: string,
-  sizeBytes: number,
-  mediaType: string,
-  uploadedAt: string,
-  errorMessage: string,
-): UploadReceipt {
-  return {
-    id: nanoid(),
-    originalName,
-    targetRelativePath: null,
-    mediaType,
-    sizeBytes,
-    previewText: null,
-    uploadedAt,
-    status: "rejected",
-    errorMessage,
-  };
-}
-
-function normalizeOriginalName(rawName: string): string {
-  const normalizedName = path.basename(rawName.trim());
-  return normalizedName || "uploaded-file";
-}
-
-function inferMediaType(file: File, extension: string): string {
-  if (file.type.trim()) {
-    return file.type.trim();
-  }
-
-  switch (extension) {
-    case ".csv":
-      return "text/csv";
-    case ".json":
-      return "application/json";
-    case ".md":
-    case ".mdx":
-      return "text/markdown";
-    case ".svg":
-      return "image/svg+xml";
-    case ".yaml":
-    case ".yml":
-      return "application/x-yaml";
-    default:
-      return "text/plain";
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.name = "UploadValidationError";
+    this.statusCode = statusCode;
   }
 }
 
-function isSupportedTextUpload(
-  originalName: string,
-  mediaType: string,
-): boolean {
+function createDuplicateKey(originalName: string): string {
+  return path.basename(originalName).trim().toLowerCase();
+}
+
+function sanitizeOriginalName(originalName: string): string {
+  const trimmedName = originalName.trim();
+
+  if (!trimmedName) {
+    throw new UploadValidationError("Uploaded files must include a filename.", 400);
+  }
+
+  const normalizedName = path.basename(trimmedName);
+
+  if (normalizedName !== trimmedName) {
+    throw new UploadValidationError(
+      "Uploaded filenames cannot include directory paths.",
+      400,
+    );
+  }
+
+  if (normalizedName === "." || normalizedName === "..") {
+    throw new UploadValidationError("Uploaded filenames are invalid.", 400);
+  }
+
+  return normalizedName;
+}
+
+function isSupportedTextFilename(filename: string): boolean {
+  const normalizedName = filename.toLowerCase();
+
+  if (SUPPORTED_TEXT_FILENAMES.has(normalizedName)) {
+    return true;
+  }
+
+  return SUPPORTED_TEXT_EXTENSIONS.has(path.extname(normalizedName));
+}
+
+function detectBinaryContents(contents: Buffer): boolean {
+  const sample = contents.subarray(0, Math.min(contents.length, 2_048));
+  let suspiciousByteCount = 0;
+
+  for (const byte of sample) {
+    if (byte === 0) {
+      return true;
+    }
+
+    const isControlByte = byte < 7 || (byte > 14 && byte < 32);
+
+    if (isControlByte) {
+      suspiciousByteCount += 1;
+    }
+  }
+
+  return sample.length > 0 && (suspiciousByteCount / sample.length) > 0.1;
+}
+
+function slugifyFilename(originalName: string): string {
   const extension = path.extname(originalName).toLowerCase();
+  const stem = path.basename(originalName, extension)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
 
-  if (TEXT_EXTENSIONS.has(extension)) {
-    return true;
-  }
-
-  if (mediaType.startsWith("text/")) {
-    return true;
-  }
-
-  return TEXT_MEDIA_TYPES.has(mediaType);
+  return `${stem || "upload"}-${nanoid(8)}${extension}`;
 }
 
-async function parseUploadRequest(
-  request: IncomingMessage,
-): Promise<ParsedUploadRequest> {
-  const uploadRequest = new Request(
-    "http://shipyard.local/api/uploads",
-    {
-      method: request.method ?? "POST",
-      headers: request.headers as HeadersInit,
-      body: request as unknown as BodyInit,
-      duplex: "half",
-    } as RequestInit & { duplex: "half" },
-  );
-  const formData = await uploadRequest.formData();
-  const sessionIdValue = formData.get("sessionId");
+function createPreviewText(contents: Buffer): {
+  previewText: string;
+  isTruncated: boolean;
+} {
+  const fullText = contents.toString("utf8").trim();
 
-  if (typeof sessionIdValue !== "string" || sessionIdValue.trim().length === 0) {
-    throw new Error("Upload requests must include the active session id.");
-  }
-
-  const files = formData
-    .getAll("files")
-    .filter((entry): entry is File => entry instanceof File);
-
-  if (files.length === 0) {
-    throw new Error("Select at least one supported text file to upload.");
+  if (fullText.length <= PREVIEW_CHAR_LIMIT) {
+    return {
+      previewText: fullText,
+      isTruncated: false,
+    };
   }
 
   return {
-    sessionId: sessionIdValue.trim(),
-    files,
+    previewText: `${fullText.slice(0, PREVIEW_CHAR_LIMIT).trimEnd()}…`,
+    isTruncated: true,
   };
 }
 
-export async function storeUploadedFiles(
-  options: {
-    request: IncomingMessage;
-    targetDirectory: string;
-  },
-): Promise<{
+function createPreviewSummary(
+  originalName: string,
+  isTruncated: boolean,
+): string {
+  const extension = path.extname(originalName).toLowerCase();
+  const baseSummary = extension === ".md" || extension === ".mdx"
+    ? "Markdown preview available."
+    : extension === ".json"
+      ? "JSON preview available."
+      : "Text preview available.";
+
+  return isTruncated
+    ? `${baseSummary.replace(/\.$/u, "")} Truncated for context.`
+    : baseSummary;
+}
+
+function validateUploadCandidate(candidate: UploadCandidate): UploadCandidate {
+  const originalName = sanitizeOriginalName(candidate.originalName);
+
+  if (!isSupportedTextFilename(originalName)) {
+    throw new UploadValidationError(
+      `Unsupported upload type for "${originalName}". Attach a supported text-based file instead.`,
+      415,
+    );
+  }
+
+  if (candidate.contents.length === 0) {
+    throw new UploadValidationError(
+      `Uploaded file "${originalName}" is empty.`,
+      400,
+    );
+  }
+
+  if (candidate.contents.length > MAX_UPLOAD_FILE_BYTES) {
+    throw new UploadValidationError(
+      `Uploaded file "${originalName}" exceeds the ${String(MAX_UPLOAD_FILE_BYTES)} byte limit.`,
+      413,
+    );
+  }
+
+  if (detectBinaryContents(candidate.contents)) {
+    throw new UploadValidationError(
+      `Unsupported binary content for "${originalName}". Attach a supported text-based file instead.`,
+      415,
+    );
+  }
+
+  return {
+    ...candidate,
+    originalName,
+  };
+}
+
+export async function readRequestBodyWithLimit(
+  request: AsyncIterable<string | Buffer>,
+  maxBytes: number,
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk)
+      ? chunk
+      : Buffer.from(chunk);
+    totalBytes += buffer.length;
+
+    if (totalBytes > maxBytes) {
+      throw new UploadValidationError(
+        `Upload request exceeds the ${String(maxBytes)} byte limit.`,
+        413,
+      );
+    }
+
+    chunks.push(buffer);
+  }
+
+  return Buffer.concat(chunks);
+}
+
+export async function storeUploadCandidates(options: {
   sessionId: string;
-  receipts: UploadReceipt[];
-}> {
-  const parsedRequest = await parseUploadRequest(options.request);
-  const uploadedAt = new Date().toISOString();
+  targetDirectory: string;
+  existingReceipts: UploadReceipt[];
+  candidates: UploadCandidate[];
+}): Promise<UploadReceipt[]> {
+  if (options.candidates.length === 0) {
+    throw new UploadValidationError("Attach at least one file before uploading.", 400);
+  }
+
+  if (
+    options.existingReceipts.length + options.candidates.length >
+      MAX_PENDING_UPLOADS
+  ) {
+    throw new UploadValidationError(
+      `Shipyard only keeps ${String(MAX_PENDING_UPLOADS)} pending uploads at a time.`,
+      400,
+    );
+  }
+
+  const validatedCandidates = options.candidates.map(validateUploadCandidate);
+  const duplicateKeys = new Set(
+    options.existingReceipts.map((receipt) => createDuplicateKey(receipt.originalName)),
+  );
+
+  for (const candidate of validatedCandidates) {
+    const duplicateKey = createDuplicateKey(candidate.originalName);
+
+    if (duplicateKeys.has(duplicateKey)) {
+      throw new UploadValidationError(
+        `"${candidate.originalName}" is already attached for this session.`,
+        409,
+      );
+    }
+
+    duplicateKeys.add(duplicateKey);
+  }
+
+  const uploadDirectory = getUploadDirectory(
+    options.targetDirectory,
+    options.sessionId,
+  );
+  await mkdir(uploadDirectory, { recursive: true });
+
   const receipts: UploadReceipt[] = [];
 
-  for (const file of parsedRequest.files) {
-    const originalName = normalizeOriginalName(file.name);
-    const extension = path.extname(originalName).toLowerCase();
-    const mediaType = inferMediaType(file, extension);
-
-    if (!isSupportedTextUpload(originalName, mediaType)) {
-      receipts.push(
-        createRejectedReceipt(
-          originalName,
-          file.size,
-          mediaType,
-          uploadedAt,
-          "This first pass only supports text-based reference files.",
-        ),
-      );
-      continue;
-    }
-
-    if (file.size > MAX_UPLOAD_BYTES) {
-      receipts.push(
-        createRejectedReceipt(
-          originalName,
-          file.size,
-          mediaType,
-          uploadedAt,
-          `Uploads must stay under ${String(MAX_UPLOAD_BYTES)} bytes for the first hosted pass.`,
-        ),
-      );
-      continue;
-    }
-
-    const contents = await file.text();
-    const storedName = `${nanoid()}${extension || ".txt"}`;
-    const targetRelativePath = path.join(
+  for (const candidate of validatedCandidates) {
+    const storedFilename = slugifyFilename(candidate.originalName);
+    const storedRelativePath = path.posix.join(
       ".shipyard",
       "uploads",
-      parsedRequest.sessionId,
-      storedName,
+      options.sessionId,
+      storedFilename,
     );
-    const absolutePath = path.join(options.targetDirectory, targetRelativePath);
+    const storedAbsolutePath = path.join(uploadDirectory, storedFilename);
+    const { previewText, isTruncated } = createPreviewText(candidate.contents);
 
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, contents, "utf8");
-
+    await writeFile(storedAbsolutePath, candidate.contents);
     receipts.push({
-      id: nanoid(),
-      originalName,
-      targetRelativePath,
-      mediaType,
-      sizeBytes: file.size,
-      previewText: clipText(contents, MAX_PREVIEW_CHARS),
-      uploadedAt,
-      status: "ready",
-      errorMessage: null,
+      id: `upload-${nanoid(10)}`,
+      originalName: candidate.originalName,
+      storedRelativePath,
+      sizeBytes: candidate.contents.length,
+      mediaType: candidate.mediaType || "text/plain",
+      previewText,
+      previewSummary: createPreviewSummary(candidate.originalName, isTruncated),
+      uploadedAt: new Date().toISOString(),
     });
   }
 
-  return {
-    sessionId: parsedRequest.sessionId,
-    receipts,
-  };
+  return receipts;
 }
 
-export async function deleteUploadedFile(
-  targetDirectory: string,
-  upload: UploadReceipt,
-): Promise<void> {
-  if (!upload.targetRelativePath) {
-    return;
+export async function deleteStoredUpload(options: {
+  sessionId: string;
+  targetDirectory: string;
+  receipt: UploadReceipt;
+}): Promise<void> {
+  const expectedPrefix = path.posix.join(
+    ".shipyard",
+    "uploads",
+    options.sessionId,
+  );
+
+  if (!options.receipt.storedRelativePath.startsWith(`${expectedPrefix}/`)) {
+    throw new UploadValidationError(
+      "Stored upload path does not belong to the active session.",
+      400,
+    );
   }
 
-  await rm(path.join(targetDirectory, upload.targetRelativePath), {
-    force: true,
-  });
-}
-
-export function createUploadInjectedContext(
-  uploads: UploadReceipt[],
-): string[] {
-  return uploads
-    .filter(
-      (upload) => upload.status === "ready" && upload.targetRelativePath !== null,
-    )
-    .map((upload) =>
-      [
-        `Uploaded reference file: ${upload.originalName}`,
-        `Stored path: ${upload.targetRelativePath}`,
-        `Media type: ${upload.mediaType}`,
-        `Size: ${String(upload.sizeBytes)} bytes`,
-        "Preview:",
-        clipText(upload.previewText ?? "(no preview available)", MAX_INJECTED_CONTEXT_PREVIEW_CHARS),
-        "Use read_file against the stored path if the full contents are needed.",
-      ].join("\n"),
-    );
-}
-
-export function getUploadStorageDirectory(
-  targetDirectory: string,
-  sessionId: string,
-): string {
-  return path.join(getShipyardDirectory(targetDirectory), "uploads", sessionId);
+  await rm(
+    path.join(options.targetDirectory, options.receipt.storedRelativePath),
+    { force: true },
+  );
 }

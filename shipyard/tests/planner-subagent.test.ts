@@ -178,6 +178,8 @@ function createContextEnvelope(): ContextEnvelope {
       rollingSummary: "",
       retryCountsByFile: {},
       blockedFiles: [],
+      latestHandoff: null,
+      activeTask: null,
     },
   };
 }

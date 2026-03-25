@@ -1,4 +1,8 @@
-import type { ExecutionSpec, PersistedTaskQueue } from "../artifacts/types.js";
+import type {
+  ExecutionSpec,
+  LoadedPlanSpec,
+  PersistedTaskQueue,
+} from "../artifacts/types.js";
 import { DEFAULT_TURN_CANCELLED_REASON, toTurnCancelledError } from "../engine/cancellation.js";
 import { buildContextEnvelope } from "../context/envelope.js";
 import { createAgentGraphState } from "../engine/graph.js";
@@ -145,6 +149,7 @@ function isLoadSpecResult(
 ): value is {
   documents: Array<{
     ref: string;
+    path: string;
   }>;
 } {
   return (
@@ -156,17 +161,22 @@ function isLoadSpecResult(
       typeof document === "object" &&
       document !== null &&
       "ref" in document &&
-      typeof document.ref === "string"
+      typeof document.ref === "string" &&
+      "path" in document &&
+      typeof document.path === "string"
     )
   );
 }
 
-function collectLoadedSpecRefs(result: ToolResult): string[] {
+function collectLoadedSpecs(result: ToolResult): LoadedPlanSpec[] {
   if (!result.success || !isLoadSpecResult(result.data)) {
     return [];
   }
 
-  return [...new Set(result.data.documents.map((document) => document.ref))];
+  return result.data.documents.map((document) => ({
+    ref: document.ref,
+    path: document.path,
+  }));
 }
 
 function formatPlanSummary(plan: PersistedTaskQueue): string {
@@ -204,6 +214,7 @@ async function createPlannerRunOptions(options: {
   runtimeState: InstructionRuntimeState;
   reporter?: InstructionTurnReporter;
   loadedSpecRefs: Set<string>;
+  loadedSpecs: Map<string, LoadedPlanSpec>;
   signal?: AbortSignal;
 }) {
   const phase = options.sessionState.activePhase === "target-manager"
@@ -213,6 +224,7 @@ async function createPlannerRunOptions(options: {
     sessionId: options.sessionState.sessionId,
     instruction: options.planInstruction,
     contextEnvelope: options.contextEnvelope,
+    previewState: options.sessionState.workbenchState.previewState,
     targetProfile: options.sessionState.targetProfile ?? null,
     targetDirectory: options.sessionState.targetDirectory,
     phaseConfig: phase,
@@ -261,8 +273,9 @@ async function createPlannerRunOptions(options: {
         rememberRecent(options.runtimeState.recentErrors, summary);
       }
 
-      for (const specRef of collectLoadedSpecRefs(context.result)) {
-        options.loadedSpecRefs.add(specRef);
+      for (const spec of collectLoadedSpecs(context.result)) {
+        options.loadedSpecRefs.add(spec.ref);
+        options.loadedSpecs.set(`${spec.ref}::${spec.path}`, spec);
       }
 
       await options.reporter?.onToolResult?.({
@@ -292,6 +305,7 @@ export async function executePlanningTurn(
   let contextEnvelope: ContextEnvelope | null = null;
   let executionSpec: ExecutionSpec | null = null;
   let loadedSpecRefs = new Set<string>();
+  let loadedSpecs = new Map<string, LoadedPlanSpec>();
 
   state.turnCount += 1;
   state.lastActiveAt = new Date().toISOString();
@@ -331,6 +345,7 @@ export async function executePlanningTurn(
       runtimeState,
       reporter: options.reporter,
       loadedSpecRefs,
+      loadedSpecs,
       signal: options.signal,
     });
     const runPlanner =
@@ -356,11 +371,14 @@ export async function executePlanningTurn(
       executionSpec,
       planningMode: "planner",
       loadedSpecRefs: [...loadedSpecRefs],
+      loadedSpecs: [...loadedSpecs.values()],
       tasks: derivePlanTasks({
         executionSpec,
         loadedSpecRefs: [...loadedSpecRefs],
       }),
     });
+    state.activePlanId = plan.planId;
+    state.activeTask = null;
     const compactSummary = `Created plan ${plan.planId} with ${String(plan.tasks.length)} task${plan.tasks.length === 1 ? "" : "s"}.`;
     const summary = createPlanningTurnSummary(
       state.turnCount,

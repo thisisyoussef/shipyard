@@ -68,6 +68,7 @@ The completion gate must include the finalization plan in the same packet as the
 - public demo status when deploy-relevant
 - whether AI-architecture checks were required
 - recovery path: `.ai/workflows/finalization-recovery.md`
+- if unrelated WIP exists in the current worktree, the clean isolation plan (fresh worktree/branch plus replay method) instead of treating the dirty tree as a finish blocker
 
 Do not make the user go through a second human-facing git checklist after this packet.
 
@@ -133,7 +134,7 @@ When a story changes user-visible behavior, the completion gate must treat UI in
 1. Treat this completion gate as the only user-facing approval step before final git actions.
 2. If the user gives narrow corrective feedback, run `.ai/workflows/user-correction-triage.md` before broadening the work.
 3. If the diff changes materially after feedback, issue a revised completion gate.
-4. Unless the user explicitly asks to pause or use a different merge path, move directly into `.ai/workflows/git-finalization.md` after issuing the completion gate.
+4. Unless the user explicitly asks to pause or use a different merge path, move directly into `.ai/workflows/git-finalization.md` after issuing the completion gate. Unrelated WIP in the current worktree is not a stop condition; isolate first rather than ending at "validation passed."
 5. If finalization fails, stop and route to `.ai/workflows/finalization-recovery.md`, then return here with updated status.
 
 ---

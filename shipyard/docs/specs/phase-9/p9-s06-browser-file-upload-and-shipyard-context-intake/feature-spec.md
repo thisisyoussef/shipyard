@@ -43,32 +43,32 @@ the hosted workspace, and feeding the resulting reference into the next turn.
   it can inspect the upload with the existing tool surface.
 
 ## Acceptance Criteria
-- [ ] AC-1: The browser workbench exposes an `Attach files` control in the chat
+- [x] AC-1: The browser workbench exposes an `Attach files` control in the chat
   flow that supports selecting one or more files, shows pending attachment
   badges, and lets the user remove an attachment before sending the next turn.
-- [ ] AC-2: Uploads travel through a dedicated backend file-intake contract
+- [x] AC-2: Uploads travel through a dedicated backend file-intake contract
   separate from the current JSON websocket instruction payload.
-- [ ] AC-3: The server validates allowlisted file types, file-size limits,
+- [x] AC-3: The server validates allowlisted file types, file-size limits,
   filename safety, and session ownership before persisting uploads under the
   hosted workspace or `target/.shipyard/uploads/` path outside the served web
   root.
-- [ ] AC-4: Successful uploads return typed receipts that include the original
+- [x] AC-4: Successful uploads return typed receipts that include the original
   filename, generated stored relative path, size, media type, and a bounded
   preview or extraction summary when the format is supported.
-- [ ] AC-5: When the operator submits the next instruction, Shipyard
+- [x] AC-5: When the operator submits the next instruction, Shipyard
   automatically injects attachment references and previews into the turn so the
   agent can discover and read the uploaded files without the user manually
   pasting their contents.
-- [ ] AC-6: Pending upload receipts survive refresh or reconnect for the active
+- [x] AC-6: Pending upload receipts survive refresh or reconnect for the active
   session and clear only after explicit removal or after the story-defined
   attach-to-turn handoff is complete.
-- [ ] AC-7: Oversized, malformed, duplicate, or unsupported binary uploads fail
+- [x] AC-7: Oversized, malformed, duplicate, or unsupported binary uploads fail
   clearly in the browser and do not create hidden partial state or leaked
   filesystem paths.
-- [ ] AC-8: Upload activity is visible in session state and trace or activity
+- [x] AC-8: Upload activity is visible in session state and trace or activity
   surfaces without logging raw file bytes or secret-bearing absolute host
   paths.
-- [ ] AC-9: Existing text-only context injection, local `--ui`, and terminal
+- [x] AC-9: Existing text-only context injection, local `--ui`, and terminal
   flows remain backward compatible when attachments are not used.
 
 ## Edge Cases
@@ -118,3 +118,69 @@ the hosted workspace, and feeding the resulting reference into the next turn.
   attachment through reconnect.
 - The next turn receives a trustworthy stored-path reference plus bounded
   preview context instead of an ad hoc blob dump.
+
+## Implementation Evidence
+
+### Code References
+
+- [`../../../../src/ui/uploads.ts`](../../../../src/ui/uploads.ts) and
+  [`../../../../src/ui/server.ts`](../../../../src/ui/server.ts): add the
+  dedicated `/api/uploads` intake, request-size and file-validation guards,
+  safe `.shipyard/uploads/<sessionId>/` storage, optional access-token checks,
+  removal handling, and trace events for accepted, rejected, removed, and
+  handed-off uploads.
+- [`../../../../src/ui/workbench-state.ts`](../../../../src/ui/workbench-state.ts),
+  [`../../../../src/ui/contracts.ts`](../../../../src/ui/contracts.ts), and
+  [`../../../../src/engine/state.ts`](../../../../src/engine/state.ts): extend
+  the persisted workbench/session model with typed pending upload receipts,
+  reconnect-safe defaults, compact composer previews, and bounded injected
+  upload context for the next turn.
+- [`../../../../ui/src/App.tsx`](../../../../ui/src/App.tsx),
+  [`../../../../ui/src/ShipyardWorkbench.tsx`](../../../../ui/src/ShipyardWorkbench.tsx),
+  [`../../../../ui/src/panels/ComposerPanel.tsx`](../../../../ui/src/panels/ComposerPanel.tsx),
+  and [`../../../../ui/src/panels/panels.css`](../../../../ui/src/panels/panels.css):
+  add the attach control, uploading or attached or rejected badges, remove
+  actions, and optimistic browser-side upload lifecycle while preserving the
+  current composer language.
+- [`../../../../tests/ui-runtime.test.ts`](../../../../tests/ui-runtime.test.ts),
+  [`../../../../tests/ui-view-models.test.ts`](../../../../tests/ui-view-models.test.ts),
+  and [`../../../../tests/ui-workbench.test.ts`](../../../../tests/ui-workbench.test.ts):
+  cover upload acceptance and rejection, receipt persistence across reconnect,
+  next-turn context handoff, attach/remove composer rendering, and the cleanup
+  edge around background teardown.
+
+### Representative Snippets
+
+```ts
+const handoff = consumePendingUploadsForInstruction(
+  sessionState.workbenchState,
+  message.injectedContext,
+);
+
+sessionState.workbenchState = queueInstructionTurn(
+  handoff.nextState,
+  message.text,
+  handoff.contextPreview,
+);
+```
+
+```ts
+const receipts = await storeUploadCandidates({
+  sessionId,
+  targetDirectory: sessionState.targetDirectory,
+  existingReceipts: sessionState.workbenchState.pendingUploads,
+  candidates,
+});
+```
+
+```ts
+const composerAttachments: ComposerAttachment[] = [
+  ...localUploads,
+  ...viewState.pendingUploads.map((receipt) => ({
+    id: receipt.id,
+    label: receipt.originalName,
+    detail: createAttachmentDetail(receipt),
+    status: "attached" as const,
+  })),
+];
+```

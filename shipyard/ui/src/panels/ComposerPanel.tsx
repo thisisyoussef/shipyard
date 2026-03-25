@@ -11,7 +11,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { BadgeTone } from "../primitives.js";
 import { Badge } from "../primitives.js";
-import type { PendingUploadReceiptViewModel } from "../view-models.js";
 
 /* ── Types ──────────────────────────────────────── */
 
@@ -21,6 +20,14 @@ export interface ComposerNotice {
   tone: BadgeTone;
   title: string;
   detail: string;
+}
+
+export interface ComposerAttachment {
+  id: string;
+  label: string;
+  detail: string;
+  status: "uploading" | "attached" | "rejected";
+  error?: string;
 }
 
 export interface ComposerPanelProps {
@@ -42,14 +49,12 @@ export interface ComposerPanelProps {
   submitting?: boolean;
   /** Notice to display above textarea */
   notice?: ComposerNotice | null;
-  /** Uploaded file receipts waiting for the next turn */
-  pendingUploads?: PendingUploadReceiptViewModel[];
-  /** Whether file uploads are temporarily unavailable */
-  uploadsDisabled?: boolean;
-  /** Callback when the user selects local files to upload */
-  onUploadFiles?: (files: File[]) => void;
-  /** Callback to remove a pending upload before the next turn */
-  onRemoveUpload?: (receiptId: string) => void;
+  /** Pending upload badges and local upload statuses */
+  attachments?: ComposerAttachment[];
+  /** Callback to open the file picker and upload files */
+  onAttachFiles?: (files: File[]) => void;
+  /** Callback to remove a pending or rejected attachment */
+  onRemoveAttachment?: (attachmentId: string) => void;
 }
 
 /* ── Auto-resize hook ───────────────────────────── */
@@ -84,13 +89,12 @@ export function ComposerPanel({
   agentBusy = false,
   submitting = false,
   notice,
-  pendingUploads = [],
-  uploadsDisabled = false,
-  onUploadFiles,
-  onRemoveUpload,
+  attachments = [],
+  onAttachFiles,
+  onRemoveAttachment,
 }: ComposerPanelProps) {
   const [isFocused, setIsFocused] = useState(false);
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Auto-resize textarea
   useAutoResize(textareaRef, instruction);
@@ -109,22 +113,20 @@ export function ComposerPanel({
 
   const handleFocus = useCallback(() => setIsFocused(true), []);
   const handleBlur = useCallback(() => setIsFocused(false), []);
-  const handleUploadPicker = useCallback(() => {
-    uploadInputRef.current?.click();
+  const handleOpenFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
   }, []);
-  const handleUploadChange = useCallback(
+  const handleFileSelection = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      const selectedFiles = event.target.files
-        ? Array.from(event.target.files)
-        : [];
+      const files = Array.from(event.currentTarget.files ?? []);
 
-      if (selectedFiles.length > 0) {
-        onUploadFiles?.(selectedFiles);
+      if (files.length > 0) {
+        onAttachFiles?.(files);
       }
 
-      event.target.value = "";
+      event.currentTarget.value = "";
     },
-    [onUploadFiles],
+    [onAttachFiles],
   );
 
   return (
@@ -146,67 +148,61 @@ export function ComposerPanel({
 
       {/* Textarea container with integrated submit */}
       <form onSubmit={onSubmit} className="composer-textarea-container">
-        <textarea
-          ref={textareaRef}
-          className="composer-textarea"
-          value={instruction}
-          onChange={(e) => onInstructionChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          placeholder="Ask Shipyard to inspect a file, explain the current diff, or map the next change."
-          aria-label="Instruction input"
-          aria-multiline="true"
-          aria-keyshortcuts="Control+Enter Meta+Enter"
-          data-state={state}
-        />
-
         <div className="composer-toolbar">
           <button
             type="button"
             className="composer-attach"
-            onClick={handleUploadPicker}
-            disabled={uploadsDisabled}
-            aria-disabled={uploadsDisabled}
+            onClick={handleOpenFilePicker}
+            disabled={!onAttachFiles}
+            aria-disabled={!onAttachFiles}
           >
             Attach files
           </button>
           <input
-            ref={uploadInputRef}
+            ref={fileInputRef}
+            className="composer-file-input"
             type="file"
             multiple
-            hidden
-            onChange={handleUploadChange}
+            onChange={handleFileSelection}
+            tabIndex={-1}
+            aria-hidden="true"
           />
         </div>
 
-        {/* Pending upload badges */}
-        {pendingUploads.length > 0 && (
+        {attachments.length > 0 && (
           <div
             className="composer-context-badges"
             role="list"
-            aria-label="Pending uploaded files"
+            aria-label="Pending uploads"
           >
-            {pendingUploads.map((upload) => (
+            {attachments.map((attachment) => (
               <span
-                key={upload.id}
+                key={attachment.id}
                 className="composer-context-badge"
+                data-status={attachment.status}
                 role="listitem"
               >
                 <code
-                  title={upload.targetRelativePath ?? upload.originalName}
-                  aria-label={`Pending uploaded file: ${upload.originalName}`}
+                  title={attachment.detail}
+                  aria-label={`Attachment: ${attachment.label}`}
                 >
-                  {upload.originalName.length > 24
-                    ? `${upload.originalName.slice(0, 12)}...${upload.originalName.slice(-9)}`
-                    : upload.originalName}
+                  {attachment.label.length > 24
+                    ? `${attachment.label.slice(0, 12)}...${attachment.label.slice(-9)}`
+                    : attachment.label}
                 </code>
-                {onRemoveUpload && (
+                <span className="composer-context-status">
+                  {attachment.status === "uploading"
+                    ? "Uploading..."
+                    : attachment.status === "rejected"
+                      ? attachment.error ?? "Upload failed"
+                      : "Attached"}
+                </span>
+                {onRemoveAttachment && attachment.status !== "uploading" && (
                   <button
                     type="button"
                     className="composer-context-dismiss"
-                    aria-label={`Remove ${upload.originalName} before the next turn`}
-                    onClick={() => onRemoveUpload(upload.id)}
+                    aria-label={`Remove ${attachment.label}`}
+                    onClick={() => onRemoveAttachment(attachment.id)}
                   >
                     ×
                   </button>
@@ -216,27 +212,44 @@ export function ComposerPanel({
           </div>
         )}
 
-        {/* Submit button attached to textarea */}
-        {agentBusy ? (
-          <button
-            type="button"
-            className="composer-submit"
-            onClick={onCancel}
-            disabled={!onCancel}
-            aria-disabled={!onCancel}
-          >
-            Cancel turn
-          </button>
-        ) : (
-          <button
-            type="submit"
-            className="composer-submit"
-            disabled={submitting}
-            aria-disabled={submitting}
-          >
-            {submitLabel}
-          </button>
-        )}
+        <div className="composer-input-row">
+          <textarea
+            ref={textareaRef}
+            className="composer-textarea"
+            value={instruction}
+            onChange={(e) => onInstructionChange(e.target.value)}
+            onKeyDown={onKeyDown}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            placeholder="Ask Shipyard to inspect a file, explain the current diff, or map the next change."
+            aria-label="Instruction input"
+            aria-multiline="true"
+            aria-keyshortcuts="Control+Enter Meta+Enter"
+            data-state={state}
+          />
+
+          {/* Submit button attached to textarea */}
+          {agentBusy ? (
+            <button
+              type="button"
+              className="composer-submit"
+              onClick={onCancel}
+              disabled={!onCancel}
+              aria-disabled={!onCancel}
+            >
+              Cancel turn
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="composer-submit"
+              disabled={submitting}
+              aria-disabled={submitting}
+            >
+              {submitLabel}
+            </button>
+          )}
+        </div>
       </form>
 
       {/* Keyboard hint below */}

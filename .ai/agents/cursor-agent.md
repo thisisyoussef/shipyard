@@ -14,7 +14,8 @@ Ensure Cursor follows the same orchestration contract as Claude and Codex.
 Before starting any new story:
 1. Run `agent-preflight`
 2. Deliver concise preflight brief
-3. Only then begin implementation
+3. If the current worktree already has unrelated WIP, start the story in a clean worktree/branch before implementation
+4. Only then begin implementation
 
 ## Spec-Driven Package Gate (Required for Feature Stories)
 Before tests/code edits for features:
@@ -78,7 +79,8 @@ Before implementation edits for a standard-lane story:
 ## Git Finalization Gate (Required)
 1. Use `.ai/workflows/story-handoff.md` as the combined completion gate
 2. Unless the user explicitly asks to pause or use a different merge path, run `.ai/workflows/git-finalization.md` after the completion gate
-3. Run `bash scripts/git_finalize_guard.sh`; if finalization fails, route to `.ai/workflows/finalization-recovery.md`
+3. If the current worktree contains unrelated WIP, preserve it and isolate the story diff in a clean branch/worktree instead of stopping at local validation
+4. Run the repo's finalization guard when it exists; otherwise run the required validation commands plus `git diff --check`. If finalization fails, route to `.ai/workflows/finalization-recovery.md`
 
 ## Task Routing
 - Feature: `.ai/workflows/feature-development.md`

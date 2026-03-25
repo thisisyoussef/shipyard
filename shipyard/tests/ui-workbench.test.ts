@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ShipyardWorkbench } from "../ui/src/ShipyardWorkbench.js";
+import type { ComposerAttachment } from "../ui/src/panels/ComposerPanel.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
@@ -196,13 +197,12 @@ const pendingUploads: PendingUploadReceiptViewModel[] = [
   {
     id: "upload-1",
     originalName: "brief.md",
-    targetRelativePath: ".shipyard/uploads/session-ui-123/brief.md",
-    mediaType: "text/markdown",
+    storedRelativePath: ".shipyard/uploads/session-ui-123/brief.md",
     sizeBytes: 128,
+    mediaType: "text/markdown",
     previewText: "# Brief",
+    previewSummary: "Markdown preview available.",
     uploadedAt: "2026-03-24T12:04:30.000Z",
-    status: "ready",
-    errorMessage: null,
   },
 ];
 
@@ -259,6 +259,7 @@ function renderWorkbench(overrides?: {
   targetManager?: TargetManagerViewModel;
   leftSidebarOpen?: boolean;
   rightSidebarOpen?: boolean;
+  composerAttachments?: ComposerAttachment[];
 }) {
   return renderToStaticMarkup(
     createElement(ShipyardWorkbench, {
@@ -278,6 +279,14 @@ function renderWorkbench(overrides?: {
       instruction: "",
       contextDraft: overrides?.contextDraft ?? "",
       composerNotice: null,
+      composerAttachments:
+        overrides?.composerAttachments ??
+        pendingUploads.map((receipt) => ({
+          id: receipt.id,
+          label: receipt.originalName,
+          detail: `${receipt.storedRelativePath} · ${receipt.previewSummary}`,
+          status: "attached" as const,
+        })),
       instructionInputRef: createRef<HTMLTextAreaElement>(),
       contextInputRef: createRef<HTMLTextAreaElement>(),
       onInstructionChange: () => undefined,
@@ -285,11 +294,11 @@ function renderWorkbench(overrides?: {
       onInstructionKeyDown: () => undefined,
       onContextKeyDown: () => undefined,
       onClearContext: () => undefined,
+      onAttachFiles: () => undefined,
       onSubmitInstruction: () => undefined,
       onCancelInstruction: () => undefined,
-      onUploadFiles: () => undefined,
-      onRemovePendingUpload: () => undefined,
       onRequestDeploy: () => undefined,
+      onRemoveAttachment: () => undefined,
       onRequestTargetSwitch: () => undefined,
       onRequestTargetCreate: () => undefined,
       onRequestSessionResume: () => undefined,
@@ -363,6 +372,31 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("Deploy unavailable until VERCEL_TOKEN is configured");
     expect(markup).toContain("Configure VERCEL_TOKEN on the hosted Shipyard service");
     expect(markup).toContain("disabled");
+  });
+
+  it("renders the attach-files control and pending attachment badges in the composer", () => {
+    const markup = renderWorkbench({
+      composerAttachments: [
+        {
+          id: "upload-1",
+          label: "spec.md",
+          detail: ".shipyard/uploads/session-ui-123/spec-abc123.md",
+          status: "attached",
+        },
+        {
+          id: "upload-2",
+          label: "notes.txt",
+          detail: "Upload failed: unsupported binary content.",
+          status: "rejected",
+          error: "Unsupported binary content.",
+        },
+      ],
+    });
+
+    expect(markup).toContain("Attach files");
+    expect(markup).toContain("spec.md");
+    expect(markup).toContain("notes.txt");
+    expect(markup).toContain("unsupported binary content");
   });
 
   it("renders passive queued enrichment status without enrich buttons", () => {

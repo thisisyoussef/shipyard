@@ -938,6 +938,398 @@ describe("ui runtime contract", () => {
     }
   });
 
+  it("accepts text uploads, rehydrates pending receipts, and injects them into the next turn", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-upload-");
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify(
+        {
+          name: "ui-upload-target",
+          version: "1.0.0",
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const discovery = await discoverTarget(targetDirectory);
+    let expectedStoredPath: string | null = null;
+    let expectedOriginalName: string | null = null;
+    const client: MockAnthropicClient = {
+      messages: {
+        async create(request) {
+          expect(expectedStoredPath).toBeTruthy();
+          expect(expectedOriginalName).toBeTruthy();
+          expect(request.system).toContain(
+            `Original filename: ${expectedOriginalName ?? ""}`,
+          );
+          expect(request.system).toContain(
+            `Stored path: ${expectedStoredPath ?? ""}`,
+          );
+          expect(request.system).toContain("Keep edits narrow.");
+
+          return createAssistantMessage({
+            stopReason: "end_turn",
+            content: [
+              {
+                type: "text",
+                text: "Upload context inspected.",
+                citations: null,
+              },
+            ],
+          });
+        },
+      },
+    };
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-upload-session",
+        targetDirectory,
+        discovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "Always inspect uploaded files before editing them.",
+      projectRulesLoaded: true,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            client,
+          };
+        },
+      },
+    });
+    const tracePath = path.join(
+      targetDirectory,
+      ".shipyard",
+      "traces",
+      "ui-upload-session.jsonl",
+    );
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialStatePromise;
+
+        const uploadSyncPromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "session:state" &&
+            message.workbenchState.pendingUploads.length === 1,
+        );
+
+        const uploadForm = new FormData();
+        uploadForm.set("sessionId", "ui-upload-session");
+        uploadForm.append(
+          "files",
+          new File(
+            ["# Hosted upload spec\n\nKeep edits narrow.\n"],
+            "spec.md",
+            { type: "text/markdown" },
+          ),
+        );
+
+        const uploadResponse = await fetch(`${runtime.url}/api/uploads`, {
+          method: "POST",
+          body: uploadForm,
+        });
+
+        expect(uploadResponse.status).toBe(201);
+
+        const uploadJson = await uploadResponse.json() as {
+          receipts: Array<{
+            id: string;
+            originalName: string;
+            storedRelativePath: string;
+            sizeBytes: number;
+            mediaType: string;
+            previewText: string;
+            previewSummary: string;
+            uploadedAt: string;
+          }>;
+        };
+        const receipt = uploadJson.receipts[0];
+
+        expect(receipt).toMatchObject({
+          originalName: "spec.md",
+          storedRelativePath: expect.stringContaining(
+            ".shipyard/uploads/ui-upload-session/",
+          ),
+          sizeBytes: expect.any(Number),
+          mediaType: "text/markdown",
+          previewText: expect.stringContaining("# Hosted upload spec"),
+          previewSummary: "Markdown preview available.",
+        });
+
+        expectedStoredPath = receipt?.storedRelativePath ?? null;
+        expectedOriginalName = receipt?.originalName ?? null;
+
+        await expect(
+          readFile(
+            path.join(targetDirectory, receipt?.storedRelativePath ?? ""),
+            "utf8",
+          ),
+        ).resolves.toContain("Keep edits narrow.");
+
+        const uploadedState = await uploadSyncPromise;
+        expect(uploadedState).toMatchObject({
+          type: "session:state",
+          workbenchState: {
+            pendingUploads: [
+              {
+                id: receipt?.id,
+                originalName: "spec.md",
+                storedRelativePath: receipt?.storedRelativePath,
+              },
+            ],
+          },
+        });
+
+        socket.close();
+
+        const reconnectedSocket = new WebSocket(runtime.socketUrl);
+
+        try {
+          const reconnectStatePromise = waitForSocketMessage(
+            reconnectedSocket,
+            (message) =>
+              message.type === "session:state" &&
+              message.workbenchState.pendingUploads.length === 1,
+          );
+          await waitForSocketOpen(reconnectedSocket);
+          const reconnectState = await reconnectStatePromise;
+
+          expect(reconnectState).toMatchObject({
+            type: "session:state",
+            workbenchState: {
+              pendingUploads: [
+                {
+                  originalName: "spec.md",
+                  storedRelativePath: receipt?.storedRelativePath,
+                },
+              ],
+            },
+          });
+
+          const turnDonePromise = waitForSocketMessage(
+            reconnectedSocket,
+            (message) => message.type === "agent:done",
+            10_000,
+          );
+          reconnectedSocket.send(
+            JSON.stringify({
+              type: "instruction",
+              text: "inspect the uploaded spec",
+            }),
+          );
+
+          await turnDonePromise;
+          const readyStatePromise = waitForSocketMessage(
+            reconnectedSocket,
+            (message) =>
+              message.type === "session:state" &&
+              message.turnCount === 1 &&
+              message.workbenchState.pendingUploads.length === 0,
+            10_000,
+          );
+          reconnectedSocket.send(JSON.stringify({ type: "status" }));
+          const readyState = await readyStatePromise;
+
+          expect(readyState).toMatchObject({
+            type: "session:state",
+            workbenchState: {
+              pendingUploads: [],
+              turns: [
+                {
+                  instruction: "inspect the uploaded spec",
+                  contextPreview: [
+                    expect.stringContaining("Upload: spec.md"),
+                  ],
+                },
+              ],
+            },
+          });
+        } finally {
+          reconnectedSocket.close();
+        }
+      } finally {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.close();
+        }
+      }
+
+      const persistedSession = JSON.parse(
+        await readFile(
+          path.join(
+            targetDirectory,
+            ".shipyard",
+            "sessions",
+            "ui-upload-session.json",
+          ),
+          "utf8",
+        ),
+      ) as {
+        workbenchState: {
+          pendingUploads: unknown[];
+          turns: Array<{
+            contextPreview: string[];
+          }>;
+        };
+      };
+
+      expect(persistedSession.workbenchState.pendingUploads).toEqual([]);
+      expect(persistedSession.workbenchState.turns[0]?.contextPreview).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("Upload: spec.md"),
+        ]),
+      );
+
+      const traceContents = await readFile(tracePath, "utf8");
+      expect(traceContents).toContain('"event":"upload.accepted"');
+      expect(traceContents).toContain(
+        expectedStoredPath ?? ".shipyard/uploads/ui-upload-session/",
+      );
+      expect(traceContents).toContain('"event":"upload.handoff"');
+    } finally {
+      await runtime.close();
+    }
+  }, 15_000);
+
+  it("rejects duplicate and unsupported uploads and removes pending receipts cleanly", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-upload-");
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify({ name: "ui-upload-validation-target" }, null, 2),
+      "utf8",
+    );
+
+    const discovery = await discoverTarget(targetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-upload-validation-session",
+        targetDirectory,
+        discovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialStatePromise;
+
+        const uploadForm = new FormData();
+        uploadForm.set("sessionId", "ui-upload-validation-session");
+        uploadForm.append(
+          "files",
+          new File(["hello from shipyard\n"], "notes.txt", {
+            type: "text/plain",
+          }),
+        );
+
+        const uploadResponse = await fetch(`${runtime.url}/api/uploads`, {
+          method: "POST",
+          body: uploadForm,
+        });
+        const uploadJson = await uploadResponse.json() as {
+          receipts: Array<{
+            id: string;
+            storedRelativePath: string;
+          }>;
+        };
+        const uploadedReceipt = uploadJson.receipts[0];
+
+        expect(uploadResponse.status).toBe(201);
+        expect(uploadedReceipt).toBeDefined();
+
+        const duplicateForm = new FormData();
+        duplicateForm.set("sessionId", "ui-upload-validation-session");
+        duplicateForm.append(
+          "files",
+          new File(["another note\n"], "notes.txt", {
+            type: "text/plain",
+          }),
+        );
+
+        const duplicateResponse = await fetch(`${runtime.url}/api/uploads`, {
+          method: "POST",
+          body: duplicateForm,
+        });
+        expect(duplicateResponse.status).toBe(409);
+        await expect(duplicateResponse.json()).resolves.toMatchObject({
+          error: expect.stringContaining("already attached"),
+        });
+
+        const binaryForm = new FormData();
+        binaryForm.set("sessionId", "ui-upload-validation-session");
+        binaryForm.append(
+          "files",
+          new File([new Uint8Array([0, 159, 146, 150])], "blob.bin", {
+            type: "application/octet-stream",
+          }),
+        );
+
+        const binaryResponse = await fetch(`${runtime.url}/api/uploads`, {
+          method: "POST",
+          body: binaryForm,
+        });
+        expect(binaryResponse.status).toBe(415);
+        await expect(binaryResponse.json()).resolves.toMatchObject({
+          error: expect.stringContaining("Unsupported"),
+        });
+
+        const removalSyncPromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "session:state" &&
+            message.workbenchState.pendingUploads.length === 0,
+        );
+
+        const deleteResponse = await fetch(
+          `${runtime.url}/api/uploads/${uploadedReceipt?.id ?? ""}?sessionId=ui-upload-validation-session`,
+          {
+            method: "DELETE",
+          },
+        );
+
+        expect(deleteResponse.status).toBe(200);
+        await expect(deleteResponse.json()).resolves.toMatchObject({
+          removedId: uploadedReceipt?.id,
+        });
+        await removalSyncPromise;
+        await expect(
+          readFile(
+            path.join(
+              targetDirectory,
+              uploadedReceipt?.storedRelativePath ?? "",
+            ),
+            "utf8",
+          ),
+        ).rejects.toThrow();
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("creates a new target from the browser, auto-enriches it, and switches the session into code mode", async () => {
     const targetsDirectory = await createTempDirectory(
       "shipyard-ui-create-target-",
@@ -3113,31 +3505,26 @@ describe("ui runtime contract", () => {
           type: "text/markdown",
         }),
       );
-      uploadForm.append(
-        "files",
-        new File(["binary"], "diagram.png", {
-          type: "image/png",
-        }),
-      );
 
       const uploadResponse = await fetch(`${runtime.url}/api/uploads`, {
         method: "POST",
         body: uploadForm,
       });
-      expect(uploadResponse.ok).toBe(true);
+      expect(uploadResponse.status).toBe(201);
 
-      const uploadJson = await uploadResponse.json();
-      expect(uploadJson).toMatchObject({
-        receipts: expect.arrayContaining([
-          expect.objectContaining({
-            status: "ready",
-            originalName: "brief.md",
-          }),
-          expect.objectContaining({
-            status: "rejected",
-            originalName: "diagram.png",
-          }),
-        ]),
+      const uploadJson = await uploadResponse.json() as {
+        receipts: Array<{
+          id: string;
+          originalName: string;
+          storedRelativePath: string;
+        }>;
+      };
+      expect(uploadJson.receipts).toHaveLength(1);
+      expect(uploadJson.receipts[0]).toMatchObject({
+        originalName: "brief.md",
+        storedRelativePath: expect.stringContaining(
+          ".shipyard/uploads/ui-upload-session/",
+        ),
       });
 
       const pendingUploadMessage = await waitForSocketMessage(
@@ -3164,19 +3551,18 @@ describe("ui runtime contract", () => {
 
       const storedUpload = pendingUploadMessage.workbenchState.pendingUploads[0];
       expect(storedUpload).toMatchObject({
-        status: "ready",
         originalName: "brief.md",
+        storedRelativePath: expect.stringContaining(
+          ".shipyard/uploads/ui-upload-session/",
+        ),
       });
-      expect(storedUpload?.targetRelativePath).toMatch(
-        /\.shipyard[\\/]+uploads[\\/]+ui-upload-session[\\/]+/u,
-      );
 
-      if (!storedUpload?.targetRelativePath) {
+      if (!storedUpload?.storedRelativePath) {
         throw new Error("Expected a stored upload path.");
       }
 
       await expect(
-        readFile(path.join(targetDirectory, storedUpload.targetRelativePath), "utf8"),
+        readFile(path.join(targetDirectory, storedUpload.storedRelativePath), "utf8"),
       ).resolves.toContain("Remember the preview contract.");
 
       firstSocket.close();
@@ -3206,6 +3592,7 @@ describe("ui runtime contract", () => {
         expect(reconnectedState.workbenchState.pendingUploads[0]).toMatchObject({
           id: storedUpload.id,
           originalName: "brief.md",
+          storedRelativePath: storedUpload.storedRelativePath,
         });
 
         const busyStatePromise = waitForSocketMessage(
@@ -3234,10 +3621,7 @@ describe("ui runtime contract", () => {
           throw new Error("Expected a session:state busy snapshot.");
         }
         expect(busyState.workbenchState.turns[0]?.contextPreview.join("\n")).toContain(
-          "Uploaded reference file: brief.md",
-        );
-        expect(busyState.workbenchState.turns[0]?.contextPreview.join("\n")).toContain(
-          storedUpload.targetRelativePath,
+          `Upload: brief.md -> ${storedUpload.storedRelativePath}`,
         );
         expect(busyState.workbenchState.pendingUploads).toHaveLength(0);
       } finally {
@@ -3303,7 +3687,7 @@ describe("ui runtime contract", () => {
         }
         const pendingUpload = pendingUploadMessage.workbenchState.pendingUploads[0];
 
-        if (!pendingUpload?.targetRelativePath) {
+        if (!pendingUpload?.storedRelativePath) {
           throw new Error("Expected a stored upload to remove.");
         }
 
@@ -3331,7 +3715,7 @@ describe("ui runtime contract", () => {
         }
         expect(clearedUploadsMessage.type).toBe("session:state");
         await expect(
-          readFile(path.join(targetDirectory, pendingUpload.targetRelativePath), "utf8"),
+          readFile(path.join(targetDirectory, pendingUpload.storedRelativePath), "utf8"),
         ).rejects.toThrowError();
       } finally {
         socket.close();
