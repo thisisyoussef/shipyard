@@ -120,3 +120,17 @@ Record durable workspace decisions here.
 - **Consequences**: Later provider migration can reuse one Shipyard-owned
   contract, and new providers should only need adapter work instead of registry
   changes.
+
+- **ADR-ID**: ADR-0012
+- **Date**: 2026-03-26
+- **Context**: Local CLI runs, browser workbench runs, and LangSmith traces all
+  exposed different slices of runtime routing, which made local vs hosted
+  debugging unnecessarily indirect.
+- **Decision**: Build one shared per-turn execution fingerprint at the
+  `executeInstructionTurn` boundary and reuse it in CLI output, browser
+  completion state, local JSONL traces, and LangSmith metadata.
+- **Alternatives Considered**: Print independent surface-specific debug lines;
+  inspect only `harnessRoute`; keep runtime-surface clues inside ad hoc logs.
+- **Consequences**: Operator surfaces now share one diagnostic vocabulary, and
+  future routing/model changes should extend the shared fingerprint contract
+  instead of inventing new debug-only formats.

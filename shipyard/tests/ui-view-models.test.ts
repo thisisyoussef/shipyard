@@ -224,6 +224,41 @@ describe("ui view models", () => {
     });
   });
 
+  it("surfaces the execution fingerprint in the done activity and footer status", () => {
+    let state = createInitialWorkbenchState();
+
+    state = queueInstructionTurn(state, "inspect package.json", []);
+    state = applyBackendMessage(state, {
+      type: "agent:done",
+      status: "success",
+      summary: "Turn finished cleanly.",
+      executionFingerprint: {
+        surface: "ui",
+        phase: "code",
+        planningMode: "planner",
+        targetProfile: "yes",
+        preview: "yes",
+        previewStatus: "running",
+        browserEval: "yes",
+        browserEvaluationStatus: "passed",
+        model: "openai/gpt-5.4",
+        modelProvider: "openai",
+        modelName: "gpt-5.4",
+      },
+    });
+
+    expect(state.agentStatus).toBe(
+      "surface=ui phase=code planningMode=planner targetProfile=yes preview=yes browserEval=yes model=openai/gpt-5.4",
+    );
+    expect(state.turns[0]?.summary).toBe("Turn finished cleanly.");
+    expect(state.turns[0]?.activity.at(-1)).toMatchObject({
+      kind: "done",
+      detail: "Turn finished cleanly.",
+      detailBody:
+        "surface=ui phase=code planningMode=planner targetProfile=yes preview=yes browserEval=yes model=openai/gpt-5.4",
+    });
+  });
+
   it("tracks cancelled turns distinctly from runtime errors", () => {
     let state = createInitialWorkbenchState();
 

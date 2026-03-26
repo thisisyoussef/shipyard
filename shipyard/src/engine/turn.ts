@@ -67,6 +67,12 @@ import {
   type ModelRoutingConfig,
   type ModelRoutingOverrides,
 } from "./model-routing.js";
+import {
+  createTurnExecutionFingerprint,
+  formatTurnExecutionFingerprint,
+  type RuntimeSurface,
+  type TurnExecutionFingerprint,
+} from "./turn-fingerprint.js";
 
 export type InstructionRuntimeMode = "graph" | "fallback";
 
@@ -135,6 +141,7 @@ export interface DoneEvent {
   status: "success" | "error" | "cancelled";
   summary: string;
   langSmithTrace?: LangSmithTraceReference | null;
+  executionFingerprint?: TurnExecutionFingerprint | null;
 }
 
 export interface InstructionTurnReporter {
@@ -155,6 +162,7 @@ export interface ExecuteInstructionTurnOptions {
   injectedContext?: string[];
   reporter?: InstructionTurnReporter;
   signal?: AbortSignal;
+  runtimeSurface?: RuntimeSurface;
 }
 
 export interface InstructionTurnResult {
@@ -164,6 +172,7 @@ export interface InstructionTurnResult {
   executionSpec: ExecutionSpec | null;
   planningMode: PlanningMode;
   harnessRoute: HarnessRouteSummary;
+  executionFingerprint?: TurnExecutionFingerprint | null;
   contextEnvelope: ContextEnvelope;
   status: "success" | "error" | "cancelled";
   summary: string;
@@ -622,6 +631,28 @@ function createEmptyTurnHandoffState(): InstructionTurnHandoffState {
     emitted: null,
   };
 }
+
+function createInstructionTurnFingerprint(options: {
+  sessionState: SessionState;
+  phaseName: string;
+  planningMode: PlanningMode;
+  harnessRoute: HarnessRouteSummary;
+  runtimeSurface?: RuntimeSurface;
+  modelProvider: string | null;
+  modelName: string | null;
+}): TurnExecutionFingerprint {
+  return createTurnExecutionFingerprint({
+    surface: options.runtimeSurface ?? "cli",
+    phase: options.phaseName === "target-manager" ? "target-manager" : "code",
+    planningMode: options.planningMode,
+    targetProfile: options.sessionState.targetProfile ?? null,
+    previewState: options.sessionState.workbenchState.previewState,
+    harnessRoute: options.harnessRoute,
+    modelProvider: options.modelProvider,
+    modelName: options.modelName,
+  });
+}
+
 function createRuntimeDependencies(
   sessionState: SessionState,
   runtimeState: InstructionRuntimeState,
@@ -802,8 +833,10 @@ function createInstructionTurnTraceMetadata(options: {
   phaseName: string;
   instruction: string;
   targetDirectory: string;
+  runtimeSurface?: RuntimeSurface;
   planningMode?: PlanningMode | null;
   harnessRoute?: HarnessRouteSummary | null;
+  executionFingerprint?: TurnExecutionFingerprint | null;
   turnStatus?: InstructionTurnResult["status"];
   finalText?: string;
   summary?: string;
@@ -816,12 +849,24 @@ function createInstructionTurnTraceMetadata(options: {
     targetDirectory: options.targetDirectory,
   };
 
+  if (options.runtimeSurface) {
+    metadata.runtimeSurface = options.runtimeSurface;
+  }
+
   if (options.planningMode) {
     metadata.planningMode = options.planningMode;
   }
 
   if (options.harnessRoute) {
     Object.assign(metadata, options.harnessRoute);
+  }
+
+  if (options.executionFingerprint) {
+    metadata.executionFingerprint = options.executionFingerprint;
+    metadata.executionFingerprintLabel = formatTurnExecutionFingerprint(
+      options.executionFingerprint,
+    );
+    metadata.runtimeSurface = options.executionFingerprint.surface;
   }
 
   if (options.turnStatus) {
@@ -898,6 +943,7 @@ async function emitInstructionTurnOutcome(
     status: result.status,
     summary: result.summary,
     langSmithTrace: result.langSmithTrace,
+    executionFingerprint: result.executionFingerprint ?? null,
   });
   await emitTurnState(
     reporter,
@@ -1106,6 +1152,15 @@ export async function executeInstructionTurn(
           ?? null,
         checkpointRequested: finalState.checkpointRequested,
       };
+      const executionFingerprint = createInstructionTurnFingerprint({
+        sessionState: state,
+        phaseName: phase.name,
+        planningMode,
+        harnessRoute,
+        runtimeSurface: options.runtimeSurface,
+        modelProvider: finalState.modelProvider,
+        modelName: finalState.modelName,
+      });
 
       runtimeState.retryCountsByFile = { ...finalState.retryCountsByFile };
       runtimeState.blockedFiles = [...finalState.blockedFiles];
@@ -1140,6 +1195,7 @@ export async function executeInstructionTurn(
           executionSpec,
           planningMode,
           harnessRoute,
+          executionFingerprint,
           contextEnvelope,
           status: "cancelled",
           summary: cancellationReason,
@@ -1168,6 +1224,7 @@ export async function executeInstructionTurn(
           executionSpec,
           planningMode,
           harnessRoute,
+          executionFingerprint,
           contextEnvelope,
           status: "error",
           summary: errorMessage,
@@ -1192,6 +1249,7 @@ export async function executeInstructionTurn(
         executionSpec,
         planningMode,
         harnessRoute,
+        executionFingerprint,
         contextEnvelope,
         status: "success",
         summary,
@@ -1222,6 +1280,16 @@ export async function executeInstructionTurn(
           options.instruction,
           summary,
         );
+        const harnessRoute = createHarnessRouteForErrorState(contextEnvelope);
+        const executionFingerprint = createInstructionTurnFingerprint({
+          sessionState: state,
+          phaseName: phase.name,
+          planningMode: "lightweight",
+          harnessRoute,
+          runtimeSurface: options.runtimeSurface,
+          modelProvider: null,
+          modelName: null,
+        });
 
         return {
           phaseName: phase.name,
@@ -1234,7 +1302,8 @@ export async function executeInstructionTurn(
           },
           executionSpec: null,
           planningMode: "lightweight",
-          harnessRoute: createHarnessRouteForErrorState(contextEnvelope),
+          harnessRoute,
+          executionFingerprint,
           contextEnvelope,
           status: "cancelled",
           summary: cancellationReason,
@@ -1265,6 +1334,16 @@ export async function executeInstructionTurn(
         options.instruction,
         summary,
       );
+      const harnessRoute = createHarnessRouteForErrorState(contextEnvelope);
+      const executionFingerprint = createInstructionTurnFingerprint({
+        sessionState: state,
+        phaseName: phase.name,
+        planningMode: "lightweight",
+        harnessRoute,
+        runtimeSurface: options.runtimeSurface,
+        modelProvider: null,
+        modelName: null,
+      });
 
       return {
         phaseName: phase.name,
@@ -1277,7 +1356,8 @@ export async function executeInstructionTurn(
         },
         executionSpec: null,
         planningMode: "lightweight",
-        harnessRoute: createHarnessRouteForErrorState(contextEnvelope),
+        harnessRoute,
+        executionFingerprint,
         contextEnvelope,
         status: "error",
         summary: message,
@@ -1360,6 +1440,7 @@ export async function executeInstructionTurn(
       phaseName: phase.name,
       instruction: options.instruction,
       targetDirectory: state.targetDirectory,
+      runtimeSurface: options.runtimeSurface,
     }),
     getResultMetadata: (result) =>
       createInstructionTurnTraceMetadata({
@@ -1370,6 +1451,7 @@ export async function executeInstructionTurn(
         targetDirectory: state.targetDirectory,
         planningMode: result.planningMode,
         harnessRoute: result.harnessRoute,
+        executionFingerprint: result.executionFingerprint ?? null,
         turnStatus: result.status,
         finalText: result.finalText,
         summary: result.summary,

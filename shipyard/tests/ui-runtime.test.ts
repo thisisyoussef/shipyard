@@ -3006,12 +3006,18 @@ describe("ui runtime contract", () => {
           type: "agent:done",
           status: "error",
           summary: expect.stringContaining("Missing OPENAI_API_KEY"),
+          executionFingerprint: expect.objectContaining({
+            surface: "ui",
+            phase: "code",
+            planningMode: "lightweight",
+          }),
         });
 
         const errorTrace = await readFile(tracePath, "utf8");
         expect(errorTrace).toContain('"event":"instruction.plan"');
         expect(errorTrace).toContain('"status":"error"');
         expect(errorTrace).toContain('"instruction":"inspect missing.ts"');
+        expect(errorTrace).toContain('"executionFingerprint"');
 
         const statusAfterErrorPromise = waitForSocketMessage(
           socket,
@@ -3119,6 +3125,10 @@ describe("ui runtime contract", () => {
           type: "agent:done",
           status: "cancelled",
           summary: "Operator interrupted the active turn.",
+          executionFingerprint: expect.objectContaining({
+            surface: "ui",
+            phase: "code",
+          }),
         });
         expect(cancelledError).toBeUndefined();
 
@@ -3153,12 +3163,17 @@ describe("ui runtime contract", () => {
           type: "agent:done",
           status: "success",
           summary: expect.stringContaining("completed"),
+          executionFingerprint: expect.objectContaining({
+            surface: "ui",
+            phase: "code",
+          }),
         });
 
         const traceContents = await readFile(tracePath, "utf8");
         expect(traceContents).toContain('"status":"cancelled"');
         expect(traceContents).toContain('"instruction":"inspect the repo until I interrupt you"');
         expect(traceContents).toContain('"instruction":"summarize the repo now"');
+        expect(traceContents).toContain('"executionFingerprint"');
       } finally {
         socket.close();
       }
