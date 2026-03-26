@@ -1,5 +1,4 @@
-import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
-
+import type { TurnMessage } from "./model-adapter.js";
 import { truncateText } from "./turn-summary.js";
 
 export const RAW_LOOP_MIN_MESSAGE_HISTORY_CHAR_BUDGET = 24_000;
@@ -28,13 +27,13 @@ export interface CompletedToolExecution {
 
 export interface CompletedToolTurn {
   turnNumber: number;
-  assistantMessage: MessageParam;
-  toolResultMessage: MessageParam;
+  assistantMessage: TurnMessage;
+  toolResultMessage: TurnMessage;
   toolExecutions: CompletedToolExecution[];
 }
 
 export interface CompactedMessageHistory {
-  messages: MessageParam[];
+  messages: TurnMessage[];
   didCompact: boolean;
   compactedTurnCount: number;
   preservedTailTurnCount: number;
@@ -59,7 +58,7 @@ export function computeRawLoopMessageHistoryCharBudget(
   );
 }
 
-function estimateMessageChars(message: MessageParam): number {
+function estimateMessageChars(message: TurnMessage): number {
   try {
     return JSON.stringify(message).length;
   } catch {
@@ -67,7 +66,7 @@ function estimateMessageChars(message: MessageParam): number {
   }
 }
 
-function estimateHistoryChars(messages: MessageParam[]): number {
+function estimateHistoryChars(messages: TurnMessage[]): number {
   return messages.reduce(
     (total, message) => total + estimateMessageChars(message),
     0,
@@ -146,7 +145,7 @@ function summarizeCompactedTurn(turn: CompletedToolTurn): string {
 
 function buildCompactionMessages(
   compactedTurns: CompletedToolTurn[],
-): [MessageParam, MessageParam] {
+): [TurnMessage, TurnMessage] {
   const retainedLines = compactedTurns.map(summarizeCompactedTurn);
   let omittedTurnCount = 0;
 
@@ -208,13 +207,13 @@ function buildCompactionMessages(
   ];
 }
 
-function flattenCompletedTurns(completedTurns: CompletedToolTurn[]): MessageParam[] {
+function flattenCompletedTurns(completedTurns: CompletedToolTurn[]): TurnMessage[] {
   return completedTurns.flatMap((turn) => [turn.assistantMessage, turn.toolResultMessage]);
 }
 
 function buildCompactTurnMessages(
   turn: CompletedToolTurn,
-): [MessageParam, MessageParam] {
+): [TurnMessage, TurnMessage] {
   const requestedActions = turn.toolExecutions
     .map((execution) => `- ${execution.historyDigest.requestLine}`)
     .join("\n");
@@ -245,7 +244,7 @@ function buildCompactTurnMessages(
 function flattenCompletedTurnsWithMode(
   completedTurns: CompletedToolTurn[],
   mode: "verbatim" | "compact",
-): MessageParam[] {
+): TurnMessage[] {
   if (mode === "verbatim") {
     return flattenCompletedTurns(completedTurns);
   }
@@ -276,9 +275,9 @@ function isWriteHeavyTurn(
 }
 
 export function buildCompactedMessageHistory(options: {
-  initialUserMessage: MessageParam;
+  initialUserMessage: TurnMessage;
   completedTurns: CompletedToolTurn[];
-  finalAssistantMessage?: MessageParam | null;
+  finalAssistantMessage?: TurnMessage | null;
   historyCharBudget?: number;
   maxTokens?: number;
 }): CompactedMessageHistory {

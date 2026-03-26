@@ -11,12 +11,28 @@ import type {
 import { wrapAnthropic } from "langsmith/wrappers/anthropic";
 
 import type {
+  ModelAdapter,
+  ModelTurnInput,
+  ModelTurnResult,
+  ToolCall,
+  TurnContentPart,
+  TurnMessage,
+} from "./model-adapter.js";
+import {
+  createAssistantTextTurnMessage,
+  createAssistantToolCallTurnMessage,
+  createToolResultTurnMessage,
+  createUserTurnMessage,
+  extractTextFromTurnMessage,
+  extractToolCallsFromTurnMessage,
+} from "./model-adapter.js";
+import { getLangSmithConfig } from "../tracing/langsmith.js";
+import { toTurnCancelledError } from "./cancellation.js";
+import type {
   ToolDefinition,
   ToolInputSchema,
   ToolResult,
 } from "../tools/registry.js";
-import { getLangSmithConfig } from "../tracing/langsmith.js";
-import { toTurnCancelledError } from "./cancellation.js";
 
 export const DEFAULT_ANTHROPIC_MODEL: Model = "claude-sonnet-4-5";
 export const DEFAULT_ANTHROPIC_MAX_TOKENS = 8_192;
@@ -41,7 +57,7 @@ export interface AnthropicConfig extends AnthropicRuntimeConfig {
 
 export interface ResolveAnthropicConfigOptions {
   apiKey?: string | null;
-  model?: Model;
+  model?: string;
   maxTokens?: number;
   timeoutMs?: number;
   maxRetries?: number;
@@ -50,9 +66,9 @@ export interface ResolveAnthropicConfigOptions {
 
 export interface ClaudeRequestInput {
   systemPrompt: string;
-  messages: MessageParam[];
+  messages: TurnMessage[];
   tools?: AnthropicToolDefinition[];
-  model?: Model;
+  model?: string;
   maxTokens?: number;
   temperature?: number;
   env?: NodeJS.ProcessEnv;
@@ -71,6 +87,11 @@ export interface AnthropicToolDefinition {
   name: string;
   description: string;
   input_schema: ToolInputSchema;
+}
+
+export interface AnthropicModelAdapterOptions {
+  client?: AnthropicMessagesClient;
+  env?: NodeJS.ProcessEnv;
 }
 
 function ensureNonBlankString(value: string, fieldName: string): string {
@@ -103,31 +124,78 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function validateMessageParam(message: MessageParam, index: number): void {
+function assertTextBlock(block: unknown, index: number): asserts block is TextBlock {
+  if (!isPlainObject(block) || typeof block.text !== "string") {
+    throw new Error(
+      `Malformed assistant text block at index ${String(index)}.`,
+    );
+  }
+}
+
+function assertToolUseBlock(block: unknown, index: number): asserts block is ToolUseBlock {
+  if (!isPlainObject(block)) {
+    throw new Error(`Malformed assistant tool_use block at index ${String(index)}.`);
+  }
+
+  if (typeof block.id !== "string" || !block.id.trim()) {
+    throw new Error(
+      `Malformed assistant tool_use block at index ${String(index)}: missing id.`,
+    );
+  }
+
+  if (typeof block.name !== "string" || !block.name.trim()) {
+    throw new Error(
+      `Malformed assistant tool_use block at index ${String(index)}: missing name.`,
+    );
+  }
+
+  if (!isPlainObject(block.caller) || typeof block.caller.type !== "string") {
+    throw new Error(
+      `Malformed assistant tool_use block at index ${String(index)}: missing caller.`,
+    );
+  }
+}
+
+function validateTurnContentPart(
+  part: TurnContentPart,
+  messageIndex: number,
+  partIndex: number,
+): void {
+  const prefix = `messages[${String(messageIndex)}].content[${String(partIndex)}]`;
+
+  if (part.type === "text") {
+    ensureNonBlankString(part.text, `${prefix}.text`);
+    return;
+  }
+
+  if (part.type === "tool_call") {
+    ensureNonBlankString(part.toolCallId, `${prefix}.toolCallId`);
+    ensureNonBlankString(part.toolName, `${prefix}.toolName`);
+    return;
+  }
+
+  ensureNonBlankString(part.toolCallId, `${prefix}.toolCallId`);
+}
+
+function validateTurnMessage(message: TurnMessage, index: number): void {
   if (typeof message.content === "string") {
-    ensureNonBlankString(message.content, `messages[${index}].content`);
+    ensureNonBlankString(message.content, `messages[${String(index)}].content`);
     return;
   }
 
   if (message.content.length === 0) {
-    throw new Error(`messages[${index}].content must not be empty.`);
+    throw new Error(`messages[${String(index)}].content must not be empty.`);
   }
+
+  message.content.forEach((part, partIndex) =>
+    validateTurnContentPart(part, index, partIndex)
+  );
 }
 
 function toAnthropicTools(
   tools: AnthropicToolDefinition[],
 ): MessageCreateParamsNonStreaming["tools"] {
   return tools as MessageCreateParamsNonStreaming["tools"];
-}
-
-export function projectToolsToAnthropicTools(
-  tools: ToolDefinition[],
-): AnthropicToolDefinition[] {
-  return tools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.inputSchema,
-  }));
 }
 
 function getErrorMessage(error: unknown): string {
@@ -172,36 +240,63 @@ function parseOptionalNonNegativeIntegerEnv(
   return ensureNonNegativeInteger(Number.parseInt(rawValue, 10), envName);
 }
 
-function assertTextBlock(block: unknown, index: number): asserts block is TextBlock {
-  if (!isPlainObject(block) || typeof block.text !== "string") {
-    throw new Error(
-      `Malformed assistant text block at index ${String(index)}.`,
-    );
-  }
+function toAnthropicToolUseBlock(toolCall: ToolCall): ToolUseBlock {
+  return {
+    type: "tool_use",
+    id: ensureNonBlankString(toolCall.id, "toolCall.id"),
+    name: ensureNonBlankString(toolCall.name, "toolCall.name"),
+    input: toolCall.input,
+    caller: {
+      type: "direct",
+    },
+  };
 }
 
-function assertToolUseBlock(block: unknown, index: number): asserts block is ToolUseBlock {
-  if (!isPlainObject(block)) {
-    throw new Error(`Malformed assistant tool_use block at index ${String(index)}.`);
+function toAnthropicContentBlock(part: TurnContentPart): unknown {
+  if (part.type === "text") {
+    return {
+      type: "text",
+      text: ensureNonBlankString(part.text, "text"),
+      citations: null,
+    };
   }
 
-  if (typeof block.id !== "string" || !block.id.trim()) {
-    throw new Error(
-      `Malformed assistant tool_use block at index ${String(index)}: missing id.`,
-    );
+  if (part.type === "tool_call") {
+    return toAnthropicToolUseBlock({
+      id: part.toolCallId,
+      name: part.toolName,
+      input: part.input,
+    });
   }
 
-  if (typeof block.name !== "string" || !block.name.trim()) {
-    throw new Error(
-      `Malformed assistant tool_use block at index ${String(index)}: missing name.`,
-    );
+  return createUserToolResultBlock(part.toolCallId, part.result);
+}
+
+function toAnthropicMessageParam(message: TurnMessage): MessageParam {
+  if (typeof message.content === "string") {
+    return {
+      role: message.role,
+      content: ensureNonBlankString(message.content, "message.content"),
+    };
   }
 
-  if (!isPlainObject(block.caller) || typeof block.caller.type !== "string") {
-    throw new Error(
-      `Malformed assistant tool_use block at index ${String(index)}: missing caller.`,
-    );
-  }
+  return {
+    role: message.role,
+    content: message.content.map((part) => toAnthropicContentBlock(part)) as Exclude<
+      MessageParam["content"],
+      string
+    >,
+  };
+}
+
+export function projectToolsToAnthropicTools(
+  tools: ToolDefinition[],
+): AnthropicToolDefinition[] {
+  return tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.inputSchema,
+  }));
 }
 
 export function resolveAnthropicConfig(
@@ -282,11 +377,8 @@ export function createAnthropicClient(
   });
 }
 
-export function createUserTextMessage(text: string): MessageParam {
-  return {
-    role: "user",
-    content: ensureNonBlankString(text, "user message"),
-  };
+export function createUserTextMessage(text: string): TurnMessage {
+  return createUserTurnMessage(text);
 }
 
 export function normalizeAssistantResponseBlocks(
@@ -334,10 +426,29 @@ export function extractAssistantText(
 
 export function createAssistantHistoryMessage(
   message: Pick<Message, "content">,
-): MessageParam {
+): TurnMessage {
+  const text = extractAssistantText(message);
+  const toolCalls = extractAssistantToolUseBlocks(message).map<ToolCall>(
+    (block) => ({
+      id: block.id,
+      name: block.name,
+      input: block.input,
+    }),
+  );
+
+  if (toolCalls.length > 0) {
+    return createAssistantToolCallTurnMessage(toolCalls, {
+      text: text || undefined,
+    });
+  }
+
+  if (text.trim()) {
+    return createAssistantTextTurnMessage(text);
+  }
+
   return {
     role: "assistant",
-    content: normalizeAssistantResponseBlocks(message.content),
+    content: [],
   };
 }
 
@@ -369,11 +480,13 @@ export function createUserToolResultBlock(
 export function createUserToolResultMessage(
   toolUseId: string,
   result: ToolResult,
-): MessageParam {
-  return {
-    role: "user",
-    content: [createUserToolResultBlock(toolUseId, result)],
-  };
+): TurnMessage {
+  return createToolResultTurnMessage([
+    {
+      toolCallId: toolUseId,
+      result,
+    },
+  ]);
 }
 
 export function buildAnthropicMessageRequest(
@@ -391,14 +504,12 @@ export function buildAnthropicMessageRequest(
   }
 
   input.messages.forEach((message, index) => {
-    validateMessageParam(message, index);
+    validateTurnMessage(message, index);
   });
 
   const request: MessageCreateParamsNonStreaming = {
     system: systemPrompt,
-    // Snapshot the request history so later loop mutations do not retroactively
-    // change the payload we already sent to Anthropic.
-    messages: [...input.messages],
+    messages: input.messages.map((message) => toAnthropicMessageParam(message)),
     model: runtimeConfig.model,
     max_tokens: runtimeConfig.maxTokens,
   };
@@ -437,4 +548,67 @@ export async function createAnthropicMessage(
       `Anthropic API request failed during message creation: ${getErrorMessage(error)}`,
     );
   }
+}
+
+function mapAnthropicStopReason(
+  stopReason: Message["stop_reason"],
+): ModelTurnResult["stopReason"] {
+  if (stopReason === "tool_use") {
+    return "tool_call";
+  }
+
+  if (stopReason === "end_turn" || stopReason === "stop_sequence") {
+    return "completed";
+  }
+
+  if (stopReason === "max_tokens") {
+    return "max_tokens";
+  }
+
+  return "unknown";
+}
+
+export function createAnthropicModelAdapter(
+  options: AnthropicModelAdapterOptions = {},
+): ModelAdapter<AnthropicToolDefinition> {
+  const client = options.client ?? createAnthropicClient({
+    env: options.env,
+  });
+
+  return {
+    provider: "anthropic",
+    defaultModel: DEFAULT_ANTHROPIC_MODEL,
+    defaultMaxTokens: DEFAULT_ANTHROPIC_MAX_TOKENS,
+    projectTools: projectToolsToAnthropicTools,
+    async createTurn(
+      input: ModelTurnInput,
+      requestOptions?: { signal?: AbortSignal },
+    ): Promise<ModelTurnResult> {
+      const response = await createAnthropicMessage(
+        client,
+        {
+          systemPrompt: input.systemPrompt,
+          messages: input.messages,
+          tools: input.tools
+            ? projectToolsToAnthropicTools(input.tools)
+            : undefined,
+          model: input.model,
+          maxTokens: input.maxTokens,
+          temperature: input.temperature,
+          env: options.env,
+        },
+        requestOptions,
+      );
+      const message = createAssistantHistoryMessage(response);
+
+      return {
+        message,
+        toolCalls: extractToolCallsFromTurnMessage(message),
+        finalText: extractTextFromTurnMessage(message).trim(),
+        stopReason: mapAnthropicStopReason(response.stop_reason),
+        rawStopReason: response.stop_reason ?? null,
+        model: response.model,
+      };
+    },
+  };
 }

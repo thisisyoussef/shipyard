@@ -238,9 +238,8 @@ async function createPlannerRunOptions(options: {
   const existingAfterToolExecution = baseOptions.afterToolExecution;
 
   return {
-    client: baseOptions.client,
+    ...baseOptions,
     logger: baseOptions.logger ?? createSilentLogger(),
-    maxIterations: baseOptions.maxIterations,
     signal: options.signal,
     beforeToolExecution: async (context: RawLoopToolHookContext) => {
       await existingBeforeToolExecution?.(context);
@@ -250,9 +249,9 @@ async function createPlannerRunOptions(options: {
       }
 
       await options.reporter?.onToolCall?.({
-        callId: context.toolUse.id,
-        toolName: context.toolUse.name,
-        summary: summarizeToolCallInput(context.toolUse.input),
+        callId: context.toolCall.id,
+        toolName: context.toolCall.name,
+        summary: summarizeToolCallInput(context.toolCall.input),
       });
     },
     afterToolExecution: async (context: RawLoopToolResultHookContext) => {
@@ -267,7 +266,7 @@ async function createPlannerRunOptions(options: {
       if (context.result.success) {
         rememberRecent(
           options.runtimeState.recentToolOutputs,
-          `${context.toolUse.name} ${summary}`,
+          `${context.toolCall.name} ${summary}`,
         );
       } else {
         rememberRecent(options.runtimeState.recentErrors, summary);
@@ -279,12 +278,12 @@ async function createPlannerRunOptions(options: {
       }
 
       await options.reporter?.onToolResult?.({
-        callId: context.toolUse.id,
-        toolName: context.toolUse.name,
+        callId: context.toolCall.id,
+        toolName: context.toolCall.name,
         success: context.result.success,
         summary,
         detail: getToolResultDetail(context.result),
-        command: extractCommandFromToolInput(context.toolUse.input),
+        command: extractCommandFromToolInput(context.toolCall.input),
       });
     },
   };

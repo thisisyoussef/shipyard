@@ -14,8 +14,8 @@ path for actual task execution.
 - `graph.ts`: explicit `plan -> act -> verify -> recover -> respond` state
   machine with explorer/planner/verifier/browser-evaluator hooks and raw
   fallback parity
-- `raw-loop.ts`: lower-level model/tool loop used by the graph `act` node and
-  helper subagents
+- `raw-loop.ts`: provider-neutral lower-level model/tool loop used by the
+  graph `act` node and helper subagents; defaults to the Anthropic adapter
 - `model-adapter.ts`: provider-neutral internal model contract for turn
   messages, tool calls, and adapter boundaries
 - `state.ts`: persisted session shape plus `.shipyard/` directory helpers
@@ -26,7 +26,8 @@ path for actual task execution.
   helpers for long-running sessions
 - `target-command.ts` and `target-enrichment.ts`: shared helpers for target
   switching and enrichment flows
-- `anthropic.ts`: Anthropic client integration
+- `anthropic.ts`: default Anthropic model adapter plus Anthropic client
+  integration and request/response normalization
 - `live-verification.ts`: credentialed smoke helpers for end-to-end validation
 
 ## Ownership Rules

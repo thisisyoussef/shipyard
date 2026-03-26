@@ -1,29 +1,21 @@
-import type {
-  Message,
-  MessageParam,
-  Model,
-  TextBlock,
-  ToolUseBlock,
-} from "@anthropic-ai/sdk/resources/messages";
 import { traceable } from "langsmith/traceable";
 
 import {
-  createAnthropicClient,
-  createAnthropicMessage,
-  createAssistantHistoryMessage,
-  projectToolsToAnthropicTools,
-  createUserTextMessage,
-  createUserToolResultBlock,
-  extractAssistantText,
-  extractAssistantToolUseBlocks,
-  resolveAnthropicRuntimeConfig,
-  type AnthropicMessagesClient,
+  createAnthropicModelAdapter,
 } from "./anthropic.js";
 import {
   buildCompactedMessageHistory,
   type CompletedToolExecution,
   type CompletedToolTurn,
 } from "./history-compaction.js";
+import {
+  createToolResultTurnMessage,
+  createUserTurnMessage,
+  type ModelAdapter,
+  type ModelTurnResult,
+  type ToolCall,
+  type TurnMessage,
+} from "./model-adapter.js";
 import {
   createToolErrorResult,
   getTools,
@@ -48,13 +40,14 @@ const LOG_PREVIEW_LIMIT = 160;
 const DEFAULT_MAX_TOKENS_RECOVERY_RETRIES = 1;
 const DEFAULT_MAX_TOKENS_RETRY_MULTIPLIER = 2;
 const DEFAULT_MAX_TOKENS_RETRY_CAP = 16_384;
+const DEFAULT_RAW_LOOP_MAX_TOKENS = 8_192;
 
 export interface RawLoopLogger {
   log: (message: string) => void;
 }
 
 export interface RawLoopToolHookContext {
-  toolUse: ToolUseBlock;
+  toolCall: ToolCall;
   turnNumber: number;
   targetDirectory: string;
 }
@@ -69,20 +62,23 @@ export interface RawToolExecution extends CompletedToolExecution {}
 export interface RawToolLoopResult {
   status: "completed" | "cancelled" | "continuation";
   finalText: string;
-  messageHistory: MessageParam[];
+  messageHistory: TurnMessage[];
   toolExecutions: RawToolExecution[];
   iterations: number;
   didEdit: boolean;
   lastEditedFile: string | null;
   touchedFiles: string[];
+  modelProvider: string;
+  modelName: string | null;
 }
 
 export interface RawToolLoopOptions {
-  client?: AnthropicMessagesClient;
+  modelAdapter?: ModelAdapter;
+  client?: object;
   logger?: RawLoopLogger;
   maxIterations?: number;
   signal?: AbortSignal;
-  model?: Model;
+  model?: string;
   maxTokens?: number;
   temperature?: number;
   maxTokensRecoveryRetries?: number;
@@ -96,7 +92,7 @@ export interface RawToolLoopOptions {
   ) => Promise<void> | void;
 }
 
-export class AnthropicOutputBudgetExceededError extends Error {
+export class ModelOutputBudgetExceededError extends Error {
   readonly stopReason = "max_tokens";
   readonly turnNumber: number;
   readonly maxTokens: number;
@@ -118,11 +114,11 @@ export class AnthropicOutputBudgetExceededError extends Error {
       : "";
 
     super(
-      `Anthropic output budget exhausted on turn ${String(options.turnNumber)} ` +
+      `Model output budget exhausted on turn ${String(options.turnNumber)} ` +
       `(stop_reason=max_tokens) while generating ${target} at max_tokens=${String(options.maxTokens)} ` +
       `after ${String(options.recoveryAttempts)} recovery attempt(s).${partialTextLabel}`,
     );
-    this.name = "AnthropicOutputBudgetExceededError";
+    this.name = "ModelOutputBudgetExceededError";
     this.turnNumber = options.turnNumber;
     this.maxTokens = options.maxTokens;
     this.recoveryAttempts = options.recoveryAttempts;
@@ -455,50 +451,16 @@ function createToolHistoryDigest(
   };
 }
 
-function extractAssistantTextSafely(
-  message: Pick<Message, "content">,
-): string {
-  const textBlocks = message.content
-    .filter(
-      (block): block is TextBlock =>
-        isPlainObject(block) &&
-        block.type === "text" &&
-        typeof block.text === "string" &&
-        "citations" in block,
-    );
-
-  return textBlocks.map((block) => block.text).join("\n\n").trim();
-}
-
-function hasToolUseLikeBlock(
-  message: Pick<Message, "content">,
-): boolean {
-  return message.content.some(
-    (block) => isPlainObject(block) && block.type === "tool_use",
-  );
-}
-
-function createUserToolResultHistoryMessage(
-  toolResultBlocks: MessageParam["content"],
-): MessageParam {
-  if (typeof toolResultBlocks === "string" || toolResultBlocks.length === 0) {
-    throw new Error("toolResultBlocks must contain at least one tool_result block.");
-  }
-
-  return {
-    role: "user",
-    content: toolResultBlocks,
-  };
-}
-
 function createCancelledLoopResult(options: {
   signal?: AbortSignal;
   fallbackReason?: string;
-  messageHistory: MessageParam[];
+  messageHistory: TurnMessage[];
   toolExecutions: RawToolExecution[];
   iterations: number;
   lastEditedFile: string | null;
   touchedFiles: string[];
+  modelProvider: string;
+  modelName: string | null;
 }): RawToolLoopResult {
   const reason = getTurnCancellationReason(
     options.signal,
@@ -515,15 +477,17 @@ function createCancelledLoopResult(options: {
     didEdit: options.lastEditedFile !== null,
     lastEditedFile: options.lastEditedFile,
     touchedFiles: [...options.touchedFiles],
+    modelProvider: options.modelProvider,
+    modelName: options.modelName,
   };
 }
 
-async function createAnthropicMessageWithBudgetRecovery(options: {
-  client: AnthropicMessagesClient;
+async function createModelTurnWithBudgetRecovery(options: {
+  modelAdapter: ModelAdapter;
   systemPrompt: string;
-  messages: MessageParam[];
-  tools: ReturnType<typeof projectToolsToAnthropicTools>;
-  model: Model;
+  messages: TurnMessage[];
+  tools: ReturnType<typeof getTools>;
+  model?: string;
   maxTokens: number;
   temperature?: number;
   turnNumber: number;
@@ -532,13 +496,12 @@ async function createAnthropicMessageWithBudgetRecovery(options: {
   maxTokensRecoveryRetries: number;
   maxTokensRetryMultiplier: number;
   maxTokensRetryCap: number;
-}): Promise<Message> {
+}): Promise<ModelTurnResult> {
   let currentMaxTokens = options.maxTokens;
   let recoveryAttempts = 0;
 
   while (true) {
-    const assistantMessage = await createAnthropicMessage(
-      options.client,
+    const modelTurn = await options.modelAdapter.createTurn(
       {
         systemPrompt: options.systemPrompt,
         messages: options.messages,
@@ -552,16 +515,16 @@ async function createAnthropicMessageWithBudgetRecovery(options: {
       },
     );
 
-    if (assistantMessage.stop_reason !== "max_tokens") {
-      return assistantMessage;
+    if (modelTurn.stopReason !== "max_tokens") {
+      return modelTurn;
     }
 
-    const partialText = extractAssistantTextSafely(assistantMessage);
+    const partialText = modelTurn.finalText.trim();
     const generatingToolCall =
-      hasToolUseLikeBlock(assistantMessage) || partialText.length === 0;
+      modelTurn.toolCalls.length > 0 || partialText.length === 0;
 
     if (recoveryAttempts >= options.maxTokensRecoveryRetries) {
-      throw new AnthropicOutputBudgetExceededError({
+      throw new ModelOutputBudgetExceededError({
         turnNumber: options.turnNumber,
         maxTokens: currentMaxTokens,
         recoveryAttempts,
@@ -579,7 +542,7 @@ async function createAnthropicMessageWithBudgetRecovery(options: {
     );
 
     if (nextMaxTokens <= currentMaxTokens) {
-      throw new AnthropicOutputBudgetExceededError({
+      throw new ModelOutputBudgetExceededError({
         turnNumber: options.turnNumber,
         maxTokens: currentMaxTokens,
         recoveryAttempts,
@@ -598,30 +561,30 @@ async function createAnthropicMessageWithBudgetRecovery(options: {
   }
 }
 
-async function executeToolUse(
-  toolUse: ToolUseBlock,
+async function executeToolCall(
+  toolCall: ToolCall,
   targetDirectory: string,
   allowedToolNames: Set<string>,
   signal?: AbortSignal,
 ): Promise<ToolResult> {
   throwIfTurnCancelled(signal);
 
-  if (!allowedToolNames.has(toolUse.name)) {
+  if (!allowedToolNames.has(toolCall.name)) {
     return createToolErrorResult(
-      `Tool "${toolUse.name}" is not available in this loop.`,
+      `Tool "${toolCall.name}" is not available in this loop.`,
     );
   }
 
-  const tool = getTool(toolUse.name);
+  const tool = getTool(toolCall.name);
 
   if (!tool) {
     return createToolErrorResult(
-      `Tool "${toolUse.name}" is not registered.`,
+      `Tool "${toolCall.name}" is not registered.`,
     );
   }
 
   try {
-    return await tool.execute(toolUse.input, targetDirectory, {
+    return await tool.execute(toolCall.input, targetDirectory, {
       signal,
     });
   } catch (error) {
@@ -632,13 +595,13 @@ async function executeToolUse(
     }
 
     return createToolErrorResult(
-      `Tool "${toolUse.name}" execution failed: ${error instanceof Error ? error.message : String(error)}`,
+      `Tool "${toolCall.name}" execution failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
 
-async function executeToolUseWithTracing(
-  toolUse: ToolUseBlock,
+async function executeToolCallWithTracing(
+  toolCall: ToolCall,
   targetDirectory: string,
   allowedToolNames: Set<string>,
   turnNumber: number,
@@ -647,18 +610,18 @@ async function executeToolUseWithTracing(
   const langSmith = getLangSmithConfig();
 
   if (!langSmith.enabled) {
-    return executeToolUse(toolUse, targetDirectory, allowedToolNames, signal);
+    return executeToolCall(toolCall, targetDirectory, allowedToolNames, signal);
   }
 
   const tracedToolExecution = traceable(
-    async () => executeToolUse(toolUse, targetDirectory, allowedToolNames, signal),
+    async () => executeToolCall(toolCall, targetDirectory, allowedToolNames, signal),
     {
-      name: `shipyard.tool.${toolUse.name}`,
+      name: `shipyard.tool.${toolCall.name}`,
       run_type: "tool",
       project_name: langSmith.project ?? undefined,
-      tags: ["shipyard", "tool", toolUse.name],
+      tags: ["shipyard", "tool", toolCall.name],
       metadata: {
-        toolName: toolUse.name,
+        toolName: toolCall.name,
         turnNumber,
         targetDirectory,
       },
@@ -668,8 +631,8 @@ async function executeToolUseWithTracing(
   return tracedToolExecution();
 }
 
-async function executeToolUsesForTurn(
-  toolUses: ToolUseBlock[],
+async function executeToolCallsForTurn(
+  toolCalls: ToolCall[],
   targetDirectory: string,
   allowedToolNames: Set<string>,
   logger: RawLoopLogger,
@@ -682,28 +645,31 @@ async function executeToolUsesForTurn(
     context: RawLoopToolResultHookContext,
   ) => Promise<void> | void,
 ): Promise<{
-  toolResultMessage: MessageParam;
+  toolResultMessage: TurnMessage;
   toolExecutions: RawToolExecution[];
 }> {
-  const toolResultBlocks: Exclude<MessageParam["content"], string> = [];
+  const toolCallResults: Array<{
+    toolCallId: string;
+    result: ToolResult;
+  }> = [];
   const toolExecutions: RawToolExecution[] = [];
 
-  for (const toolUse of toolUses) {
+  for (const toolCall of toolCalls) {
     throwIfTurnCancelled(signal);
     await beforeToolExecution?.({
-      toolUse,
+      toolCall,
       turnNumber,
       targetDirectory,
     });
 
     logger.log(
-      `[raw-loop] turn ${String(turnNumber)} tool_call ${toolUse.name} input=${truncateForLog(
-        stringifyForLog(toolUse.input),
+      `[raw-loop] turn ${String(turnNumber)} tool_call ${toolCall.name} input=${truncateForLog(
+        stringifyForLog(toolCall.input),
       )}`,
     );
 
-    const result = await executeToolUseWithTracing(
-      toolUse,
+    const result = await executeToolCallWithTracing(
+      toolCall,
       targetDirectory,
       allowedToolNames,
       turnNumber,
@@ -711,23 +677,23 @@ async function executeToolUsesForTurn(
     );
 
     logger.log(
-      `[raw-loop] turn ${String(turnNumber)} tool_result ${toolUse.name} ${result.success ? "success" : "failure"} output=${formatToolResultPreview(
+      `[raw-loop] turn ${String(turnNumber)} tool_result ${toolCall.name} ${result.success ? "success" : "failure"} output=${formatToolResultPreview(
         result,
       )}`,
     );
-    const touchedFiles = extractTouchedFiles(toolUse.name, toolUse.input, result);
+    const touchedFiles = extractTouchedFiles(toolCall.name, toolCall.input, result);
 
     const toolExecution: RawToolExecution = {
-      toolName: toolUse.name,
-      input: toolUse.input,
+      toolName: toolCall.name,
+      input: toolCall.input,
       success: result.success,
       output: result.output,
       error: result.error,
-      editedPath: extractEditedPath(toolUse.name, toolUse.input, result),
+      editedPath: extractEditedPath(toolCall.name, toolCall.input, result),
       touchedFiles,
       historyDigest: createToolHistoryDigest(
-        toolUse.name,
-        toolUse.input,
+        toolCall.name,
+        toolCall.input,
         result,
         touchedFiles,
       ),
@@ -736,34 +702,35 @@ async function executeToolUsesForTurn(
     toolExecutions.push(toolExecution);
     throwIfTurnCancelled(signal);
     await afterToolExecution?.({
-      toolUse,
+      toolCall,
       turnNumber,
       targetDirectory,
       result,
       toolExecution,
     });
-    toolResultBlocks.push(createUserToolResultBlock(toolUse.id, result));
+    toolCallResults.push({
+      toolCallId: toolCall.id,
+      result,
+    });
   }
 
   return {
-    toolResultMessage: createUserToolResultHistoryMessage(toolResultBlocks),
+    toolResultMessage: createToolResultTurnMessage(toolCallResults),
     toolExecutions,
   };
 }
 
-function validateToolUseTurn(
-  message: Pick<Message, "content" | "stop_reason">,
+function validateToolCallTurn(
+  message: Pick<ModelTurnResult, "toolCalls" | "stopReason">,
   turnNumber: number,
-): ToolUseBlock[] {
-  const toolUses = extractAssistantToolUseBlocks(message);
-
-  if (toolUses.length === 0) {
+): ToolCall[] {
+  if (message.toolCalls.length === 0) {
     throw new Error(
-      `Claude returned stop_reason "tool_use" on turn ${String(turnNumber)} without any tool_use blocks.`,
+      `Model adapter returned stopReason "tool_call" on turn ${String(turnNumber)} without any tool calls.`,
     );
   }
 
-  return toolUses;
+  return message.toolCalls;
 }
 
 async function runRawToolLoopDetailedCore(
@@ -776,10 +743,6 @@ async function runRawToolLoopDetailedCore(
   const normalizedSystemPrompt = ensureNonBlankString(systemPrompt, "systemPrompt");
   const normalizedUserMessage = ensureNonBlankString(userMessage, "userMessage");
   const normalizedToolNames = ensureValidToolNames(toolNames);
-  const runtimeConfig = resolveAnthropicRuntimeConfig({
-    model: options.model,
-    maxTokens: options.maxTokens,
-  });
   const maxIterations = ensureValidIterationCap(
     options.maxIterations ?? RAW_LOOP_MAX_ITERATIONS,
   );
@@ -792,23 +755,27 @@ async function runRawToolLoopDetailedCore(
   const maxTokensRetryCap = ensureValidRetryCap(
     options.maxTokensRetryCap ?? DEFAULT_MAX_TOKENS_RETRY_CAP,
   );
-  const client = options.client ?? createAnthropicClient();
+  const modelAdapter = options.modelAdapter ?? createAnthropicModelAdapter({
+    client: options.client as never,
+  });
+  const maxTokens = options.maxTokens
+    ?? modelAdapter.defaultMaxTokens
+    ?? DEFAULT_RAW_LOOP_MAX_TOKENS;
   const logger = options.logger ?? console;
   const allowedToolNames = new Set(normalizedToolNames);
-  const initialUserMessage = createUserTextMessage(normalizedUserMessage);
+  const initialUserMessage = createUserTurnMessage(normalizedUserMessage);
   const completedToolTurns: CompletedToolTurn[] = [];
-  const anthropicTools = projectToolsToAnthropicTools(
-    getTools(normalizedToolNames),
-  );
+  const toolDefinitions = getTools(normalizedToolNames);
   const toolExecutions: RawToolExecution[] = [];
   let lastEditedFile: string | null = null;
+  let activeModelName = options.model ?? modelAdapter.defaultModel ?? null;
 
   for (let turnNumber = 1; turnNumber <= maxIterations; turnNumber += 1) {
     throwIfTurnCancelled(options.signal);
     const requestHistory = buildCompactedMessageHistory({
       initialUserMessage,
       completedTurns: completedToolTurns,
-      maxTokens: runtimeConfig.maxTokens,
+      maxTokens,
     });
 
     if (requestHistory.didCompact) {
@@ -823,19 +790,20 @@ async function runRawToolLoopDetailedCore(
 
     logger.log(
       `[raw-loop] turn ${String(turnNumber)} request messages=${String(requestHistory.messages.length)} ` +
-      `tools=${String(anthropicTools.length)} max_tokens=${String(runtimeConfig.maxTokens)}`,
+      `tools=${String(toolDefinitions.length)} max_tokens=${String(maxTokens)} ` +
+      `provider=${modelAdapter.provider}`,
     );
 
-    let assistantMessage: Message;
+    let modelTurn: ModelTurnResult;
 
     try {
-      assistantMessage = await createAnthropicMessageWithBudgetRecovery({
-        client,
+      modelTurn = await createModelTurnWithBudgetRecovery({
+        modelAdapter,
         systemPrompt: normalizedSystemPrompt,
         messages: requestHistory.messages,
-        tools: anthropicTools,
-        model: runtimeConfig.model,
-        maxTokens: runtimeConfig.maxTokens,
+        tools: toolDefinitions,
+        model: options.model,
+        maxTokens,
         temperature: options.temperature,
         turnNumber,
         logger,
@@ -844,6 +812,7 @@ async function runRawToolLoopDetailedCore(
         maxTokensRetryMultiplier,
         maxTokensRetryCap,
       });
+      activeModelName = modelTurn.model;
     } catch (error) {
       const cancelledError = toTurnCancelledError(error, options.signal);
 
@@ -856,6 +825,8 @@ async function runRawToolLoopDetailedCore(
           iterations: Math.max(turnNumber - 1, 0),
           lastEditedFile,
           touchedFiles: uniqueStrings(toolExecutions.flatMap((execution) => execution.touchedFiles)),
+          modelProvider: modelAdapter.provider,
+          modelName: activeModelName,
         });
       }
 
@@ -863,20 +834,20 @@ async function runRawToolLoopDetailedCore(
     }
 
     logger.log(
-      `[raw-loop] turn ${String(turnNumber)} stop_reason=${assistantMessage.stop_reason ?? "unknown"}`,
+      `[raw-loop] turn ${String(turnNumber)} stop_reason=${modelTurn.rawStopReason ?? modelTurn.stopReason ?? "unknown"}`,
     );
 
-    if (assistantMessage.stop_reason === "tool_use") {
-      const toolUses = validateToolUseTurn(assistantMessage, turnNumber);
-      const assistantHistoryMessage = createAssistantHistoryMessage(assistantMessage);
+    if (modelTurn.stopReason === "tool_call") {
+      const toolCalls = validateToolCallTurn(modelTurn, turnNumber);
+      const assistantHistoryMessage = modelTurn.message;
       let toolTurnResult: {
-        toolResultMessage: MessageParam;
+        toolResultMessage: TurnMessage;
         toolExecutions: RawToolExecution[];
       };
 
       try {
-        toolTurnResult = await executeToolUsesForTurn(
-          toolUses,
+        toolTurnResult = await executeToolCallsForTurn(
+          toolCalls,
           targetDirectory,
           allowedToolNames,
           logger,
@@ -897,6 +868,8 @@ async function runRawToolLoopDetailedCore(
             iterations: turnNumber,
             lastEditedFile,
             touchedFiles: uniqueStrings(toolExecutions.flatMap((execution) => execution.touchedFiles)),
+            modelProvider: modelAdapter.provider,
+            modelName: activeModelName,
           });
         }
 
@@ -925,12 +898,14 @@ async function runRawToolLoopDetailedCore(
           messageHistory: buildCompactedMessageHistory({
             initialUserMessage,
             completedTurns: [...completedToolTurns, completedToolTurn],
-            maxTokens: runtimeConfig.maxTokens,
+            maxTokens,
           }).messages,
           toolExecutions,
           iterations: turnNumber,
           lastEditedFile,
           touchedFiles: uniqueStrings(toolExecutions.flatMap((execution) => execution.touchedFiles)),
+          modelProvider: modelAdapter.provider,
+          modelName: activeModelName,
         });
       }
 
@@ -946,14 +921,16 @@ async function runRawToolLoopDetailedCore(
         iterations: turnNumber,
         lastEditedFile,
         touchedFiles: uniqueStrings(toolExecutions.flatMap((execution) => execution.touchedFiles)),
+        modelProvider: modelAdapter.provider,
+        modelName: activeModelName,
       });
     }
 
-    const finalText = extractAssistantText(assistantMessage).trim();
+    const finalText = modelTurn.finalText.trim();
 
     if (!finalText) {
       throw new Error(
-        `Claude completed turn ${String(turnNumber)} without any final text blocks.`,
+        `Model adapter completed turn ${String(turnNumber)} without any final text.`,
       );
     }
 
@@ -961,12 +938,12 @@ async function runRawToolLoopDetailedCore(
       `[raw-loop] turn ${String(turnNumber)} final_text=${truncateForLog(finalText)}`,
     );
 
-    const finalAssistantMessage = createAssistantHistoryMessage(assistantMessage);
+    const finalAssistantMessage = modelTurn.message;
     const finalMessageHistory = buildCompactedMessageHistory({
       initialUserMessage,
       completedTurns: completedToolTurns,
       finalAssistantMessage,
-      maxTokens: runtimeConfig.maxTokens,
+      maxTokens,
     });
     const touchedFiles = uniqueStrings(
       toolExecutions.flatMap((execution) => execution.touchedFiles),
@@ -981,13 +958,15 @@ async function runRawToolLoopDetailedCore(
       didEdit: lastEditedFile !== null,
       lastEditedFile,
       touchedFiles,
+      modelProvider: modelAdapter.provider,
+      modelName: activeModelName,
     };
   }
 
   const continuationHistory = buildCompactedMessageHistory({
     initialUserMessage,
     completedTurns: completedToolTurns,
-    maxTokens: runtimeConfig.maxTokens,
+    maxTokens,
   });
   const touchedFiles = uniqueStrings(
     toolExecutions.flatMap((execution) => execution.touchedFiles),
@@ -1004,6 +983,8 @@ async function runRawToolLoopDetailedCore(
     didEdit: lastEditedFile !== null,
     lastEditedFile,
     touchedFiles,
+    modelProvider: modelAdapter.provider,
+    modelName: activeModelName,
   };
 }
 
@@ -1015,6 +996,14 @@ export async function runRawToolLoopDetailed(
   options: RawToolLoopOptions = {},
 ): Promise<RawToolLoopResult> {
   const langSmith = getLangSmithConfig();
+  const modelAdapter = options.modelAdapter ?? createAnthropicModelAdapter({
+    client: options.client as never,
+  });
+  const modelName = options.model ?? modelAdapter.defaultModel ?? null;
+  const tracedOptions = {
+    ...options,
+    modelAdapter,
+  };
 
   if (!langSmith.enabled) {
     return runRawToolLoopDetailedCore(
@@ -1022,7 +1011,7 @@ export async function runRawToolLoopDetailed(
       userMessage,
       toolNames,
       targetDirectory,
-      options,
+      tracedOptions,
     );
   }
 
@@ -1032,7 +1021,7 @@ export async function runRawToolLoopDetailed(
       userMessage,
       toolNames,
       targetDirectory,
-      options,
+      tracedOptions,
     ), {
     name: "shipyard.raw-tool-loop",
     run_type: "chain",
@@ -1041,6 +1030,8 @@ export async function runRawToolLoopDetailed(
     metadata: {
       targetDirectory,
       toolCount: toolNames.length,
+      modelProvider: modelAdapter.provider,
+      modelName,
     },
   });
 

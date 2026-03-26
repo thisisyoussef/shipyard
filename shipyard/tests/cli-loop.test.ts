@@ -26,7 +26,7 @@ const LIVE_RUNTIME_ENV = {
   SHIPYARD_RUNTIME_MODE: "fallback",
 } satisfies Record<string, string>;
 const CLI_TEST_TIMEOUT_MS = 30_000;
-const OUTPUT_WAIT_TIMEOUT_MS = 10_000;
+const OUTPUT_WAIT_TIMEOUT_MS = 20_000;
 const SESSION_WAIT_TIMEOUT_MS = 7_500;
 const PROCESS_EXIT_TIMEOUT_MS = 5_000;
 

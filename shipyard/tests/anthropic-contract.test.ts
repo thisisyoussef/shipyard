@@ -1,4 +1,4 @@
-import type { Message, MessageParam, ToolResultBlockParam } from "@anthropic-ai/sdk/resources/messages";
+import type { Message } from "@anthropic-ai/sdk/resources/messages";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,6 +7,7 @@ import {
   DEFAULT_ANTHROPIC_MODEL,
   buildAnthropicMessageRequest,
   createAnthropicClient,
+  createAnthropicModelAdapter,
   createAssistantHistoryMessage,
   createToolResultPayload,
   createUserTextMessage,
@@ -17,6 +18,7 @@ import {
   projectToolsToAnthropicTools,
   resolveAnthropicConfig,
 } from "../src/engine/anthropic.js";
+import type { ToolResultTurnContentPart, TurnMessage } from "../src/engine/model-adapter.js";
 import "../src/tools/index.js";
 import { getTools } from "../src/tools/registry.js";
 
@@ -43,12 +45,20 @@ function createAssistantMessage(content: unknown[]): Message {
   };
 }
 
-function getSingleToolResultBlock(message: MessageParam): ToolResultBlockParam {
+function getSingleToolResultBlock(
+  message: TurnMessage,
+): ToolResultTurnContentPart {
   if (typeof message.content === "string") {
     throw new Error("Expected structured tool_result content.");
   }
 
-  return message.content[0] as ToolResultBlockParam;
+  const firstPart = message.content[0];
+
+  if (!firstPart || firstPart.type !== "tool_result") {
+    throw new Error("Expected a tool_result content part.");
+  }
+
+  return firstPart;
 }
 
 describe("Anthropic client contract", () => {
@@ -112,6 +122,70 @@ describe("Anthropic client contract", () => {
     });
     expect(request.model).toBe("claude-opus-4-1");
     expect(request.max_tokens).toBe(12_288);
+  });
+
+  it("maps Anthropic responses into the provider-neutral adapter contract", async () => {
+    const adapter = createAnthropicModelAdapter({
+      client: {
+        messages: {
+          async create() {
+            return createAssistantMessage([
+              {
+                type: "text",
+                text: "I should inspect the file first.",
+                citations: null,
+              },
+              {
+                type: "tool_use",
+                id: "toolu_read_file",
+                name: "read_file",
+                input: {
+                  path: "README.md",
+                },
+                caller: {
+                  type: "direct",
+                },
+              },
+            ]);
+          },
+        },
+      },
+    });
+
+    const result = await adapter.createTurn({
+      systemPrompt: "You are Shipyard.",
+      messages: [createUserTextMessage("Inspect README.md")],
+      tools: getTools(["read_file"]),
+    });
+
+    expect(result.stopReason).toBe("tool_call");
+    expect(result.finalText).toBe("I should inspect the file first.");
+    expect(result.toolCalls).toEqual([
+      {
+        id: "toolu_read_file",
+        name: "read_file",
+        input: {
+          path: "README.md",
+        },
+      },
+    ]);
+    expect(result.message).toEqual({
+      role: "assistant",
+      content: [
+        {
+          type: "text",
+          text: "I should inspect the file first.",
+        },
+        {
+          type: "tool_call",
+          toolCallId: "toolu_read_file",
+          toolName: "read_file",
+          input: {
+            path: "README.md",
+          },
+        },
+      ],
+    });
   });
 
   it("rejects invalid Shipyard Anthropic env overrides clearly", () => {
@@ -193,7 +267,20 @@ describe("Anthropic client contract", () => {
     ]);
     expect(replayMessage).toEqual({
       role: "assistant",
-      content: normalizedBlocks,
+      content: [
+        {
+          type: "text",
+          text: "I will inspect the file before editing it.",
+        },
+        {
+          type: "tool_call",
+          toolCallId: "toolu_read_file",
+          toolName: "read_file",
+          input: {
+            path: "README.md",
+          },
+        },
+      ],
     });
   });
 
@@ -216,13 +303,13 @@ describe("Anthropic client contract", () => {
     const successBlock = getSingleToolResultBlock(successMessage);
     const errorBlock = getSingleToolResultBlock(errorMessage);
 
-    expect(successBlock.is_error).toBe(false);
-    expect(JSON.parse(String(successBlock.content))).toEqual({
+    expect(successBlock.result.success).toBe(true);
+    expect(successBlock.result).toEqual({
       success: true,
       output: "Read 12 lines from README.md.",
     });
-    expect(errorBlock.is_error).toBe(true);
-    expect(JSON.parse(String(errorBlock.content))).toEqual({
+    expect(errorBlock.result.success).toBe(false);
+    expect(errorBlock.result).toEqual({
       success: false,
       output: "",
       error: "Anchor not found in README.md.",

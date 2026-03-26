@@ -22,11 +22,11 @@ Even with a provider-neutral contract in place, Shipyard still cannot be called 
 - As a Shipyard maintainer, I want the current Anthropic path to keep working after the abstraction lands so multi-provider work starts from a regression-tested baseline.
 
 ## Acceptance Criteria
-- [ ] AC-1: Anthropic request assembly, response parsing, and client creation move behind a dedicated adapter module that implements the internal model contract.
-- [ ] AC-2: `graph.ts`, `raw-loop.ts`, and shared engine/subagent code depend on provider-neutral turn types instead of Anthropic `MessageParam`, `ToolUseBlock`, or related SDK types.
-- [ ] AC-3: Anthropic remains the default configured provider for current behavior unless later routing overrides are applied.
-- [ ] AC-4: Shared tracing and runtime metadata record provider/model information without importing Anthropic-only types into core orchestration files.
-- [ ] AC-5: Regression tests prove the Anthropic-backed loop still supports tool use, final-text completion, cancellation, and failure paths through the adapter boundary.
+- [x] AC-1: Anthropic request assembly, response parsing, and client creation move behind a dedicated adapter module that implements the internal model contract.
+- [x] AC-2: `graph.ts`, `raw-loop.ts`, and shared engine/subagent code depend on provider-neutral turn types instead of Anthropic `MessageParam`, `ToolUseBlock`, or related SDK types.
+- [x] AC-3: Anthropic remains the default configured provider for current behavior unless later routing overrides are applied.
+- [x] AC-4: Shared tracing and runtime metadata record provider/model information without importing Anthropic-only types into core orchestration files.
+- [x] AC-5: Regression tests prove the Anthropic-backed loop still supports tool use, final-text completion, cancellation, and failure paths through the adapter boundary.
 
 ## Edge Cases
 - Empty/null inputs: Anthropic still supports no-tool or no-history turns through the adapter.
@@ -55,3 +55,9 @@ Even with a provider-neutral contract in place, Shipyard still cannot be called 
 - Anthropic becomes a `ModelAdapter` implementation rather than the shared runtime contract.
 - Core engine files no longer require Anthropic SDK message types.
 - Current Anthropic behavior still passes regression coverage through the new boundary.
+
+## Implementation Evidence
+- Anthropic now implements the internal contract in `shipyard/src/engine/anthropic.ts` via `createAnthropicModelAdapter`, while request assembly still stays provider-owned in `buildAnthropicMessageRequest`.
+- Shared runtime orchestration now stores `TurnMessage[]` and consumes `ModelAdapter` in `shipyard/src/engine/raw-loop.ts`, `shipyard/src/engine/history-compaction.ts`, and `shipyard/src/engine/graph.ts`.
+- Provider/model metadata now flows through graph state and LangSmith metadata in `shipyard/src/engine/raw-loop.ts` and `shipyard/src/engine/graph.ts`.
+- Regression coverage landed in `shipyard/tests/anthropic-contract.test.ts`, `shipyard/tests/raw-loop.test.ts`, `shipyard/tests/history-compaction.test.ts`, and `shipyard/tests/graph-runtime.test.ts`.
