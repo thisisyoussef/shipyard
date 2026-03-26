@@ -188,30 +188,56 @@ export function PreviewPanel({
       </div>
 
       <div className="panel-preview">
-        <div className="preview-surface-grid">
-          <div className="preview-meta-block preview-surface-card">
-            <div className="preview-surface-card-header">
-              <div>
-                <span className="preview-link-label">Hosted Shipyard URL</span>
-                <p className="preview-summary">
-                  This is the Railway-hosted Shipyard editor you are using right now.
-                </p>
-              </div>
-            </div>
-            <code className="preview-url">{hostedEditorUrl}</code>
+        {/* Preview iframe — hero element, takes up most of the space */}
+        {showPreviewFrame ? (
+          <div className="preview-frame-shell">
+            <iframe
+              className="preview-frame"
+              title="Local preview"
+              src={preview.url ?? undefined}
+              loading="lazy"
+            />
           </div>
+        ) : (
+          <div className="preview-empty-state">
+            <p className="preview-summary">{preview.summary}</p>
+            {preview.lastRestartReason ? (
+              <p className="preview-note" data-tone={tone}>
+                <strong>{getReasonLabel(preview.status)}:</strong>{" "}
+                {preview.lastRestartReason}
+              </p>
+            ) : null}
+          </div>
+        )}
 
-          <div className="preview-meta-block preview-surface-card">
-            <div className="preview-surface-card-header">
-              <div>
-                <span className="preview-link-label">Production deploy</span>
-                <p className="preview-summary">{deploy.summary}</p>
-              </div>
-              <Badge tone={deployTone}>
-                <StatusDot tone={deployTone} pulse={showDeployPulse} />
-                {deployLabel}
-              </Badge>
-            </div>
+        {/* Preview toolbar — compact bar below the iframe */}
+        {showPreviewLink ? (
+          <div className="preview-toolbar">
+            <code className="preview-url">{preview.url}</code>
+            <a
+              className="target-inline-action preview-open-link"
+              href={preview.url ?? undefined}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Open preview at ${preview.url}`}
+            >
+              Open preview
+            </a>
+          </div>
+        ) : null}
+
+        {/* Deploy status — collapsible section below preview */}
+        <details className="preview-deploy-section">
+          <summary className="preview-deploy-summary">
+            <span className="preview-deploy-label">Deploy</span>
+            <Badge tone={deployTone}>
+              <StatusDot tone={deployTone} pulse={showDeployPulse} />
+              {deployLabel}
+            </Badge>
+          </summary>
+
+          <div className="preview-deploy-body">
+            <p className="preview-summary">{deploy.summary}</p>
 
             {showProductionLink ? (
               <div className="preview-link-row">
@@ -233,87 +259,24 @@ export function PreviewPanel({
               </div>
             ) : (
               <p className="preview-note" data-tone={deployTone}>
-                Deploy to publish a public target-app URL that you can share outside Shipyard.
+                Deploy to publish a public URL you can share outside Shipyard.
               </p>
             )}
 
             {deploy.unavailableReason ? (
               <p className="preview-note" data-tone={deployTone}>
-                <strong>Deploy prerequisites:</strong> {deploy.unavailableReason}
-              </p>
-            ) : null}
-
-            {deploy.command ? (
-              <p className="preview-note" data-tone="neutral">
-                <strong>Deploy command:</strong> <code>{deploy.command}</code>
+                <strong>Prerequisites:</strong> {deploy.unavailableReason}
               </p>
             ) : null}
 
             {deploy.status === "error" && deploy.logExcerpt ? (
               <details className="preview-log-shell">
-                <summary>Provider output excerpt</summary>
+                <summary>Provider output</summary>
                 <pre className="preview-log-output">{deploy.logExcerpt}</pre>
               </details>
             ) : null}
           </div>
-        </div>
-
-        <div className="preview-meta-block">
-          <p className="preview-summary">{preview.summary}</p>
-          <p className="preview-note" data-tone="neutral">
-            This preview stays local to the hosted Shipyard workspace until you deploy the target.
-          </p>
-
-          {showPreviewLink ? (
-            <>
-              <div className="preview-link-row">
-                <div className="preview-link-copy">
-                  <span className="preview-link-label">Direct link</span>
-                  <code className="preview-url">{preview.url}</code>
-                </div>
-                <a
-                  className="target-inline-action preview-open-link"
-                  href={preview.url ?? undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={`Open preview at ${preview.url}`}
-                >
-                  Open preview
-                </a>
-              </div>
-
-              {preview.lastRestartReason ? (
-                <p className="preview-note" data-tone={tone}>
-                  <strong>{getReasonLabel(preview.status)}:</strong>{" "}
-                  {preview.lastRestartReason}
-                </p>
-              ) : null}
-            </>
-          ) : preview.lastRestartReason ? (
-            <p className="preview-note" data-tone={tone}>
-              <strong>{getReasonLabel(preview.status)}:</strong>{" "}
-              {preview.lastRestartReason}
-            </p>
-          ) : (
-            <div className="context-empty">
-              <p className="context-empty-text">
-                Shipyard will publish a loopback URL here once the preview
-                runtime reports one.
-              </p>
-            </div>
-          )}
-        </div>
-
-        {showPreviewFrame ? (
-          <div className="preview-frame-shell">
-            <iframe
-              className="preview-frame"
-              title="Local preview"
-              src={preview.url ?? undefined}
-              loading="lazy"
-            />
-          </div>
-        ) : null}
+        </details>
 
         {preview.logTail.length > 0 ? (
           <details className="preview-log-shell">

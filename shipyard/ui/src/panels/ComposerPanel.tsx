@@ -148,26 +148,16 @@ export function ComposerPanel({
 
       {/* Textarea container with integrated submit */}
       <form onSubmit={onSubmit} className="composer-textarea-container">
-        <div className="composer-toolbar">
-          <button
-            type="button"
-            className="composer-attach"
-            onClick={handleOpenFilePicker}
-            disabled={!onAttachFiles}
-            aria-disabled={!onAttachFiles}
-          >
-            Attach files
-          </button>
-          <input
-            ref={fileInputRef}
-            className="composer-file-input"
-            type="file"
-            multiple
-            onChange={handleFileSelection}
-            tabIndex={-1}
-            aria-hidden="true"
-          />
-        </div>
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          className="composer-file-input"
+          type="file"
+          multiple
+          onChange={handleFileSelection}
+          tabIndex={-1}
+          aria-hidden="true"
+        />
 
         {attachments.length > 0 && (
           <div
@@ -213,6 +203,19 @@ export function ComposerPanel({
         )}
 
         <div className="composer-input-row">
+          {/* Attach button inside input row, left of textarea */}
+          <button
+            type="button"
+            className="composer-attach"
+            onClick={handleOpenFilePicker}
+            disabled={!onAttachFiles}
+            aria-disabled={!onAttachFiles}
+            aria-label="Attach files"
+            title="Attach files"
+          >
+            +
+          </button>
+
           <textarea
             ref={textareaRef}
             className="composer-textarea"
