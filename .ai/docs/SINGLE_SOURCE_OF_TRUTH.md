@@ -13,7 +13,7 @@
 
 ### Active Task
 
-- **Title**: Land drafted runtime workflow increments without breaking the lightweight path or the helper-harness split
+- **Title**: Land the runtime-hardening follow-up pack so write-heavy replays stop rereading, checkpoint cleanly, and bootstrap seeded targets correctly
 - **Status**: Ready for the next story
 - **Owner**: Codex
 
@@ -22,7 +22,7 @@
 1. Keep the harness aligned with the actual repo shape: `.ai/` beside `shipyard/`.
 2. Continue building the persistent CLI loop, typed tools, and tracing inside `shipyard/`.
 3. Advance the drafted Phase 7 and Phase 8 packs incrementally on the shipped planner, handoff, and spec-loading foundations while keeping tests, docs, and runtime artifacts in sync.
-4. Use the drafted runtime-hardening supplemental pack to fix long-loop context bloat, Anthropic budget exhaustion, continuation routing, and live smoke gaps.
+4. Use the drafted runtime-hardening follow-up pack to fix history-safe tool-turn storage, write-aware compaction, greenfield batching prompts, handoff fidelity, continuation-first loop thresholds, bootstrap-ready discovery, and task-aware loop budgets.
 
 ---
 
