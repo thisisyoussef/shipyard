@@ -43,6 +43,11 @@ Capture failures so they are not repeated.
 - **Why it failed**: Resume behavior becomes lossy, hard to validate, and nearly impossible to inspect in traces when something goes wrong.
 - **Prevention rule**: Persist typed handoff artifacts, keep only the active artifact path in session state, and inject structured handoff context on resume.
 
+- **Problem**: Replaying full historical tool payloads in long code-writing loops
+- **Example**: Feeding old `write_file` bodies and raw `tool_result` payloads back into every Anthropic request even after the files already exist on disk
+- **Why it failed**: Prompt size grows with every write-heavy turn, leading to slower requests, provider budget pressure, and follow-up turns dominated by stale history.
+- **Prevention rule**: Compact completed older tool cycles into bounded summaries, keep only the protocol tail verbatim, and cap rolling-summary or serialized-session budgets.
+
 - **Problem**: Routing Claude into later UI phases without preserving the Codex skill chain
 - **Example**: Turning on a Claude bridge for UI implementation or QA but dropping the exact `typeset`/`colorize`/`arrange` or `critique`/`audit` skill contracts from the prompt
 - **Why it failed**: Provider swaps changed the actual design process instead of only changing who executed it.
@@ -52,3 +57,8 @@ Capture failures so they are not repeated.
 - **Example**: Creating a new bootstrap toolchain that writes its own boilerplate templates instead of reusing `scaffolds.ts`
 - **Why it failed**: Template drift appears immediately between target creation and empty-target bootstrap, and prompt guidance stops matching the actual generator.
 - **Prevention rule**: Extend the shared scaffold catalog once and route both `create_target` and `bootstrap_target` through the same materialization helper.
+
+- **Problem**: Escalating same-session follow-up turns into explorer or planner without checking recent local evidence first
+- **Example**: Sending a continuation into read-only subagents even though the same session just bootstrapped or edited the relevant files
+- **Why it failed**: Shipyard pays extra model hops, hides tool activity from the operator, and burns the same loop budget on work it already knows how to scope locally.
+- **Prevention rule**: Reuse recent target-file evidence from bootstrap, edits, active tasks, and prior plans before escalating, and surface any remaining subagent work through the outer reporter path.

@@ -21,3 +21,4 @@
   app deploys from its own root; `shipyard/railway.json` now uses `pnpm build`
   and `pnpm start -- --ui`, and the public Railway service lives at
   `shipyard-production-f2e5.up.railway.app` behind the shared access gate.
+- 2026-03-26: Drafted the `phase-runtime-hardening` supplemental spec pack to address long-loop prompt bloat, Anthropic budget exhaustion, continuation-aware routing, bootstrap seed-doc allowlists, and graph-aware live smoke coverage.
