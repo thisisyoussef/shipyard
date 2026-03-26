@@ -86,3 +86,35 @@ generated project files under a predictable server-side workspace path.
 - The hosted runtime can boot against a fixed server-side workspace path.
 - The repo documents how to start the public Shipyard service without
   disrupting existing local workflows.
+
+## Implementation Evidence
+
+### Code References
+- `shipyard/railway.json`
+- `shipyard/README.md`
+- `shipyard/docs/architecture/hosted-railway.md`
+- `.github/workflows/railway-main-deploy.yml`
+
+### Representative Snippets
+
+- Native Railway GitHub sync now has one explicit monorepo contract: point the
+  service at the nested app root and let the checked-in config run from there.
+
+```json
+"buildCommand": "pnpm install --frozen-lockfile && pnpm build",
+"startCommand": "pnpm start -- --ui"
+```
+
+- Repo-controlled deploys keep the same contract by uploading the nested app as
+  the deployment root:
+
+```yaml
+working-directory: shipyard
+run: |
+  railway up . \
+    --path-as-root \
+    --ci \
+    --project "${RAILWAY_PROJECT_ID}" \
+    --environment "${RAILWAY_ENVIRONMENT_ID}" \
+    --service "${RAILWAY_SERVICE_ID}"
+```

@@ -95,9 +95,12 @@ path from the workbench.
 
 ## Railway Setup Notes
 
-- If Railway is connected to the full repo, set the service root directory to
-  `shipyard/` so `package.json`, `pnpm-lock.yaml`, and `railway.json` resolve
-  together.
+- If Railway is connected to the full repo, set the service `Root Directory`
+  to `/shipyard` so `package.json`, `pnpm-lock.yaml`, and `railway.json`
+  resolve together.
+- The checked-in `shipyard/railway.json` commands assume Railway is already
+  operating inside `/shipyard`; running the same commands from the repo root
+  will fail because the lockfile lives under `shipyard/`.
 - If you prefer repo-controlled auto-deploy instead of Railway's native GitHub
   integration, add a root GitHub Actions workflow that runs on pushes to
   `main`, changes into `shipyard/`, and deploys with
