@@ -24,6 +24,7 @@ for durable onboarding and architecture reference.
 - [`phase-7/README.md`](./phase-7/README.md): planner artifacts, richer evaluation, browser QA, and long-run handoff routing
 - [`phase-8/README.md`](./phase-8/README.md): spec-driven operator planning, next-task execution, and shared greenfield bootstrap presets
 - [`phase-9/README.md`](./phase-9/README.md): hosted Railway runtime, lightweight access control, browser file intake, and Vercel deploy flow for public Shipyard demos
+- [`phase-runtime-hardening/README.md`](./phase-runtime-hardening/README.md): long-loop context compaction, Anthropic budget recovery, continuation-aware routing, bootstrap guardrails, and long-run graph smoke coverage
 - [`phase-stress-validation/README.md`](./phase-stress-validation/README.md): stress matrix, UI error-stream alignment, and loop flakiness hardening
 - [`phase-ui-revamp/README.md`](./phase-ui-revamp/README.md): visual system, activity/diff polish, and session UX refinements
 

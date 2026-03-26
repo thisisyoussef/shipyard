@@ -1,6 +1,6 @@
 # Shipyard Workspace - Single Source of Truth
 
-**Last Updated**: 2026-03-25
+**Last Updated**: 2026-03-26
 **Current Phase**: Day 1 foundation
 **Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, richer runtime artifacts, and the spec-driven operator workflow
 **Project Status**: Active
@@ -22,6 +22,7 @@
 1. Keep the harness aligned with the actual repo shape: `.ai/` beside `shipyard/`.
 2. Continue building the persistent CLI loop, typed tools, and tracing inside `shipyard/`.
 3. Advance the drafted Phase 7 and Phase 8 packs incrementally on the shipped planner, handoff, and spec-loading foundations while keeping tests, docs, and runtime artifacts in sync.
+4. Use the drafted runtime-hardening supplemental pack to fix long-loop context bloat, Anthropic budget exhaustion, continuation routing, and live smoke gaps.
 
 ---
 
