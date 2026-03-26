@@ -16,6 +16,10 @@ interface RailwayConfig {
 
 const testsDirectory = path.dirname(fileURLToPath(import.meta.url));
 const railwayConfigPath = path.resolve(testsDirectory, "../railway.json");
+const railwayWorkflowPath = path.resolve(
+  testsDirectory,
+  "../../.github/workflows/railway-main-deploy.yml",
+);
 
 describe("railway config", () => {
   it("runs build and start commands from the shipyard app root", async () => {
@@ -28,5 +32,15 @@ describe("railway config", () => {
     );
     expect(config.deploy?.startCommand).toBe("pnpm start -- --ui");
     expect(config.deploy?.healthcheckPath).toBe("/api/health");
+  });
+
+  it("syncs the production OpenAI defaults before deploying to Railway", async () => {
+    const workflow = await readFile(railwayWorkflowPath, "utf8");
+
+    expect(workflow).toContain("OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}");
+    expect(workflow).toContain("Missing OPENAI_API_KEY GitHub secret");
+    expect(workflow).toContain("railway variable set OPENAI_API_KEY --stdin");
+    expect(workflow).toContain("SHIPYARD_MODEL_PROVIDER=openai");
+    expect(workflow).toContain("SHIPYARD_OPENAI_MODEL=gpt-5.4");
   });
 });

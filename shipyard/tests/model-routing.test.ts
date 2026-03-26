@@ -23,38 +23,36 @@ describe("model routing", () => {
   });
 
   it("resolves the global default route deterministically", () => {
+    const env = {
+      OPENAI_API_KEY: "test-openai-key",
+      SHIPYARD_OPENAI_MODEL: "gpt-default-env",
+    } as NodeJS.ProcessEnv;
     const routing = createModelRoutingConfig({
-      env: {
-        ANTHROPIC_API_KEY: "test-anthropic-key",
-        SHIPYARD_ANTHROPIC_MODEL: "claude-global-env",
-      },
+      env,
     });
 
     expect(
       resolveModelRoute({
         routing,
         routeId: CODE_PHASE_MODEL_ROUTE,
-        env: {
-          ANTHROPIC_API_KEY: "test-anthropic-key",
-          SHIPYARD_ANTHROPIC_MODEL: "claude-global-env",
-        },
+        env,
       }),
     ).toMatchObject({
       routeId: CODE_PHASE_MODEL_ROUTE,
-      provider: "anthropic",
-      model: "claude-global-env",
+      provider: "openai",
+      model: "gpt-default-env",
     });
   });
 
   it("lets route-specific overrides win over the global default while inheriting the provider", () => {
     const routing = createModelRoutingConfig({
       defaultRoute: {
-        provider: "anthropic",
-        model: "claude-default",
+        provider: "openai",
+        model: "gpt-default",
       },
       routes: {
         [PLANNER_MODEL_ROUTE]: {
-          model: "claude-planner",
+          model: "gpt-planner",
         },
       },
     });
@@ -65,8 +63,8 @@ describe("model routing", () => {
         routeId: PLANNER_MODEL_ROUTE,
       }),
     ).toMatchObject({
-      provider: "anthropic",
-      model: "claude-planner",
+      provider: "openai",
+      model: "gpt-planner",
     });
     expect(
       resolveModelRoute({
@@ -74,8 +72,8 @@ describe("model routing", () => {
         routeId: CODE_PHASE_MODEL_ROUTE,
       }),
     ).toMatchObject({
-      provider: "anthropic",
-      model: "claude-default",
+      provider: "openai",
+      model: "gpt-default",
     });
   });
 
@@ -97,7 +95,7 @@ describe("model routing", () => {
   it("returns provider-aware missing-credential diagnostics for target enrichment", () => {
     const routing = createModelRoutingConfig({
       defaultRoute: {
-        provider: "anthropic",
+        provider: "openai",
       },
     });
 
@@ -110,13 +108,13 @@ describe("model routing", () => {
       }),
     ).toMatchObject({
       available: false,
-      provider: "anthropic",
-      missingEnvironmentVariables: ["ANTHROPIC_API_KEY"],
-      reason: expect.stringMatching(/ANTHROPIC_API_KEY/i),
+      provider: "openai",
+      missingEnvironmentVariables: ["OPENAI_API_KEY"],
+      reason: expect.stringMatching(/OPENAI_API_KEY/i),
     });
   });
 
-  it("resolves the OpenAI provider to a registered adapter with a default model", () => {
+  it("resolves the default OpenAI provider to a registered adapter with a default model", () => {
     const env = {
       OPENAI_API_KEY: "test-openai-key",
     } as NodeJS.ProcessEnv;
@@ -146,5 +144,44 @@ describe("model routing", () => {
 
     expect(selection.modelAdapter.provider).toBe("openai");
     expect(selection.model).toBe(DEFAULT_OPENAI_MODEL);
+  });
+
+  it("still allows explicit Anthropic route overrides when OpenAI is the default", () => {
+    const env = {
+      OPENAI_API_KEY: "test-openai-key",
+      ANTHROPIC_API_KEY: "test-anthropic-key",
+      SHIPYARD_ANTHROPIC_MODEL: "claude-route",
+    } as NodeJS.ProcessEnv;
+    const routing = createModelRoutingConfig({
+      defaultRoute: {
+        provider: "openai",
+      },
+      routes: {
+        [PLANNER_MODEL_ROUTE]: {
+          provider: "anthropic",
+        },
+      },
+      env,
+    });
+
+    expect(
+      resolveModelRoute({
+        routing,
+        routeId: PLANNER_MODEL_ROUTE,
+        env,
+      }),
+    ).toMatchObject({
+      provider: "anthropic",
+      model: "claude-route",
+    });
+
+    const selection = createModelAdapterForRoute({
+      routing,
+      routeId: PLANNER_MODEL_ROUTE,
+      env,
+    });
+
+    expect(selection.modelAdapter.provider).toBe("anthropic");
+    expect(selection.model).toBe("claude-route");
   });
 });

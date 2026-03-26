@@ -97,10 +97,23 @@ node dist/bin/shipyard.js --targets-dir ../test-targets
 Once you want a bare `shipyard` command outside the repo, link the package with
 your preferred global package-manager workflow.
 
-## Anthropic Runtime Tuning
+## Model Provider Defaults
 
-For longer planning or spec-pack turns, Shipyard also honors these optional env
-vars:
+Shipyard now defaults to OpenAI through the Responses API. Set
+`OPENAI_API_KEY` before running live turns. The shipped OpenAI model default is
+`gpt-5.4`.
+
+If you want to route turns through Anthropic instead, set
+`SHIPYARD_MODEL_PROVIDER=anthropic` and provide `ANTHROPIC_API_KEY`.
+
+Optional OpenAI tuning env vars:
+
+- `SHIPYARD_OPENAI_TIMEOUT_MS`
+- `SHIPYARD_OPENAI_MAX_RETRIES`
+- `SHIPYARD_OPENAI_MODEL`
+- `SHIPYARD_OPENAI_MAX_TOKENS`
+
+Optional Anthropic tuning env vars:
 
 - `SHIPYARD_ANTHROPIC_TIMEOUT_MS`
 - `SHIPYARD_ANTHROPIC_MAX_RETRIES`

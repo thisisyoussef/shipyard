@@ -609,7 +609,7 @@ describe("instruction runtime handoff", () => {
     expect(modelAdapter.calls[0]?.systemPrompt).toContain("select_target");
   });
 
-  it("fails clearly instead of using the offline preview path when ANTHROPIC_API_KEY is missing", async () => {
+  it("fails clearly instead of using the offline preview path when OPENAI_API_KEY is missing", async () => {
     const targetDirectory = await createTempDirectory("shipyard-turn-missing-key-");
     const sessionState = createSessionState({
       sessionId: "turn-missing-key-session",
@@ -629,31 +629,21 @@ describe("instruction runtime handoff", () => {
     });
     const runtimeState = createInstructionRuntimeState({
       projectRules: "",
+      env: {} as NodeJS.ProcessEnv,
     });
-    const previousApiKey = process.env.ANTHROPIC_API_KEY;
 
-    delete process.env.ANTHROPIC_API_KEY;
+    const result = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "create a README",
+    });
 
-    try {
-      const result = await executeInstructionTurn({
-        sessionState,
-        runtimeState,
-        instruction: "create a README",
-      });
-
-      expect(result.runtimeMode).toBe("graph");
-      expect(result.status).toBe("error");
-      expect(result.summary).toMatch(/Missing ANTHROPIC_API_KEY/i);
-      expect(result.finalText).toContain("Turn 1 stopped: Missing ANTHROPIC_API_KEY");
-      expect(sessionState.rollingSummary).toContain("create a README");
-      expect(sessionState.rollingSummary).toContain("failed via graph");
-    } finally {
-      if (previousApiKey === undefined) {
-        delete process.env.ANTHROPIC_API_KEY;
-      } else {
-        process.env.ANTHROPIC_API_KEY = previousApiKey;
-      }
-    }
+    expect(result.runtimeMode).toBe("graph");
+    expect(result.status).toBe("error");
+    expect(result.summary).toMatch(/Missing OPENAI_API_KEY/i);
+    expect(result.finalText).toContain("Turn 1 stopped: Missing OPENAI_API_KEY");
+    expect(sessionState.rollingSummary).toContain("create a README");
+    expect(sessionState.rollingSummary).toContain("failed via graph");
   });
 
   it("passes the target-manager model route into raw-loop option creation", async () => {
