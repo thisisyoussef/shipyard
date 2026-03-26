@@ -1,14 +1,16 @@
-import { Badge, MicroLabel } from "./primitives.js";
+import type { BadgeTone } from "./primitives.js";
+import { Badge, MicroLabel, StatusDot } from "./primitives.js";
 import { EnrichmentIndicator } from "./EnrichmentIndicator.js";
-import type { TargetManagerViewModel } from "./view-models.js";
+import type {
+  LatestDeployViewModel,
+  TargetManagerViewModel,
+} from "./view-models.js";
 
 interface TargetHeaderProps {
   activePhase: "code" | "target-manager";
   targetManager: TargetManagerViewModel;
-  deployDisabledReason: string | null;
-  deploying: boolean;
+  latestDeploy: LatestDeployViewModel;
   onOpenSwitcher: () => void;
-  onRequestDeploy: () => void;
 }
 
 function createTargetDescription(
@@ -26,15 +28,52 @@ function createTargetDescription(
   return "Target selected. Shipyard will analyze it automatically when enough context is available.";
 }
 
+function getDeployTone(deploy: LatestDeployViewModel): BadgeTone {
+  if (deploy.status === "success") {
+    return "success";
+  }
+
+  if (deploy.status === "deploying") {
+    return "accent";
+  }
+
+  if (deploy.status === "error") {
+    return "danger";
+  }
+
+  return deploy.available ? "neutral" : "warning";
+}
+
+function getDeployLabel(deploy: LatestDeployViewModel): string {
+  if (deploy.status === "success") {
+    return "Published";
+  }
+
+  if (deploy.status === "deploying") {
+    return "Publishing";
+  }
+
+  if (deploy.status === "error") {
+    return "Needs attention";
+  }
+
+  return deploy.available ? "Auto-publish ready" : "Publish unavailable";
+}
+
+function getOpenAppLabel(deploy: LatestDeployViewModel): string {
+  return deploy.status === "error" ? "Open last live app" : "Open app";
+}
+
 export function TargetHeader(props: TargetHeaderProps) {
   const description = createTargetDescription(
     props.activePhase,
     props.targetManager,
   );
   const hasSelectedTarget = props.activePhase === "code";
-  const deployActionHintId = hasSelectedTarget
-    ? `target-deploy-hint-${props.targetManager.currentTarget.name.replace(/\s+/g, "-").toLowerCase()}`
-    : undefined;
+  const deployTone = getDeployTone(props.latestDeploy);
+  const deployLabel = getDeployLabel(props.latestDeploy);
+  const hasPublicApp = hasSelectedTarget && props.latestDeploy.productionUrl !== null;
+  const showPublishPulse = props.latestDeploy.status === "deploying";
 
   return (
     <section className="target-header" aria-label="Target context">
@@ -70,23 +109,30 @@ export function TargetHeader(props: TargetHeaderProps) {
       </button>
 
       <div className="target-header-actions">
-        <EnrichmentIndicator
-          status={props.targetManager.enrichmentStatus.status}
-          message={props.targetManager.enrichmentStatus.message}
-          hasProfile={props.targetManager.currentTarget.hasProfile}
-          canEnrich={hasSelectedTarget}
-        />
-        <div className="target-action-group">
+        <div className="target-status-group">
+          <EnrichmentIndicator
+            status={props.targetManager.enrichmentStatus.status}
+            message={props.targetManager.enrichmentStatus.message}
+            hasProfile={props.targetManager.currentTarget.hasProfile}
+            canEnrich={hasSelectedTarget}
+          />
           {hasSelectedTarget ? (
-            <button
-              type="button"
+            <Badge tone={deployTone}>
+              <StatusDot tone={deployTone} pulse={showPublishPulse} />
+              {deployLabel}
+            </Badge>
+          ) : null}
+        </div>
+        <div className="target-action-group">
+          {hasPublicApp ? (
+            <a
               className="target-primary-action"
-              onClick={props.onRequestDeploy}
-              disabled={props.deployDisabledReason !== null}
-              aria-describedby={props.deployDisabledReason ? deployActionHintId : undefined}
+              href={props.latestDeploy.productionUrl ?? undefined}
+              target="_blank"
+              rel="noreferrer"
             >
-              {props.deploying ? "Deploying..." : "Deploy to Vercel"}
-            </button>
+              {getOpenAppLabel(props.latestDeploy)}
+            </a>
           ) : null}
           <button
             type="button"
@@ -96,10 +142,32 @@ export function TargetHeader(props: TargetHeaderProps) {
             {hasSelectedTarget ? "Change target" : "Browse targets"}
           </button>
         </div>
-        {hasSelectedTarget && props.deployDisabledReason ? (
-          <p id={deployActionHintId} className="target-action-hint">
-            {props.deployDisabledReason}
+        {hasSelectedTarget ? (
+          <p className="target-action-hint">
+            {props.latestDeploy.summary}
           </p>
+        ) : null}
+        {hasSelectedTarget &&
+        props.latestDeploy.unavailableReason &&
+        props.latestDeploy.unavailableReason !== props.latestDeploy.summary ? (
+          <p className="target-action-hint">
+            {props.latestDeploy.unavailableReason}
+          </p>
+        ) : null}
+        {hasPublicApp ? (
+          <code className="target-deploy-url">
+            {props.latestDeploy.productionUrl}
+          </code>
+        ) : null}
+        {hasSelectedTarget &&
+        props.latestDeploy.status === "error" &&
+        props.latestDeploy.logExcerpt ? (
+          <details className="target-deploy-log">
+            <summary>Provider output excerpt</summary>
+            <pre className="target-deploy-log-output">
+              {props.latestDeploy.logExcerpt}
+            </pre>
+          </details>
         ) : null}
       </div>
     </section>

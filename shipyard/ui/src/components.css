@@ -196,6 +196,13 @@
   gap: var(--space-2);
 }
 
+.target-status-group {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .target-action-group {
   display: flex;
   flex-wrap: wrap;
@@ -264,6 +271,41 @@
   color: var(--text-muted);
   font-size: var(--text-xs);
   line-height: var(--leading-relaxed);
+}
+
+.target-deploy-url {
+  max-width: 22rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-strong);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  overflow-x: auto;
+}
+
+.target-deploy-log {
+  width: min(100%, 26rem);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid rgba(236, 129, 112, 0.22);
+  border-radius: var(--radius-md);
+  background: rgba(236, 129, 112, 0.08);
+}
+
+.target-deploy-log summary {
+  cursor: pointer;
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+}
+
+.target-deploy-log-output {
+  margin: var(--space-2) 0 0;
+  color: var(--text-body);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  white-space: pre-wrap;
+  overflow-x: auto;
 }
 
 .target-enrichment-pill {
@@ -905,6 +947,15 @@ textarea:focus-visible {
 
   .target-header-actions {
     align-items: flex-start;
+  }
+
+  .target-status-group,
+  .target-action-group {
+    justify-content: flex-start;
+  }
+
+  .target-action-hint {
+    text-align: left;
   }
 }
 

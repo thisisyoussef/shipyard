@@ -2528,6 +2528,11 @@ describe("ui runtime contract", () => {
               message.type === "session:state" &&
               message.turnCount === 1 &&
               message.connectionState === "ready"
+            ) &&
+            messages.some((message) =>
+              message.type === "preview:state" &&
+              message.preview.status === "running" &&
+              message.preview.lastRestartReason?.includes("Refresh requested") === true
             ),
           10_000,
         );
@@ -2554,7 +2559,6 @@ describe("ui runtime contract", () => {
           "session:state",
           "agent:thinking",
           "agent:edit",
-          "preview:state",
           "agent:text",
           "agent:done",
           "session:state",
@@ -2576,6 +2580,17 @@ describe("ui runtime contract", () => {
             message.preview.lastRestartReason?.includes("Refresh requested") === true
           ),
         ).toBe(true);
+        expect(
+          turnMessages.findIndex((message) => message.type === "agent:edit"),
+        ).toBeLessThan(
+          turnMessages.findIndex((message) =>
+            message.type === "preview:state" &&
+            (
+              message.preview.status === "refreshing" ||
+              message.preview.status === "running"
+            )
+          ),
+        );
       } finally {
         socket.close();
       }
@@ -3310,6 +3325,318 @@ describe("ui runtime contract", () => {
               available: true,
               unavailableReason: null,
               command: "vercel deploy --prod --yes --token [redacted]",
+            },
+          },
+        });
+      } finally {
+        reconnectedSocket.close();
+      }
+    } finally {
+      firstSocket.close();
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("auto-publishes successful edited turns to Vercel and restores the public URL on reconnect", async () => {
+    process.env.VERCEL_TOKEN = "phase-nine-vercel-token";
+    const targetDirectory = await createTempDirectory("shipyard-ui-auto-deploy-");
+    const packageJsonContents = `${JSON.stringify(
+      {
+        name: "ui-auto-deploy-target",
+        version: "1.0.0",
+      },
+      null,
+      2,
+    )}\n`;
+
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      packageJsonContents,
+      "utf8",
+    );
+    await initializeGitRepository(targetDirectory);
+    await expectRawCommandSuccess(targetDirectory, "git add package.json");
+    await expectRawCommandSuccess(
+      targetDirectory,
+      "git commit -m \"Initial auto deploy target\"",
+    );
+
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-auto-deploy-session",
+      targetDirectory,
+      discovery,
+    });
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_read_file_auto_deploy",
+            name: "read_file",
+            input: {
+              path: "package.json",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+          {
+            type: "tool_use",
+            id: "toolu_edit_block_auto_deploy",
+            name: "edit_block",
+            input: {
+              path: "package.json",
+              old_string: '  "name": "ui-auto-deploy-target",',
+              new_string: '  "name": "ui-auto-deploy-target-updated",',
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Updated the target package metadata.",
+            citations: null,
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_run_command_auto_deploy",
+            name: "run_command",
+            input: {
+              command: "git diff --stat",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              command: "git diff --stat",
+              exitCode: 0,
+              passed: true,
+              stdout:
+                " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
+              stderr: "",
+              summary: "Verification passed.",
+            }),
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+    const deployInvocations: Array<{
+      platform: string;
+      targetDirectory: string;
+    }> = [];
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "Always inspect files before editing them.",
+      projectRulesLoaded: true,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            client,
+          };
+        },
+      },
+      async executeDeploy(input, deployTargetDirectory) {
+        deployInvocations.push({
+          platform: input.platform,
+          targetDirectory: deployTargetDirectory,
+        });
+
+        return {
+          success: true,
+          output: "Production URL: https://shipyard-auto-deploy.vercel.app",
+          data: {
+            platform: "vercel",
+            productionUrl: "https://shipyard-auto-deploy.vercel.app",
+            command: "vercel deploy --prod --yes --token [redacted]",
+            logExcerpt: "Production URL: https://shipyard-auto-deploy.vercel.app",
+            exitCode: 0,
+            timedOut: false,
+          },
+        };
+      },
+    });
+
+    const firstSocket = new WebSocket(runtime.socketUrl);
+
+    try {
+      const firstStatePromise = waitForSocketMessage(
+        firstSocket,
+        (message) => message.type === "session:state",
+      );
+
+      await waitForSocketOpen(firstSocket);
+      await firstStatePromise;
+
+      const publishSequencePromise = collectMessagesUntil(
+        firstSocket,
+        (messages) =>
+          messages.some(
+            (message) =>
+              message.type === "deploy:state" &&
+              message.deploy.status === "success" &&
+              message.deploy.productionUrl ===
+                "https://shipyard-auto-deploy.vercel.app",
+          ) &&
+          messages.some(
+            (message) =>
+              message.type === "session:state" &&
+              message.connectionState === "ready" &&
+              message.turnCount === 2,
+          ),
+      );
+
+      firstSocket.send(
+        JSON.stringify({
+          type: "instruction",
+          text: "rename the package in package.json",
+        }),
+      );
+
+      const publishMessages = await publishSequencePromise;
+      expect(deployInvocations).toEqual([
+        {
+          platform: "vercel",
+          targetDirectory,
+        },
+      ]);
+
+      const firstTurnDoneIndex = publishMessages.findIndex(
+        (message) => message.type === "agent:done",
+      );
+      const deployToolCallIndex = publishMessages.findIndex(
+        (message) =>
+          message.type === "agent:tool_call" &&
+          message.toolName === "deploy_target",
+      );
+      const deployState = publishMessages.find(
+        (
+          message,
+        ): message is Extract<
+          BackendToFrontendMessage,
+          { type: "deploy:state" }
+        > =>
+          message.type === "deploy:state" &&
+          message.deploy.status === "deploying",
+      );
+      const deployToolResult = publishMessages.find(
+        (
+          message,
+        ): message is Extract<
+          BackendToFrontendMessage,
+          { type: "agent:tool_result" }
+        > =>
+          message.type === "agent:tool_result" &&
+          message.toolName === "deploy_target",
+      );
+      const deploySuccessState = publishMessages.find(
+        (
+          message,
+        ): message is Extract<
+          BackendToFrontendMessage,
+          { type: "deploy:state" }
+        > =>
+          message.type === "deploy:state" &&
+          message.deploy.status === "success",
+      );
+      const finalReadyState = publishMessages.find(
+        (
+          message,
+        ): message is Extract<
+          BackendToFrontendMessage,
+          { type: "session:state" }
+        > =>
+          message.type === "session:state" &&
+          message.connectionState === "ready" &&
+          message.turnCount === 2,
+      );
+
+      expect(firstTurnDoneIndex).toBeGreaterThanOrEqual(0);
+      expect(deployToolCallIndex).toBeGreaterThan(firstTurnDoneIndex);
+      expect(publishMessages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "agent:edit",
+            path: "package.json",
+            summary: "Applied targeted edit to package.json",
+          }),
+        ]),
+      );
+      expect(deployState).toMatchObject({
+        type: "deploy:state",
+        deploy: {
+          status: "deploying",
+          available: false,
+        },
+      });
+      expect(deployToolResult).toMatchObject({
+        type: "agent:tool_result",
+        toolName: "deploy_target",
+        success: true,
+        summary:
+          "Deploy completed. Public URL: https://shipyard-auto-deploy.vercel.app",
+      });
+      expect(deploySuccessState).toMatchObject({
+        type: "deploy:state",
+        deploy: {
+          status: "success",
+          productionUrl: "https://shipyard-auto-deploy.vercel.app",
+          available: true,
+        },
+      });
+      expect(finalReadyState).toMatchObject({
+        type: "session:state",
+        connectionState: "ready",
+        turnCount: 2,
+        workbenchState: {
+          latestDeploy: {
+            status: "success",
+            productionUrl: "https://shipyard-auto-deploy.vercel.app",
+          },
+        },
+      });
+
+      const reconnectedSocket = new WebSocket(runtime.socketUrl);
+
+      try {
+        const recoveredStatePromise = waitForSocketMessage(
+          reconnectedSocket,
+          (message) => message.type === "session:state",
+        );
+        await waitForSocketOpen(reconnectedSocket);
+        const recoveredState = await recoveredStatePromise;
+
+        expect(recoveredState).toMatchObject({
+          type: "session:state",
+          turnCount: 2,
+          workbenchState: {
+            latestDeploy: {
+              status: "success",
+              productionUrl: "https://shipyard-auto-deploy.vercel.app",
+              available: true,
             },
           },
         });

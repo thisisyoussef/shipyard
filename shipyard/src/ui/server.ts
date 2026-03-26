@@ -658,7 +658,8 @@ function synchronizeDeploySummary(
     if (unavailableReason) {
       nextSummary.summary = unavailableReason;
     } else if (!baseline.summary.trim() || baseline.summary === defaultIdleSummary) {
-      nextSummary.summary = "Ready to deploy this target to Vercel.";
+      nextSummary.summary =
+        "Auto-publish is ready. Shipyard will publish the next successful code change to Vercel.";
     }
   }
 
@@ -1725,9 +1726,11 @@ export async function startUiRuntimeServer(
       workspaceDirectory,
     });
     let pendingTurnState: TurnStateEvent | null = null;
+    let turnProducedEdits = false;
     const reporter: InstructionTurnReporter = {
       ...baseReporter,
       async onEdit(event) {
+        turnProducedEdits = true;
         await baseReporter.onEdit?.(event);
 
         const previousPreviewCapability = sessionState.discovery.previewCapability;
@@ -1739,18 +1742,32 @@ export async function startUiRuntimeServer(
 
         sessionState.discovery = nextDiscovery;
 
-        if (
-          previewCapabilityChanged ||
-          (
-            nextDiscovery.previewCapability.status === "available" &&
-            previewSupervisor.isStarterCanvasActive()
-          )
-        ) {
-          await restartPreviewSupervisor({ silent: true });
-          return;
-        }
+        void (async () => {
+          try {
+            if (
+              previewCapabilityChanged ||
+              (
+                nextDiscovery.previewCapability.status === "available" &&
+                previewSupervisor.isStarterCanvasActive()
+              )
+            ) {
+              await restartPreviewSupervisor({ silent: true });
+              return;
+            }
 
-        await previewSupervisor.refresh(event.path);
+            await previewSupervisor.refresh(event.path);
+          } catch (error) {
+            await traceLogger.log("preview.refresh.error", {
+              sessionId: sessionState.sessionId,
+              targetDirectory: sessionState.targetDirectory,
+              runtimeMode: "ui",
+              path: event.path,
+              message: error instanceof Error
+                ? error.message
+                : "Preview refresh failed after an edit.",
+            });
+          }
+        })();
       },
       async onTurnState(event) {
         if (event.connectionState === "agent-busy") {
@@ -1861,6 +1878,41 @@ export async function startUiRuntimeServer(
         });
         await broadcastSessionState();
       }
+
+      if (
+        turnResult.status === "success" &&
+        turnProducedEdits &&
+        turnResult.selectedTargetPath === null &&
+        sessionState.activePhase === "code" &&
+        !signal?.aborted
+      ) {
+        const deployUnavailableReason = getDeployUnavailableReason(sessionState);
+
+        if (deployUnavailableReason === null) {
+          deployInFlight = true;
+
+          try {
+            await runBrowserDeploy(
+              {
+                platform: "vercel",
+              },
+              signal,
+              {
+                mode: "automatic",
+              },
+            );
+          } finally {
+            deployInFlight = false;
+            syncLatestDeploy();
+            await saveSessionState(sessionState);
+          }
+
+          if (pendingTurnState) {
+            await baseReporter.onTurnState?.(pendingTurnState);
+            pendingTurnState = null;
+          }
+        }
+      }
     }
 
     if (pendingTurnState) {
@@ -1871,15 +1923,25 @@ export async function startUiRuntimeServer(
   const runBrowserDeploy = async (
     input: DeployInput,
     signal?: AbortSignal,
+    options: {
+      mode?: "manual" | "automatic";
+    } = {},
   ): Promise<void> => {
+    const mode = options.mode ?? "manual";
     const requestedAt = new Date().toISOString();
     const callId = `deploy-${Date.now().toString(36)}`;
+    const turnInstruction = mode === "automatic"
+      ? "Auto-publish updated target to Vercel"
+      : "Deploy current target to Vercel";
+    const toolCallSummary = mode === "automatic"
+      ? "Publishing the updated target to Vercel."
+      : "Deploying current target to Vercel.";
 
     sessionState.turnCount += 1;
     sessionState.lastActiveAt = requestedAt;
     sessionState.workbenchState = queueInstructionTurn(
       sessionState.workbenchState,
-      "Deploy current target to Vercel",
+      turnInstruction,
       [],
     );
     sessionState.workbenchState.latestDeploy = createDeployingSummary(
@@ -1894,7 +1956,7 @@ export async function startUiRuntimeServer(
       type: "agent:tool_call",
       callId,
       toolName: "deploy_target",
-      summary: "Deploying current target to Vercel.",
+      summary: toolCallSummary,
     });
     await saveSessionState(sessionState);
 
@@ -1942,6 +2004,7 @@ export async function startUiRuntimeServer(
       sessionId: sessionState.sessionId,
       targetDirectory: sessionState.targetDirectory,
       platform: input.platform,
+      trigger: mode,
       status: deploySummary.status,
       summary: deploySummary.summary,
       productionUrl: deploySummary.productionUrl,

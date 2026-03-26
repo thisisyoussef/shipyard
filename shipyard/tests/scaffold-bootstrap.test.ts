@@ -31,6 +31,26 @@ afterEach(async () => {
 });
 
 describe("shared scaffold bootstrap", () => {
+  it("defines a Vite-ready React TypeScript preset for CSS imports", () => {
+    const files = getScaffoldFiles(
+      "react-ts",
+      "demo-app",
+      "Starter React app for hosted Shipyard deploys.",
+    );
+
+    const fileMap = new Map(files.map((file) => [file.path, file.content]));
+    const tsconfigContents = fileMap.get("tsconfig.json") ?? "";
+    const appContents = fileMap.get(path.join("src", "App.tsx")) ?? "";
+    const appCssContents = fileMap.get(path.join("src", "App.css")) ?? "";
+    const viteEnvContents = fileMap.get(path.join("src", "vite-env.d.ts")) ?? "";
+
+    expect(tsconfigContents).toContain('"types": [');
+    expect(tsconfigContents).toContain('"vite/client"');
+    expect(appContents).toContain('import "./App.css";');
+    expect(appCssContents).toContain(".app-shell");
+    expect(viteEnvContents).toContain('/// <reference types="vite/client" />');
+  });
+
   it("defines a richer TypeScript pnpm workspace preset", () => {
     const files = getScaffoldFiles(
       "ts-pnpm-workspace",

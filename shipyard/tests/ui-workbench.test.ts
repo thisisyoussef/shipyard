@@ -255,7 +255,6 @@ function renderWorkbench(overrides?: {
   primaryView?: "chat" | "preview" | "live";
   previewState?: PreviewStateViewModel;
   latestDeploy?: LatestDeployViewModel;
-  hostedEditorUrl?: string;
   targetManager?: TargetManagerViewModel;
   leftSidebarOpen?: boolean;
   rightSidebarOpen?: boolean;
@@ -270,8 +269,6 @@ function renderWorkbench(overrides?: {
       fileEvents,
       previewState: overrides?.previewState ?? runningPreviewState,
       latestDeploy: overrides?.latestDeploy ?? latestDeploy,
-      hostedEditorUrl:
-        overrides?.hostedEditorUrl ?? "https://shipyard.example.com/workbench",
       contextHistory,
       pendingUploads,
       connectionState: overrides?.connectionState ?? "ready",
@@ -297,7 +294,6 @@ function renderWorkbench(overrides?: {
       onAttachFiles: () => undefined,
       onSubmitInstruction: () => undefined,
       onCancelInstruction: () => undefined,
-      onRequestDeploy: () => undefined,
       onRemoveAttachment: () => undefined,
       onRequestTargetSwitch: () => undefined,
       onRequestTargetCreate: () => undefined,
@@ -325,7 +321,6 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain("activity");
     expect(markup).toContain("Previous runs");
     expect(markup).toContain("fix the failing preview");
-    expect(markup).toContain("Preview");
     expect(markup).toContain("Files");
     expect(markup).toContain("Latest conversation");
     expect(markup).toContain("inspect package.json");
@@ -335,19 +330,19 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain('aria-label="Current location"');
   });
 
-  it("renders deploy status and production URL in collapsible deploy section", () => {
+  it("renders the public app link and auto-publish status in the target header", () => {
     const markup = renderWorkbench({
       primaryView: "preview",
     });
 
-    expect(markup).toContain("Deploy to Vercel");
-    expect(markup).toContain("Deploy");
-    expect(markup).toContain("Deployed target-app URL");
+    expect(markup).toContain("Open app");
     expect(markup).toContain("https://shipyard-demo.vercel.app");
-    expect(markup).toContain("Open deployed app");
+    expect(markup).toContain("Production deploy completed on Vercel.");
+    expect(markup).not.toContain("Deploy to Vercel");
+    expect(markup).not.toContain("Hosted Shipyard URL");
   });
 
-  it("keeps deploy disabled with explicit guidance when hosted deploy prerequisites are missing", () => {
+  it("keeps automatic publish guidance visible when hosted deploy prerequisites are missing", () => {
     const markup = renderWorkbench({
       latestDeploy: {
         ...latestDeploy,
@@ -367,7 +362,7 @@ describe("ShipyardWorkbench", () => {
 
     expect(markup).toContain("Deploy unavailable until VERCEL_TOKEN is configured");
     expect(markup).toContain("Configure VERCEL_TOKEN on the hosted Shipyard service");
-    expect(markup).toContain("disabled");
+    expect(markup).not.toContain("Open app");
   });
 
   it("renders the attach-files control and pending attachment badges in the composer", () => {
@@ -416,23 +411,15 @@ describe("ShipyardWorkbench", () => {
     expect(markup).not.toContain("Retry enrichment");
   });
 
-  it("renders preview iframe, toolbar, and deploy section when preview is running", () => {
+  it("removes the localhost preview panel from the hosted workbench", () => {
     const markup = renderWorkbench({
       primaryView: "preview",
     });
 
-    expect(markup).toContain("Local preview");
-    expect(markup).toContain("Open preview");
-    expect(markup).toContain('href="http://127.0.0.1:4173"');
-    expect(markup).toContain('target="_blank"');
-    expect(markup).toContain('rel="noreferrer"');
-    expect(markup).toContain('title="Local preview"');
-    expect(markup).toContain('src="http://127.0.0.1:4173"');
-    expect(markup).toContain("VITE v5.0.8 ready in 145 ms");
-    // Preview toolbar shows URL
-    expect(markup).toContain("preview-toolbar");
-    // Deploy section is collapsible
-    expect(markup).toContain("preview-deploy-section");
+    expect(markup).not.toContain("Local preview");
+    expect(markup).not.toContain("Open preview");
+    expect(markup).not.toContain("http://127.0.0.1:4173");
+    expect(markup).not.toContain("VITE v5.0.8 ready in 145 ms");
   });
 
   // SKIP: UIV3 rebuild - full panel rendering reimplemented in S02-S08
@@ -475,24 +462,21 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain('aria-keyshortcuts="Control+Enter Meta+Enter Escape"');
   });
 
-  // SKIP: UIV3 rebuild - preview panel reimplemented in S07
-  it("renders an explicit unavailable preview state instead of guessing", () => {
+  it("surfaces provider output excerpts in the target header after a failed publish", () => {
     const markup = renderWorkbench({
-      primaryView: "preview",
-      previewState: {
-        status: "unavailable",
-        summary: "Preview unavailable for this target.",
-        url: null,
-        logTail: [],
-        lastRestartReason:
-          "No package.json was found, so Shipyard cannot infer a supported local preview command.",
+      latestDeploy: {
+        ...latestDeploy,
+        status: "error",
+        summary: "Deploy failed. Review the provider output excerpt and retry.",
+        logExcerpt:
+          "src/App.tsx(2,8): error TS2882: Cannot find module or type declarations for side-effect import of './App.css'.",
       },
     });
 
-    expect(markup).toContain("Preview unavailable for this target.");
+    expect(markup).toContain("Provider output excerpt");
     expect(markup).toContain(
-      "No package.json was found, so Shipyard cannot infer a supported local preview command.",
+      "Cannot find module or type declarations for side-effect import of",
     );
-    expect(markup).not.toContain("Open preview");
+    expect(markup).toContain("App.css");
   });
 });

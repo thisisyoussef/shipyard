@@ -16,7 +16,6 @@ import {
   ContextPanel,
   FilePanel,
   RunHistoryPanel,
-  PreviewPanel,
   OutputPanel,
   SessionPanel,
 } from "./panels/index.js";
@@ -58,7 +57,6 @@ export interface ShipyardWorkbenchProps {
   fileEvents: FileEventViewModel[];
   previewState: PreviewStateViewModel;
   latestDeploy: LatestDeployViewModel;
-  hostedEditorUrl: string;
   contextHistory: ContextReceiptViewModel[];
   pendingUploads: PendingUploadReceiptViewModel[];
   connectionState: WorkbenchConnectionState;
@@ -77,7 +75,6 @@ export interface ShipyardWorkbenchProps {
   onAttachFiles: (files: File[]) => void;
   onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
   onCancelInstruction: () => void;
-  onRequestDeploy: () => void;
   onRemoveAttachment: (attachmentId: string) => void;
   onRequestSessionResume: (sessionId: string) => void;
   onRequestTargetSwitch: (targetPath: string) => void;
@@ -124,9 +121,6 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
   const [targetSwitcherOpen, setTargetSwitcherOpen] = useState(false);
   const [targetCreationOpen, setTargetCreationOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [workspaceTab, setWorkspaceTab] = useState<"preview" | "files">(
-    "preview",
-  );
 
   const workspaceName = props.sessionState?.workspaceDirectory?.split("/").pop();
   const activePhase = props.sessionState?.activePhase ?? "target-manager";
@@ -134,19 +128,6 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
     props.targetManager?.currentTarget.name ?? props.sessionState?.targetLabel;
   const targetPath =
     props.targetManager?.currentTarget.path ?? props.sessionState?.targetDirectory;
-  const deployDisabledReason = activePhase !== "code"
-    ? "Select or create a target before deploying."
-    : props.latestDeploy.status === "deploying"
-      ? "A deploy is already in progress."
-      : props.connectionState === "agent-busy"
-        ? "Finish the current browser action before deploying."
-        : props.connectionState === "disconnected" ||
-            props.connectionState === "error" ||
-            props.connectionState === "connecting"
-          ? "Wait for Shipyard to reconnect before deploying."
-          : props.latestDeploy.available
-            ? null
-            : props.latestDeploy.unavailableReason ?? props.latestDeploy.summary;
 
   const leftRailItems = [
     { id: "session", icon: <SessionIcon />, label: "Session", active: true },
@@ -184,10 +165,8 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
               <TargetHeader
                 activePhase={activePhase}
                 targetManager={props.targetManager}
-                deployDisabledReason={activePhase === "code" ? deployDisabledReason : null}
-                deploying={props.latestDeploy.status === "deploying"}
+                latestDeploy={props.latestDeploy}
                 onOpenSwitcher={() => setTargetSwitcherOpen(true)}
-                onRequestDeploy={props.onRequestDeploy}
               />
             ) : null}
 
@@ -214,46 +193,9 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         }
         rightPanel={
           <div className="workspace-pane">
-            {/* Workspace tabs */}
-            <div
-              className="workspace-tabs"
-              role="tablist"
-              aria-label="Workspace view"
-            >
-              <button
-                type="button"
-                className="workspace-tab"
-                data-active={workspaceTab === "preview"}
-                aria-selected={workspaceTab === "preview"}
-                onClick={() => setWorkspaceTab("preview")}
-              >
-                Preview
-              </button>
-              <button
-                type="button"
-                className="workspace-tab"
-                data-active={workspaceTab === "files"}
-                aria-selected={workspaceTab === "files"}
-                onClick={() => setWorkspaceTab("files")}
-              >
-                Files
-              </button>
-            </div>
-
-            {/* Workspace content */}
             <div className="workspace-content">
-              {workspaceTab === "preview" ? (
-                <PreviewPanel
-                  preview={props.previewState}
-                  deploy={props.latestDeploy}
-                  hostedEditorUrl={props.hostedEditorUrl}
-                />
-              ) : (
-                <>
-                  <FilePanel fileEvents={props.fileEvents} />
-                  <OutputPanel turns={props.turns} />
-                </>
-              )}
+              <FilePanel fileEvents={props.fileEvents} />
+              <OutputPanel turns={props.turns} />
             </div>
           </div>
         }

@@ -143,12 +143,6 @@ export function extractBootstrapAccessToken(locationUrl: URL): {
   };
 }
 
-export function createHostedEditorUrl(locationUrl: URL): string {
-  const bootstrapAccess = extractBootstrapAccessToken(locationUrl);
-
-  return `${locationUrl.origin}${bootstrapAccess.sanitizedRelativeUrl}`;
-}
-
 function readSidebarState(key: string, fallback: boolean): boolean {
   try {
     const stored = localStorage.getItem(key);
@@ -893,22 +887,6 @@ export function App() {
     }
   }
 
-  function handleDeployTarget(): void {
-    const sent = sendMessage({
-      type: "deploy:request",
-      platform: "vercel",
-    });
-
-    if (!sent) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Deploy unavailable",
-        detail:
-          "The browser runtime is disconnected. Reconnect before deploying this target.",
-      });
-    }
-  }
-
   async function handleHostedAccessSubmit(
     event: FormEvent<HTMLFormElement>,
   ): Promise<void> {
@@ -971,8 +949,6 @@ export function App() {
     );
   }
 
-  const hostedEditorUrl = createHostedEditorUrl(new URL(window.location.href));
-
   return (
     <ShipyardWorkbench
       sessionState={viewState.sessionState}
@@ -982,7 +958,6 @@ export function App() {
       fileEvents={deferredFileEvents}
       previewState={viewState.previewState}
       latestDeploy={viewState.latestDeploy}
-      hostedEditorUrl={hostedEditorUrl}
       contextHistory={deferredContextHistory}
       pendingUploads={viewState.pendingUploads}
       connectionState={viewState.connectionState}
@@ -1001,7 +976,6 @@ export function App() {
       onAttachFiles={handleAttachFiles}
       onSubmitInstruction={handleInstructionSubmit}
       onCancelInstruction={handleCancelInstruction}
-      onRequestDeploy={handleDeployTarget}
       onRemoveAttachment={handleRemoveAttachment}
       onRequestSessionResume={handleSessionResume}
       onRequestTargetSwitch={handleTargetSwitch}
