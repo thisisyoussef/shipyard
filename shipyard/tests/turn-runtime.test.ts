@@ -895,6 +895,129 @@ describe("instruction runtime handoff", () => {
     );
   });
 
+  it("suppresses threshold handoffs for single-turn UI builds when the feature flag is enabled", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-turn-ui-build-");
+    const sessionState = createSessionState({
+      sessionId: "turn-ui-build-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: false,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: ["src"],
+        projectName: "turn-ui-build-target",
+      },
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      featureFlags: {
+        disableRecentTouchedScopeWidening: false,
+        preferSingleTurnUiBuilds: true,
+        enableStrictFreshUiVerification: false,
+      },
+    });
+
+    vi.spyOn(graphRuntime, "runAgentRuntime").mockResolvedValue(
+      graphRuntime.createAgentGraphState({
+        sessionId: "turn-ui-build-session",
+        instruction: "Make a login page",
+        contextEnvelope: {
+          stable: {
+            discovery: sessionState.discovery,
+            projectRules: "",
+            availableScripts: sessionState.discovery.scripts,
+          },
+          task: {
+            currentInstruction: "Make a login page",
+            injectedContext: [],
+            targetFilePaths: [],
+          },
+          runtime: {
+            recentToolOutputs: [],
+            recentErrors: [],
+            currentGitDiff: null,
+            featureFlags: runtimeState.featureFlags,
+          },
+          session: {
+            rollingSummary: "",
+            retryCountsByFile: {},
+            blockedFiles: [],
+            latestHandoff: null,
+            activeTask: null,
+          },
+        },
+        previewState: sessionState.workbenchState.previewState,
+        targetDirectory,
+        phaseConfig: createCodePhase(),
+        planningMode: "lightweight",
+        executionSpec: {
+          instruction: "Make a login page",
+          goal: "Build a polished login page.",
+          deliverables: ["Create the login page UI."],
+          acceptanceCriteria: ["The login page matches the request."],
+          verificationIntent: ["Run the verification checks."],
+          targetFilePaths: [],
+          risks: [],
+        },
+        taskPlan: {
+          instruction: "Make a login page",
+          goal: "Build a polished login page.",
+          targetFilePaths: [],
+          plannedSteps: [
+            "Read the relevant files before editing.",
+            "Create the login page UI.",
+          ],
+        },
+        actingIterations: 7,
+        lastEditedFile: "src/App.tsx",
+        touchedFiles: ["src/App.tsx", "src/login.css"],
+        finalResult: "Created the login page.",
+        status: "done",
+        verificationReport: {
+          command: "pnpm test",
+          exitCode: 0,
+          passed: true,
+          stdout: "",
+          stderr: "",
+          summary: "Verification passed.",
+          evaluationPlan: {
+            summary: "Run the verification checks.",
+            checks: [
+              {
+                id: "check-1",
+                label: "Run pnpm test",
+                kind: "command",
+                command: "pnpm test",
+                required: true,
+              },
+            ],
+          },
+          checks: [],
+          firstHardFailure: null,
+          browserEvaluationReport: null,
+        },
+      }),
+    );
+
+    const result = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "Make a login page",
+    });
+
+    expect(result.handoff.emitted).toBeNull();
+    expect(result.harnessRoute.handoffEmitted).toBe(false);
+    expect(result.harnessRoute.handoffReason).toBeNull();
+    expect(result.harnessRoute.continuationCount).toBe(0);
+  });
+
   it("classifies timeout and budget-exhaustion failures in LangSmith turn metadata", async () => {
     const targetDirectory = await createTempDirectory("shipyard-turn-failure-");
     const outerTrace = {

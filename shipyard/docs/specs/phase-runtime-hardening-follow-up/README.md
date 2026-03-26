@@ -134,17 +134,23 @@
   ```
 - `RHF-S07` Task-aware loop budgets and long-run replay coverage
   Code References:
+  - `shipyard/src/engine/runtime-flags.ts`
+  - `shipyard/src/agents/coordinator.ts`
   - `shipyard/src/engine/graph.ts`
+  - `shipyard/src/engine/turn.ts`
   - `shipyard/tests/graph-runtime.test.ts`
-  - `shipyard/tests/manual/phase3-live-loop-smoke.ts`
-  - `shipyard/tests/manual/README.md`
+  - `shipyard/tests/planner-subagent.test.ts`
+  - `shipyard/tests/turn-runtime.test.ts`
   Representative Snippet:
   ```ts
-  const broadContinuation =
-    (latestHandoff?.handoff.resetReason.kind === "iteration-threshold"
-      && latestHandoff.handoff.touchedFiles.length >= 3)
-    || (
-      recentTouchedFiles.length > 0
-      && isBroadContinuationInstruction(options.instruction)
-    );
+  const singleTurnUiBuild =
+    featureFlags.preferSingleTurnUiBuilds
+    && isSingleTurnUiBuildInstruction(options.instruction);
+
+  if (singleTurnUiBuild) {
+    return {
+      maxIterations: SINGLE_TURN_UI_BUILD_MAX_ITERATIONS,
+      reason: "single-turn-ui-build",
+    };
+  }
   ```

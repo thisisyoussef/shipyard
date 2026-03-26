@@ -195,6 +195,7 @@ export type HarnessVerificationMode = "none" | "command" | "command+browser";
 export type HarnessCommandReadinessStatus = "none" | "ready-before-timeout";
 export type ActingLoopBudgetReason =
   | "narrow-default"
+  | "single-turn-ui-build"
   | "broad-greenfield"
   | "broad-continuation"
   | "override";

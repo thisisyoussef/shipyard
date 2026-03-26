@@ -32,6 +32,7 @@ import {
   createExplorerQuery,
   extractInstructionTargetFilePaths,
   isClearlyLightweightInstruction,
+  isSingleTurnUiBuildInstruction,
   createVerificationPlan,
   mergeBrowserEvaluationIntoVerificationReport,
   shouldCoordinatorUseBrowserEvaluator,
@@ -71,6 +72,7 @@ import {
   type ContextEnvelope,
   type FileHashMap,
 } from "./state.js";
+import { normalizeRuntimeFeatureFlags } from "./runtime-flags.js";
 import {
   getLangSmithCallbacksForCurrentTrace,
   getLangSmithConfig,
@@ -227,6 +229,7 @@ export interface AgentRuntimeOptions {
 type AgentGraphNodeName = "plan" | "act" | "verify" | "recover" | "respond";
 
 const DEFAULT_MAX_RECOVERIES_PER_FILE = 2;
+const SINGLE_TURN_UI_BUILD_MAX_ITERATIONS = 60;
 
 const AgentGraphStateAnnotation = Annotation.Root({
   sessionId: Annotation<string>(),
@@ -353,6 +356,9 @@ export function determineActingLoopBudget(options: {
   }
 
   const discovery = options.contextEnvelope.stable.discovery;
+  const featureFlags = normalizeRuntimeFeatureFlags(
+    options.contextEnvelope.runtime.featureFlags,
+  );
   const explicitTargetFilePaths = [
     ...new Set([
       ...extractInstructionTargetFilePaths(options.instruction),
@@ -377,6 +383,16 @@ export function determineActingLoopBudget(options: {
       recentTouchedFiles.length > 0
       && isBroadContinuationInstruction(options.instruction)
     );
+  const singleTurnUiBuild =
+    featureFlags.preferSingleTurnUiBuilds
+    && isSingleTurnUiBuildInstruction(options.instruction);
+
+  if (singleTurnUiBuild) {
+    return {
+      maxIterations: SINGLE_TURN_UI_BUILD_MAX_ITERATIONS,
+      reason: "single-turn-ui-build",
+    };
+  }
 
   if (broadContinuation) {
     return {
@@ -480,6 +496,7 @@ function createDefaultVerificationReport(
     contextEnvelope: state.contextEnvelope,
     executionSpec: state.executionSpec,
     editedFilePath: state.lastEditedFile,
+    touchedFiles: state.touchedFiles,
   });
   const command = evaluationPlan.checks[0]?.command ?? "";
 
@@ -652,6 +669,7 @@ async function defaultVerifyState(
       contextEnvelope: state.contextEnvelope,
       executionSpec: state.executionSpec,
       editedFilePath: state.lastEditedFile,
+      touchedFiles: state.touchedFiles,
     }),
     state.targetDirectory,
     await createSubagentLoopOptions(
@@ -1171,6 +1189,7 @@ export function createAgentRuntimeNodes(
           contextEnvelope: state.contextEnvelope,
           executionSpec: state.executionSpec,
           editedFilePath: state.lastEditedFile,
+          touchedFiles: state.touchedFiles,
         }).checks.length;
         const cancelledAfterVerify = createCancellationUpdate(signal);
 

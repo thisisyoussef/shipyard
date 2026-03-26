@@ -386,4 +386,43 @@ describe("planner subagent", () => {
     expect(executionSpec.acceptanceCriteria).not.toHaveLength(0);
     expect(executionSpec.verificationIntent).not.toHaveLength(0);
   });
+
+  it("can ignore recent touched files when lightweight scope widening is disabled", () => {
+    const widenedContextEnvelope = createContextEnvelope();
+
+    widenedContextEnvelope.session.recentTouchedFiles = [
+      "src/App.tsx",
+      "src/App.css",
+      "src/login.css",
+    ];
+
+    const narrowedContextEnvelope = createContextEnvelope();
+
+    narrowedContextEnvelope.session.recentTouchedFiles = [
+      "src/App.tsx",
+      "src/App.css",
+      "src/login.css",
+    ];
+    narrowedContextEnvelope.runtime.featureFlags = {
+      disableRecentTouchedScopeWidening: true,
+      preferSingleTurnUiBuilds: false,
+      enableStrictFreshUiVerification: false,
+    };
+
+    const widenedExecutionSpec = createLightweightExecutionSpec({
+      instruction: "Make a login page.",
+      contextEnvelope: widenedContextEnvelope,
+    });
+    const narrowedExecutionSpec = createLightweightExecutionSpec({
+      instruction: "Make a login page.",
+      contextEnvelope: narrowedContextEnvelope,
+    });
+
+    expect(widenedExecutionSpec.targetFilePaths).toEqual([
+      "src/App.tsx",
+      "src/App.css",
+      "src/login.css",
+    ]);
+    expect(narrowedExecutionSpec.targetFilePaths).toEqual([]);
+  });
 });
