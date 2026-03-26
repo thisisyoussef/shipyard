@@ -10,6 +10,7 @@ import type {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
+import { TARGET_MANAGER_PHASE_MODEL_ROUTE } from "../src/engine/model-routing.js";
 import { createSessionState } from "../src/engine/state.js";
 import * as graphRuntime from "../src/engine/graph.js";
 import { createCodePhase } from "../src/phases/code/index.js";
@@ -830,6 +831,103 @@ describe("instruction runtime handoff", () => {
         process.env.ANTHROPIC_API_KEY = previousApiKey;
       }
     }
+  });
+
+  it("passes the target-manager model route into raw-loop option creation", async () => {
+    const targetsDirectory = await createTempDirectory("shipyard-turn-target-route-");
+    const alphaTargetDirectory = path.join(targetsDirectory, "alpha-app");
+    const selectedTargetDirectory = path.join(targetsDirectory, "beta-app");
+    const createRawLoopRouteIds: string[] = [];
+
+    await mkdir(alphaTargetDirectory, { recursive: true });
+    await mkdir(selectedTargetDirectory, { recursive: true });
+    await writeFile(
+      path.join(alphaTargetDirectory, "package.json"),
+      JSON.stringify({ name: "alpha-app" }, null, 2),
+      "utf8",
+    );
+    await writeFile(
+      path.join(selectedTargetDirectory, "package.json"),
+      JSON.stringify({ name: "beta-app" }, null, 2),
+      "utf8",
+    );
+
+    const sessionState = createSessionState({
+      sessionId: "turn-target-route-session",
+      targetDirectory: targetsDirectory,
+      targetsDirectory,
+      activePhase: "target-manager",
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: [],
+        topLevelDirectories: [],
+        projectName: path.basename(targetsDirectory),
+      },
+    });
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "text",
+            text: "Selecting target.",
+            citations: null,
+          },
+          {
+            type: "tool_use",
+            id: "toolu_select_beta",
+            name: "select_target",
+            input: {
+              target_path: selectedTargetDirectory,
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Selected the beta-app target.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      runtimeDependencies: {
+        createRawLoopOptions(_graphState, request) {
+          if (request?.routeId) {
+            createRawLoopRouteIds.push(request.routeId);
+          }
+
+          return {
+            client,
+            logger: {
+              log() {},
+            },
+          };
+        },
+      },
+    });
+
+    await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "Open the beta-app target.",
+    });
+
+    expect(createRawLoopRouteIds).toContain(TARGET_MANAGER_PHASE_MODEL_ROUTE);
   });
 
   it("returns harness-route metadata and prepares the final LangSmith turn metadata", async () => {

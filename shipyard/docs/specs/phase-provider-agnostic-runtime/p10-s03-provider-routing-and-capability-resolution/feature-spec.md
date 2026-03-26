@@ -22,11 +22,11 @@ After Anthropic moves behind an adapter, Shipyard still lacks a coherent way to 
 - As a Shipyard operator, I want provider/model overrides to be predictable so I can route different runtime surfaces without patching core engine files.
 
 ## Acceptance Criteria
-- [ ] AC-1: Add a provider-aware configuration resolver that supports a global default plus named override points for phases, subagents, or target enrichment.
-- [ ] AC-2: `Phase` or adjacent phase config can express model-routing intent without embedding provider SDK types or environment parsing logic.
-- [ ] AC-3: Shared helper surfaces such as planner, explorer, verifier, browser evaluator, and target enrichment can opt into explicit provider/model routing through the same resolver.
-- [ ] AC-4: Automatic enrichment and other capability checks no longer depend directly on `ANTHROPIC_API_KEY`; they resolve availability from the active provider configuration.
-- [ ] AC-5: Focused tests cover default resolution, override precedence, invalid provider or model config, and provider-aware capability checks.
+- [x] AC-1: Add a provider-aware configuration resolver that supports a global default plus named override points for phases, subagents, or target enrichment.
+- [x] AC-2: `Phase` or adjacent phase config can express model-routing intent without embedding provider SDK types or environment parsing logic.
+- [x] AC-3: Shared helper surfaces such as planner, explorer, verifier, browser evaluator, and target enrichment can opt into explicit provider/model routing through the same resolver.
+- [x] AC-4: Automatic enrichment and other capability checks no longer depend directly on `ANTHROPIC_API_KEY`; they resolve availability from the active provider configuration.
+- [x] AC-5: Focused tests cover default resolution, override precedence, invalid provider or model config, and provider-aware capability checks.
 
 ## Edge Cases
 - Empty/null inputs: a missing override falls back to the global default cleanly.
@@ -56,3 +56,34 @@ After Anthropic moves behind an adapter, Shipyard still lacks a coherent way to 
 - Phases and helper roles can opt into explicit routing intent.
 - Automatic enrichment availability no longer hard-codes Anthropic env checks.
 - Tests prove routing precedence and capability resolution.
+
+## Implementation Evidence
+- Central routing and capability resolution landed in
+  [`../../../../src/engine/model-routing.ts`](../../../../src/engine/model-routing.ts).
+- Declarative phase routing landed in
+  [`../../../../src/phases/phase.ts`](../../../../src/phases/phase.ts),
+  [`../../../../src/phases/code/index.ts`](../../../../src/phases/code/index.ts),
+  and
+  [`../../../../src/phases/target-manager/index.ts`](../../../../src/phases/target-manager/index.ts).
+- Shared runtime surfaces now pass explicit route IDs through
+  [`../../../../src/engine/graph.ts`](../../../../src/engine/graph.ts),
+  [`../../../../src/engine/turn.ts`](../../../../src/engine/turn.ts),
+  and [`../../../../src/plans/turn.ts`](../../../../src/plans/turn.ts).
+- Target enrichment now resolves availability and invokers through the shared
+  routing layer in
+  [`../../../../src/engine/target-enrichment.ts`](../../../../src/engine/target-enrichment.ts),
+  [`../../../../src/engine/target-command.ts`](../../../../src/engine/target-command.ts),
+  [`../../../../src/ui/server.ts`](../../../../src/ui/server.ts), and
+  [`../../../../src/tools/target-manager/enrich-target.ts`](../../../../src/tools/target-manager/enrich-target.ts).
+- Focused coverage landed in
+  [`../../../../tests/model-routing.test.ts`](../../../../tests/model-routing.test.ts),
+  [`../../../../tests/turn-runtime.test.ts`](../../../../tests/turn-runtime.test.ts),
+  [`../../../../tests/plan-mode.test.ts`](../../../../tests/plan-mode.test.ts),
+  and
+  [`../../../../tests/target-auto-enrichment.test.ts`](../../../../tests/target-auto-enrichment.test.ts).
+
+## Validation Evidence
+- `pnpm --dir shipyard test`
+- `pnpm --dir shipyard typecheck`
+- `pnpm --dir shipyard build`
+- `git diff --check`

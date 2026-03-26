@@ -18,6 +18,9 @@ path for actual task execution.
   graph `act` node and helper subagents; defaults to the Anthropic adapter
 - `model-adapter.ts`: provider-neutral internal model contract for turn
   messages, tool calls, and adapter boundaries
+- `model-routing.ts`: named provider/model routes plus centralized
+  env-backed resolution, capability checks, and adapter lookup for phases,
+  subagents, and target enrichment
 - `state.ts`: persisted session shape plus `.shipyard/` directory helpers
 - `cancellation.ts`: active-turn cancellation normalization for terminal and UI
 - `runtime-context.ts`: injected-context builders for project rules and
@@ -48,6 +51,7 @@ flowchart LR
   Turn["turn.ts"]
   Graph["graph.ts"]
   Raw["raw-loop.ts"]
+  Routing["model-routing.ts"]
   State["state.ts"]
   Cancel["cancellation.ts"]
   RuntimeCtx["runtime-context.ts"]
@@ -66,10 +70,13 @@ flowchart LR
   Turn --> RuntimeCtx
   Turn --> Summary
   Turn --> Graph
+  Turn --> Routing
   Turn --> Commands
   Graph --> Raw
+  Graph --> Routing
   Graph --> Agents
   Graph --> Tools
   Graph --> Checkpoints
+  Commands --> Routing
   Turn --> Traces
 ```

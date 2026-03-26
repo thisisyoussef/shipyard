@@ -22,6 +22,7 @@ import {
   truncateText,
   updateRollingSummary,
 } from "../engine/turn-summary.js";
+import { PLANNER_MODEL_ROUTE } from "../engine/model-routing.js";
 import type {
   InstructionRuntimeState,
   InstructionTurnReporter,
@@ -232,7 +233,12 @@ async function createPlannerRunOptions(options: {
     blockedFiles: options.runtimeState.blockedFiles,
   });
   const baseOptions =
-    await options.runtimeState.runtimeDependencies?.createRawLoopOptions?.(graphState)
+    await options.runtimeState.runtimeDependencies?.createRawLoopOptions?.(
+      graphState,
+      {
+        routeId: PLANNER_MODEL_ROUTE,
+      },
+    )
     ?? {};
   const existingBeforeToolExecution = baseOptions.beforeToolExecution;
   const existingAfterToolExecution = baseOptions.afterToolExecution;

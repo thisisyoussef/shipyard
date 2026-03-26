@@ -14,6 +14,7 @@ import type {
   ExecutionSpec,
 } from "../src/artifacts/types.js";
 import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
+import { PLANNER_MODEL_ROUTE } from "../src/engine/model-routing.js";
 import { createSessionState } from "../src/engine/state.js";
 import { createInstructionRuntimeState } from "../src/engine/turn.js";
 import {
@@ -205,6 +206,54 @@ describe("plan mode", () => {
     await expect(
       loadPlanTaskQueue(targetDirectory, firstPlan.planId),
     ).resolves.toEqual(firstPlan);
+  });
+
+  it("passes the planner model route into raw-loop option creation", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-plan-route-");
+    const createRawLoopRouteIds: string[] = [];
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(createExecutionSpec()),
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+    const sessionState = createSessionState({
+      sessionId: "plan-route-session",
+      targetDirectory,
+      discovery: createDiscovery(),
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      runtimeDependencies: {
+        createRawLoopOptions(_graphState, request) {
+          if (request?.routeId) {
+            createRawLoopRouteIds.push(request.routeId);
+          }
+
+          return {
+            client,
+            logger: {
+              log() {},
+            },
+          };
+        },
+      },
+    });
+
+    const result = await executePlanningTurn({
+      sessionState,
+      runtimeState,
+      instruction: "plan: add durable queue persistence",
+    });
+
+    expect(result.status).toBe("success");
+    expect(createRawLoopRouteIds).toContain(PLANNER_MODEL_ROUTE);
   });
 
   it("rejects malformed persisted task queues instead of silently coercing them", async () => {

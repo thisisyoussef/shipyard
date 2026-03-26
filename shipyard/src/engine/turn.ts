@@ -50,6 +50,7 @@ import {
   truncateText,
   updateRollingSummary,
 } from "./turn-summary.js";
+import { getTargetEnrichmentInvoker } from "./target-enrichment.js";
 import {
   saveSessionState,
   type ContextEnvelope,
@@ -60,6 +61,12 @@ import {
   type LangSmithTraceReference,
 } from "../tracing/langsmith.js";
 import { configureTargetManagerEnrichmentInvoker } from "../tools/target-manager/enrich-target.js";
+import {
+  createModelAdapterForRoute,
+  createModelRoutingConfig,
+  type ModelRoutingConfig,
+  type ModelRoutingOverrides,
+} from "./model-routing.js";
 
 export type InstructionRuntimeMode = "graph" | "fallback";
 
@@ -81,6 +88,8 @@ export interface InstructionRuntimeState {
   retryCountsByFile: Record<string, number>;
   blockedFiles: string[];
   pendingTargetSelectionPath: string | null;
+  modelRouting: ModelRoutingConfig;
+  modelRoutingEnv: NodeJS.ProcessEnv;
   targetEnrichmentInvoker?: (
     prompt: string,
   ) => Promise<{
@@ -621,15 +630,26 @@ function createRuntimeDependencies(
 
   return {
     ...baseDependencies,
-    async createRawLoopOptions(graphState) {
+    async createRawLoopOptions(graphState, request) {
       const baseOptions =
-        await baseDependencies?.createRawLoopOptions?.(graphState)
+        await baseDependencies?.createRawLoopOptions?.(graphState, request)
         ?? {};
       const existingBeforeToolExecution = baseOptions.beforeToolExecution;
       const existingAfterToolExecution = baseOptions.afterToolExecution;
+      const routeId = request?.routeId ?? graphState.phaseConfig.modelRoute;
+      const selection =
+        !baseOptions.modelAdapter && !baseOptions.client && routeId
+          ? createModelAdapterForRoute({
+              routing: runtimeState.modelRouting,
+              routeId,
+              env: runtimeState.modelRoutingEnv,
+            })
+          : null;
 
       return {
         ...baseOptions,
+        modelAdapter: baseOptions.modelAdapter ?? selection?.modelAdapter,
+        model: baseOptions.model ?? selection?.model ?? undefined,
         logger: baseOptions.logger ?? createSilentLogger(),
         beforeToolExecution: async (context: RawLoopToolHookContext) => {
           await existingBeforeToolExecution?.(context);
@@ -731,6 +751,8 @@ export function createInstructionRuntimeState(
     projectRules: string;
     baseInjectedContext?: string[];
     continuationLimits?: Partial<InstructionContinuationLimits>;
+    modelRouting?: ModelRoutingOverrides;
+    env?: NodeJS.ProcessEnv;
     targetEnrichmentInvoker?: (
       prompt: string,
     ) => Promise<{
@@ -741,6 +763,12 @@ export function createInstructionRuntimeState(
     runtimeDependencies?: AgentRuntimeDependencies;
   },
 ): InstructionRuntimeState {
+  const modelRoutingEnv = options.env ?? process.env;
+  const modelRouting = createModelRoutingConfig({
+    env: modelRoutingEnv,
+    ...options.modelRouting,
+  });
+
   return {
     projectRules: options.projectRules,
     baseInjectedContext: [...(options.baseInjectedContext ?? [])],
@@ -749,6 +777,8 @@ export function createInstructionRuntimeState(
     retryCountsByFile: {},
     blockedFiles: [],
     pendingTargetSelectionPath: null,
+    modelRouting,
+    modelRoutingEnv,
     targetEnrichmentInvoker: options.targetEnrichmentInvoker,
     runtimeMode: options.runtimeMode ?? "graph",
     runtimeDependencies: options.runtimeDependencies,
@@ -902,7 +932,11 @@ export async function executeInstructionTurn(
     );
 
     configureTargetManagerEnrichmentInvoker(
-      runtimeState.targetEnrichmentInvoker ?? null,
+      getTargetEnrichmentInvoker({
+        invokeModel: runtimeState.targetEnrichmentInvoker,
+        modelRouting: runtimeState.modelRouting,
+        env: runtimeState.modelRoutingEnv,
+      }),
     );
 
     try {

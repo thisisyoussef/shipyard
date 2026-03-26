@@ -43,8 +43,9 @@ import {
   type SessionState,
 } from "../engine/state.js";
 import {
-  hasAutomaticTargetEnrichmentCapability,
+  getTargetEnrichmentInvoker,
   planAutomaticEnrichment,
+  resolveAutomaticTargetEnrichmentCapability,
 } from "../engine/target-enrichment.js";
 import { applySessionSwitchToRuntime } from "../engine/runtime-context.js";
 import { createPreviewSupervisor } from "../preview/supervisor.js";
@@ -1726,7 +1727,11 @@ export async function startUiRuntimeServer(
           userDescription: options.userDescription,
         },
         {
-          invokeModel: project.runtimeState.targetEnrichmentInvoker,
+          invokeModel: getTargetEnrichmentInvoker({
+            invokeModel: project.runtimeState.targetEnrichmentInvoker,
+            modelRouting: project.runtimeState.modelRouting,
+            env: project.runtimeState.modelRoutingEnv,
+          }),
           shouldCancel: () => isStaleEnrichmentRun(project, runId, options.targetPath),
           async onProgress(event) {
             if (isStaleEnrichmentRun(project, runId, options.targetPath)) {
@@ -1821,22 +1826,26 @@ export async function startUiRuntimeServer(
       return;
     }
 
-    if (
-      !hasAutomaticTargetEnrichmentCapability(
-        project.runtimeState.targetEnrichmentInvoker,
-      )
-    ) {
+    const capability = resolveAutomaticTargetEnrichmentCapability({
+      invokeModel: project.runtimeState.targetEnrichmentInvoker,
+      modelRouting: project.runtimeState.modelRouting,
+      env: project.runtimeState.modelRoutingEnv,
+    });
+
+    if (!capability.available) {
+      const message =
+        capability.reason
+        ?? "Automatic analysis is unavailable until target enrichment is configured.";
+
       await broadcastTargetState(project, {
         status: "idle",
-        message:
-          "Automatic analysis is unavailable until target enrichment is configured.",
+        message,
       });
       await logTargetEnrichment(project, {
         targetPath,
         trigger: "automatic",
         status: "skipped",
-        message:
-          "Automatic analysis is unavailable until target enrichment is configured.",
+        message,
         reason: options.reason,
       });
       return;
@@ -2566,6 +2575,23 @@ export async function startUiRuntimeServer(
                   socket,
                   createErrorMessage(
                     "Select or create a target before running enrichment.",
+                  ),
+                );
+                break;
+              }
+
+              const capability = resolveAutomaticTargetEnrichmentCapability({
+                invokeModel: activeProject.runtimeState.targetEnrichmentInvoker,
+                modelRouting: activeProject.runtimeState.modelRouting,
+                env: activeProject.runtimeState.modelRoutingEnv,
+              });
+
+              if (!capability.available) {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    capability.reason
+                    ?? "Target enrichment is unavailable until a model provider is configured.",
                   ),
                 );
                 break;

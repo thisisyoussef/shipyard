@@ -1,5 +1,6 @@
 import "../../tools/index.js";
 import type { TaskPlan } from "../../artifacts/types.js";
+import { CODE_PHASE_MODEL_ROUTE } from "../../engine/model-routing.js";
 import {
   getTools,
   type ToolDefinition,
@@ -25,6 +26,7 @@ export const codePhase: Phase = {
   description: "Default autonomous coding phase for repository changes.",
   systemPrompt: CODE_PHASE_SYSTEM_PROMPT,
   tools: CODE_PHASE_TOOL_NAMES,
+  modelRoute: CODE_PHASE_MODEL_ROUTE,
   approvalRequired: false,
   inputArtifact: "instruction",
   outputArtifact: "task_plan",

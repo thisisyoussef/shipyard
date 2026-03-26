@@ -3,7 +3,7 @@
 - Pack: Provider-Agnostic Model Runtime
 - Estimate: 16-24 hours
 - Date: 2026-03-26
-- Status: In progress (`P10-S01` and `P10-S02` implemented; `P10-S03` through `P10-S05` drafted)
+- Status: In progress (`P10-S01` through `P10-S03` implemented; `P10-S04` and `P10-S05` drafted)
 
 ## Pack Objectives
 
@@ -172,4 +172,73 @@ const modelTurn = await createModelTurnWithBudgetRecovery({
   systemPrompt: normalizedSystemPrompt,
   messages: requestHistory.messages,
   tools: toolDefinitions,
+```
+
+- `P10-S03`: [`../../src/engine/model-routing.ts`](../../src/engine/model-routing.ts),
+  [`../../src/phases/phase.ts`](../../src/phases/phase.ts),
+  [`../../src/phases/code/index.ts`](../../src/phases/code/index.ts),
+  [`../../src/phases/target-manager/index.ts`](../../src/phases/target-manager/index.ts),
+  [`../../src/engine/graph.ts`](../../src/engine/graph.ts),
+  [`../../src/engine/turn.ts`](../../src/engine/turn.ts),
+  [`../../src/plans/turn.ts`](../../src/plans/turn.ts),
+  [`../../src/engine/target-enrichment.ts`](../../src/engine/target-enrichment.ts),
+  [`../../src/engine/target-command.ts`](../../src/engine/target-command.ts),
+  [`../../src/ui/server.ts`](../../src/ui/server.ts),
+  [`../../src/tools/target-manager/enrich-target.ts`](../../src/tools/target-manager/enrich-target.ts),
+  [`../../tests/model-routing.test.ts`](../../tests/model-routing.test.ts),
+  [`../../tests/turn-runtime.test.ts`](../../tests/turn-runtime.test.ts),
+  [`../../tests/plan-mode.test.ts`](../../tests/plan-mode.test.ts), and
+  [`../../tests/target-auto-enrichment.test.ts`](../../tests/target-auto-enrichment.test.ts)
+  add a central provider/model routing resolver, let phases and helper roles
+  declare named routes, route planner/explorer/verifier/target-manager turns
+  through the shared resolver, and replace Anthropic-only target-enrichment
+  availability checks with provider-aware capability diagnostics.
+
+- `P10-S03` declarative route IDs and central resolution:
+
+```ts
+export const CODE_PHASE_MODEL_ROUTE = "phase:code" as const;
+export const TARGET_ENRICHMENT_MODEL_ROUTE = "target-enrichment" as const;
+
+export function resolveModelRoute(options: {
+  routing: ModelRoutingConfig;
+  routeId?: ModelRouteId | string;
+  override?: ModelRouteDefinition;
+  env?: NodeJS.ProcessEnv;
+}): ResolvedModelRoute {
+  const routeId = assertKnownRouteId(options.routeId);
+  const routeOverride = routeId === DEFAULT_MODEL_ROUTE
+    ? undefined
+    : options.routing.routes[routeId as NamedModelRouteId];
+  const mergedRoute = mergeRouteDefinitions(
+    options.routing.defaultRoute,
+    routeOverride,
+    options.override,
+  );
+```
+
+- `P10-S03` provider-aware enrichment capability resolution:
+
+```ts
+export function resolveAutomaticTargetEnrichmentCapability(
+  options: AutomaticTargetEnrichmentCapabilityOptions,
+): ModelRouteCapability {
+  if (options.invokeModel) {
+    return {
+      routeId: TARGET_ENRICHMENT_MODEL_ROUTE,
+      provider: "custom",
+      model: null,
+      available: true,
+      missingEnvironmentVariables: [],
+      reason: null,
+    };
+  }
+
+  return resolveModelRouteCapability({
+    routing: options.modelRouting,
+    routeId: TARGET_ENRICHMENT_MODEL_ROUTE,
+    env: options.env,
+    requireAdapter: true,
+  });
+}
 ```
