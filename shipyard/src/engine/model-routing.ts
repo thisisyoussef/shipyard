@@ -11,7 +11,7 @@ import {
   type ModelAdapter,
 } from "./model-adapter.js";
 
-export const DEFAULT_MODEL_PROVIDER = "anthropic";
+export const DEFAULT_MODEL_PROVIDER = "openai";
 export const DEFAULT_MODEL_ROUTE = "default" as const;
 export const CODE_PHASE_MODEL_ROUTE = "phase:code" as const;
 export const TARGET_MANAGER_PHASE_MODEL_ROUTE =

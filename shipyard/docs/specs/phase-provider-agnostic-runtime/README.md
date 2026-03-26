@@ -3,7 +3,8 @@
 - Pack: Provider-Agnostic Model Runtime
 - Estimate: 16-24 hours
 - Date: 2026-03-26
-- Status: Complete (`P10-S01` through `P10-S05` implemented)
+- Status: Complete (`P10-S01` through `P10-S05` implemented, plus the
+  OpenAI-first operational default follow-up shipped)
 
 ## Pack Objectives
 
@@ -15,7 +16,7 @@
    the code phase, target manager, and helper subagents without wiring SDK
    details into those modules.
 4. Add OpenAI support through the Responses API while preserving Anthropic as a
-   first-class provider and keeping the default behavior backward compatible.
+   first-class provider and keeping the shipped default route easy to switch.
 5. Move runtime and UI tests onto provider-neutral fakes so future
    model-provider work does not require Anthropic wire types across the whole
    suite.
@@ -63,8 +64,9 @@
 - The shared runtime loop can execute turns against an internal `ModelAdapter`
   contract instead of directly against Anthropic SDK message types.
 - The tool registry exposes only provider-neutral tool definitions.
-- Anthropic remains a supported default path, but provider/model choice can be
-  configured per runtime surface or helper role without branching the loop.
+- OpenAI is now the shipped default route, while Anthropic remains a supported
+  alternate path and provider/model choice can be configured per runtime
+  surface or helper role without branching the loop.
 - OpenAI can run through the same orchestration path using a Responses API
   adapter instead of a one-off alternate loop.
 
@@ -242,6 +244,21 @@ export function resolveAutomaticTargetEnrichmentCapability(
   });
 }
 ```
+
+- Operational follow-up: [`../../src/engine/model-routing.ts`](../../src/engine/model-routing.ts),
+  [`../../../.github/workflows/railway-main-deploy.yml`](../../../.github/workflows/railway-main-deploy.yml),
+  [`../../README.md`](../../README.md),
+  [`../../docs/architecture/README.md`](../../docs/architecture/README.md),
+  [`../../docs/architecture/hosted-railway.md`](../../docs/architecture/hosted-railway.md),
+  [`../../.env.example`](../../.env.example),
+  [`../../tests/model-routing.test.ts`](../../tests/model-routing.test.ts),
+  [`../../tests/turn-runtime.test.ts`](../../tests/turn-runtime.test.ts),
+  [`../../tests/cli-loop.test.ts`](../../tests/cli-loop.test.ts),
+  [`../../tests/ui-runtime.test.ts`](../../tests/ui-runtime.test.ts), and
+  [`../../tests/railway-config.test.ts`](../../tests/railway-config.test.ts)
+  flip the shipped default provider to OpenAI, update the operator-facing
+  runtime contract, and make the GitHub Actions Railway deploy sync the
+  production OpenAI credentials plus `gpt-5.4` routing before each release.
 
 - `P10-S04`: [`../../src/engine/openai.ts`](../../src/engine/openai.ts),
   [`../../src/engine/model-routing.ts`](../../src/engine/model-routing.ts),
