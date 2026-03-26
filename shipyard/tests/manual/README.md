@@ -9,6 +9,34 @@ credentialed, or otherwise unsuitable for the default automated test suite.
 - `phase3-live-loop-smoke.ts`: checks the live graph-mode runtime path with bootstrap-ready seeded targets, large writes, a broad-greenfield first turn, and a same-session `broad-continuation` follow-up that should stay off explorer/planner
 - `phase4-langsmith-mvp.ts`: validates the LangSmith-backed MVP flow
 - `phase5-local-preview-smoke.ts`: verifies preview auto-start, refresh, and unavailable-state handling
+- `spec-pack-rebuild.ts`: mounts an external spec pack at `.shipyard/spec` inside a disposable target and runs a one-shot rebuild instruction against it
+
+## Spec Pack Runner
+
+Use this when you want to reproduce a large spec-driven run without hand-wiring
+temp targets or symlinks.
+
+Example:
+
+```bash
+pnpm --dir shipyard manual:spec-pack -- --spec-root /abs/path/to/spec-pack --instruction-file /abs/path/to/prompt.md
+```
+
+To resume a long-running mounted-pack session after Shipyard emits a handoff:
+
+```bash
+pnpm --dir shipyard manual:spec-pack -- --spec-root /abs/path/to/spec-pack --target-dir /tmp/existing-target --session-id <session-id>
+```
+
+Useful env vars for long-running model turns:
+
+- `SHIPYARD_ANTHROPIC_TIMEOUT_MS`
+- `SHIPYARD_ANTHROPIC_MAX_RETRIES`
+- `SHIPYARD_ANTHROPIC_MODEL`
+- `SHIPYARD_ANTHROPIC_MAX_TOKENS`
+
+The runner prints the scratch target path, session id, mounted spec path, and a
+JSON result artifact path so you can inspect the generated files after the run.
 
 ## SV-S01 Operator Checklist
 
