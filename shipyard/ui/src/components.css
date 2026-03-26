@@ -121,6 +121,97 @@
    Target context bar, switcher, and creation dialog
    ═══════════════════════════════════════════════ */
 
+.project-board {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 56%),
+    rgba(8, 18, 34, 0.72);
+  box-shadow: var(--elevation-2);
+}
+
+.project-board-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.project-board-copy {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.project-board-copy h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  color: var(--text-strong);
+  letter-spacing: var(--tracking-tight);
+}
+
+.project-board-strip {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.project-board-item {
+  display: grid;
+  gap: var(--space-1-5);
+  padding: var(--space-3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.project-board-item:hover {
+  border-color: rgba(111, 191, 255, 0.34);
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
+}
+
+.project-board-item[data-active="true"] {
+  border-color: rgba(111, 191, 255, 0.48);
+  background:
+    linear-gradient(180deg, rgba(111, 191, 255, 0.12), transparent 68%),
+    rgba(255, 255, 255, 0.05);
+}
+
+.project-board-item-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.project-board-item-row strong {
+  font-size: var(--text-sm);
+  color: var(--text-strong);
+}
+
+.project-board-item-status,
+.project-board-item-description,
+.project-board-empty {
+  margin: 0;
+  color: var(--text-body);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+.project-board-item-description {
+  color: var(--text-muted);
+}
+
 .target-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -941,6 +1032,11 @@ textarea:focus-visible {
 /* ── Target manager responsive adjustments ───── */
 
 @media (max-width: 1180px) {
+  .project-board-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .target-header {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -970,6 +1066,7 @@ textarea:focus-visible {
     padding: var(--space-4);
   }
 
+  .project-board-item-row,
   .target-header-row,
   .target-switcher-header,
   .target-card-header,

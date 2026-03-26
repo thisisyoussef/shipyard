@@ -6,6 +6,7 @@ import {
 import type {
   BackendToFrontendMessage,
   DeploySummary,
+  ProjectBoardState,
   UploadReceipt,
   SessionRunSummary,
   TargetEnrichmentState,
@@ -113,6 +114,11 @@ export interface TargetEnrichmentStateViewModel extends TargetEnrichmentState {}
 
 export interface TargetManagerViewModel extends TargetManagerState {}
 
+export type ProjectBoardProjectViewModel =
+  ProjectBoardState["openProjects"][number];
+
+export type ProjectBoardViewModel = ProjectBoardState;
+
 export interface SessionRunSummaryViewModel extends SessionRunSummary {}
 
 export interface WorkbenchViewState {
@@ -133,6 +139,7 @@ export interface WorkbenchViewState {
   latestDeploy: LatestDeployViewModel;
   previewState: PreviewStateViewModel;
   targetManager: TargetManagerViewModel | null;
+  projectBoard: ProjectBoardViewModel | null;
 }
 
 export interface PreparedInstructionSubmission {
@@ -448,6 +455,7 @@ export function ensureWorkbenchStateDefaults(
     latestDeploy: state.latestDeploy ?? initialState.latestDeploy,
     previewState: state.previewState ?? initialState.previewState,
     targetManager: state.targetManager ?? initialState.targetManager,
+    projectBoard: state.projectBoard ?? initialState.projectBoard,
   };
 }
 
@@ -472,6 +480,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
       "Waiting for Shipyard to publish preview state.",
     ),
     targetManager: null,
+    projectBoard: null,
   };
 }
 
@@ -635,6 +644,7 @@ export function applySessionSnapshot(
     latestDeploy: recoveredState.latestDeploy,
     previewState,
     targetManager: recoveredState.targetManager ?? state.targetManager ?? null,
+    projectBoard: recoveredState.projectBoard ?? state.projectBoard ?? null,
   };
 }
 
@@ -957,5 +967,11 @@ export function applyBackendMessage(
         agentStatus: message.message,
       };
     }
+
+    case "projects:state":
+      return {
+        ...state,
+        projectBoard: message.state,
+      };
   }
 }

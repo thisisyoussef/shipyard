@@ -248,6 +248,68 @@ describe("ui view models", () => {
     });
   });
 
+  it("updates the project board without disturbing the active turn snapshot", () => {
+    let state = queueInstructionTurn(
+      createInitialWorkbenchState(),
+      "inspect package.json",
+      [],
+    );
+
+    state = applyBackendMessage(
+      state,
+      {
+        type: "projects:state",
+        state: {
+          activeProjectId: "/tmp/beta-app",
+          openProjects: [
+            {
+              projectId: "/tmp/alpha-app",
+              targetPath: "/tmp/alpha-app",
+              targetName: "alpha-app",
+              description: "Busy alpha project.",
+              activePhase: "code",
+              status: "agent-busy",
+              agentStatus: "Running alpha task",
+              hasProfile: true,
+              lastActiveAt: "2026-03-26T12:00:00.000Z",
+              turnCount: 3,
+            },
+            {
+              projectId: "/tmp/beta-app",
+              targetPath: "/tmp/beta-app",
+              targetName: "beta-app",
+              description: "Ready beta project.",
+              activePhase: "code",
+              status: "ready",
+              agentStatus: "Ready for the next instruction.",
+              hasProfile: false,
+              lastActiveAt: "2026-03-26T12:02:00.000Z",
+              turnCount: 1,
+            },
+          ],
+        },
+      } as unknown as Parameters<typeof applyBackendMessage>[1],
+    );
+
+    expect(state.projectBoard).toMatchObject({
+      activeProjectId: "/tmp/beta-app",
+      openProjects: [
+        expect.objectContaining({
+          targetPath: "/tmp/alpha-app",
+          status: "agent-busy",
+        }),
+        expect.objectContaining({
+          targetPath: "/tmp/beta-app",
+          status: "ready",
+        }),
+      ],
+    });
+    expect(state.turns[0]).toMatchObject({
+      instruction: "inspect package.json",
+      status: "working",
+    });
+  });
+
   it("page reload restores the same session snapshot", () => {
     const snapshot = queueInstructionTurn(
       createInitialWorkbenchState(),

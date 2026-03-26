@@ -48,10 +48,12 @@ import {
 } from "../engine/target-enrichment.js";
 import { applySessionSwitchToRuntime } from "../engine/runtime-context.js";
 import { createPreviewSupervisor } from "../preview/supervisor.js";
+import type { PreviewSupervisor } from "../preview/supervisor.js";
 import { shouldUseStarterCanvasForScratchTarget } from "../preview/contracts.js";
 import type {
   BackendToFrontendMessage,
   DeploySummary,
+  ProjectBoardState,
   TargetEnrichmentState,
   TargetManagerState,
 } from "./contracts.js";
@@ -80,7 +82,10 @@ import {
   queueInstructionTurn,
   removePendingUploadReceipt,
 } from "./workbench-state.js";
-import { createLocalTraceLogger } from "../tracing/local-log.js";
+import {
+  createLocalTraceLogger,
+  type LocalTraceLogger,
+} from "../tracing/local-log.js";
 import { buildTargetManagerState, IDLE_TARGET_ENRICHMENT_STATE } from "./target-manager.js";
 import { createTargetTool } from "../tools/target-manager/create-target.js";
 import { enrichTargetTool } from "../tools/target-manager/enrich-target.js";
@@ -161,6 +166,30 @@ interface UiHealthResponse {
   targetDirectory?: string;
   workspaceDirectory?: string;
   turnCount?: number;
+}
+
+interface BrowserProjectRuntime {
+  projectId: string;
+  sessionState: SessionState;
+  runtimeState: InstructionRuntimeState;
+  projectRulesLoaded: boolean;
+  traceLogger: LocalTraceLogger;
+  targetManagerState: TargetManagerState;
+  previewSupervisor: PreviewSupervisor;
+  previewStarted: boolean;
+  activeInstruction: Promise<void> | null;
+  activeInstructionController: AbortController | null;
+  activeDeploy: Promise<void> | null;
+  activeDeployController: AbortController | null;
+  deployInFlight: boolean;
+  enrichmentRunSequence: number;
+  activeEnrichmentRun:
+    | {
+        runId: number;
+        targetPath: string;
+      }
+    | null;
+  pendingEnrichmentTasks: Set<Promise<void>>;
 }
 
 export interface ExistingUiRuntimeInfo {
@@ -872,40 +901,100 @@ export async function startUiRuntimeServer(
   options: StartUiRuntimeServerOptions,
 ): Promise<UiRuntimeServer> {
   const host = resolveUiHost(options.host);
-  const sessionState = options.sessionState;
-  const fallbackHtml = createFallbackUiHtml(sessionState);
-  const runtimeState = createInstructionRuntimeState({
-    projectRules: options.projectRules,
-    baseInjectedContext: options.baseInjectedContext,
-    targetEnrichmentInvoker: options.targetEnrichmentInvoker,
-    runtimeMode: options.runtimeMode,
-    runtimeDependencies: options.runtimeDependencies,
-  });
+  const initialSessionState = options.sessionState;
+  const fallbackHtml = createFallbackUiHtml(initialSessionState);
   const executePlanTurn = options.executePlanTurn ?? executePlanningTurn;
   const executeDeploy = options.executeDeploy ?? deployTargetTool;
   const executeTaskTurn = options.executeTaskTurn ?? executeTaskRunnerTurn;
-  let projectRulesLoaded = options.projectRulesLoaded;
-  let traceLogger = await createLocalTraceLogger(
-    sessionState.targetDirectory,
-    sessionState.sessionId,
-  );
-  let targetManagerState = await buildTargetManagerState(sessionState);
-  sessionState.workbenchState.targetManager = targetManagerState;
-  sessionState.workbenchState.latestDeploy = synchronizeDeploySummary(
-    sessionState.workbenchState.latestDeploy,
-    sessionState,
-    {
-      deploying: false,
+  const projectRuntimes = new Map<string, BrowserProjectRuntime>();
+  let activeProjectId = "";
+
+  const createProjectId = (sessionState: SessionState): string =>
+    sessionState.activePhase === "target-manager"
+      ? sessionState.targetsDirectory
+      : sessionState.targetDirectory;
+
+  const getProject = (projectId: string): BrowserProjectRuntime => {
+    const project = projectRuntimes.get(projectId);
+
+    if (!project) {
+      throw new Error(`Project runtime ${projectId} is not available.`);
+    }
+
+    return project;
+  };
+
+  const getActiveProject = (): BrowserProjectRuntime => getProject(activeProjectId);
+
+  const createProjectRuntime = async (
+    sessionState: SessionState,
+    seed?: {
+      projectRules?: string;
+      projectRulesLoaded?: boolean;
+      baseInjectedContext?: string[];
     },
-  );
-  await traceLogger.log("session.start", {
-    sessionId: sessionState.sessionId,
-    targetDirectory: sessionState.targetDirectory,
-    discovery: sessionState.discovery,
-    phase: sessionState.activePhase,
+  ): Promise<BrowserProjectRuntime> => {
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: seed?.projectRules ?? "",
+      baseInjectedContext: seed?.baseInjectedContext,
+      targetEnrichmentInvoker: options.targetEnrichmentInvoker,
+      runtimeMode: options.runtimeMode,
+      runtimeDependencies: options.runtimeDependencies,
+    });
+
+    if (!seed) {
+      await applySessionSwitchToRuntime(sessionState, runtimeState);
+    }
+
+    const project = {
+      projectId: createProjectId(sessionState),
+      sessionState,
+      runtimeState,
+      projectRulesLoaded: seed?.projectRulesLoaded ?? Boolean(runtimeState.projectRules),
+      traceLogger: await createLocalTraceLogger(
+        sessionState.targetDirectory,
+        sessionState.sessionId,
+      ),
+      targetManagerState: await buildTargetManagerState(sessionState),
+      previewSupervisor: null as unknown as PreviewSupervisor,
+      previewStarted: false,
+      activeInstruction: null,
+      activeInstructionController: null,
+      activeDeploy: null,
+      activeDeployController: null,
+      deployInFlight: false,
+      enrichmentRunSequence: 0,
+      activeEnrichmentRun: null,
+      pendingEnrichmentTasks: new Set<Promise<void>>(),
+    } satisfies BrowserProjectRuntime;
+
+    project.sessionState.workbenchState.targetManager = project.targetManagerState;
+    project.sessionState.workbenchState.latestDeploy = synchronizeDeploySummary(
+      project.sessionState.workbenchState.latestDeploy,
+      project.sessionState,
+      {
+        deploying: false,
+      },
+    );
+
+    return project;
+  };
+
+  const initialProject = await createProjectRuntime(initialSessionState, {
+    projectRules: options.projectRules,
+    projectRulesLoaded: options.projectRulesLoaded,
+    baseInjectedContext: options.baseInjectedContext,
+  });
+  projectRuntimes.set(initialProject.projectId, initialProject);
+  activeProjectId = initialProject.projectId;
+  await initialProject.traceLogger.log("session.start", {
+    sessionId: initialProject.sessionState.sessionId,
+    targetDirectory: initialProject.sessionState.targetDirectory,
+    discovery: initialProject.sessionState.discovery,
+    phase: initialProject.sessionState.activePhase,
     runtimeMode: "ui",
   });
-  await saveSessionState(sessionState);
+  await saveSessionState(initialProject.sessionState);
   const httpServer = createServer(
     async (request: IncomingMessage, response: ServerResponse) => {
       const requestLocation = new URL(
@@ -916,10 +1005,11 @@ export async function startUiRuntimeServer(
       const accessState = getUiAccessState(request);
 
       if (requestPath === "/api/health") {
+        const activeProject = getActiveProject();
         sendJson(
           response,
           200,
-          createHealthResponse(sessionState, {
+          createHealthResponse(activeProject.sessionState, {
             accessProtected: accessState.required,
             includeRuntimeDetails:
               accessState.authenticated || !accessState.required,
@@ -1030,29 +1120,39 @@ export async function startUiRuntimeServer(
   );
   const socketServer = new WebSocketServer({ noServer: true });
   const sockets = new Set<WebSocket>();
-  let activeInstruction: Promise<void> | null = null;
-  let activeInstructionController: AbortController | null = null;
-  let activeDeploy: Promise<void> | null = null;
-  let activeDeployController: AbortController | null = null;
-  let deployInFlight = false;
-  let previewStarted = false;
   let isClosing = false;
-  let enrichmentRunSequence = 0;
-  let activeEnrichmentRun:
-    | {
-        runId: number;
-        targetPath: string;
-      }
-    | null = null;
-  const pendingEnrichmentTasks = new Set<Promise<void>>();
   const closed = new Promise<void>((resolve) => {
     httpServer.once("close", () => {
       resolve();
     });
   });
 
-  const connectionState = (): "ready" | "agent-busy" =>
-    activeInstruction === null && !deployInFlight ? "ready" : "agent-busy";
+  const projectConnectionState = (
+    project: BrowserProjectRuntime,
+  ): "ready" | "agent-busy" => {
+    if (project.activeInstruction !== null || project.deployInFlight) {
+      return "agent-busy";
+    }
+
+    return "ready";
+  };
+
+  const projectBoardStatus = (
+    project: BrowserProjectRuntime,
+  ): "ready" | "agent-busy" | "error" => {
+    if (project.activeInstruction !== null || project.deployInFlight) {
+      return "agent-busy";
+    }
+
+    if (
+      project.sessionState.workbenchState.connectionState === "error" ||
+      project.sessionState.workbenchState.latestError
+    ) {
+      return "error";
+    }
+
+    return "ready";
+  };
 
   const sendToSocket = async (
     socket: WebSocket,
@@ -1071,134 +1171,283 @@ export async function startUiRuntimeServer(
     );
   };
 
-  const broadcastBrowserMessage = async (
-    message: BackendToFrontendMessage,
-  ): Promise<void> => {
-    sessionState.workbenchState =
-      message.type === "session:state"
-        ? message.workbenchState
-        : applyBackendMessage(sessionState.workbenchState, message);
+  const createProjectBoardState = (): ProjectBoardState => {
+    const openProjects = [...projectRuntimes.values()]
+      .map((project) => {
+        const targetManager =
+          project.sessionState.workbenchState.targetManager ??
+          project.targetManagerState;
+        const currentTarget = targetManager.currentTarget;
 
-    await broadcast(message);
+        return {
+          projectId: project.projectId,
+          targetPath: project.sessionState.targetDirectory,
+          targetName: currentTarget.name,
+          description: currentTarget.description,
+          activePhase: project.sessionState.activePhase,
+          status: projectBoardStatus(project),
+          agentStatus: project.sessionState.workbenchState.agentStatus,
+          hasProfile: currentTarget.hasProfile,
+          lastActiveAt: project.sessionState.lastActiveAt,
+          turnCount: project.sessionState.turnCount,
+        };
+      })
+      .sort((left, right) => {
+        if (left.projectId === activeProjectId) {
+          return -1;
+        }
+
+        if (right.projectId === activeProjectId) {
+          return 1;
+        }
+
+        return Date.parse(right.lastActiveAt) - Date.parse(left.lastActiveAt);
+      });
+    const boardState: ProjectBoardState = {
+      activeProjectId: activeProjectId || null,
+      openProjects,
+    };
+
+    for (const project of projectRuntimes.values()) {
+      project.sessionState.workbenchState.projectBoard = boardState;
+    }
+
+    return boardState;
   };
 
-  const syncLatestDeploy = (): DeploySummary => {
+  const sendProjectsState = async (socket: WebSocket): Promise<ProjectBoardState> => {
+    const state = createProjectBoardState();
+    await sendToSocket(socket, {
+      type: "projects:state",
+      state,
+    });
+    return state;
+  };
+
+  const broadcastProjectsState = async (): Promise<ProjectBoardState> => {
+    const state = createProjectBoardState();
+    await broadcast({
+      type: "projects:state",
+      state,
+    });
+    return state;
+  };
+
+  const emitProjectMessage = async (
+    project: BrowserProjectRuntime,
+    message: BackendToFrontendMessage,
+    options: {
+      broadcastIfActive?: boolean;
+      syncProjects?: boolean;
+    } = {},
+  ): Promise<void> => {
+    project.sessionState.workbenchState =
+      message.type === "session:state"
+        ? message.workbenchState
+        : applyBackendMessage(project.sessionState.workbenchState, message);
+
+    if (message.type === "target:state" || message.type === "target:switch_complete") {
+      project.targetManagerState = message.state;
+    }
+
+    if ((options.broadcastIfActive ?? true) && project.projectId === activeProjectId) {
+      await broadcast(message);
+    }
+
+    if (options.syncProjects ?? true) {
+      await broadcastProjectsState();
+    }
+  };
+
+  const syncLatestDeploy = (
+    project: BrowserProjectRuntime,
+  ): DeploySummary => {
     const nextDeploy = synchronizeDeploySummary(
-      sessionState.workbenchState.latestDeploy,
-      sessionState,
+      project.sessionState.workbenchState.latestDeploy,
+      project.sessionState,
       {
-        deploying: deployInFlight,
+        deploying: project.deployInFlight,
       },
     );
-    sessionState.workbenchState.latestDeploy = nextDeploy;
+    project.sessionState.workbenchState.latestDeploy = nextDeploy;
     return nextDeploy;
   };
 
-  const currentEnrichmentState = (): TargetEnrichmentState =>
-    sessionState.workbenchState.targetManager?.enrichmentStatus ??
+  const currentEnrichmentState = (
+    project: BrowserProjectRuntime,
+  ): TargetEnrichmentState =>
+    project.sessionState.workbenchState.targetManager?.enrichmentStatus ??
     IDLE_TARGET_ENRICHMENT_STATE;
 
   const syncTargetManagerState = async (
-    enrichmentState: TargetEnrichmentState = currentEnrichmentState(),
+    project: BrowserProjectRuntime,
+    enrichmentState: TargetEnrichmentState = currentEnrichmentState(project),
   ): Promise<TargetManagerState> => {
-    targetManagerState = await buildTargetManagerState(
-      sessionState,
+    project.targetManagerState = await buildTargetManagerState(
+      project.sessionState,
       enrichmentState,
     );
-    sessionState.workbenchState.targetManager = targetManagerState;
-    return targetManagerState;
+    project.sessionState.workbenchState.targetManager = project.targetManagerState;
+    return project.targetManagerState;
   };
 
-  const publishPreviewState = async (previewState: PreviewState): Promise<void> => {
-    sessionState.workbenchState = applyBackendMessage(
-      sessionState.workbenchState,
+  const createSessionMessage = async (
+    project: BrowserProjectRuntime,
+  ): Promise<Extract<BackendToFrontendMessage, { type: "session:state" }>> => {
+    await syncTargetManagerState(project);
+    syncLatestDeploy(project);
+    createProjectBoardState();
+    const sessionHistory = await listSessionRunSummaries(
+      project.sessionState.targetDirectory,
+      project.sessionState.sessionId,
+    );
+
+    return createSessionStateMessage({
+      sessionState: project.sessionState,
+      connectionState: projectConnectionState(project),
+      projectRulesLoaded: project.projectRulesLoaded,
+      sessionHistory,
+      workspaceDirectory,
+    }) as Extract<BackendToFrontendMessage, { type: "session:state" }>;
+  };
+
+  const publishPreviewState = async (
+    project: BrowserProjectRuntime,
+    previewState: PreviewState,
+  ): Promise<void> => {
+    project.sessionState.workbenchState = applyBackendMessage(
+      project.sessionState.workbenchState,
       {
         type: "preview:state",
         preview: previewState,
       },
     );
 
-    await traceLogger.log("preview.state", {
-      sessionId: sessionState.sessionId,
+    await project.traceLogger.log("preview.state", {
+      sessionId: project.sessionState.sessionId,
       preview: previewState,
     });
-    await saveSessionState(sessionState);
-    await broadcast({
-      type: "preview:state",
-      preview: previewState,
-    });
+    await saveSessionState(project.sessionState);
+
+    if (project.projectId === activeProjectId) {
+      await broadcast({
+        type: "preview:state",
+        preview: previewState,
+      });
+    }
   };
 
-  const createPreviewBridge = () =>
+  const createPreviewBridge = (project: BrowserProjectRuntime) =>
     createPreviewSupervisor({
-      targetDirectory: sessionState.targetDirectory,
-      capability: sessionState.discovery.previewCapability,
+      targetDirectory: project.sessionState.targetDirectory,
+      capability: project.sessionState.discovery.previewCapability,
       starterCanvasOnUnavailable: shouldUseStarterCanvasForScratchTarget({
-        activePhase: sessionState.activePhase,
-        discovery: sessionState.discovery,
+        activePhase: project.sessionState.activePhase,
+        discovery: project.sessionState.discovery,
       }),
-      starterCanvasOnStartupFailure: sessionState.activePhase === "code",
-      onState: publishPreviewState,
+      starterCanvasOnStartupFailure: project.sessionState.activePhase === "code",
+      onState: (previewState) => publishPreviewState(project, previewState),
     });
 
-  let previewSupervisor = createPreviewBridge();
+  initialProject.previewSupervisor = createPreviewBridge(initialProject);
+  createProjectBoardState();
 
-  const sendSessionState = async (socket: WebSocket): Promise<void> => {
-    await syncTargetManagerState();
-    syncLatestDeploy();
-    const sessionHistory = await listSessionRunSummaries(
-      sessionState.targetDirectory,
-      sessionState.sessionId,
-    );
-    await sendToSocket(
-      socket,
-      createSessionStateMessage({
-        sessionState,
-        connectionState: connectionState(),
-        projectRulesLoaded,
-        sessionHistory,
-        workspaceDirectory,
-      }),
-    );
+  const sendSessionState = async (
+    socket: WebSocket,
+    project: BrowserProjectRuntime = getActiveProject(),
+  ): Promise<void> => {
+    await sendToSocket(socket, await createSessionMessage(project));
   };
 
-  const broadcastSessionState = async (): Promise<void> => {
-    await syncTargetManagerState();
-    syncLatestDeploy();
-    const sessionHistory = await listSessionRunSummaries(
-      sessionState.targetDirectory,
-      sessionState.sessionId,
+  const broadcastSessionState = async (
+    project: BrowserProjectRuntime = getActiveProject(),
+  ): Promise<void> => {
+    const message = await createSessionMessage(project);
+
+    if (project.projectId === activeProjectId) {
+      await broadcast(message);
+    }
+
+    await saveSessionState(project.sessionState);
+    await broadcastProjectsState();
+  };
+
+  const sendTargetState = async (
+    socket: WebSocket,
+    project: BrowserProjectRuntime = getActiveProject(),
+  ): Promise<void> => {
+    const nextTargetManagerState = await syncTargetManagerState(project);
+    await sendToSocket(socket, {
+      type: "target:state",
+      state: nextTargetManagerState,
+    });
+  };
+
+  const broadcastTargetState = async (
+    project: BrowserProjectRuntime = getActiveProject(),
+    enrichmentState: TargetEnrichmentState = currentEnrichmentState(project),
+  ): Promise<TargetManagerState> => {
+    const nextTargetManagerState = await syncTargetManagerState(
+      project,
+      enrichmentState,
     );
-    await broadcastBrowserMessage(
-      createSessionStateMessage({
-        sessionState,
-        connectionState: connectionState(),
-        projectRulesLoaded,
-        sessionHistory,
-        workspaceDirectory,
-      }),
-    );
-    await saveSessionState(sessionState);
+    await emitProjectMessage(project, {
+      type: "target:state",
+      state: nextTargetManagerState,
+    });
+    await saveSessionState(project.sessionState);
+    return nextTargetManagerState;
+  };
+
+  const broadcastTargetSwitchComplete = async (
+    project: BrowserProjectRuntime,
+    success: boolean,
+    message: string,
+    nextTargetManagerState: TargetManagerState,
+  ): Promise<void> => {
+    await emitProjectMessage(project, {
+      type: "target:switch_complete",
+      success,
+      message,
+      state: nextTargetManagerState,
+      projectId: project.projectId,
+    });
+    await saveSessionState(project.sessionState);
+  };
+
+  const broadcastEnrichmentProgress = async (
+    project: BrowserProjectRuntime,
+    status: "queued" | "started" | "in-progress" | "complete" | "error",
+    message: string,
+  ): Promise<void> => {
+    await emitProjectMessage(project, {
+      type: "target:enrichment_progress",
+      status,
+      message,
+    });
+    await saveSessionState(project.sessionState);
   };
 
   const broadcastDeployState = async (
-    deploy: DeploySummary = syncLatestDeploy(),
+    project: BrowserProjectRuntime = getActiveProject(),
+    deploy: DeploySummary = syncLatestDeploy(project),
   ): Promise<DeploySummary> => {
-    await broadcastBrowserMessage({
+    await emitProjectMessage(project, {
       type: "deploy:state",
       deploy,
     });
-    await saveSessionState(sessionState);
+    await saveSessionState(project.sessionState);
     return deploy;
   };
 
   const logUploadTrace = async (
     event: "upload.accepted" | "upload.rejected" | "upload.removed" | "upload.handoff",
     payload: Record<string, unknown>,
+    project: BrowserProjectRuntime = getActiveProject(),
   ): Promise<void> => {
-    await traceLogger.log(event, {
-      sessionId: sessionState.sessionId,
-      targetDirectory: sessionState.targetDirectory,
+    await project.traceLogger.log(event, {
+      sessionId: project.sessionState.sessionId,
+      targetDirectory: project.sessionState.targetDirectory,
       runtimeMode: "ui",
       ...payload,
     });
@@ -1261,6 +1510,8 @@ export async function startUiRuntimeServer(
     response: ServerResponse,
     requestLocation: URL,
   ): Promise<void> => {
+    const project = getActiveProject();
+
     try {
       if (!requestIsAuthorized(request)) {
         sendJson(response, 401, {
@@ -1281,7 +1532,7 @@ export async function startUiRuntimeServer(
         requestLocation,
       );
 
-      if (sessionId !== sessionState.sessionId) {
+      if (sessionId !== project.sessionState.sessionId) {
         throw new UploadValidationError(
           "The requested upload session does not match the active browser session.",
           409,
@@ -1290,17 +1541,17 @@ export async function startUiRuntimeServer(
 
       const receipts = await storeUploadCandidates({
         sessionId,
-        targetDirectory: sessionState.targetDirectory,
-        existingReceipts: sessionState.workbenchState.pendingUploads,
+        targetDirectory: project.sessionState.targetDirectory,
+        existingReceipts: project.sessionState.workbenchState.pendingUploads,
         candidates,
       });
 
-      sessionState.workbenchState = appendPendingUploadReceipts(
-        sessionState.workbenchState,
+      project.sessionState.workbenchState = appendPendingUploadReceipts(
+        project.sessionState.workbenchState,
         receipts,
       );
-      await saveSessionState(sessionState);
-      await broadcastSessionState();
+      await saveSessionState(project.sessionState);
+      await broadcastSessionState(project);
       await logUploadTrace("upload.accepted", {
         files: receipts.map((receipt) => ({
           id: receipt.id,
@@ -1309,7 +1560,7 @@ export async function startUiRuntimeServer(
           sizeBytes: receipt.sizeBytes,
           mediaType: receipt.mediaType,
         })),
-      });
+      }, project);
       sendJson(response, 201, {
         receipts,
       });
@@ -1323,7 +1574,7 @@ export async function startUiRuntimeServer(
       await logUploadTrace("upload.rejected", {
         message,
         path: requestLocation.pathname,
-      });
+      }, project);
       sendJson(response, statusCode, {
         error: message,
       });
@@ -1335,6 +1586,8 @@ export async function startUiRuntimeServer(
     response: ServerResponse,
     requestLocation: URL,
   ): Promise<void> => {
+    const project = getActiveProject();
+
     try {
       if (!requestIsAuthorized(request)) {
         sendJson(response, 401, {
@@ -1359,7 +1612,7 @@ export async function startUiRuntimeServer(
         );
       }
 
-      if (sessionId !== sessionState.sessionId) {
+      if (sessionId !== project.sessionState.sessionId) {
         throw new UploadValidationError(
           "The requested upload session does not match the active browser session.",
           409,
@@ -1372,7 +1625,7 @@ export async function startUiRuntimeServer(
         throw new UploadValidationError("Upload removal requires an upload id.", 400);
       }
 
-      const receipt = sessionState.workbenchState.pendingUploads.find(
+      const receipt = project.sessionState.workbenchState.pendingUploads.find(
         (pendingUpload) => pendingUpload.id === uploadId,
       );
 
@@ -1385,20 +1638,20 @@ export async function startUiRuntimeServer(
 
       await deleteStoredUpload({
         sessionId,
-        targetDirectory: sessionState.targetDirectory,
+        targetDirectory: project.sessionState.targetDirectory,
         receipt,
       });
-      sessionState.workbenchState = removePendingUploadReceipt(
-        sessionState.workbenchState,
+      project.sessionState.workbenchState = removePendingUploadReceipt(
+        project.sessionState.workbenchState,
         uploadId,
       );
-      await saveSessionState(sessionState);
-      await broadcastSessionState();
+      await saveSessionState(project.sessionState);
+      await broadcastSessionState(project);
       await logUploadTrace("upload.removed", {
         id: receipt.id,
         originalName: receipt.originalName,
         storedRelativePath: receipt.storedRelativePath,
-      });
+      }, project);
       sendJson(response, 200, {
         removedId: uploadId,
       });
@@ -1412,60 +1665,15 @@ export async function startUiRuntimeServer(
       await logUploadTrace("upload.rejected", {
         message,
         path: requestLocation.pathname,
-      });
+      }, project);
       sendJson(response, statusCode, {
         error: message,
       });
     }
   };
 
-  const sendTargetState = async (socket: WebSocket): Promise<void> => {
-    const nextTargetManagerState = await syncTargetManagerState();
-    await sendToSocket(socket, {
-      type: "target:state",
-      state: nextTargetManagerState,
-    });
-  };
-
-  const broadcastTargetState = async (
-    enrichmentState: TargetEnrichmentState = currentEnrichmentState(),
-  ): Promise<TargetManagerState> => {
-    const nextTargetManagerState = await syncTargetManagerState(enrichmentState);
-    await broadcastBrowserMessage({
-      type: "target:state",
-      state: nextTargetManagerState,
-    });
-    await saveSessionState(sessionState);
-    return nextTargetManagerState;
-  };
-
-  const broadcastTargetSwitchComplete = async (
-    success: boolean,
-    message: string,
-    nextTargetManagerState: TargetManagerState,
-  ): Promise<void> => {
-    await broadcastBrowserMessage({
-      type: "target:switch_complete",
-      success,
-      message,
-      state: nextTargetManagerState,
-    });
-    await saveSessionState(sessionState);
-  };
-
-  const broadcastEnrichmentProgress = async (
-    status: "queued" | "started" | "in-progress" | "complete" | "error",
-    message: string,
-  ): Promise<void> => {
-    await broadcastBrowserMessage({
-      type: "target:enrichment_progress",
-      status,
-      message,
-    });
-    await saveSessionState(sessionState);
-  };
-
   const logTargetEnrichment = async (
+    project: BrowserProjectRuntime,
     event: {
       targetPath: string;
       trigger: "automatic" | "manual";
@@ -1474,8 +1682,8 @@ export async function startUiRuntimeServer(
       reason: string;
     },
   ): Promise<void> => {
-    await traceLogger.log("target.enrichment", {
-      sessionId: sessionState.sessionId,
+    await project.traceLogger.log("target.enrichment", {
+      sessionId: project.sessionState.sessionId,
       targetDirectory: event.targetPath,
       trigger: event.trigger,
       status: event.status,
@@ -1486,16 +1694,18 @@ export async function startUiRuntimeServer(
   };
 
   const isStaleEnrichmentRun = (
+    project: BrowserProjectRuntime,
     runId: number,
     targetPath: string,
   ): boolean =>
     isClosing ||
-    activeEnrichmentRun?.runId !== runId ||
-    activeEnrichmentRun.targetPath !== targetPath ||
-    sessionState.activePhase !== "code" ||
-    sessionState.targetDirectory !== targetPath;
+    project.activeEnrichmentRun?.runId !== runId ||
+    project.activeEnrichmentRun.targetPath !== targetPath ||
+    project.sessionState.activePhase !== "code" ||
+    project.sessionState.targetDirectory !== targetPath;
 
   const runBrowserTargetEnrichment = async (
+    project: BrowserProjectRuntime,
     options: {
       targetPath: string;
       trigger: "automatic" | "manual";
@@ -1503,8 +1713,8 @@ export async function startUiRuntimeServer(
       reason: string;
     },
   ): Promise<void> => {
-    const runId = ++enrichmentRunSequence;
-    activeEnrichmentRun = {
+    const runId = ++project.enrichmentRunSequence;
+    project.activeEnrichmentRun = {
       runId,
       targetPath: options.targetPath,
     };
@@ -1516,29 +1726,29 @@ export async function startUiRuntimeServer(
           userDescription: options.userDescription,
         },
         {
-          invokeModel: runtimeState.targetEnrichmentInvoker,
-          shouldCancel: () => isStaleEnrichmentRun(runId, options.targetPath),
+          invokeModel: project.runtimeState.targetEnrichmentInvoker,
+          shouldCancel: () => isStaleEnrichmentRun(project, runId, options.targetPath),
           async onProgress(event) {
-            if (isStaleEnrichmentRun(runId, options.targetPath)) {
+            if (isStaleEnrichmentRun(project, runId, options.targetPath)) {
               return;
             }
 
-            await broadcastEnrichmentProgress(event.status, event.message);
+            await broadcastEnrichmentProgress(project, event.status, event.message);
           },
         },
       );
 
-      if (isStaleEnrichmentRun(runId, options.targetPath)) {
+      if (isStaleEnrichmentRun(project, runId, options.targetPath)) {
         return;
       }
 
-      sessionState.targetProfile = profile;
-      await broadcastTargetState({
+      project.sessionState.targetProfile = profile;
+      await broadcastTargetState(project, {
         status: "complete",
         message: "Target profile saved.",
       });
-      await broadcastSessionState();
-      await logTargetEnrichment({
+      await broadcastSessionState(project);
+      await logTargetEnrichment(project, {
         targetPath: options.targetPath,
         trigger: options.trigger,
         status: "complete",
@@ -1550,16 +1760,16 @@ export async function startUiRuntimeServer(
         ? error.message
         : "Target enrichment failed.";
 
-      if (isStaleEnrichmentRun(runId, options.targetPath)) {
+      if (isStaleEnrichmentRun(project, runId, options.targetPath)) {
         return;
       }
 
-      await broadcastTargetState({
+      await broadcastTargetState(project, {
         status: "error",
         message: errorMessage,
       });
-      await broadcastSessionState();
-      await logTargetEnrichment({
+      await broadcastSessionState(project);
+      await logTargetEnrichment(project, {
         targetPath: options.targetPath,
         trigger: options.trigger,
         status: "error",
@@ -1567,45 +1777,43 @@ export async function startUiRuntimeServer(
         reason: options.reason,
       });
     } finally {
-      if (activeEnrichmentRun?.runId === runId) {
-        activeEnrichmentRun = null;
+      if (project.activeEnrichmentRun?.runId === runId) {
+        project.activeEnrichmentRun = null;
       }
     }
   };
 
   const startBrowserTargetEnrichment = (
-    options: Parameters<typeof runBrowserTargetEnrichment>[0],
+    project: BrowserProjectRuntime,
+    options: Parameters<typeof runBrowserTargetEnrichment>[1],
   ): void => {
-    const task = runBrowserTargetEnrichment(options);
-    pendingEnrichmentTasks.add(task);
+    const task = runBrowserTargetEnrichment(project, options);
+    project.pendingEnrichmentTasks.add(task);
     void task.finally(() => {
-      pendingEnrichmentTasks.delete(task);
+      project.pendingEnrichmentTasks.delete(task);
     });
   };
 
   const maybeAutoEnrichBrowserTarget = async (
+    project: BrowserProjectRuntime,
     options: {
       creationDescription?: string;
       reason: string;
     },
   ): Promise<void> => {
-    if (isClosing) {
+    if (isClosing || project.sessionState.activePhase !== "code") {
       return;
     }
 
-    if (sessionState.activePhase !== "code") {
-      return;
-    }
+    const targetPath = project.sessionState.targetDirectory;
 
-    const targetPath = sessionState.targetDirectory;
-
-    if (activeEnrichmentRun?.targetPath === targetPath) {
+    if (project.activeEnrichmentRun?.targetPath === targetPath) {
       return;
     }
 
     const plan = planAutomaticEnrichment({
-      discovery: sessionState.discovery,
-      targetProfile: sessionState.targetProfile,
+      discovery: project.sessionState.discovery,
+      targetProfile: project.sessionState.targetProfile,
       creationDescription: options.creationDescription,
     });
 
@@ -1615,15 +1823,15 @@ export async function startUiRuntimeServer(
 
     if (
       !hasAutomaticTargetEnrichmentCapability(
-        runtimeState.targetEnrichmentInvoker,
+        project.runtimeState.targetEnrichmentInvoker,
       )
     ) {
-      await broadcastTargetState({
+      await broadcastTargetState(project, {
         status: "idle",
         message:
           "Automatic analysis is unavailable until target enrichment is configured.",
       });
-      await logTargetEnrichment({
+      await logTargetEnrichment(project, {
         targetPath,
         trigger: "automatic",
         status: "skipped",
@@ -1635,11 +1843,11 @@ export async function startUiRuntimeServer(
     }
 
     if (plan.kind === "needs-description") {
-      await broadcastTargetState({
+      await broadcastTargetState(project, {
         status: "idle",
         message: plan.message,
       });
-      await logTargetEnrichment({
+      await logTargetEnrichment(project, {
         targetPath,
         trigger: "automatic",
         status: "needs-context",
@@ -1649,15 +1857,15 @@ export async function startUiRuntimeServer(
       return;
     }
 
-    await broadcastEnrichmentProgress("queued", plan.queuedMessage);
-    await logTargetEnrichment({
+    await broadcastEnrichmentProgress(project, "queued", plan.queuedMessage);
+    await logTargetEnrichment(project, {
       targetPath,
       trigger: "automatic",
       status: "queued",
       message: plan.queuedMessage,
       reason: options.reason,
     });
-    startBrowserTargetEnrichment({
+    startBrowserTargetEnrichment(project, {
       targetPath,
       trigger: "automatic",
       userDescription: plan.userDescription,
@@ -1666,57 +1874,146 @@ export async function startUiRuntimeServer(
   };
 
   const restartPreviewSupervisor = async (
+    project: BrowserProjectRuntime,
     options?: { silent?: boolean },
   ): Promise<void> => {
-    await previewSupervisor.stop(options);
-    previewStarted = false;
-    previewSupervisor = createPreviewBridge();
-    await publishPreviewState(previewSupervisor.getState());
+    await project.previewSupervisor.stop(options);
+    project.previewStarted = false;
+    project.previewSupervisor = createPreviewBridge(project);
+    await publishPreviewState(project, project.previewSupervisor.getState());
 
     if (sockets.size > 0) {
-      previewStarted = true;
-      void previewSupervisor.start();
+      project.previewStarted = true;
+      void project.previewSupervisor.start();
     }
   };
 
-  const applySwitchedSessionState = async (
+  const replaceProjectSession = async (
+    project: BrowserProjectRuntime,
     nextState: SessionState,
     reason: string,
     enrichmentState: TargetEnrichmentState = IDLE_TARGET_ENRICHMENT_STATE,
   ): Promise<TargetManagerState> => {
-    Object.assign(sessionState, nextState);
-    sessionState.workbenchState.latestDeploy = synchronizeDeploySummary(
-      sessionState.workbenchState.latestDeploy,
-      sessionState,
+    const previousProjectId = project.projectId;
+    project.sessionState = nextState;
+    project.projectId = createProjectId(nextState);
+    project.sessionState.workbenchState.latestDeploy = synchronizeDeploySummary(
+      project.sessionState.workbenchState.latestDeploy,
+      project.sessionState,
       {
-        deploying: false,
+        deploying: project.deployInFlight,
       },
     );
-    await applySessionSwitchToRuntime(sessionState, runtimeState);
-    projectRulesLoaded = Boolean(runtimeState.projectRules);
-    traceLogger = await createLocalTraceLogger(
-      sessionState.targetDirectory,
-      sessionState.sessionId,
+    await applySessionSwitchToRuntime(project.sessionState, project.runtimeState);
+    project.projectRulesLoaded = Boolean(project.runtimeState.projectRules);
+    project.traceLogger = await createLocalTraceLogger(
+      project.sessionState.targetDirectory,
+      project.sessionState.sessionId,
     );
-    await traceLogger.log("session.switch", {
-      sessionId: sessionState.sessionId,
-      targetDirectory: sessionState.targetDirectory,
-      phase: sessionState.activePhase,
+
+    if (previousProjectId !== project.projectId) {
+      projectRuntimes.delete(previousProjectId);
+      projectRuntimes.set(project.projectId, project);
+    }
+
+    await project.traceLogger.log("session.switch", {
+      sessionId: project.sessionState.sessionId,
+      targetDirectory: project.sessionState.targetDirectory,
+      phase: project.sessionState.activePhase,
       reason,
       runtimeMode: "ui",
     });
-    await restartPreviewSupervisor({ silent: true });
-    return syncTargetManagerState(enrichmentState);
+    await restartPreviewSupervisor(project, { silent: true });
+    return syncTargetManagerState(project, enrichmentState);
+  };
+
+  const ensureProjectRuntimeForTarget = async (
+    sourceProject: BrowserProjectRuntime,
+    targetPath: string,
+  ): Promise<{ project: BrowserProjectRuntime; reused: boolean }> => {
+    const resolvedTargetPath = path.resolve(targetPath);
+    const existingProject = projectRuntimes.get(resolvedTargetPath);
+
+    if (existingProject) {
+      existingProject.sessionState.lastActiveAt = new Date().toISOString();
+      return {
+        project: existingProject,
+        reused: true,
+      };
+    }
+
+    const nextState = await switchTarget(sourceProject.sessionState, resolvedTargetPath);
+    const nextProject = await createProjectRuntime(nextState);
+    nextProject.previewSupervisor = createPreviewBridge(nextProject);
+    projectRuntimes.set(nextProject.projectId, nextProject);
+
+    if (sockets.size > 0) {
+      nextProject.previewStarted = true;
+      void nextProject.previewSupervisor.start();
+    }
+
+    await nextProject.traceLogger.log("session.switch", {
+      sessionId: nextProject.sessionState.sessionId,
+      targetDirectory: nextProject.sessionState.targetDirectory,
+      phase: nextProject.sessionState.activePhase,
+      reason: `browser:open:${resolvedTargetPath}`,
+      runtimeMode: "ui",
+    });
+
+    return {
+      project: nextProject,
+      reused: false,
+    };
+  };
+
+  const activateProject = async (
+    project: BrowserProjectRuntime,
+    options: {
+      successMessage?: string | null;
+      enrichmentState?: TargetEnrichmentState;
+      autoEnrichReason?: string;
+      creationDescription?: string;
+    } = {},
+  ): Promise<void> => {
+    activeProjectId = project.projectId;
+    project.sessionState.lastActiveAt = new Date().toISOString();
+    createProjectBoardState();
+
+    if (options.successMessage) {
+      const nextTargetManagerState = await syncTargetManagerState(
+        project,
+        options.enrichmentState,
+      );
+      await broadcastTargetSwitchComplete(
+        project,
+        true,
+        options.successMessage,
+        nextTargetManagerState,
+      );
+    }
+
+    await broadcastTargetState(project, options.enrichmentState);
+    await broadcastSessionState(project);
+
+    if (options.autoEnrichReason) {
+      await maybeAutoEnrichBrowserTarget(project, {
+        creationDescription: options.creationDescription,
+        reason: options.autoEnrichReason,
+      });
+    }
   };
 
   const runBrowserInstruction = async (
+    project: BrowserProjectRuntime,
     instruction: string,
     injectedContext: string[] | undefined,
     signal?: AbortSignal,
   ): Promise<void> => {
     const baseReporter = createUiInstructionReporter({
-      send: broadcastBrowserMessage,
-      projectRulesLoaded,
+      send(message) {
+        return emitProjectMessage(project, message);
+      },
+      projectRulesLoaded: project.projectRulesLoaded,
       sessionHistory(nextSessionState) {
         return listSessionRunSummaries(
           nextSessionState.targetDirectory,
@@ -1733,14 +2030,14 @@ export async function startUiRuntimeServer(
         turnProducedEdits = true;
         await baseReporter.onEdit?.(event);
 
-        const previousPreviewCapability = sessionState.discovery.previewCapability;
-        const nextDiscovery = await discoverTarget(sessionState.targetDirectory);
+        const previousPreviewCapability = project.sessionState.discovery.previewCapability;
+        const nextDiscovery = await discoverTarget(project.sessionState.targetDirectory);
         const previewCapabilityChanged = !hasSamePreviewCapability(
           previousPreviewCapability,
           nextDiscovery.previewCapability,
         );
 
-        sessionState.discovery = nextDiscovery;
+        project.sessionState.discovery = nextDiscovery;
 
         void (async () => {
           try {
@@ -1748,18 +2045,18 @@ export async function startUiRuntimeServer(
               previewCapabilityChanged ||
               (
                 nextDiscovery.previewCapability.status === "available" &&
-                previewSupervisor.isStarterCanvasActive()
+                project.previewSupervisor.isStarterCanvasActive()
               )
             ) {
-              await restartPreviewSupervisor({ silent: true });
+              await restartPreviewSupervisor(project, { silent: true });
               return;
             }
 
-            await previewSupervisor.refresh(event.path);
+            await project.previewSupervisor.refresh(event.path);
           } catch (error) {
-            await traceLogger.log("preview.refresh.error", {
-              sessionId: sessionState.sessionId,
-              targetDirectory: sessionState.targetDirectory,
+            await project.traceLogger.log("preview.refresh.error", {
+              sessionId: project.sessionState.sessionId,
+              targetDirectory: project.sessionState.targetDirectory,
               runtimeMode: "ui",
               path: event.path,
               message: error instanceof Error
@@ -1781,14 +2078,14 @@ export async function startUiRuntimeServer(
 
     if (isTaskRunnerInstruction(instruction)) {
       const taskTurnResult = await executeTaskTurn({
-        sessionState,
-        runtimeState,
+        sessionState: project.sessionState,
+        runtimeState: project.runtimeState,
         instruction,
         injectedContext,
         reporter,
         signal,
       });
-      await traceLogger.log("instruction.plan", {
+      await project.traceLogger.log("instruction.plan", {
         instruction,
         phase: taskTurnResult.phaseName,
         runtimeMode: taskTurnResult.runtimeMode,
@@ -1808,17 +2105,17 @@ export async function startUiRuntimeServer(
         langSmithTrace: taskTurnResult.langSmithTrace,
         runtimeSurface: "ui",
       });
-      await saveSessionState(sessionState);
+      await saveSessionState(project.sessionState);
     } else if (isPlanModeInstruction(instruction)) {
       const planResult = await executePlanTurn({
-        sessionState,
-        runtimeState,
+        sessionState: project.sessionState,
+        runtimeState: project.runtimeState,
         instruction,
         injectedContext,
         reporter,
         signal,
       });
-      await traceLogger.log("instruction.plan", {
+      await project.traceLogger.log("instruction.plan", {
         instruction,
         phase: planResult.phaseName,
         runtimeMode: planResult.runtimeMode,
@@ -1833,17 +2130,17 @@ export async function startUiRuntimeServer(
         langSmithTrace: planResult.langSmithTrace,
         runtimeSurface: "ui",
       });
-      await saveSessionState(sessionState);
+      await saveSessionState(project.sessionState);
     } else {
       const turnResult = await executeInstructionTurn({
-        sessionState,
-        runtimeState,
+        sessionState: project.sessionState,
+        runtimeState: project.runtimeState,
         instruction,
         injectedContext,
         reporter,
         signal,
       });
-      await traceLogger.log("instruction.plan", {
+      await project.traceLogger.log("instruction.plan", {
         instruction,
         phase: turnResult.phaseName,
         runtimeMode: turnResult.runtimeMode,
@@ -1858,41 +2155,35 @@ export async function startUiRuntimeServer(
         handoff: turnResult.handoff,
         runtimeSurface: "ui",
       });
-      await saveSessionState(sessionState);
+      await saveSessionState(project.sessionState);
 
       if (turnResult.selectedTargetPath) {
-        const nextState = await switchTarget(sessionState, turnResult.selectedTargetPath);
-        const nextTargetManagerState = await applySwitchedSessionState(
-          nextState,
-          "tool:select_target",
-          IDLE_TARGET_ENRICHMENT_STATE,
+        const { project: selectedProject } = await ensureProjectRuntimeForTarget(
+          project,
+          turnResult.selectedTargetPath,
         );
-        await broadcastTargetSwitchComplete(
-          true,
-          `Switched to ${nextTargetManagerState.currentTarget.name}.`,
-          nextTargetManagerState,
-        );
-        await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
-        await maybeAutoEnrichBrowserTarget({
-          reason: "tool:select_target",
+        await activateProject(selectedProject, {
+          successMessage: `Switched to ${selectedProject.targetManagerState.currentTarget.name}.`,
+          enrichmentState: IDLE_TARGET_ENRICHMENT_STATE,
+          autoEnrichReason: "tool:select_target",
         });
-        await broadcastSessionState();
       }
 
       if (
         turnResult.status === "success" &&
         turnProducedEdits &&
         turnResult.selectedTargetPath === null &&
-        sessionState.activePhase === "code" &&
+        project.sessionState.activePhase === "code" &&
         !signal?.aborted
       ) {
-        const deployUnavailableReason = getDeployUnavailableReason(sessionState);
+        const deployUnavailableReason = getDeployUnavailableReason(project.sessionState);
 
         if (deployUnavailableReason === null) {
-          deployInFlight = true;
+          project.deployInFlight = true;
 
           try {
             await runBrowserDeploy(
+              project,
               {
                 platform: "vercel",
               },
@@ -1902,9 +2193,10 @@ export async function startUiRuntimeServer(
               },
             );
           } finally {
-            deployInFlight = false;
-            syncLatestDeploy();
-            await saveSessionState(sessionState);
+            project.deployInFlight = false;
+            syncLatestDeploy(project);
+            await saveSessionState(project.sessionState);
+            await broadcastProjectsState();
           }
 
           if (pendingTurnState) {
@@ -1921,6 +2213,7 @@ export async function startUiRuntimeServer(
   };
 
   const runBrowserDeploy = async (
+    project: BrowserProjectRuntime,
     input: DeployInput,
     signal?: AbortSignal,
     options: {
@@ -1937,33 +2230,33 @@ export async function startUiRuntimeServer(
       ? "Publishing the updated target to Vercel."
       : "Deploying current target to Vercel.";
 
-    sessionState.turnCount += 1;
-    sessionState.lastActiveAt = requestedAt;
-    sessionState.workbenchState = queueInstructionTurn(
-      sessionState.workbenchState,
+    project.sessionState.turnCount += 1;
+    project.sessionState.lastActiveAt = requestedAt;
+    project.sessionState.workbenchState = queueInstructionTurn(
+      project.sessionState.workbenchState,
       turnInstruction,
       [],
     );
-    sessionState.workbenchState.latestDeploy = createDeployingSummary(
-      sessionState.workbenchState.latestDeploy,
-      sessionState,
+    project.sessionState.workbenchState.latestDeploy = createDeployingSummary(
+      project.sessionState.workbenchState.latestDeploy,
+      project.sessionState,
       requestedAt,
     );
-    await saveSessionState(sessionState);
-    await broadcastSessionState();
-    await broadcastDeployState(sessionState.workbenchState.latestDeploy);
-    await broadcastBrowserMessage({
+    await saveSessionState(project.sessionState);
+    await broadcastSessionState(project);
+    await broadcastDeployState(project, project.sessionState.workbenchState.latestDeploy);
+    await emitProjectMessage(project, {
       type: "agent:tool_call",
       callId,
       toolName: "deploy_target",
       summary: toolCallSummary,
     });
-    await saveSessionState(sessionState);
+    await saveSessionState(project.sessionState);
 
     let result: ToolResult;
 
     try {
-      result = await executeDeploy(input, sessionState.targetDirectory, { signal });
+      result = await executeDeploy(input, project.sessionState.targetDirectory, { signal });
     } catch (error) {
       result = {
         success: false,
@@ -1977,15 +2270,15 @@ export async function startUiRuntimeServer(
     const validSuccess = result.success && deployResultData !== null;
     const deploySummary = validSuccess
       ? createSuccessfulDeploySummary(
-          sessionState.workbenchState.latestDeploy,
-          sessionState,
+          project.sessionState.workbenchState.latestDeploy,
+          project.sessionState,
           deployResultData,
           requestedAt,
           completedAt,
         )
       : createFailedDeploySummary(
-          sessionState.workbenchState.latestDeploy,
-          sessionState,
+          project.sessionState.workbenchState.latestDeploy,
+          project.sessionState,
           result,
           requestedAt,
           completedAt,
@@ -1998,11 +2291,11 @@ export async function startUiRuntimeServer(
           ? "success"
           : "error";
 
-    sessionState.lastActiveAt = completedAt;
-    sessionState.workbenchState.latestDeploy = deploySummary;
-    await traceLogger.log("deploy.browser", {
-      sessionId: sessionState.sessionId,
-      targetDirectory: sessionState.targetDirectory,
+    project.sessionState.lastActiveAt = completedAt;
+    project.sessionState.workbenchState.latestDeploy = deploySummary;
+    await project.traceLogger.log("deploy.browser", {
+      sessionId: project.sessionState.sessionId,
+      targetDirectory: project.sessionState.targetDirectory,
       platform: input.platform,
       trigger: mode,
       status: deploySummary.status,
@@ -2010,8 +2303,8 @@ export async function startUiRuntimeServer(
       productionUrl: deploySummary.productionUrl,
       runtimeMode: "ui",
     });
-    await broadcastDeployState(deploySummary);
-    await broadcastBrowserMessage({
+    await broadcastDeployState(project, deploySummary);
+    await emitProjectMessage(project, {
       type: "agent:tool_result",
       callId,
       toolName: "deploy_target",
@@ -2022,13 +2315,13 @@ export async function startUiRuntimeServer(
         : result.error ?? "Deploy failed.",
       command: deploySummary.command ?? undefined,
     });
-    await broadcastBrowserMessage({
+    await emitProjectMessage(project, {
       type: "agent:done",
       status: turnStatus,
       summary: deploySummary.summary,
       langSmithTrace: null,
     });
-    await saveSessionState(sessionState);
+    await saveSessionState(project.sessionState);
   };
 
   socketServer.on("connection", (socket) => {
@@ -2037,9 +2330,17 @@ export async function startUiRuntimeServer(
       try {
         await sendSessionState(socket);
         await sendTargetState(socket);
+        await sendProjectsState(socket);
 
         if (sockets.size === 1) {
-          await maybeAutoEnrichBrowserTarget({
+          for (const project of projectRuntimes.values()) {
+            if (!project.previewStarted) {
+              project.previewStarted = true;
+              void project.previewSupervisor.start();
+            }
+          }
+
+          await maybeAutoEnrichBrowserTarget(getActiveProject(), {
             reason: "browser:initial-sync",
           });
         }
@@ -2055,11 +2356,6 @@ export async function startUiRuntimeServer(
       }
     })();
 
-    if (!previewStarted) {
-      previewStarted = true;
-      void previewSupervisor.start();
-    }
-
     socket.on("close", () => {
       sockets.delete(socket);
     });
@@ -2069,353 +2365,370 @@ export async function startUiRuntimeServer(
 
       void (async () => {
         try {
-        const message = parseFrontendMessage(rawMessage);
+          const message = parseFrontendMessage(rawMessage);
 
-        switch (message.type) {
-          case "status":
-            await sendSessionState(socket);
-            await sendTargetState(socket);
-            break;
-          case "cancel":
-            if (activeInstructionController === null && activeDeployController === null) {
-              sessionState.workbenchState = {
-                ...sessionState.workbenchState,
-                latestError: null,
-                agentStatus: "No active browser-driven turn or deploy is running.",
-              };
-              await broadcastSessionState();
+          switch (message.type) {
+            case "status": {
+              const activeProject = getActiveProject();
+              await sendSessionState(socket, activeProject);
+              await sendTargetState(socket, activeProject);
+              await sendProjectsState(socket);
               break;
             }
+            case "cancel": {
+              const activeProject = getActiveProject();
+              const activeController =
+                activeProject.activeInstructionController ??
+                activeProject.activeDeployController;
 
-            if ((activeInstructionController ?? activeDeployController)?.signal.aborted) {
-              sessionState.workbenchState = {
-                ...sessionState.workbenchState,
+              if (activeController === null) {
+                activeProject.sessionState.workbenchState = {
+                  ...activeProject.sessionState.workbenchState,
+                  latestError: null,
+                  agentStatus: "No active browser-driven turn or deploy is running.",
+                };
+                await broadcastSessionState(activeProject);
+                break;
+              }
+
+              if (activeController.signal.aborted) {
+                activeProject.sessionState.workbenchState = {
+                  ...activeProject.sessionState.workbenchState,
+                  latestError: null,
+                  agentStatus:
+                    activeProject.activeInstructionController
+                      ? "Cancellation already requested. Waiting for the active turn to stop."
+                      : "Cancellation already requested. Waiting for the active deploy to stop.",
+                };
+                await broadcastSessionState(activeProject);
+                break;
+              }
+
+              activeProject.sessionState.workbenchState = {
+                ...activeProject.sessionState.workbenchState,
                 latestError: null,
                 agentStatus:
-                  activeInstructionController
-                    ? "Cancellation already requested. Waiting for the active turn to stop."
-                    : "Cancellation already requested. Waiting for the active deploy to stop.",
+                  activeProject.activeInstructionController
+                    ? "Cancellation requested. Waiting for the active turn to stop."
+                    : "Cancellation requested. Waiting for the active deploy to stop.",
               };
-              await broadcastSessionState();
-              break;
-            }
-
-            sessionState.workbenchState = {
-              ...sessionState.workbenchState,
-              latestError: null,
-              agentStatus:
-                activeInstructionController
-                  ? "Cancellation requested. Waiting for the active turn to stop."
-                  : "Cancellation requested. Waiting for the active deploy to stop.",
-            };
-            await broadcastSessionState();
-            abortTurn(
-              activeInstructionController ?? activeDeployController as AbortController,
-              activeInstructionController
-                ? undefined
-                : "Operator interrupted the active deploy.",
-            );
-            break;
-          case "session:resume_request": {
-            if (activeInstruction !== null || deployInFlight) {
-              await sendToSocket(
-                socket,
-                createErrorMessage(
-                  "Finish the current browser action before opening another saved run.",
-                ),
+              await broadcastSessionState(activeProject);
+              abortTurn(
+                activeController,
+                activeProject.activeInstructionController
+                  ? undefined
+                  : "Operator interrupted the active deploy.",
               );
               break;
             }
+            case "session:resume_request": {
+              const activeProject = getActiveProject();
 
-            const resumedSession = await loadSessionState(
-              sessionState.targetDirectory,
-              message.sessionId,
-            );
+              if (activeProject.activeInstruction !== null || activeProject.deployInFlight) {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    "Finish the current browser action before opening another saved run.",
+                  ),
+                );
+                break;
+              }
 
-            if (resumedSession === null) {
-              await sendToSocket(
-                socket,
-                createErrorMessage(
-                  `Saved run ${message.sessionId} was not found for the current target.`,
-                ),
+              const resumedSession = await loadSessionState(
+                activeProject.sessionState.targetDirectory,
+                message.sessionId,
               );
-              break;
-            }
 
-            const nextTargetManagerState = await applySwitchedSessionState(
-              resumedSession,
-              `browser:resume:${message.sessionId}`,
-              IDLE_TARGET_ENRICHMENT_STATE,
-            );
-            await traceLogger.log("session.resume", {
-              sessionId: sessionState.sessionId,
-              targetDirectory: sessionState.targetDirectory,
-              phase: sessionState.activePhase,
-              resumedSessionId: message.sessionId,
-              runtimeMode: "ui",
-            });
-            await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
-            await broadcastSessionState();
-            await maybeAutoEnrichBrowserTarget({
-              reason: `browser:resume:${message.sessionId}`,
-            });
-            break;
-          }
-          case "target:switch_request": {
-            if (activeInstruction !== null || deployInFlight) {
-              await sendToSocket(
-                socket,
-                createErrorMessage(
-                  "Finish the current browser action before switching targets.",
-                ),
-              );
-              break;
-            }
+              if (resumedSession === null) {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    `Saved run ${message.sessionId} was not found for the current target.`,
+                  ),
+                );
+                break;
+              }
 
-            try {
-              const nextState = await switchTarget(
-                sessionState,
-                message.targetPath,
-              );
-              const nextTargetManagerState = await applySwitchedSessionState(
-                nextState,
-                `browser:switch:${message.targetPath}`,
+              const nextTargetManagerState = await replaceProjectSession(
+                activeProject,
+                resumedSession,
+                `browser:resume:${message.sessionId}`,
                 IDLE_TARGET_ENRICHMENT_STATE,
               );
-              await broadcastTargetSwitchComplete(
-                true,
-                `Switched to ${nextTargetManagerState.currentTarget.name}.`,
-                nextTargetManagerState,
-              );
-              await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
-              await broadcastSessionState();
-              await maybeAutoEnrichBrowserTarget({
-                reason: `browser:switch:${message.targetPath}`,
+              await activeProject.traceLogger.log("session.resume", {
+                sessionId: activeProject.sessionState.sessionId,
+                targetDirectory: activeProject.sessionState.targetDirectory,
+                phase: activeProject.sessionState.activePhase,
+                resumedSessionId: message.sessionId,
+                runtimeMode: "ui",
               });
-            } catch (error) {
-              const errorMessage = error instanceof Error
-                ? error.message
-                : "Target switch failed.";
-              const nextTargetManagerState = await syncTargetManagerState();
-              await broadcastTargetSwitchComplete(
-                false,
-                errorMessage,
-                nextTargetManagerState,
+              await broadcastTargetState(
+                activeProject,
+                nextTargetManagerState.enrichmentStatus,
               );
-            }
-            break;
-          }
-          case "target:create_request": {
-            if (activeInstruction !== null || deployInFlight) {
-              await sendToSocket(
-                socket,
-                createErrorMessage(
-                  "Finish the current browser action before creating a target.",
-                ),
-              );
+              await broadcastSessionState(activeProject);
+              await maybeAutoEnrichBrowserTarget(activeProject, {
+                reason: `browser:resume:${message.sessionId}`,
+              });
               break;
             }
+            case "project:activate_request": {
+              const targetProject = projectRuntimes.get(message.projectId);
 
-            try {
-              const createdTarget = await createTargetTool({
-                name: message.name,
-                description: message.description,
-                targetsDir: sessionState.targetsDirectory,
-                scaffoldType: message.scaffoldType,
-              });
-              const nextState = await switchTarget(
-                sessionState,
-                createdTarget.path,
-              );
-              const nextTargetManagerState = await applySwitchedSessionState(
-                nextState,
-                `browser:create:${createdTarget.path}`,
-                IDLE_TARGET_ENRICHMENT_STATE,
-              );
-              await broadcastTargetSwitchComplete(
-                true,
-                `Created and selected ${nextTargetManagerState.currentTarget.name}.`,
-                nextTargetManagerState,
-              );
-              await broadcastTargetState(nextTargetManagerState.enrichmentStatus);
-              await broadcastSessionState();
-              await maybeAutoEnrichBrowserTarget({
-                creationDescription: message.description,
-                reason: `browser:create:${createdTarget.path}`,
-              });
-            } catch (error) {
-              const errorMessage = error instanceof Error
-                ? error.message
-                : "Target creation failed.";
-              const nextTargetManagerState = await syncTargetManagerState();
-              await broadcastTargetSwitchComplete(
-                false,
-                errorMessage,
-                nextTargetManagerState,
-              );
-            }
-            break;
-          }
-          case "target:enrich_request": {
-            if (activeInstruction !== null || deployInFlight) {
-              await sendToSocket(
-                socket,
-                createErrorMessage(
-                  "Finish the current browser action before enriching a target.",
-                ),
-              );
+              if (!targetProject) {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    `Open project ${message.projectId} was not found.`,
+                  ),
+                );
+                break;
+              }
+
+              await activateProject(targetProject);
               break;
             }
-
-            if (sessionState.activePhase !== "code") {
-              await sendToSocket(
-                socket,
-                createErrorMessage(
-                  "Select or create a target before running enrichment.",
-                ),
-              );
+            case "target:switch_request": {
+              try {
+                const sourceProject = getActiveProject();
+                const { project } = await ensureProjectRuntimeForTarget(
+                  sourceProject,
+                  message.targetPath,
+                );
+                await activateProject(project, {
+                  successMessage: `Switched to ${project.targetManagerState.currentTarget.name}.`,
+                  autoEnrichReason: `browser:switch:${message.targetPath}`,
+                });
+              } catch (error) {
+                const errorMessage = error instanceof Error
+                  ? error.message
+                  : "Target switch failed.";
+                const activeProject = getActiveProject();
+                const nextTargetManagerState = await syncTargetManagerState(activeProject);
+                await broadcastTargetSwitchComplete(
+                  activeProject,
+                  false,
+                  errorMessage,
+                  nextTargetManagerState,
+                );
+              }
               break;
             }
-
-            try {
-              await logTargetEnrichment({
-                targetPath: sessionState.targetDirectory,
-                trigger: "manual",
-                status: "queued",
-                message: "Manual target analysis requested.",
-                reason: "browser:manual-request",
-              });
-              startBrowserTargetEnrichment({
-                targetPath: sessionState.targetDirectory,
-                trigger: "manual",
-                userDescription: message.userDescription,
-                reason: "browser:manual-request",
-              });
-            } catch (error) {
-              const errorMessage = error instanceof Error
-                ? error.message
-                : "Target enrichment failed.";
-              await broadcastTargetState({
-                status: "error",
-                message: errorMessage,
-              });
-              await broadcastSessionState();
-            }
-            break;
-          }
-          case "deploy:request": {
-            if (activeInstruction !== null || deployInFlight) {
-              await sendToSocket(
-                socket,
-                createErrorMessage(
-                  deployInFlight
-                    ? "A deploy is already in progress for this session."
-                    : "Finish the current browser instruction before starting a deploy.",
-                ),
-              );
+            case "target:create_request": {
+              try {
+                const sourceProject = getActiveProject();
+                const createdTarget = await createTargetTool({
+                  name: message.name,
+                  description: message.description,
+                  targetsDir: sourceProject.sessionState.targetsDirectory,
+                  scaffoldType: message.scaffoldType,
+                });
+                const { project } = await ensureProjectRuntimeForTarget(
+                  sourceProject,
+                  createdTarget.path,
+                );
+                await activateProject(project, {
+                  successMessage:
+                    `Created and selected ${project.targetManagerState.currentTarget.name}.`,
+                  autoEnrichReason: `browser:create:${createdTarget.path}`,
+                  creationDescription: message.description,
+                });
+              } catch (error) {
+                const errorMessage = error instanceof Error
+                  ? error.message
+                  : "Target creation failed.";
+                const activeProject = getActiveProject();
+                const nextTargetManagerState = await syncTargetManagerState(activeProject);
+                await broadcastTargetSwitchComplete(
+                  activeProject,
+                  false,
+                  errorMessage,
+                  nextTargetManagerState,
+                );
+              }
               break;
             }
+            case "target:enrich_request": {
+              const activeProject = getActiveProject();
 
-            if (sessionState.activePhase !== "code") {
-              await sendToSocket(
-                socket,
-                createErrorMessage(
-                  "Select or create a target before deploying.",
-                ),
-              );
+              if (activeProject.activeInstruction !== null || activeProject.deployInFlight) {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    "Finish the current browser action before enriching a target.",
+                  ),
+                );
+                break;
+              }
+
+              if (activeProject.sessionState.activePhase !== "code") {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    "Select or create a target before running enrichment.",
+                  ),
+                );
+                break;
+              }
+
+              try {
+                await logTargetEnrichment(activeProject, {
+                  targetPath: activeProject.sessionState.targetDirectory,
+                  trigger: "manual",
+                  status: "queued",
+                  message: "Manual target analysis requested.",
+                  reason: "browser:manual-request",
+                });
+                startBrowserTargetEnrichment(activeProject, {
+                  targetPath: activeProject.sessionState.targetDirectory,
+                  trigger: "manual",
+                  userDescription: message.userDescription,
+                  reason: "browser:manual-request",
+                });
+              } catch (error) {
+                const errorMessage = error instanceof Error
+                  ? error.message
+                  : "Target enrichment failed.";
+                await broadcastTargetState(activeProject, {
+                  status: "error",
+                  message: errorMessage,
+                });
+                await broadcastSessionState(activeProject);
+              }
               break;
             }
+            case "deploy:request": {
+              const activeProject = getActiveProject();
 
-            const deployUnavailableReason = getDeployUnavailableReason(sessionState);
+              if (activeProject.activeInstruction !== null || activeProject.deployInFlight) {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    activeProject.deployInFlight
+                      ? "A deploy is already in progress for this session."
+                      : "Finish the current browser instruction before starting a deploy.",
+                  ),
+                );
+                break;
+              }
 
-            if (deployUnavailableReason) {
-              sessionState.workbenchState.latestDeploy = synchronizeDeploySummary(
-                sessionState.workbenchState.latestDeploy,
-                sessionState,
+              if (activeProject.sessionState.activePhase !== "code") {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    "Select or create a target before deploying.",
+                  ),
+                );
+                break;
+              }
+
+              const deployUnavailableReason = getDeployUnavailableReason(
+                activeProject.sessionState,
+              );
+
+              if (deployUnavailableReason) {
+                activeProject.sessionState.workbenchState.latestDeploy =
+                  synchronizeDeploySummary(
+                    activeProject.sessionState.workbenchState.latestDeploy,
+                    activeProject.sessionState,
+                    {
+                      deploying: false,
+                    },
+                  );
+                await broadcastDeployState(
+                  activeProject,
+                  activeProject.sessionState.workbenchState.latestDeploy,
+                );
+                await sendToSocket(socket, createErrorMessage(deployUnavailableReason));
+                break;
+              }
+
+              const deployController = new AbortController();
+              activeProject.activeDeployController = deployController;
+              activeProject.deployInFlight = true;
+              activeProject.activeDeploy = runBrowserDeploy(
+                activeProject,
                 {
-                  deploying: false,
+                  platform: message.platform,
                 },
+                deployController.signal,
               );
-              await broadcastDeployState(sessionState.workbenchState.latestDeploy);
-              await sendToSocket(socket, createErrorMessage(deployUnavailableReason));
+
+              try {
+                await activeProject.activeDeploy;
+              } finally {
+                activeProject.activeDeploy = null;
+                activeProject.activeDeployController = null;
+                activeProject.deployInFlight = false;
+                syncLatestDeploy(activeProject);
+                await saveSessionState(activeProject.sessionState);
+                await broadcastSessionState(activeProject);
+              }
               break;
             }
+            case "instruction": {
+              const activeProject = getActiveProject();
 
-            const deployController = new AbortController();
-            activeDeployController = deployController;
-            deployInFlight = true;
-            activeDeploy = runBrowserDeploy(
-              {
-                platform: message.platform,
-              },
-              deployController.signal,
-            );
+              if (activeProject.activeInstruction !== null || activeProject.deployInFlight) {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    activeProject.deployInFlight
+                      ? "A deploy is already in progress for this session."
+                      : "A browser instruction is already in progress for this session.",
+                  ),
+                );
+                break;
+              }
 
-            try {
-              await activeDeploy;
-            } finally {
-              activeDeploy = null;
-              activeDeployController = null;
-              deployInFlight = false;
-              syncLatestDeploy();
-              await saveSessionState(sessionState);
-              await broadcastSessionState();
+              const pendingUploads =
+                activeProject.sessionState.workbenchState.pendingUploads;
+              const handoff = consumePendingUploadsForInstruction(
+                activeProject.sessionState.workbenchState,
+                message.injectedContext,
+              );
+
+              activeProject.sessionState.workbenchState = queueInstructionTurn(
+                handoff.nextState,
+                message.text,
+                handoff.contextPreview,
+              );
+
+              if (pendingUploads.length > 0) {
+                await logUploadTrace(
+                  "upload.handoff",
+                  {
+                    instruction: message.text,
+                    files: pendingUploads.map((receipt) => ({
+                      id: receipt.id,
+                      originalName: receipt.originalName,
+                      storedRelativePath: receipt.storedRelativePath,
+                    })),
+                  },
+                  activeProject,
+                );
+              }
+
+              await saveSessionState(activeProject.sessionState);
+              const turnController = new AbortController();
+              activeProject.activeInstructionController = turnController;
+              activeProject.activeInstruction = runBrowserInstruction(
+                activeProject,
+                message.text,
+                handoff.injectedContext,
+                turnController.signal,
+              );
+
+              try {
+                await activeProject.activeInstruction;
+              } finally {
+                activeProject.activeInstruction = null;
+                activeProject.activeInstructionController = null;
+                await broadcastProjectsState();
+              }
+              break;
             }
-            break;
           }
-          case "instruction":
-            if (activeInstruction !== null || deployInFlight) {
-              await sendToSocket(
-                socket,
-                createErrorMessage(
-                  deployInFlight
-                    ? "A deploy is already in progress for this session."
-                    : "A browser instruction is already in progress for this session.",
-                ),
-              );
-              break;
-            }
-
-            const pendingUploads = sessionState.workbenchState.pendingUploads;
-            const handoff = consumePendingUploadsForInstruction(
-              sessionState.workbenchState,
-              message.injectedContext,
-            );
-
-            sessionState.workbenchState = queueInstructionTurn(
-              handoff.nextState,
-              message.text,
-              handoff.contextPreview,
-            );
-
-            if (pendingUploads.length > 0) {
-              await logUploadTrace("upload.handoff", {
-                instruction: message.text,
-                files: pendingUploads.map((receipt) => ({
-                  id: receipt.id,
-                  originalName: receipt.originalName,
-                  storedRelativePath: receipt.storedRelativePath,
-                })),
-              });
-            }
-
-            await saveSessionState(sessionState);
-            const turnController = new AbortController();
-            activeInstructionController = turnController;
-            activeInstruction = runBrowserInstruction(
-              message.text,
-              handoff.injectedContext,
-              turnController.signal,
-            );
-
-            try {
-              await activeInstruction;
-            } finally {
-              activeInstruction = null;
-              activeInstructionController = null;
-            }
-            break;
-        }
         } catch (error) {
           const message = error instanceof Error
             ? error.message
@@ -2467,22 +2780,38 @@ export async function startUiRuntimeServer(
     portResolution,
     async close(): Promise<void> {
       isClosing = true;
-      activeEnrichmentRun = null;
 
-      if (pendingEnrichmentTasks.size > 0) {
+      for (const project of projectRuntimes.values()) {
+        project.activeEnrichmentRun = null;
+      }
+
+      const pendingEnrichmentTasks = [...projectRuntimes.values()].flatMap((project) =>
+        [...project.pendingEnrichmentTasks]
+      );
+
+      if (pendingEnrichmentTasks.length > 0) {
         await Promise.race([
-          Promise.allSettled([...pendingEnrichmentTasks]),
+          Promise.allSettled(pendingEnrichmentTasks),
           new Promise<void>((resolve) => {
             setTimeout(resolve, CLOSE_ENRICHMENT_DRAIN_TIMEOUT_MS);
           }),
         ]);
       }
 
-      if (activeInstructionController !== null) {
-        abortTurn(activeInstructionController);
-      }
+      for (const project of projectRuntimes.values()) {
+        if (project.activeInstructionController !== null) {
+          abortTurn(project.activeInstructionController);
+        }
 
-      await previewSupervisor.stop();
+        if (project.activeDeployController !== null) {
+          abortTurn(
+            project.activeDeployController,
+            "Operator interrupted the active deploy.",
+          );
+        }
+
+        await project.previewSupervisor.stop();
+      }
 
       for (const client of socketServer.clients) {
         client.close(1001, "Shipyard UI shutting down");
