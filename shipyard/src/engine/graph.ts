@@ -57,8 +57,11 @@ import { readFileTool } from "../tools/read-file.js";
 import { normalizeTargetRelativePath } from "../tools/file-state.js";
 import {
   RAW_LOOP_MAX_ITERATIONS,
+  createRawLoopIterationLimitMessage,
+  isRawLoopIterationLimitError,
   runRawToolLoopDetailed,
   type RawToolLoopOptions,
+  type RawToolExecution,
   type RawLoopToolHookContext,
   type RawToolLoopResult,
 } from "./raw-loop.js";
@@ -101,6 +104,7 @@ export interface AgentGraphState {
   retryCountsByFile: Record<string, number>;
   blockedFiles: string[];
   lastEditedFile: string | null;
+  touchedFiles: string[];
   status: AgentRuntimeStatus;
   finalResult: string | null;
   taskPlan: TaskPlan | null;
@@ -129,6 +133,7 @@ export interface CreateAgentGraphStateOptions {
   retryCountsByFile?: Record<string, number>;
   blockedFiles?: string[];
   lastEditedFile?: string | null;
+  touchedFiles?: string[];
   status?: AgentRuntimeStatus;
   finalResult?: string | null;
   taskPlan?: TaskPlan | null;
@@ -145,12 +150,13 @@ export interface CreateAgentGraphStateOptions {
 }
 
 export interface ActingLoopResult {
-  status?: "completed" | "cancelled";
+  status?: "completed" | "cancelled" | "limit_reached";
   finalText: string;
   messageHistory: MessageParam[];
   iterations: number;
   didEdit: boolean;
   lastEditedFile: string | null;
+  touchedFiles?: string[];
 }
 
 export interface AgentRuntimeDependencies {
@@ -215,6 +221,7 @@ const AgentGraphStateAnnotation = Annotation.Root({
   retryCountsByFile: Annotation<Record<string, number>>(),
   blockedFiles: Annotation<string[]>(),
   lastEditedFile: Annotation<string | null>(),
+  touchedFiles: Annotation<string[]>(),
   status: Annotation<AgentRuntimeStatus>(),
   finalResult: Annotation<string | null>(),
   taskPlan: Annotation<TaskPlan | null>(),
@@ -303,6 +310,48 @@ function getRelativeToolPath(input: unknown): string | null {
   }
 
   return null;
+}
+
+function isBootstrapToolData(
+  data: unknown,
+): data is {
+  createdFiles: string[];
+} {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "createdFiles" in data &&
+    Array.isArray(data.createdFiles) &&
+    data.createdFiles.every((item) => typeof item === "string")
+  );
+}
+
+function collectTouchedFiles(
+  toolExecutions: RawToolExecution[],
+): string[] {
+  const touchedFiles = new Set<string>();
+
+  for (const execution of toolExecutions) {
+    if (!execution.success) {
+      continue;
+    }
+
+    if (execution.editedPath) {
+      touchedFiles.add(execution.editedPath);
+      continue;
+    }
+
+    if (
+      execution.toolName === "bootstrap_target" &&
+      isBootstrapToolData(execution.data)
+    ) {
+      for (const createdFile of execution.data.createdFiles) {
+        touchedFiles.add(createdFile);
+      }
+    }
+  }
+
+  return [...touchedFiles];
 }
 
 async function createSubagentLoopOptions(
@@ -538,12 +587,18 @@ async function defaultActingLoop(
   );
 
   return {
-    status: result.status === "cancelled" ? "cancelled" : "completed",
+    status:
+      result.status === "cancelled"
+        ? "cancelled"
+        : result.status === "limit_reached"
+          ? "limit_reached"
+          : "completed",
     finalText: result.finalText,
     messageHistory: result.messageHistory,
     iterations: result.iterations,
     didEdit: result.didEdit,
     lastEditedFile: result.lastEditedFile,
+    touchedFiles: collectTouchedFiles(result.toolExecutions),
   };
 }
 
@@ -574,6 +629,7 @@ export function createAgentGraphState(
     retryCountsByFile: { ...(options.retryCountsByFile ?? {}) },
     blockedFiles: [...(options.blockedFiles ?? [])],
     lastEditedFile: options.lastEditedFile ?? null,
+    touchedFiles: [...(options.touchedFiles ?? [])],
     status: options.status ?? "planning",
     finalResult: options.finalResult ?? null,
     taskPlan: options.taskPlan ?? null,
@@ -858,9 +914,22 @@ export function createAgentRuntimeNodes(
             messageHistory: actingLoop.messageHistory,
             actingIterations: actingLoop.iterations,
             lastEditedFile: actingLoop.lastEditedFile,
+            touchedFiles: actingLoop.touchedFiles ?? [],
             finalResult:
               cancelledAfterAct?.finalResult ?? actingLoop.finalText,
             status: "cancelled",
+            lastError: null,
+          };
+        }
+
+        if (actingLoop.status === "limit_reached") {
+          return {
+            messageHistory: actingLoop.messageHistory,
+            actingIterations: actingLoop.iterations,
+            lastEditedFile: actingLoop.lastEditedFile,
+            touchedFiles: actingLoop.touchedFiles ?? [],
+            finalResult: actingLoop.finalText,
+            status: "responding",
             lastError: null,
           };
         }
@@ -869,6 +938,7 @@ export function createAgentRuntimeNodes(
           messageHistory: actingLoop.messageHistory,
           actingIterations: actingLoop.iterations,
           lastEditedFile: actingLoop.lastEditedFile,
+          touchedFiles: actingLoop.touchedFiles ?? [],
           finalResult: actingLoop.finalText,
           status: actingLoop.didEdit ? "verifying" : "responding",
           lastError: null,
@@ -881,15 +951,20 @@ export function createAgentRuntimeNodes(
         }
 
         const message = toErrorMessage(error);
-        const limitHit = message.includes(String(RAW_LOOP_MAX_ITERATIONS));
+        const limitHit = isRawLoopIterationLimitError(
+          message,
+          RAW_LOOP_MAX_ITERATIONS,
+        );
 
         return {
           actingIterations: limitHit
             ? RAW_LOOP_MAX_ITERATIONS
             : state.actingIterations,
-          status: "failed",
-          finalResult: message,
-          lastError: message,
+          status: limitHit ? "responding" : "failed",
+          finalResult: limitHit
+            ? createRawLoopIterationLimitMessage(RAW_LOOP_MAX_ITERATIONS)
+            : message,
+          lastError: limitHit ? null : message,
         };
       }
     },

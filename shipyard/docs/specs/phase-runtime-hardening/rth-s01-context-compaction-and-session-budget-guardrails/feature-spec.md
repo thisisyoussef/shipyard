@@ -48,3 +48,36 @@ Shipyard's long-running tool loops currently replay full prior `tool_use` and `t
 
 ## Done Definition
 - Shipyard can sustain long write-heavy sessions without replaying unbounded historical payloads or injecting oversized rolling summaries into every future turn.
+
+## Implementation Evidence
+
+### Code References
+
+- [`../../../../src/engine/history-compaction.ts`](../../../../src/engine/history-compaction.ts):
+  raises the compaction budgets and summarizes older `write_file`,
+  `edit_block`, and `bootstrap_target` turns with path, line-count, and preview
+  metadata instead of replaying large payloads forever.
+- [`../../../../src/engine/raw-loop.ts`](../../../../src/engine/raw-loop.ts):
+  preserves structured tool execution data so history compaction can emit
+  useful compact summaries without depending on raw historical file bodies.
+- [`../../../../tests/history-compaction.test.ts`](../../../../tests/history-compaction.test.ts)
+  and [`../../../../tests/raw-loop.test.ts`](../../../../tests/raw-loop.test.ts):
+  cover bounded compaction behavior for large write-heavy turns and keep the
+  raw-loop contract aligned with the compacted history format.
+
+### Representative Snippets
+
+```ts
+const RAW_LOOP_MESSAGE_HISTORY_CHAR_BUDGET = 24_000;
+const RAW_LOOP_COMPACTION_SUMMARY_CHAR_BUDGET = 4_200;
+```
+
+```ts
+if (toolName === "write_file") {
+  return {
+    path: normalizePath(input.path),
+    lineCount,
+    preview,
+  };
+}
+```

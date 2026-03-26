@@ -210,6 +210,7 @@ describe("execution handoff artifacts", () => {
         iterations: 5,
         didEdit: false,
         lastEditedFile: "src/app.ts",
+        touchedFiles: ["src/app.ts", "src/routes.tsx", "src/lib/data.ts"],
       })
       .mockResolvedValueOnce({
         finalText: "Resumed from handoff.",
@@ -217,6 +218,7 @@ describe("execution handoff artifacts", () => {
         iterations: 1,
         didEdit: false,
         lastEditedFile: null,
+        touchedFiles: [],
       });
     const runtimeState = createInstructionRuntimeState({
       projectRules: "",
@@ -256,6 +258,15 @@ describe("execution handoff artifacts", () => {
       ),
     ) as ExecutionHandoff;
     expect(artifactContents.resetReason.kind).toBe("iteration-threshold");
+    expect(artifactContents.touchedFiles).toEqual(
+      expect.arrayContaining(["src/app.ts", "src/routes.tsx", "src/lib/data.ts"]),
+    );
+    expect(artifactContents.completedWork).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Goal checkpointed"),
+        expect.stringContaining("Recent touched files"),
+      ]),
+    );
 
     const resumedTurn = await executeInstructionTurn({
       sessionState,

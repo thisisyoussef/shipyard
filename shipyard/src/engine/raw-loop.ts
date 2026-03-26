@@ -63,10 +63,11 @@ export interface RawToolExecution {
   output: string;
   error?: string;
   editedPath: string | null;
+  data?: unknown;
 }
 
 export interface RawToolLoopResult {
-  status: "completed" | "cancelled";
+  status: "completed" | "cancelled" | "limit_reached";
   finalText: string;
   messageHistory: MessageParam[];
   toolExecutions: RawToolExecution[];
@@ -127,6 +128,25 @@ export class AnthropicOutputBudgetExceededError extends Error {
     this.generatingToolCall = options.generatingToolCall;
     this.partialText = partialText;
   }
+}
+
+export function createRawLoopIterationLimitMessage(
+  maxIterations: number,
+): string {
+  return (
+    `Acting loop reached ${String(maxIterations)} iterations before a final response. ` +
+    "Persist a handoff and continue in a fresh turn from the current workspace checkpoint."
+  );
+}
+
+export function isRawLoopIterationLimitError(
+  message: string,
+  maxIterations = RAW_LOOP_MAX_ITERATIONS,
+): boolean {
+  return new RegExp(
+    `Raw Claude loop exceeded ${String(maxIterations)} iterations`,
+    "i",
+  ).test(message);
 }
 
 function ensureNonBlankString(value: string, fieldName: string): string {
@@ -508,6 +528,7 @@ async function executeToolUsesForTurn(
       output: result.output,
       error: result.error,
       editedPath: extractEditedPath(toolUse.name, toolUse.input, result),
+      data: result.data,
     };
 
     toolExecutions.push(toolExecution);
@@ -746,9 +767,18 @@ async function runRawToolLoopDetailedCore(
     };
   }
 
-  throw new Error(
-    `Raw Claude loop exceeded ${String(maxIterations)} iterations without reaching a final response.`,
-  );
+  return {
+    status: "limit_reached",
+    finalText: createRawLoopIterationLimitMessage(maxIterations),
+    messageHistory: buildCompactedMessageHistory({
+      initialUserMessage,
+      completedTurns: completedToolTurns,
+    }).messages,
+    toolExecutions,
+    iterations: maxIterations,
+    didEdit: lastEditedFile !== null,
+    lastEditedFile,
+  };
 }
 
 export async function runRawToolLoopDetailed(
