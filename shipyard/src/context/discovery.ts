@@ -17,6 +17,7 @@ interface PackageManifest {
 }
 
 const IGNORED_TOP_LEVEL_NAMES = new Set([".git", ".shipyard", ".DS_Store"]);
+const BOOTSTRAP_SAFE_TOP_LEVEL_FILES = new Set(["AGENTS.md"]);
 
 function createEmptyDiscoveryReport(): DiscoveryReport {
   return {
@@ -237,6 +238,10 @@ function detectHasReadme(topLevelFiles: string[]): boolean {
   return topLevelFiles.some((filePath) => filePath.toLowerCase().startsWith("readme"));
 }
 
+function isBootstrapSafeTopLevelFile(filePath: string): boolean {
+  return BOOTSTRAP_SAFE_TOP_LEVEL_FILES.has(filePath) || detectHasReadme([filePath]);
+}
+
 async function readPackageManifest(
   targetPath: string,
   topLevelFiles: string[],
@@ -285,6 +290,29 @@ export async function discoverTarget(
 
   if (topLevelFiles.length === 0 && topLevelDirectories.length === 0) {
     return createEmptyDiscoveryReport();
+  }
+
+  const onlyBootstrapSafeFiles =
+    topLevelDirectories.length === 0 &&
+    topLevelFiles.length > 0 &&
+    topLevelFiles.every((filePath) => isBootstrapSafeTopLevelFile(filePath));
+
+  if (onlyBootstrapSafeFiles) {
+    return normalizeDiscoveryReport({
+      isGreenfield: true,
+      language: null,
+      framework: null,
+      packageManager: null,
+      scripts: {},
+      hasReadme: detectHasReadme(topLevelFiles),
+      hasAgentsMd: topLevelFiles.includes("AGENTS.md"),
+      topLevelFiles,
+      topLevelDirectories,
+      projectName: null,
+      previewCapability: createUnavailablePreviewCapability(
+        "Greenfield target; no supported local preview has been detected yet.",
+      ),
+    });
   }
 
   const packageManifest = await readPackageManifest(targetPath, topLevelFiles);

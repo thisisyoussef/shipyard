@@ -51,6 +51,28 @@ describe("discoverTarget", () => {
     expect(report.projectName).toBeNull();
   });
 
+  it("keeps README/AGENTS seeded targets bootstrap-ready", async () => {
+    const seededDirectory = await mkdtemp(path.join(tmpdir(), "shipyard-seeded-"));
+    createdDirectories.push(seededDirectory);
+    await writeFile(
+      path.join(seededDirectory, "README.md"),
+      "# Seeded target\n",
+      "utf8",
+    );
+    await writeFile(
+      path.join(seededDirectory, "AGENTS.md"),
+      "Follow the local rules.\n",
+      "utf8",
+    );
+
+    const report = await discoverTarget(seededDirectory);
+
+    expect(report.isGreenfield).toBe(true);
+    expect(report.hasReadme).toBe(true);
+    expect(report.hasAgentsMd).toBe(true);
+    expect(report.topLevelFiles).toEqual(["AGENTS.md", "README.md"]);
+  });
+
   it("infers preview capability from a Vite dev script", async () => {
     const targetDirectory = await mkdtemp(path.join(tmpdir(), "shipyard-previewable-"));
     createdDirectories.push(targetDirectory);

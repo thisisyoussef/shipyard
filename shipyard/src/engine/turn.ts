@@ -903,6 +903,10 @@ export async function executeInstructionTurn(
         state.recentTouchedFiles,
         executionSpec?.targetFilePaths ?? [],
       );
+      rememberRecentFilePaths(
+        state.recentTouchedFiles,
+        finalState.touchedFiles ?? [],
+      );
 
       if (finalState.lastEditedFile) {
         rememberRecentFilePath(
@@ -954,6 +958,7 @@ export async function executeInstructionTurn(
             retryCountsByFile: finalState.retryCountsByFile,
             blockedFiles: finalState.blockedFiles,
             lastEditedFile: finalState.lastEditedFile,
+            touchedFiles: finalState.touchedFiles ?? [],
             verificationReport: finalState.verificationReport,
             decision: handoffDecision,
           }),

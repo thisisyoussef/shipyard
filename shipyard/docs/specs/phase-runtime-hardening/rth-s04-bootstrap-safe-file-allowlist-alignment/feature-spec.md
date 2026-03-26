@@ -45,3 +45,30 @@
 
 ## Done Definition
 - Near-empty targets seeded only with `AGENTS.md` and `README.md` bootstrap cleanly, while truly non-empty targets still fail fast.
+
+## Implementation Evidence
+
+### Code References
+
+- [`../../../../src/context/discovery.ts`](../../../../src/context/discovery.ts):
+  treats a target containing only `README.md` and allowlisted seed docs such as
+  `AGENTS.md` as still greenfield/bootstrap-ready instead of prematurely
+  classifying it as an existing project.
+- [`../../../../src/tools/target-manager/bootstrap-target.ts`](../../../../src/tools/target-manager/bootstrap-target.ts):
+  remains the source of truth for the narrow seed-doc allowlist used by
+  bootstrap itself.
+- [`../../../../tests/discovery.test.ts`](../../../../tests/discovery.test.ts):
+  covers the `README.md` plus `AGENTS.md` near-empty target case so discovery
+  stays aligned with the bootstrap guard rail.
+
+### Representative Snippets
+
+```ts
+const BOOTSTRAP_SAFE_TOP_LEVEL_FILES = new Set(["AGENTS.md"]);
+```
+
+```ts
+const hasOnlyBootstrapSafeFiles =
+  topLevelDirectories.length === 0 &&
+  topLevelFiles.every((entry) => entry === "README.md" || isBootstrapSafeTopLevelFile(entry));
+```

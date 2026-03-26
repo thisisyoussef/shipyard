@@ -47,3 +47,45 @@ Once a target stops being greenfield, Shipyard currently routes broad follow-up 
 
 ## Done Definition
 - Same-session follow-ups stay on the lightweight path when recent local evidence already identifies the target files, and any remaining subagent work is visible in the outer run evidence.
+
+## Implementation Evidence
+
+### Code References
+
+- [`../../../../src/engine/graph.ts`](../../../../src/engine/graph.ts):
+  converts raw-loop iteration-threshold exits into resumable graph responses,
+  carries touched-file evidence out of the acting loop, and preserves the
+  lightweight graph path instead of surfacing a hard failure.
+- [`../../../../src/engine/turn.ts`](../../../../src/engine/turn.ts) and
+  [`../../../../src/artifacts/handoff.ts`](../../../../src/artifacts/handoff.ts):
+  persist recent touched files into session state and emitted handoff artifacts
+  so the next turn can resume from concrete file evidence instead of starting
+  from scratch.
+- [`../../../../src/phases/code/prompts.ts`](../../../../src/phases/code/prompts.ts):
+  distinguishes between editing existing files and creating brand-new modules,
+  which keeps same-session scaffold follow-ups on the lightweight path.
+- [`../../../../tests/graph-runtime.test.ts`](../../../../tests/graph-runtime.test.ts)
+  and [`../../../../tests/handoff-artifacts.test.ts`](../../../../tests/handoff-artifacts.test.ts):
+  cover the resumable iteration-threshold path and touched-file carry-forward.
+
+### Representative Snippets
+
+```ts
+if (loopResult.status === "limit_reached") {
+  return {
+    status: "responding",
+    response: loopResult.finalText,
+    touchedFiles: loopResult.touchedFiles,
+  };
+}
+```
+
+```ts
+touchedFiles: finalState.touchedFiles ?? [],
+```
+
+### Notes
+
+- This patch implements the continuation-aware touched-file and resumable
+  checkpoint parts of the story.
+- Subagent visibility remains follow-up work and did not change in this patch.

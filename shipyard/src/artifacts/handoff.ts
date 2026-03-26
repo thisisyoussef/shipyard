@@ -7,6 +7,7 @@ import {
   getArtifactDirectory,
   getShipyardDirectory,
 } from "../engine/state.js";
+import { truncateText } from "../engine/turn-summary.js";
 import type {
   ExecutionHandoff,
   ExecutionHandoffEvaluation,
@@ -106,6 +107,7 @@ export interface CreateExecutionHandoffOptions {
   retryCountsByFile: Record<string, number>;
   blockedFiles: string[];
   lastEditedFile: string | null;
+  touchedFiles?: string[];
   verificationReport: VerificationReport | null;
   decision: ExecutionHandoffDecision;
   createdAt?: string;
@@ -265,10 +267,12 @@ function createCompletedWork(options: {
   touchedFiles: string[];
   verificationReport: VerificationReport | null;
 }): string[] {
-  const completed = [`Captured the implementation goal: ${options.taskPlan.goal}`];
+  const completed = [
+    `Goal checkpointed: ${truncateText(options.taskPlan.goal, 180)}`,
+  ];
 
   if (options.touchedFiles.length > 0) {
-    completed.push(`Touched files: ${options.touchedFiles.join(", ")}`);
+    completed.push(`Recent touched files: ${options.touchedFiles.join(", ")}`);
   }
 
   if (options.verificationReport) {
@@ -290,6 +294,7 @@ export function createExecutionHandoff(
   }
 
   const touchedFiles = uniqueStrings([
+    ...(options.touchedFiles ?? []),
     ...options.taskPlan.targetFilePaths,
     ...Object.keys(options.retryCountsByFile),
     ...options.blockedFiles,

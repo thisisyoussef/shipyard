@@ -2,8 +2,8 @@ import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 
 import { truncateText } from "./turn-summary.js";
 
-export const RAW_LOOP_MESSAGE_HISTORY_CHAR_BUDGET = 12_000;
-export const RAW_LOOP_COMPACTION_SUMMARY_CHAR_BUDGET = 2_600;
+export const RAW_LOOP_MESSAGE_HISTORY_CHAR_BUDGET = 24_000;
+export const RAW_LOOP_COMPACTION_SUMMARY_CHAR_BUDGET = 4_200;
 export const RAW_LOOP_PREFERRED_VERBATIM_TAIL_CYCLES = 1;
 
 export interface CompletedToolTurn {
@@ -17,6 +17,7 @@ export interface CompletedToolTurn {
     output: string;
     error?: string;
     editedPath: string | null;
+    data?: unknown;
   }>;
 }
 
@@ -58,6 +59,71 @@ function summarizeInputPath(input: unknown): string | null {
   return null;
 }
 
+function formatPreviewBlock(preview: string): string {
+  return truncateText(preview.trim(), 220);
+}
+
+function isWritePreviewData(
+  data: unknown,
+): data is {
+  path: string;
+  totalLines: number;
+  afterPreview: string;
+} {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "path" in data &&
+    typeof data.path === "string" &&
+    "totalLines" in data &&
+    typeof data.totalLines === "number" &&
+    "afterPreview" in data &&
+    typeof data.afterPreview === "string"
+  );
+}
+
+function isEditPreviewData(
+  data: unknown,
+): data is {
+  path: string;
+  addedLines: number;
+  removedLines: number;
+  totalLines: number;
+  afterPreview: string;
+} {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "path" in data &&
+    typeof data.path === "string" &&
+    "addedLines" in data &&
+    typeof data.addedLines === "number" &&
+    "removedLines" in data &&
+    typeof data.removedLines === "number" &&
+    "totalLines" in data &&
+    typeof data.totalLines === "number" &&
+    "afterPreview" in data &&
+    typeof data.afterPreview === "string"
+  );
+}
+
+function isBootstrapPreviewData(
+  data: unknown,
+): data is {
+  createdFiles: string[];
+  scaffoldType: string;
+} {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "createdFiles" in data &&
+    Array.isArray(data.createdFiles) &&
+    data.createdFiles.every((item) => typeof item === "string") &&
+    "scaffoldType" in data &&
+    typeof data.scaffoldType === "string"
+  );
+}
+
 function summarizeToolExecution(
   execution: CompletedToolTurn["toolExecutions"][number],
 ): string {
@@ -77,7 +143,42 @@ function summarizeToolExecution(
     || execution.toolName === "edit_block"
     || execution.toolName === "bootstrap_target"
   ) {
-    return `${toolLabel} succeeded; exact generated contents were compacted. Re-read the workspace if details matter.`;
+    if (execution.toolName === "write_file" && isWritePreviewData(execution.data)) {
+      return (
+        `${toolLabel} created ${String(execution.data.totalLines)} lines. ` +
+        `Preview: ${formatPreviewBlock(execution.data.afterPreview)}`
+      );
+    }
+
+    if (execution.toolName === "edit_block" && isEditPreviewData(execution.data)) {
+      return (
+        `${toolLabel} updated +${String(execution.data.addedLines)}` +
+        `/-${String(execution.data.removedLines)} lines ` +
+        `(total ${String(execution.data.totalLines)}). ` +
+        `After preview: ${formatPreviewBlock(execution.data.afterPreview)}`
+      );
+    }
+
+    if (
+      execution.toolName === "bootstrap_target" &&
+      isBootstrapPreviewData(execution.data)
+    ) {
+      const createdPreview = execution.data.createdFiles.slice(0, 6).join(", ");
+      const omittedCount =
+        execution.data.createdFiles.length
+        - Math.min(execution.data.createdFiles.length, 6);
+      const omittedLabel = omittedCount > 0
+        ? ` (+${String(omittedCount)} more)`
+        : "";
+
+      return (
+        `${toolLabel} bootstrapped ${execution.data.scaffoldType} with ` +
+        `${String(execution.data.createdFiles.length)} files: ` +
+        `${createdPreview}${omittedLabel}`
+      );
+    }
+
+    return `${toolLabel} succeeded; re-read the workspace if exact generated contents matter.`;
   }
 
   const detail = truncateText(execution.output, 90);

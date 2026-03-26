@@ -811,7 +811,7 @@ describe("Phase 4 graph runtime contract", () => {
     expect(getTrackedReadHash("src/app.ts")).toBe(restoredHash);
   });
 
-  it("act node fails clearly after 25 tool-loop iterations", async () => {
+  it("act node checkpoints after 25 tool-loop iterations instead of failing", async () => {
     const graph = createAgentRuntimeGraph({
       dependencies: {
         runActingLoop: vi.fn(async () => {
@@ -824,9 +824,9 @@ describe("Phase 4 graph runtime contract", () => {
 
     const finalState = await graph.invoke(createInitialState());
 
-    expect(finalState.status).toBe("failed");
+    expect(finalState.status).toBe("done");
     expect(finalState.actingIterations).toBe(25);
-    expect(finalState.finalResult).toMatch(/exceeded 25 iterations/i);
+    expect(finalState.finalResult).toMatch(/handoff|fresh turn|checkpoint/i);
   });
 
   it("fallback runtime preserves retry and blocked-file semantics", async () => {

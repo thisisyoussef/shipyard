@@ -503,7 +503,7 @@ describe("raw Claude tool loop", () => {
     ).rejects.toThrowError(/output budget exhausted|stop_reason=max_tokens/i);
   });
 
-  it("fails after 25 iterations without a final response", async () => {
+  it("returns a resumable checkpoint message after 25 iterations without a final response", async () => {
     const client = createMockAnthropicClient((_request, turnNumber) =>
       createAssistantMessage({
         stopReason: "tool_use",
@@ -523,23 +523,22 @@ describe("raw Claude tool loop", () => {
       }),
     );
 
-    await expect(
-      runRawToolLoop(
-        "You are Shipyard.",
-        "Keep going forever.",
-        [],
-        process.cwd(),
-        {
-          client,
-          logger: {
-            log() {},
-          },
+    const result = await runRawToolLoopDetailed(
+      "You are Shipyard.",
+      "Keep going forever.",
+      [],
+      process.cwd(),
+      {
+        client,
+        logger: {
+          log() {},
         },
-      ),
-    ).rejects.toThrowError(
-      new RegExp(`exceeded ${String(RAW_LOOP_MAX_ITERATIONS)} iterations`, "i"),
+      },
     );
 
+    expect(result.status).toBe("limit_reached");
+    expect(result.finalText).toMatch(/handoff|fresh turn|checkpoint/i);
+    expect(result.iterations).toBe(RAW_LOOP_MAX_ITERATIONS);
     expect(client.calls).toHaveLength(RAW_LOOP_MAX_ITERATIONS);
   });
 
