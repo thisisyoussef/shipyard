@@ -1,9 +1,7 @@
 import "../../tools/index.js";
 import type { TaskPlan } from "../../artifacts/types.js";
 import {
-  getAnthropicTools,
   getTools,
-  type AnthropicToolDefinition,
   type ToolDefinition,
 } from "../../tools/registry.js";
 import type { Phase } from "../phase.js";
@@ -38,10 +36,6 @@ export function createCodePhase(): Phase {
 
 export function getCodePhaseToolDefinitions(): ToolDefinition[] {
   return getTools(CODE_PHASE_TOOL_NAMES);
-}
-
-export function getCodePhaseAnthropicTools(): AnthropicToolDefinition[] {
-  return getAnthropicTools(CODE_PHASE_TOOL_NAMES);
 }
 
 export function createStubCodeTaskPlan(instruction: string): TaskPlan {

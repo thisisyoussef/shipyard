@@ -10,7 +10,11 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages";
 import { wrapAnthropic } from "langsmith/wrappers/anthropic";
 
-import type { AnthropicToolDefinition, ToolResult } from "../tools/registry.js";
+import type {
+  ToolDefinition,
+  ToolInputSchema,
+  ToolResult,
+} from "../tools/registry.js";
 import { getLangSmithConfig } from "../tracing/langsmith.js";
 import { toTurnCancelledError } from "./cancellation.js";
 
@@ -63,6 +67,12 @@ export interface AnthropicMessagesClient {
   };
 }
 
+export interface AnthropicToolDefinition {
+  name: string;
+  description: string;
+  input_schema: ToolInputSchema;
+}
+
 function ensureNonBlankString(value: string, fieldName: string): string {
   const trimmed = value.trim();
 
@@ -108,6 +118,16 @@ function toAnthropicTools(
   tools: AnthropicToolDefinition[],
 ): MessageCreateParamsNonStreaming["tools"] {
   return tools as MessageCreateParamsNonStreaming["tools"];
+}
+
+export function projectToolsToAnthropicTools(
+  tools: ToolDefinition[],
+): AnthropicToolDefinition[] {
+  return tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.inputSchema,
+  }));
 }
 
 function getErrorMessage(error: unknown): string {

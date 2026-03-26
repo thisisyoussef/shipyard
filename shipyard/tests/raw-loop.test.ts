@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   DEFAULT_ANTHROPIC_MODEL,
+  projectToolsToAnthropicTools,
 } from "../src/engine/anthropic.js";
 import {
   RAW_LOOP_MAX_ITERATIONS,
@@ -15,7 +16,7 @@ import {
 } from "../src/engine/raw-loop.js";
 import "../src/tools/index.js";
 import {
-  getAnthropicTools,
+  getTools,
   getTool,
   registerTool,
 } from "../src/tools/registry.js";
@@ -272,7 +273,9 @@ describe("raw Claude tool loop", () => {
 
     expect(result).toBe("README inspected successfully.");
     expect(client.calls).toHaveLength(2);
-    expect(client.calls[0]?.tools).toEqual(getAnthropicTools(["read_file"]));
+    expect(client.calls[0]?.tools).toEqual(
+      projectToolsToAnthropicTools(getTools(["read_file"])),
+    );
     expect(client.calls[1]?.messages).toHaveLength(3);
     expect(client.calls[1]?.messages[1]).toEqual({
       role: "assistant",

@@ -26,7 +26,7 @@ Target-manager tools:
 
 Supporting files:
 
-- `registry.ts`: tool registration, lookup, and Anthropic tool-shape export
+- `registry.ts`: tool registration, lookup, and generic metadata validation
 - `file-state.ts`: path normalization and hash tracking for safe edits
 - `target-manager/profile-io.ts`: target profile persistence helpers
 - `target-manager/scaffolds.ts` and `target-manager/scaffold-materializer.ts`:

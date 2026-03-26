@@ -1,8 +1,6 @@
 import "../../tools/target-manager/index.js";
 import {
-  getAnthropicTools,
   getTools,
-  type AnthropicToolDefinition,
   type ToolDefinition,
 } from "../../tools/registry.js";
 import type { Phase } from "../phase.js";
@@ -31,8 +29,4 @@ export function createTargetManagerPhase(): Phase {
 
 export function getTargetManagerToolDefinitions(): ToolDefinition[] {
   return getTools(TARGET_MANAGER_TOOL_NAMES);
-}
-
-export function getTargetManagerAnthropicTools(): AnthropicToolDefinition[] {
-  return getAnthropicTools(TARGET_MANAGER_TOOL_NAMES);
 }

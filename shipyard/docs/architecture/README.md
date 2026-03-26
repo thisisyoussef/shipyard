@@ -195,6 +195,10 @@ flowchart TD
 - `src/engine/`: owns the shared turn executor, graph runtime, fallback raw
   loop, cancellation, history compaction, runtime-context injection, handoff
   emission/loading, and session persistence.
+- `src/engine/model-adapter.ts`: owns the internal provider-neutral turn and
+  tool contract. Provider modules such as `src/engine/anthropic.ts` should
+  project generic tool definitions into provider wire formats instead of
+  leaking SDK types into the shared runtime boundary.
 - `src/plans/`: owns `plan:` creation, persisted task queues, spec-ref capture,
   and `next` / `continue` task execution over the shared turn runtime.
 - `src/agents/`: keeps the coordinator-only write boundary plus isolated
@@ -224,6 +228,9 @@ flowchart TD
 - Add new filesystem or process capabilities as typed tools under `src/tools/`,
   then expose them through a phase bundle rather than reaching around the
   registry.
+- Keep provider-specific SDK wire types and tool-shape projection inside
+  adapter modules such as `src/engine/anthropic.ts`. The shared registry should
+  expose only generic `ToolDefinition` metadata and execution behavior.
 - Treat `target/.shipyard/` as runtime output, not as hand-authored source.
 - Keep `rollingSummary` compact. Durable resume state belongs in typed plans or
   handoff artifacts, with only lightweight pointers persisted in session state.

@@ -17,9 +17,12 @@ import {
   runVerifierSubagent,
   VERIFIER_TOOL_NAMES,
 } from "../src/agents/verifier.js";
-import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
+import {
+  DEFAULT_ANTHROPIC_MODEL,
+  projectToolsToAnthropicTools,
+} from "../src/engine/anthropic.js";
 import "../src/tools/index.js";
-import { getAnthropicTools } from "../src/tools/registry.js";
+import { getTools } from "../src/tools/registry.js";
 
 const createdDirectories: string[] = [];
 
@@ -240,7 +243,7 @@ describe("verifier subagent", () => {
     ).rejects.toThrow(/read_file|command-only|not available|unauthorized/i);
 
     expect(client.calls[0]?.tools).toEqual(
-      getAnthropicTools([...VERIFIER_TOOL_NAMES]),
+      projectToolsToAnthropicTools(getTools([...VERIFIER_TOOL_NAMES])),
     );
   });
 

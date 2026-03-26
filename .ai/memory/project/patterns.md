@@ -12,6 +12,7 @@ Capture repeatable patterns that match how this workspace actually works.
 
 - CLI entrypoint: `shipyard/src/bin/shipyard.ts`
 - Core runtime loop: `shipyard/src/engine/`
+- Internal model/provider contract: `shipyard/src/engine/model-adapter.ts`
 - Routed planning/task execution: `shipyard/src/plans/`
 - Context discovery: `shipyard/src/context/`
 - Tool registry and tool implementations: `shipyard/src/tools/`
@@ -42,6 +43,9 @@ Capture repeatable patterns that match how this workspace actually works.
   app root. App-level `railway.json` commands run from that directory, so they
   should use plain `pnpm build` / `pnpm start -- --ui` instead of recursing
   back into `--dir shipyard`.
+- Shared runtime code should depend on Shipyard-owned turn/tool contracts, while
+  provider adapters project `ToolDefinition[]` into provider-specific wire
+  formats inside adapter modules.
 
 ## Runtime Artifact Pattern
 
@@ -58,6 +62,9 @@ Capture repeatable patterns that match how this workspace actually works.
 - Even when Shipyard borrows software-factory patterns, keep the single-writer
   coordinator for the main target and make any parallelism read-only,
   isolated, or review-before-apply.
+- `src/tools/registry.ts` is the canonical generic tool boundary. If a provider
+  needs a different tool schema, add a projection helper in the provider module
+  instead of teaching the registry about that provider.
 
 ## Greenfield Bootstrap Pattern
 

@@ -28,3 +28,7 @@
 - 2026-03-26: Implemented the `phase-runtime-hardening-follow-up` pack by digesting completed tool turns, preserving write-aware compaction tails, relaxing new-file prompt policy, compressing handoffs, aligning bootstrap-ready discovery, and auto-resuming threshold-hit loops through checkpoint-backed continuations.
 - 2026-03-26: Task-aware acting budgets now resolve broad greenfield and same-session continuation intent before exact-path narrow defaults; the live smoke and LangSmith traces confirmed a `broad-greenfield` bootstrap turn followed by a `broad-continuation` follow-up in the same session.
 - 2026-03-26: Promoted the fresh-branch/worktree `.env*` carryover rule into `AGENTS.md`, the single-source baseline, and the startup workflow so new story worktrees copy the working `shipyard/.env` setup before project commands.
+- 2026-03-26: Added a provider-neutral model adapter contract in
+  `src/engine/model-adapter.ts`, removed Anthropic tool projection from
+  `src/tools/registry.ts`, and moved provider-side tool projection into the
+  Anthropic integration layer.

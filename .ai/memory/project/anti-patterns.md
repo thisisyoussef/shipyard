@@ -92,3 +92,15 @@ Capture failures so they are not repeated.
 - **Example**: Adding background tasks, approvals, repo indexing, or eval jobs as separate sidecar stores and flows that do not share one durable thread or one reviewed apply path
 - **Why it failed**: The runtime becomes harder to reason about, resume semantics drift, and parallel work starts mutating the main target without a clear control plane.
 - **Prevention rule**: Sequence larger runtime upgrades through the `phase-10` architecture pack, preserve the single-writer coordinator, and anchor new capability surfaces to durable threads, explicit policy, and review-before-apply boundaries.
+
+- **Problem**: Letting provider-specific wire types leak into the shared
+  runtime or tool registry
+- **Example**: Exporting Anthropic-only tool descriptors from
+  `src/tools/registry.ts` or making shared engine code depend directly on
+  provider SDK message shapes
+- **Why it failed**: Adding or swapping providers starts requiring edits in
+  generic registry/runtime code, which makes provider work expensive and
+  brittle.
+- **Prevention rule**: Keep Shipyard-owned turn/tool contracts in
+  `src/engine/model-adapter.ts`, keep the registry generic, and push provider
+  projection into adapter modules.

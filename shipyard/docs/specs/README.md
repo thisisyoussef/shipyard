@@ -15,6 +15,7 @@ for durable onboarding and architecture reference.
 
 ## Indexed Phase Packs
 
+- [`phase-10/README.md`](./phase-10/README.md): provider-neutral model adapters, configurable provider/model routing, and OpenAI Responses integration
 - [`phase-pre-2/README.md`](./phase-pre-2/README.md): introduces the browser runtime before Phase 2 finishes
 - [`phase-2/README.md`](./phase-2/README.md): tool registry, file I/O, edit guardrails, and discovery smoke coverage
 - [`phase-3/README.md`](./phase-3/README.md): Anthropic client contract and raw tool loop work

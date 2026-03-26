@@ -106,3 +106,17 @@ Record durable workspace decisions here.
 - **Consequences**: Future architecture stories should map back to the `phase-10`
   sequence, preserve the single-writer coordinator, and avoid introducing new
   parallel persistence systems or unreviewed background mutation paths.
+
+- **ADR-ID**: ADR-0011
+- **Date**: 2026-03-26
+- **Context**: Provider-routing work needs one stable internal model boundary
+  before Anthropic can move behind an adapter or OpenAI can be added cleanly.
+- **Decision**: Define provider-neutral turn and tool contracts in
+  `shipyard/src/engine/model-adapter.ts`, keep
+  `shipyard/src/tools/registry.ts` generic, and let adapter modules own
+  provider-specific tool projection.
+- **Alternatives Considered**: Keep Anthropic wire types as the shared runtime
+  contract; make the registry emit multiple provider-specific tool shapes.
+- **Consequences**: Later provider migration can reuse one Shipyard-owned
+  contract, and new providers should only need adapter work instead of registry
+  changes.

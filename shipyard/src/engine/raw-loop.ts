@@ -11,6 +11,7 @@ import {
   createAnthropicClient,
   createAnthropicMessage,
   createAssistantHistoryMessage,
+  projectToolsToAnthropicTools,
   createUserTextMessage,
   createUserToolResultBlock,
   extractAssistantText,
@@ -25,7 +26,7 @@ import {
 } from "./history-compaction.js";
 import {
   createToolErrorResult,
-  getAnthropicTools,
+  getTools,
   getTool,
   type ToolResult,
 } from "../tools/registry.js";
@@ -521,7 +522,7 @@ async function createAnthropicMessageWithBudgetRecovery(options: {
   client: AnthropicMessagesClient;
   systemPrompt: string;
   messages: MessageParam[];
-  tools: ReturnType<typeof getAnthropicTools>;
+  tools: ReturnType<typeof projectToolsToAnthropicTools>;
   model: Model;
   maxTokens: number;
   temperature?: number;
@@ -796,7 +797,9 @@ async function runRawToolLoopDetailedCore(
   const allowedToolNames = new Set(normalizedToolNames);
   const initialUserMessage = createUserTextMessage(normalizedUserMessage);
   const completedToolTurns: CompletedToolTurn[] = [];
-  const anthropicTools = getAnthropicTools(normalizedToolNames);
+  const anthropicTools = projectToolsToAnthropicTools(
+    getTools(normalizedToolNames),
+  );
   const toolExecutions: RawToolExecution[] = [];
   let lastEditedFile: string | null = null;
 
