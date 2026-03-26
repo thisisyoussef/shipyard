@@ -110,9 +110,14 @@ path from the workbench.
   GitHub-linked. Native Railway GitHub autodeploy remains optional and can be
   enabled later from the service settings if you want Railway to watch a branch
   directly.
-- The checked-in GitHub Actions deploy workflow now syncs `OPENAI_API_KEY`,
-  `SHIPYARD_MODEL_PROVIDER=openai`, and `SHIPYARD_OPENAI_MODEL=gpt-5.4` into
-  the production Railway service before uploading new builds.
+- The checked-in GitHub Actions deploy workflow now syncs
+  `SHIPYARD_ACCESS_TOKEN`, `OPENAI_API_KEY`, `SHIPYARD_MODEL_PROVIDER=openai`,
+  and `SHIPYARD_OPENAI_MODEL=gpt-5.4` into the production Railway service
+  before uploading new builds.
+- For local operator convenience, keep the same hosted token in the ignored
+  `shipyard/.env` file and optionally add `SHIPYARD_HOSTED_URL`; the repo-root
+  helper `node scripts/print-hosted-access-url.mjs` prints a bootstrap URL
+  without committing the secret into tracked docs or source.
 - Point Railway's config-as-code path at `/shipyard/railway.json` when the
   provider is watching the full repo, or keep `railway.json` at the uploaded
   app root when deploying only the `shipyard/` directory.

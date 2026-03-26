@@ -225,6 +225,9 @@ target-manager flow:
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1` once the mount exists
 - set `SHIPYARD_ACCESS_TOKEN` if the public workbench should require a shared
   unlock token
+- keep the current hosted token in the ignored `shipyard/.env` file for local
+  operator convenience; `node scripts/print-hosted-access-url.mjs` prints a
+  bootstrap link from that file
 - set `VERCEL_TOKEN` to enable `deploy_target` and automatic public publishing
   after successful edited turns
 - use `/api/health` for the service health check
