@@ -34,7 +34,7 @@
 - **Claude compatibility mirror**: `.ai/agents/claude.md`
 - **Root app package**: `shipyard/package.json`
 - **App runtime state**: `shipyard/.shipyard/`
-- **Branch rule**: start non-trivial work on a fresh `codex/` branch
+- **Branch rule**: start non-trivial work on a fresh `codex/` branch, and carry over required local `.env*` files into new branches/worktrees before project commands
 - **Default validation commands**:
   - `pnpm --dir shipyard test`
   - `pnpm --dir shipyard typecheck`
