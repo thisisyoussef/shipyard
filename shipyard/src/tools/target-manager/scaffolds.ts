@@ -440,6 +440,7 @@ function createReactTsScaffold(
           strict: true,
           noEmit: true,
           skipLibCheck: true,
+          types: ["vite/client"],
         },
         include: ["src"],
       }),
@@ -485,14 +486,73 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     },
     {
       path: "src/App.tsx",
-      content: `export function App() {
+      content: `import "./App.css";
+
+export function App() {
   return (
-    <main>
-      <h1>${toDisplayName(name)}</h1>
-      <p>${description}</p>
+    <main className="app-shell">
+      <section className="app-card">
+        <span className="app-eyebrow">Shipyard starter</span>
+        <h1>${toDisplayName(name)}</h1>
+        <p>${description}</p>
+      </section>
     </main>
   );
 }
+`,
+    },
+    {
+      path: "src/App.css",
+      content: `.app-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at top, rgba(59, 130, 246, 0.18), transparent 42%),
+    linear-gradient(180deg, #08111f 0%, #122032 100%);
+  color: #f8fafc;
+  font-family: "Inter", "Segoe UI", sans-serif;
+}
+
+.app-card {
+  width: min(100%, 40rem);
+  padding: 2rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 1.5rem;
+  background: rgba(15, 23, 42, 0.78);
+  box-shadow: 0 24px 80px rgba(8, 15, 31, 0.45);
+}
+
+.app-card h1 {
+  margin: 0.5rem 0 0.75rem;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.1;
+}
+
+.app-card p {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: rgba(226, 232, 240, 0.88);
+}
+
+.app-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+`,
+    },
+    {
+      path: "src/vite-env.d.ts",
+      content: `/// <reference types="vite/client" />
 `,
     },
   ];

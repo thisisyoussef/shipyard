@@ -104,8 +104,9 @@
   bounded preview for the next turn.
 - A user can deploy the current target to Vercel and get a public production
   URL without leaving Shipyard.
-- The workbench clearly separates the hosted Shipyard URL from the deployed
-  target-app URL and stays honest about preview limitations.
+- The hosted workbench keeps the deployed target-app URL primary, auto-publishes
+  successful edited turns when Vercel is configured, and stays honest about
+  localhost-only preview limitations.
 
 ## Implementation Evidence
 
@@ -139,9 +140,11 @@
 - Deploy UX and public URL surfacing:
   - `shipyard/src/ui/server.ts`
   - `shipyard/src/ui/workbench-state.ts`
+  - `shipyard/ui/src/ShipyardWorkbench.tsx`
   - `shipyard/ui/src/TargetHeader.tsx`
-  - `shipyard/ui/src/panels/PreviewPanel.tsx`
+  - `shipyard/src/tools/target-manager/scaffolds.ts`
   - `shipyard/tests/ui-workbench.test.ts`
+  - `shipyard/tests/scaffold-bootstrap.test.ts`
 
 ### Representative Snippets
 
@@ -177,10 +180,16 @@ summary: `Deploy completed. Public URL: ${data.productionUrl}`,
 productionUrl: data.productionUrl,
 ```
 
-- The preview surface now labels hosted Shipyard and deployed target URLs as
-  separate destinations:
+- Successful edited turns now trigger the same deploy contract automatically:
 
-```tsx
-<span className="preview-link-label">Hosted Shipyard URL</span>
-<span className="preview-link-label">Deployed target-app URL</span>
+```ts
+if (turnResult.status === "success" && turnProducedEdits) {
+  await runBrowserDeploy({ platform: "vercel" }, signal, { mode: "automatic" });
+}
+```
+
+- New React/Vite targets ship with the CSS typing baseline Vercel builds need:
+
+```ts
+types: ["vite/client"],
 ```

@@ -137,15 +137,15 @@ Phase 9 introduces a hosted Railway path for the existing browser runtime.
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1` once the mount exists
 - Set `SHIPYARD_ACCESS_TOKEN` if the public workbench should require a shared
   unlock token
-- Set `VERCEL_TOKEN` to enable the first-class deploy action and the
-  `deploy_target` tool
+- Set `VERCEL_TOKEN` to enable automatic public publishing after successful
+  edited turns and the underlying `deploy_target` tool
 - Use `/api/health` for the service health check
 - If Railway is connected to the full repo, set the service root directory to
   `shipyard/` and point config-as-code at [`railway.json`](./railway.json)
 
 Hosted Phase 9 also adds browser-side reference-file upload and a dedicated
-deploy surface that keeps the hosted Shipyard URL, local preview URL, and
-deployed target-app URL clearly distinct.
+publish surface that keeps the shareable target-app URL primary and removes the
+localhost preview panel from the hosted workbench.
 
 See [`docs/architecture/hosted-railway.md`](./docs/architecture/hosted-railway.md)
 for the hosted start contract, persistence behavior, and operator flow.

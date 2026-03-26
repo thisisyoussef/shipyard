@@ -22,7 +22,7 @@ path from the workbench.
 | `SHIPYARD_UI_HOST` | `0.0.0.0` | Lets the existing Node + WebSocket runtime bind to Railway's public networking instead of loopback only. |
 | `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE` | `1` | Fails startup loudly when the hosted service is expected to use a durable mounted workspace but Railway has not attached the volume yet. |
 | `SHIPYARD_ACCESS_TOKEN` | shared secret | Protects `/api/access`, the SPA shell, and `/ws` with a lightweight hosted gate. |
-| `VERCEL_TOKEN` | Vercel token | Enables the `deploy_target` tool and the browser-side `Deploy to Vercel` action. |
+| `VERCEL_TOKEN` | Vercel token | Enables the `deploy_target` tool and automatic public publishing after successful edited turns. |
 
 ## Provider Environment
 
@@ -45,8 +45,11 @@ path from the workbench.
   `.shipyard/uploads/<session-id>/...` and are converted into bounded
   next-turn context notes instead of being embedded directly into the websocket
   payload.
-- The preview panel remains a local workspace preview. Public share links come
-  from production deploys and are surfaced separately.
+- The hosted workbench no longer shows a localhost preview panel. Public share
+  links come from Vercel publishes and are surfaced from the target header.
+- Preview supervision still runs behind the scenes for runtime capabilities and
+  tests, but the hosted operator surface no longer treats loopback URLs as
+  shareable output.
 
 ## Operator Flow
 
@@ -57,9 +60,10 @@ path from the workbench.
 3. Select or create a target inside `/app/workspace`.
 4. Optionally attach reference files from the browser; Shipyard stores them
    inside the workspace and injects safe previews into the next turn.
-5. Use the workbench deploy action to publish the current target to Vercel.
-6. Share the deployed target-app URL, not the Shipyard editor URL or the local
-   preview URL.
+5. After a successful edited turn, Shipyard automatically publishes the current
+   target to Vercel when `VERCEL_TOKEN` is configured.
+6. Open or copy the latest production URL from the target header and share the
+   deployed target-app URL, not the Shipyard editor URL.
 
 ## Failure Behavior
 
@@ -69,8 +73,8 @@ path from the workbench.
   ephemeral directory.
 - If the hosted access token is missing or invalid, `/api/health` redacts
   session details and websocket upgrades are rejected with `401`.
-- If `VERCEL_TOKEN` is missing, the deploy action stays disabled and the UI
-  explains how to restore deploy capability.
+- If `VERCEL_TOKEN` is missing, automatic publishing stays unavailable and the
+  target header explains how to restore deploy capability.
 
 ## Railway Setup Notes
 
