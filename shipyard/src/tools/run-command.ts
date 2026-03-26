@@ -335,14 +335,10 @@ export const runCommandDefinition: ToolDefinition<
       const formattedOutput = formatRunCommandOutput(result);
 
       if (result.exitCode !== 0 || result.timedOut) {
-        return {
-          success: false,
-          output: "",
-          error: formattedOutput,
-        };
+        return createToolErrorResult(formattedOutput, result);
       }
 
-      return createToolSuccessResult(formattedOutput);
+      return createToolSuccessResult(formattedOutput, result);
     } catch (error) {
       const cancelledError = toTurnCancelledError(error, context?.signal);
 

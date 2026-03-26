@@ -298,6 +298,9 @@ function createInitialHarnessRouteSummary(
     verificationCheckCount: 0,
     usedBrowserEvaluator: false,
     browserEvaluationStatus: "not_run",
+    browserEvaluationFailureKind: null,
+    commandReadinessStatus: "none",
+    commandReadyUrl: null,
     handoffLoaded: latestHandoff !== null,
     handoffEmitted: false,
     handoffReason: latestHandoff?.handoff.resetReason.kind ?? null,
@@ -799,6 +802,9 @@ function createRuntimeTraceMetadata(
     verificationCheckCount: state.harnessRoute.verificationCheckCount,
     usedBrowserEvaluator: state.harnessRoute.usedBrowserEvaluator,
     browserEvaluationStatus: state.harnessRoute.browserEvaluationStatus,
+    browserEvaluationFailureKind: state.harnessRoute.browserEvaluationFailureKind,
+    commandReadinessStatus: state.harnessRoute.commandReadinessStatus,
+    commandReadyUrl: state.harnessRoute.commandReadyUrl,
     handoffLoaded: state.harnessRoute.handoffLoaded || latestHandoff !== null,
     handoffEmitted: state.harnessRoute.handoffEmitted,
     handoffPath: latestHandoff?.artifactPath ?? null,
@@ -1193,6 +1199,12 @@ export function createAgentRuntimeNodes(
             usedBrowserEvaluator: browserEvaluationReport !== null,
             browserEvaluationStatus:
               browserEvaluationReport?.status ?? "not_run",
+            browserEvaluationFailureKind:
+              browserEvaluationReport?.failure?.kind ?? null,
+            commandReadinessStatus:
+              combinedVerificationReport.commandReadiness?.status ?? "none",
+            commandReadyUrl:
+              combinedVerificationReport.commandReadiness?.readyUrl ?? null,
             firstHardFailure:
               combinedVerificationReport.firstHardFailure ?? null,
           },

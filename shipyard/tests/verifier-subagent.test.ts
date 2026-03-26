@@ -572,6 +572,42 @@ describe("verifier subagent", () => {
     expect(toolResultPayloads[0]?.result.error).toContain("Timed out: yes");
   });
 
+  it("treats timed-out preview commands as passed when ready evidence is present", async () => {
+    const directory = await createTempProject();
+    const command =
+      "node -e \"console.log('VITE v5.0.8 ready in 145 ms'); console.log('Local: http://127.0.0.1:4173/'); setTimeout(() => {}, 2000)\"";
+    const modelAdapter = createFakeModelAdapter([
+      ...createVerifierCommandResponses({
+        toolUseId: "toolu_preview_ready_timeout",
+        command,
+        exitCode: null,
+        passed: false,
+        stdout: "",
+        stderr: "",
+        summary: "Command timed out after 1 second.",
+        timeoutSeconds: 1,
+      }),
+    ]);
+
+    const result = await runVerifierSubagent(command, directory, {
+      modelAdapter,
+      logger: {
+        log() {},
+      },
+    });
+
+    expect(result).toMatchObject({
+      command,
+      exitCode: null,
+      passed: true,
+      summary: expect.stringMatching(/ready|preview/i),
+    });
+    expect(result.commandReadiness).toMatchObject({
+      status: "ready-before-timeout",
+      readyUrl: "http://127.0.0.1:4173/",
+    });
+  });
+
   it("optional check failures do not mask required-check success", async () => {
     const directory = await createTempProject();
     const evaluationPlan = {

@@ -48,23 +48,23 @@ instead of letting runtime scaffolding damage otherwise decent code.
   trace evidence points to the real cause.
 
 ## Acceptance Criteria
-- [ ] AC-1: Hosted verification detects missing or unavailable browser
+- [x] AC-1: Hosted verification detects missing or unavailable browser
   evaluator capabilities and records an explicit degraded-environment outcome
   instead of repeatedly retrying browser checks that cannot succeed.
-- [ ] AC-2: Verification treats a long-lived dev server as successful when the
+- [x] AC-2: Verification treats a long-lived dev server as successful when the
   server reaches a ready state or exposes the expected URL before the process
   timeout, rather than marking the check failed only because the process stays
   alive.
-- [ ] AC-3: Infra-only verification failures on hosted runs do not trigger
+- [x] AC-3: Infra-only verification failures on hosted runs do not trigger
   destructive recovery loops or blocked-file handoffs unless there is separate
   evidence of a real code failure.
-- [ ] AC-4: Trace or runtime metadata distinguishes at least these cases:
+- [x] AC-4: Trace or runtime metadata distinguishes at least these cases:
   browser unavailable, command ready, code failure, and degraded hosted
   verification mode.
-- [ ] AC-5: Regression coverage reproduces the Railway failure class for an
+- [x] AC-5: Regression coverage reproduces the Railway failure class for an
   existing previewable target and proves Shipyard now degrades safely instead
   of spiraling through repeated `plan -> act -> verify -> recover` cycles.
-- [ ] AC-6: Hosted runtime docs explain the browser dependency contract and
+- [x] AC-6: Hosted runtime docs explain the browser dependency contract and
   the fallback behavior when Railway lacks those dependencies.
 
 ## Edge Cases

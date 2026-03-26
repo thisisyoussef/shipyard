@@ -75,6 +75,17 @@ path from the workbench.
   session details and websocket upgrades are rejected with `401`.
 - If `VERCEL_TOKEN` is missing, automatic publishing stays unavailable and the
   target header explains how to restore deploy capability.
+- If browser verification is requested but the Railway image does not include
+  the required Playwright or Chromium system libraries, Shipyard records an
+  explicit degraded verification result instead of treating that infrastructure
+  gap as proof that the target app is broken.
+- If a preview command such as `npm run dev` reaches a concrete ready state
+  before timing out, Shipyard treats the verification command as successful and
+  records the ready URL in trace metadata even though the process itself stays
+  alive.
+- Infra-only verification degradation does not trigger the normal recovery loop
+  unless Shipyard also has separate command or build evidence that the target
+  code actually failed.
 
 ## Railway Setup Notes
 
@@ -100,3 +111,7 @@ path from the workbench.
   build and start commands above.
 - Attach a persistent volume at `/app/workspace` before enabling
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1`.
+- When you want full hosted browser verification, use a Railway image or build
+  setup that includes Playwright's Linux browser dependencies. Without those
+  packages Shipyard will fall back to command-led verification and mark browser
+  evaluation as degraded in traces instead of retrying impossible checks.

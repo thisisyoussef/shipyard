@@ -20,6 +20,7 @@ export interface CompletedToolExecution {
   success: boolean;
   output: string;
   error?: string;
+  data?: unknown;
   editedPath: string | null;
   touchedFiles: string[];
   historyDigest: ToolHistoryDigest;

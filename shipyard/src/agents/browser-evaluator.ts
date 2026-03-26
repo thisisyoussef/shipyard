@@ -445,7 +445,7 @@ function createInfrastructureFailureReport(
   message: string,
 ): BrowserEvaluationReport {
   return {
-    status: "failed",
+    status: "infrastructure_failed",
     summary: message,
     previewUrl: plan.target.previewUrl,
     browserEvaluationPlan: plan,
@@ -464,7 +464,7 @@ function createInfrastructureFailureReport(
     failure: {
       stepId: null,
       label: null,
-      kind: "target",
+      kind: "infrastructure",
       message,
     },
   };
