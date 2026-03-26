@@ -16,6 +16,7 @@
     "build": "tsc -p tsconfig.build.json && vite build",
     "build:ui": "vite build",
     "dev": "node --env-file-if-exists=.env --import tsx ./src/bin/shipyard.ts",
+    "manual:spec-pack": "node --env-file-if-exists=.env --import tsx ./tests/manual/spec-pack-rebuild.ts",
     "start": "node --env-file-if-exists=.env --import tsx ./src/bin/shipyard.ts",
     "shipyard": "node --env-file-if-exists=.env --import tsx ./src/bin/shipyard.ts",
     "test-target:init": "bash ../scripts/init-test-target.sh",

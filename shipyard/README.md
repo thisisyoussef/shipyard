@@ -97,6 +97,26 @@ node dist/bin/shipyard.js --targets-dir ../test-targets
 Once you want a bare `shipyard` command outside the repo, link the package with
 your preferred global package-manager workflow.
 
+## Anthropic Runtime Tuning
+
+For longer planning or spec-pack turns, Shipyard also honors these optional env
+vars:
+
+- `SHIPYARD_ANTHROPIC_TIMEOUT_MS`
+- `SHIPYARD_ANTHROPIC_MAX_RETRIES`
+- `SHIPYARD_ANTHROPIC_MODEL`
+- `SHIPYARD_ANTHROPIC_MAX_TOKENS`
+
+For one-shot external spec-pack runs, use:
+
+```bash
+pnpm --dir shipyard manual:spec-pack -- --spec-root /abs/path/to/spec-pack --instruction-file /abs/path/to/prompt.md
+```
+
+The runner mounts the pack at `.shipyard/spec` inside a disposable target so
+the model can read it with target-relative tool paths without tripping the
+bootstrap empty-target guard.
+
 ## Operator Controls
 
 - In terminal mode, `help` shows built-in commands including `target`,
