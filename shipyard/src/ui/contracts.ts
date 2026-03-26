@@ -222,6 +222,22 @@ export const targetManagerStateSchema = z.object({
   availableTargets: z.array(targetSummarySchema),
   enrichmentStatus: targetEnrichmentStateSchema,
 });
+export const projectBoardProjectSchema = z.object({
+  projectId: z.string(),
+  targetPath: z.string(),
+  targetName: z.string(),
+  description: z.string().nullable(),
+  activePhase: z.enum(["code", "target-manager"]),
+  status: uiConnectionStateSchema,
+  agentStatus: z.string(),
+  hasProfile: z.boolean(),
+  lastActiveAt: z.string(),
+  turnCount: z.number().int().nonnegative(),
+});
+export const projectBoardStateSchema = z.object({
+  activeProjectId: z.string().nullable(),
+  openProjects: z.array(projectBoardProjectSchema),
+});
 export const workbenchStateSchema = z.object({
   connectionState: uiConnectionStateSchema,
   agentStatus: z.string(),
@@ -240,6 +256,7 @@ export const workbenchStateSchema = z.object({
   latestDeploy: deploySummarySchema,
   previewState: previewStateSchema,
   targetManager: targetManagerStateSchema.nullable(),
+  projectBoard: projectBoardStateSchema.nullable().default(null),
 });
 
 export const uploadReceiptsResponseSchema = z.object({
@@ -281,6 +298,11 @@ export const targetCreateRequestMessageSchema = z.object({
   scaffoldType: scaffoldTypeSchema.optional(),
 });
 
+export const projectActivateRequestMessageSchema = z.object({
+  type: z.literal("project:activate_request"),
+  projectId: nonEmptyTextSchema,
+});
+
 export const targetEnrichRequestMessageSchema = z.object({
   type: z.literal("target:enrich_request"),
   userDescription: z.string().trim().optional(),
@@ -303,6 +325,7 @@ export const frontendToBackendMessageSchema = z.discriminatedUnion("type", [
   sessionResumeRequestMessageSchema,
   targetSwitchRequestMessageSchema,
   targetCreateRequestMessageSchema,
+  projectActivateRequestMessageSchema,
   targetEnrichRequestMessageSchema,
   deployRequestMessageSchema,
 ]);
@@ -390,11 +413,17 @@ export const targetStateMessageSchema = z.object({
   state: targetManagerStateSchema,
 });
 
+export const projectsStateMessageSchema = z.object({
+  type: z.literal("projects:state"),
+  state: projectBoardStateSchema,
+});
+
 export const targetSwitchCompleteMessageSchema = z.object({
   type: z.literal("target:switch_complete"),
   success: z.boolean(),
   message: z.string().nullable(),
   state: targetManagerStateSchema,
+  projectId: z.string().nullable().optional(),
 });
 
 export const targetEnrichmentProgressMessageSchema = z.object({
@@ -419,6 +448,7 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   agentErrorMessageSchema,
   previewStateMessageSchema,
   targetStateMessageSchema,
+  projectsStateMessageSchema,
   targetSwitchCompleteMessageSchema,
   targetEnrichmentProgressMessageSchema,
   deployStateMessageSchema,
@@ -436,6 +466,7 @@ export type TargetSummary = z.infer<typeof targetSummarySchema>;
 export type TargetEnrichmentState = z.infer<
   typeof targetEnrichmentStateSchema
 >;
+export type ProjectBoardState = z.infer<typeof projectBoardStateSchema>;
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
 export type DeploySummary = z.infer<typeof deploySummarySchema>;
 export type UploadReceiptsResponse = z.infer<typeof uploadReceiptsResponseSchema>;
@@ -475,6 +506,7 @@ export function parseFrontendMessage(
     "session:resume_request",
     "target:switch_request",
     "target:create_request",
+    "project:activate_request",
     "target:enrich_request",
     "deploy:request",
   ]);
@@ -487,12 +519,12 @@ export function parseFrontendMessage(
     }
 
     throw new Error(
-      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, target:enrich_request, or deploy:request.`,
+      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.`,
     );
   }
 
   throw new Error(
-    "Invalid client message: expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, target:enrich_request, or deploy:request.",
+    "Invalid client message: expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.",
   );
 }
 

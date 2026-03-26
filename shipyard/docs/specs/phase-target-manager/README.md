@@ -11,6 +11,7 @@
 2. Enrich every target with an AI-generated project profile (description, stack, architecture, complexity, suggested AGENTS.md, task ideas) so the coding agent has richer context from the first turn.
 3. Allow target switching at any point during a session without losing prior session state.
 4. Make enrichment automatic from the default user experience so new targets do not require a separate "enrich" step in the browser workbench.
+5. Let the browser workbench keep multiple target-bound project runtimes open at once so one busy project does not block opening, creating, or resuming another target.
 
 ## Shared Constraints
 
@@ -31,6 +32,7 @@
 | PTM-S02 | CLI Integration & Runtime Switching | Make `--target` optional, add `--targets-dir`, add `target` REPL command, wire up session save/load on switch. Terminal-complete. | PTM-S01 |
 | PTM-S03 | Browser Workbench Target UI | Add WebSocket contracts for target manager events, target header bar, switch dropdown, creation dialog, and enrichment progress indicator. Both surfaces complete. | PTM-S01, PTM-S02 |
 | PTM-S04 | Automatic Background Enrichment | Start enrichment automatically after create/switch when a target lacks a profile, remove the browser enrich button, and keep progress passive in the workbench UX. | PTM-S02, PTM-S03 |
+| PTM-S05 | Multi-Project Browser Workspaces | Keep one isolated browser runtime per target, add a project board for fast activation, and allow new/open target flows while another target is still busy. | PTM-S02, PTM-S03, PTM-S04 |
 
 ## Sequencing Rationale
 
@@ -38,6 +40,7 @@
 - `PTM-S02` adds the terminal experience on top of S01. This makes the feature usable end-to-end in the REPL without needing the browser.
 - `PTM-S03` adds the richer browser surface last, since it depends on both the tools and the session switching logic being proven.
 - `PTM-S04` follows the base browser flow because it intentionally changes the user experience from explicit enrichment to automatic/background enrichment and needs both surfaces to exist first.
+- `PTM-S05` follows after PTM-S04 because it reuses the shipped browser target manager, session persistence, and background enrichment contracts instead of replacing them.
 
 ## Whole-Pack Success Signal
 
@@ -46,6 +49,7 @@
 - A user mid-session can type `target switch` to change targets without losing prior session state.
 - Newly created or newly selected targets without a saved profile are enriched automatically.
 - The browser workbench shows the active target, allows switching via the UI, and treats enrichment as passive background work instead of a separate button-driven action.
+- The browser workbench can keep multiple targets open concurrently, activate an already-open target instantly, and open or create another target without forcing the current project run to stop first.
 - All existing `--target <path>` behavior is unchanged (backward compatible).
 
 ## Implementation Evidence
@@ -71,20 +75,23 @@
   [`../../../src/ui/target-manager.ts`](../../../src/ui/target-manager.ts), and
   [`../../../src/ui/workbench-state.ts`](../../../src/ui/workbench-state.ts):
   ship the browser target manager state, create/switch events, recovery on
-  reload, passive background enrichment, and stale-run protection.
+  reload, passive background enrichment, stale-run protection, and the
+  multi-project runtime registry plus project-board summaries.
 - [`../../../ui/src/TargetHeader.tsx`](../../../ui/src/TargetHeader.tsx),
   [`../../../ui/src/TargetSwitcher.tsx`](../../../ui/src/TargetSwitcher.tsx),
   [`../../../ui/src/TargetCreationDialog.tsx`](../../../ui/src/TargetCreationDialog.tsx),
   [`../../../ui/src/EnrichmentIndicator.tsx`](../../../ui/src/EnrichmentIndicator.tsx),
-  and [`../../../ui/src/ShipyardWorkbench.tsx`](../../../ui/src/ShipyardWorkbench.tsx):
-  surface the active target, switcher, creation dialog, and passive enrichment
-  status on the current split-pane workbench UI.
+  [`../../../ui/src/ProjectBoard.tsx`](../../../ui/src/ProjectBoard.tsx), and
+  [`../../../ui/src/ShipyardWorkbench.tsx`](../../../ui/src/ShipyardWorkbench.tsx):
+  surface the active target, switcher, creation dialog, passive enrichment
+  status, and the open-project activation board on the split-pane workbench UI.
 - [`../../../tests/target-manager.test.ts`](../../../tests/target-manager.test.ts),
   [`../../../tests/target-auto-enrichment.test.ts`](../../../tests/target-auto-enrichment.test.ts),
   [`../../../tests/ui-runtime.test.ts`](../../../tests/ui-runtime.test.ts), and
   [`../../../tests/ui-workbench.test.ts`](../../../tests/ui-workbench.test.ts):
   cover the tool contracts, CLI/browser switching, background auto-enrichment,
-  reload recovery, and no-button UI expectations.
+  reload recovery, no-button UI expectations, and concurrent open-project
+  browser behavior.
 
 ### Representative Snippets
 

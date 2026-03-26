@@ -9,6 +9,7 @@ import type {
   FileEventViewModel,
   LatestDeployViewModel,
   PendingUploadReceiptViewModel,
+  ProjectBoardViewModel,
   SessionRunSummaryViewModel,
   PreviewStateViewModel,
   SessionStateViewModel,
@@ -85,6 +86,36 @@ const targetManager: TargetManagerViewModel = {
     status: "complete" as const,
     message: "Target profile saved.",
   },
+};
+
+const projectBoard: ProjectBoardViewModel = {
+  activeProjectId: "/tmp/shipyard-demo",
+  openProjects: [
+    {
+      projectId: "/tmp/shipyard-demo",
+      targetPath: "/tmp/shipyard-demo",
+      targetName: "shipyard",
+      description: "The active React workspace.",
+      activePhase: "code",
+      status: "ready",
+      agentStatus: "Ready for the next instruction.",
+      hasProfile: true,
+      lastActiveAt: "2026-03-24T12:05:00.000Z",
+      turnCount: 2,
+    },
+    {
+      projectId: "/tmp/shipyard-demo-alt",
+      targetPath: "/tmp/shipyard-demo-alt",
+      targetName: "shipyard-demo-alt",
+      description: "An alternate demo target.",
+      activePhase: "code",
+      status: "agent-busy",
+      agentStatus: "Running a background verification pass.",
+      hasProfile: false,
+      lastActiveAt: "2026-03-24T12:04:00.000Z",
+      turnCount: 4,
+    },
+  ],
 };
 
 const runningPreviewState: PreviewStateViewModel = {
@@ -256,6 +287,7 @@ function renderWorkbench(overrides?: {
   previewState?: PreviewStateViewModel;
   latestDeploy?: LatestDeployViewModel;
   targetManager?: TargetManagerViewModel;
+  projectBoard?: ProjectBoardViewModel | null;
   leftSidebarOpen?: boolean;
   rightSidebarOpen?: boolean;
   composerAttachments?: ComposerAttachment[];
@@ -271,6 +303,7 @@ function renderWorkbench(overrides?: {
       latestDeploy: overrides?.latestDeploy ?? latestDeploy,
       contextHistory,
       pendingUploads,
+      projectBoard: overrides?.projectBoard ?? projectBoard,
       connectionState: overrides?.connectionState ?? "ready",
       agentStatus: overrides?.agentStatus ?? "Ready for the next instruction.",
       instruction: "",
@@ -298,6 +331,7 @@ function renderWorkbench(overrides?: {
       onRequestTargetSwitch: () => undefined,
       onRequestTargetCreate: () => undefined,
       onRequestSessionResume: () => undefined,
+      onActivateProject: () => undefined,
       onRefreshStatus: () => undefined,
       onCopyTracePath: () => undefined,
       traceButtonLabel: "Copy trace path",
@@ -315,6 +349,9 @@ describe("ShipyardWorkbench", () => {
     const markup = renderWorkbench();
 
     expect(markup).toContain("SHIPYARD");
+    expect(markup).toContain("Open projects");
+    expect(markup).toContain("shipyard-demo-alt");
+    expect(markup).toContain("Running a background verification pass.");
     expect(markup).toContain("The active React workspace.");
     expect(markup).toContain("Change target");
     expect(markup).toContain("Target profile saved.");

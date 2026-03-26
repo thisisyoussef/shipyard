@@ -20,6 +20,7 @@ import {
   SessionPanel,
 } from "./panels/index.js";
 import type { BadgeTone } from "./primitives.js";
+import { ProjectBoard } from "./ProjectBoard.js";
 import { TargetCreationDialog } from "./TargetCreationDialog.js";
 import { TargetHeader } from "./TargetHeader.js";
 import { TargetSwitcher } from "./TargetSwitcher.js";
@@ -33,6 +34,7 @@ import type {
   FileEventViewModel,
   LatestDeployViewModel,
   PendingUploadReceiptViewModel,
+  ProjectBoardViewModel,
   PreviewStateViewModel,
   SessionRunSummaryViewModel,
   SessionStateViewModel,
@@ -53,6 +55,7 @@ export interface ShipyardWorkbenchProps {
   sessionState: SessionStateViewModel | null;
   sessionHistory: SessionRunSummaryViewModel[];
   targetManager: TargetManagerViewModel | null;
+  projectBoard: ProjectBoardViewModel | null;
   turns: TurnViewModel[];
   fileEvents: FileEventViewModel[];
   previewState: PreviewStateViewModel;
@@ -83,6 +86,7 @@ export interface ShipyardWorkbenchProps {
     description: string;
     scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
   }) => void;
+  onActivateProject: (projectId: string) => void;
   onRefreshStatus: () => void;
   onCopyTracePath: () => void;
   traceButtonLabel: string;
@@ -160,6 +164,12 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         }
         leftPanel={
           <div className="conversation-pane">
+            <ProjectBoard
+              projectBoard={props.projectBoard}
+              onActivateProject={props.onActivateProject}
+              onOpenTargets={() => setTargetSwitcherOpen(true)}
+            />
+
             {/* Target context — compact */}
             {props.targetManager ? (
               <TargetHeader

@@ -887,6 +887,30 @@ export function App() {
     }
   }
 
+  function handleProjectActivate(projectId: string): void {
+    const sent = sendMessage({
+      type: "project:activate_request",
+      projectId,
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Project switch unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before switching projects.",
+      });
+      return;
+    }
+
+    queueComposerNotice({
+      tone: "neutral",
+      title: "Opening project",
+      detail:
+        "Shipyard is moving the workbench to the selected project while any background work keeps running.",
+    });
+  }
+
   async function handleHostedAccessSubmit(
     event: FormEvent<HTMLFormElement>,
   ): Promise<void> {
@@ -954,6 +978,7 @@ export function App() {
       sessionState={viewState.sessionState}
       sessionHistory={viewState.sessionHistory}
       targetManager={viewState.targetManager}
+      projectBoard={viewState.projectBoard}
       turns={deferredTurns}
       fileEvents={deferredFileEvents}
       previewState={viewState.previewState}
@@ -980,6 +1005,7 @@ export function App() {
       onRequestSessionResume={handleSessionResume}
       onRequestTargetSwitch={handleTargetSwitch}
       onRequestTargetCreate={handleTargetCreate}
+      onActivateProject={handleProjectActivate}
       onRefreshStatus={() => sendMessage({ type: "status" })}
       onCopyTracePath={handleCopyTracePath}
       traceButtonLabel={traceButtonLabel}

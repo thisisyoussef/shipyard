@@ -1466,6 +1466,292 @@ describe("ui runtime contract", () => {
     }
   });
 
+  it("creates a new target while the current project remains busy in the background", async () => {
+    const targetsDirectory = await createTempDirectory(
+      "shipyard-ui-multi-project-create-",
+    );
+    const alphaTargetDirectory = path.join(targetsDirectory, "alpha-app");
+    const gammaTargetDirectory = path.join(targetsDirectory, "gamma-app");
+    await mkdir(alphaTargetDirectory, { recursive: true });
+    await writeFile(
+      path.join(alphaTargetDirectory, "package.json"),
+      JSON.stringify({ name: "alpha-app" }, null, 2),
+      "utf8",
+    );
+
+    const alphaDiscovery = await discoverTarget(alphaTargetDirectory);
+    const client = createAbortAwareMockAnthropicClient();
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-multi-project-alpha",
+        targetDirectory: alphaTargetDirectory,
+        targetsDirectory,
+        discovery: alphaDiscovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      runtimeMode: "fallback",
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            client,
+          };
+        },
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialSessionStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialSessionStatePromise;
+
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "keep alpha running until I switch back",
+          }),
+        );
+        await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "session:state" &&
+            message.targetDirectory === alphaTargetDirectory &&
+            message.connectionState === "agent-busy",
+        );
+
+        const createSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.targetDirectory === gammaTargetDirectory &&
+              message.connectionState === "ready"
+            ) &&
+            messages.some((message) =>
+              message.type === "projects:state"
+            ),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "target:create_request",
+            name: "gamma app",
+            description: "Created while alpha stays busy.",
+            scaffoldType: "react-ts",
+          }),
+        );
+
+        const createSequence = await createSequencePromise;
+        const busyGuardError = createSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "agent:error" }
+          > =>
+            message.type === "agent:error" &&
+            message.message.includes("Finish the current browser action"),
+        );
+        const projectsState = createSequence.find(
+          (message) => message.type === "projects:state",
+        ) as
+          | (BackendToFrontendMessage & {
+              type: "projects:state";
+              state: {
+                activeProjectId: string | null;
+                openProjects: Array<{
+                  projectId: string;
+                  targetPath: string;
+                  status: string;
+                }>;
+              };
+            })
+          | undefined;
+        const gammaState = createSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "session:state" }
+          > =>
+            message.type === "session:state" &&
+            message.targetDirectory === gammaTargetDirectory,
+        );
+
+        expect(busyGuardError).toBeUndefined();
+        expect(projectsState).toMatchObject({
+          type: "projects:state",
+          state: {
+            activeProjectId: gammaTargetDirectory,
+            openProjects: expect.arrayContaining([
+              expect.objectContaining({
+                projectId: alphaTargetDirectory,
+                targetPath: alphaTargetDirectory,
+                status: "agent-busy",
+              }),
+              expect.objectContaining({
+                projectId: gammaTargetDirectory,
+                targetPath: gammaTargetDirectory,
+                status: "ready",
+              }),
+            ]),
+          },
+        });
+        expect(gammaState).toMatchObject({
+          type: "session:state",
+          targetDirectory: gammaTargetDirectory,
+          connectionState: "ready",
+        });
+        await expect(
+          readFile(path.join(gammaTargetDirectory, "README.md"), "utf8"),
+        ).resolves.toContain("Created while alpha stays busy.");
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("activates an already-open project without duplicating the target runtime", async () => {
+    const targetsDirectory = await createTempDirectory(
+      "shipyard-ui-multi-project-activate-",
+    );
+    const alphaTargetDirectory = path.join(targetsDirectory, "alpha-app");
+    const betaTargetDirectory = path.join(targetsDirectory, "beta-app");
+    await mkdir(alphaTargetDirectory, { recursive: true });
+    await mkdir(betaTargetDirectory, { recursive: true });
+    await writeFile(
+      path.join(alphaTargetDirectory, "package.json"),
+      JSON.stringify({ name: "alpha-app" }, null, 2),
+      "utf8",
+    );
+    await writeFile(
+      path.join(betaTargetDirectory, "package.json"),
+      JSON.stringify({ name: "beta-app" }, null, 2),
+      "utf8",
+    );
+
+    const alphaDiscovery = await discoverTarget(alphaTargetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-multi-project-activate-alpha",
+        targetDirectory: alphaTargetDirectory,
+        targetsDirectory,
+        discovery: alphaDiscovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialSessionStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialSessionStatePromise;
+
+        const openBetaSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.targetDirectory === betaTargetDirectory
+            ) &&
+            messages.some((message) => message.type === "projects:state"),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "target:switch_request",
+            targetPath: betaTargetDirectory,
+          }),
+        );
+        await openBetaSequencePromise;
+
+        const activateAlphaSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.targetDirectory === alphaTargetDirectory &&
+              message.connectionState === "ready"
+            ) &&
+            messages.some((message) => message.type === "projects:state"),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "project:activate_request",
+            projectId: alphaTargetDirectory,
+          }),
+        );
+
+        const activateAlphaSequence = await activateAlphaSequencePromise;
+        const projectsState = activateAlphaSequence.find(
+          (message) => message.type === "projects:state",
+        ) as
+          | (BackendToFrontendMessage & {
+              type: "projects:state";
+              state: {
+                activeProjectId: string | null;
+                openProjects: Array<{
+                  projectId: string;
+                  targetPath: string;
+                }>;
+              };
+            })
+          | undefined;
+        const activeAlphaState = activateAlphaSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "session:state" }
+          > =>
+            message.type === "session:state" &&
+            message.targetDirectory === alphaTargetDirectory,
+        );
+
+        expect(projectsState).toMatchObject({
+          type: "projects:state",
+          state: {
+            activeProjectId: alphaTargetDirectory,
+          },
+        });
+        expect(projectsState?.state.openProjects).toHaveLength(2);
+        expect(
+          projectsState?.state.openProjects.map((project) => project.targetPath),
+        ).toEqual(
+          expect.arrayContaining([
+            alphaTargetDirectory,
+            betaTargetDirectory,
+          ]),
+        );
+        expect(activeAlphaState).toMatchObject({
+          type: "session:state",
+          targetDirectory: alphaTargetDirectory,
+          connectionState: "ready",
+        });
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("publishes previous runs for the current target and resumes a selected session", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-session-history-");
     const discovery = await discoverTarget(targetDirectory);
@@ -3178,7 +3464,7 @@ describe("ui runtime contract", () => {
         expect(invalidMessageError).toMatchObject({
           type: "agent:error",
           message:
-            "Invalid client message type: bogus. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, target:enrich_request, or deploy:request.",
+            "Invalid client message type: bogus. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.",
         });
       } finally {
         socket.close();
