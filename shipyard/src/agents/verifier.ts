@@ -3,6 +3,7 @@ import { z } from "zod";
 import type {
   EvaluationCheck,
   EvaluationPlan,
+  VerificationCommandReadiness,
   VerificationCheckResult,
   VerificationHardFailure,
   VerificationReport,
@@ -14,6 +15,8 @@ import {
   type RawToolLoopOptions,
 } from "../engine/raw-loop.js";
 import { createTurnCancelledError } from "../engine/cancellation.js";
+import type { RunCommandResult } from "../tools/run-command.js";
+import { findReadyServerEvidence } from "../preview/readiness.js";
 
 export const VERIFIER_TOOL_NAMES = ["run_command"] as const;
 const MAX_EVALUATION_CHECKS = 5;
@@ -59,6 +62,22 @@ const evaluationPlanSchema = z.object({
 
     seenIds.add(check.id);
   }
+});
+
+const runCommandResultSchema = z.object({
+  command: z.string().trim().min(1),
+  cwd: z.string().trim().min(1),
+  stdout: z.string(),
+  stderr: z.string(),
+  exitCode: z.number().int().nullable(),
+  timedOut: z.boolean(),
+  signal: z.custom<NodeJS.Signals | null>(
+    (value): value is NodeJS.Signals | null =>
+      value === null || typeof value === "string",
+  ),
+  timeoutMs: z.number().int().positive(),
+  combinedOutput: z.string(),
+  truncated: z.boolean(),
 });
 
 const verifierToolNameSet = new Set<string>(VERIFIER_TOOL_NAMES);
@@ -296,6 +315,7 @@ export async function runVerifierSubagent(
 ): Promise<VerificationReport> {
   const evaluationPlan = normalizeEvaluationPlan(input);
   const checks: VerificationCheckResult[] = [];
+  const reportsByCheckId = new Map<string, VerificationReport>();
   let firstHardFailure: VerificationHardFailure | null = null;
 
   for (const check of evaluationPlan.checks) {
@@ -309,6 +329,7 @@ export async function runVerifierSubagent(
       targetDirectory,
       options,
     );
+    reportsByCheckId.set(check.id, report);
     const result = toEvaluationCheckResult(check, report);
 
     checks.push(result);
@@ -323,6 +344,9 @@ export async function runVerifierSubagent(
   }
 
   const anchorResult = selectPrimaryCheckResult(checks, firstHardFailure);
+  const anchorReport = anchorResult
+    ? (reportsByCheckId.get(anchorResult.checkId) ?? null)
+    : null;
 
   return {
     command: anchorResult?.command ?? evaluationPlan.checks[0]?.command ?? "",
@@ -334,6 +358,9 @@ export async function runVerifierSubagent(
     evaluationPlan,
     checks,
     firstHardFailure,
+    ...(anchorReport?.commandReadiness
+      ? { commandReadiness: anchorReport.commandReadiness }
+      : {}),
   };
 }
 
@@ -356,8 +383,98 @@ async function runSingleVerificationCommand(
   }
 
   throwIfUnauthorizedToolWasRequested(result.toolExecutions);
+  const parsedReport = parseVerificationReport(result.finalText, normalizedCommand);
 
-  return parseVerificationReport(result.finalText, normalizedCommand);
+  return reconcileVerificationReport(parsedReport, result.toolExecutions);
+}
+
+function looksLikePreviewCommand(command: string): boolean {
+  return /\b(dev|start|preview|serve|watch)\b/i.test(command);
+}
+
+function getRunCommandResult(
+  executions: RawToolExecution[],
+): RunCommandResult | null {
+  const latestExecution = [...executions]
+    .reverse()
+    .find((execution) => execution.toolName === "run_command");
+
+  if (!latestExecution?.data) {
+    return null;
+  }
+
+  const parsed = runCommandResultSchema.safeParse(latestExecution.data);
+
+  return parsed.success ? parsed.data : null;
+}
+
+function createReadyBeforeTimeoutReadiness(
+  runCommandResult: RunCommandResult,
+): VerificationCommandReadiness | null {
+  if (!runCommandResult.timedOut) {
+    return null;
+  }
+
+  const readiness = findReadyServerEvidence(runCommandResult.combinedOutput);
+
+  if (!readiness) {
+    return null;
+  }
+
+  if (!readiness.readyUrl && !looksLikePreviewCommand(runCommandResult.command)) {
+    return null;
+  }
+
+  return {
+    status: "ready-before-timeout",
+    readyUrl: readiness.readyUrl,
+    readyLine: readiness.readyLine,
+  };
+}
+
+function createReadyBeforeTimeoutSummary(
+  readiness: VerificationCommandReadiness,
+): string {
+  if (readiness.readyUrl) {
+    return `Command reached ready state at ${readiness.readyUrl} before timing out.`;
+  }
+
+  if (readiness.readyLine) {
+    return `Command reached ready state before timing out: ${readiness.readyLine}`;
+  }
+
+  return "Command reached ready state before timing out.";
+}
+
+function reconcileVerificationReport(
+  report: VerificationReport,
+  executions: RawToolExecution[],
+): VerificationReport {
+  const runCommandResult = getRunCommandResult(executions);
+
+  if (!runCommandResult) {
+    return report;
+  }
+
+  const readiness = createReadyBeforeTimeoutReadiness(runCommandResult);
+  const nextReport: VerificationReport = {
+    ...report,
+    command: runCommandResult.command,
+    exitCode: runCommandResult.exitCode,
+    stdout: report.stdout || runCommandResult.stdout,
+    stderr: report.stderr || runCommandResult.stderr,
+    ...(readiness ? { commandReadiness: readiness } : {}),
+  };
+
+  if (!readiness || report.passed) {
+    return nextReport;
+  }
+
+  return {
+    ...nextReport,
+    passed: true,
+    summary: createReadyBeforeTimeoutSummary(readiness),
+  };
 }
 
 function toEvaluationCheckResult(

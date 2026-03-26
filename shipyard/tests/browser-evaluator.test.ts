@@ -2,7 +2,8 @@ import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { chromium } from "playwright";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PreviewState } from "../src/artifacts/types.js";
 import {
@@ -403,6 +404,49 @@ describe("browser evaluator", () => {
       await supervisor.stop();
     }
   }, 20_000);
+
+  it("reports browser launch failures as infrastructure failures", async () => {
+    const launchSpy = vi.spyOn(chromium, "launch").mockRejectedValueOnce(
+      new Error("libglib-2.0.so.0: cannot open shared object file"),
+    );
+
+    try {
+      const report = await runBrowserEvaluator({
+        summary: "Inspect the preview.",
+        target: {
+          status: "available",
+          previewUrl: "http://127.0.0.1:4173/",
+          reason: "Preview ready.",
+        },
+        steps: [
+          {
+            id: "load",
+            label: "Load preview",
+            kind: "load",
+          },
+          {
+            id: "console",
+            label: "Check console health",
+            kind: "console",
+          },
+        ],
+      });
+
+      expect(report.status).toBe("infrastructure_failed");
+      expect(report.failure).toMatchObject({
+        stepId: null,
+        label: null,
+        kind: "infrastructure",
+        message: expect.stringContaining("libglib-2.0.so.0"),
+      });
+      expect(report.steps.map((step) => step.status)).toEqual([
+        "skipped",
+        "skipped",
+      ]);
+    } finally {
+      launchSpy.mockRestore();
+    }
+  });
 
   it("persists bounded artifact references when configured", async () => {
     const targetDirectory = await createTempDirectory(

@@ -938,6 +938,101 @@ describe("Phase 4 graph runtime contract", () => {
     expect(update.status).toBe("responding");
   });
 
+  it("verify node does not enter recovery when browser evaluation infrastructure is unavailable", async () => {
+    const contextEnvelope = createContextEnvelope();
+
+    contextEnvelope.stable.discovery.scripts = {
+      test: "vitest run",
+      typecheck: "tsc -p tsconfig.json",
+      build: "vite build",
+    };
+    contextEnvelope.stable.availableScripts = {
+      test: "vitest run",
+      typecheck: "tsc -p tsconfig.json",
+      build: "vite build",
+    };
+
+    const runVerifierSubagent = vi.fn(async (input: string | EvaluationPlan) => ({
+      command: typeof input === "string" ? input : input.checks.at(-1)?.command ?? "",
+      exitCode: 0,
+      passed: true,
+      stdout: "build ok\n",
+      stderr: "",
+      summary: "All 3 evaluation checks passed.",
+      evaluationPlan: typeof input === "string" ? undefined : input,
+      checks: [],
+      firstHardFailure: null,
+      browserEvaluationReport: null,
+    }));
+    const runBrowserEvaluator = vi.fn(async (plan: BrowserEvaluationPlan) => ({
+      status: "infrastructure_failed" as const,
+      summary: "Browser launch failed: libglib-2.0.so.0 missing.",
+      previewUrl: "http://127.0.0.1:4173/",
+      browserEvaluationPlan: plan,
+      steps: [
+        {
+          stepId: "load-preview",
+          label: "Load the current preview",
+          kind: "load" as const,
+          status: "skipped" as const,
+          summary: "Skipped because the browser could not be launched.",
+          error: null,
+          elapsedMs: 0,
+        },
+      ],
+      consoleMessages: [],
+      pageErrors: [],
+      artifacts: [],
+      failure: {
+        stepId: null,
+        label: null,
+        kind: "infrastructure" as const,
+        message: "Browser launch failed: libglib-2.0.so.0 missing.",
+      },
+    }));
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runVerifierSubagent,
+        runBrowserEvaluator,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Polish the app layout in src/app.tsx",
+      contextEnvelope,
+      previewState: createPreviewState({
+        status: "running",
+        summary: "Preview running.",
+        url: "http://127.0.0.1:4173/",
+      }),
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+      planningMode: "planner",
+      executionSpec: {
+        instruction: "Polish the app layout in src/app.tsx",
+        goal: "Polish the app layout without breaking the existing flow.",
+        deliverables: ["Refine the main app layout."],
+        acceptanceCriteria: ["The layout renders cleanly in the preview."],
+        verificationIntent: ["Run the verification checks."],
+        targetFilePaths: ["src/app.tsx"],
+        risks: [],
+      },
+      lastEditedFile: "src/app.tsx",
+    });
+
+    const update = await nodes.verify(state);
+
+    expect(update.verificationReport?.passed).toBe(true);
+    expect(update.browserEvaluationReport?.status).toBe("infrastructure_failed");
+    expect(update.harnessRoute).toMatchObject({
+      verificationMode: "command+browser",
+      verificationCheckCount: 3,
+      usedBrowserEvaluator: true,
+      browserEvaluationStatus: "infrastructure_failed",
+    });
+    expect(update.status).toBe("responding");
+  });
+
   it("recover restores the latest checkpoint, refreshes hashes, and retries", async () => {
     const directory = await createTempProject();
     const appPath = path.join(directory, "src", "app.ts");

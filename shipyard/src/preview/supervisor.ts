@@ -21,6 +21,11 @@ import {
   createPreviewStateFromCapability,
   getPreviewRefreshSummary,
 } from "./contracts.js";
+import {
+  extractLoopbackUrl,
+  isReadyServerLine,
+  normalizeLoopbackUrlHost,
+} from "./readiness.js";
 
 export interface CreatePreviewSupervisorOptions {
   targetDirectory: string;
@@ -158,24 +163,6 @@ function createPreviewSpawnPlan(
         args: ["run", capability.scriptName, "--", ...previewArgs],
       };
   }
-}
-
-function normalizePreviewUrl(url: string, host: string): string {
-  return url.replace("http://localhost:", `http://${host}:`);
-}
-
-function extractPreviewUrl(line: string, host: string): string | null {
-  const match = line.match(/https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/?/i);
-
-  if (!match) {
-    return null;
-  }
-
-  return normalizePreviewUrl(match[0], host);
-}
-
-function isReadyLine(line: string): boolean {
-  return /\bready in\b/i.test(line) || /\blocal:\s*https?:\/\//i.test(line);
 }
 
 function waitForProcessClose(
@@ -458,7 +445,10 @@ export function createPreviewSupervisor(
   };
 
   const handleOutputLine = (line: string): void => {
-    const nextUrl = extractPreviewUrl(line, host);
+    const extractedUrl = extractLoopbackUrl(line);
+    const nextUrl = extractedUrl
+      ? normalizeLoopbackUrlHost(extractedUrl, host)
+      : null;
 
     if (nextUrl) {
       previewUrl = nextUrl;
@@ -470,7 +460,7 @@ export function createPreviewSupervisor(
 
     if (
       (state.status === "starting" || state.status === "refreshing") &&
-      (previewUrl !== null || isReadyLine(line))
+      (previewUrl !== null || isReadyServerLine(line))
     ) {
       if (previewUrl === null) {
         previewUrl = `http://${host}:${String(currentPort ?? preferredPort)}/`;

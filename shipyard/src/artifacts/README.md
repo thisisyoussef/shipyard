@@ -14,11 +14,14 @@ This folder holds small shared types that move between runtime layers.
   explorer
 - `EvaluationPlan`: the verifier's ordered command-check contract
 - `VerificationReport` and `VerificationCheckResult`: structured validation
-  outcomes, including per-check details when available
+  outcomes, including per-check details plus command-readiness evidence when a
+  long-lived preview server reached a usable ready state
 - `BrowserEvaluationPlan` and `BrowserEvaluationReport`: loopback preview
-  inspection contracts for UI-backed verification
+  inspection contracts for UI-backed verification, including explicit
+  infrastructure-degradation outcomes when browser dependencies are unavailable
 - `HarnessRouteSummary`: selected lightweight vs planner-backed path, verifier
-  mode, browser-evaluator usage, and handoff facts for a turn
+  mode, browser-evaluator usage, browser failure kind, command readiness
+  status, and handoff facts for a turn
 - `DiscoveryReport`, `TargetProfile`, and preview/deploy-related view-model
   inputs
 - `ExecutionHandoff` and `LoadedExecutionHandoff`: the durable long-run resume

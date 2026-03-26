@@ -689,6 +689,7 @@ async function executeToolCallsForTurn(
       success: result.success,
       output: result.output,
       error: result.error,
+      data: result.data,
       editedPath: extractEditedPath(toolCall.name, toolCall.input, result),
       touchedFiles,
       historyDigest: createToolHistoryDigest(

@@ -170,6 +170,12 @@ export interface VerificationHardFailure {
   command: string;
 }
 
+export interface VerificationCommandReadiness {
+  status: "ready-before-timeout";
+  readyUrl: string | null;
+  readyLine: string | null;
+}
+
 export interface VerificationReport {
   command: string;
   exitCode: number | null;
@@ -180,11 +186,13 @@ export interface VerificationReport {
   evaluationPlan?: EvaluationPlan;
   checks?: VerificationCheckResult[];
   firstHardFailure?: VerificationHardFailure | null;
+  commandReadiness?: VerificationCommandReadiness | null;
   browserEvaluationReport?: BrowserEvaluationReport | null;
 }
 
 export type HarnessSelectedPath = "lightweight" | "planner-backed";
 export type HarnessVerificationMode = "none" | "command" | "command+browser";
+export type HarnessCommandReadinessStatus = "none" | "ready-before-timeout";
 export type ActingLoopBudgetReason =
   | "narrow-default"
   | "broad-greenfield"
@@ -200,6 +208,9 @@ export interface HarnessRouteSummary {
   verificationCheckCount: number;
   usedBrowserEvaluator: boolean;
   browserEvaluationStatus: BrowserEvaluationStatus | "not_run";
+  browserEvaluationFailureKind: BrowserEvaluationFailure["kind"] | null;
+  commandReadinessStatus: HarnessCommandReadinessStatus;
+  commandReadyUrl: string | null;
   handoffLoaded: boolean;
   handoffEmitted: boolean;
   handoffReason: ExecutionHandoffResetKind | null;
@@ -276,7 +287,11 @@ export interface BrowserEvaluationPlan {
   captureArtifacts?: "none" | "on-failure";
 }
 
-export type BrowserEvaluationStatus = "passed" | "failed" | "not_applicable";
+export type BrowserEvaluationStatus =
+  | "passed"
+  | "failed"
+  | "infrastructure_failed"
+  | "not_applicable";
 export type BrowserEvaluationStepStatus = "passed" | "failed" | "skipped";
 
 export interface BrowserEvaluationConsoleMessage {
@@ -298,7 +313,7 @@ export interface BrowserEvaluationStepResult {
 export interface BrowserEvaluationFailure {
   stepId: string | null;
   label: string | null;
-  kind: "target" | "console" | "pageerror" | "step";
+  kind: "target" | "console" | "pageerror" | "step" | "infrastructure";
   message: string;
 }
 

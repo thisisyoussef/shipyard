@@ -519,6 +519,16 @@ export function mergeBrowserEvaluationIntoVerificationReport(options: {
     };
   }
 
+  if (browserEvaluationReport.status === "infrastructure_failed") {
+    return {
+      ...verificationReport,
+      summary: verificationReport.passed
+        ? `${verificationReport.summary} Browser evaluation degraded: ${browserEvaluationReport.summary}`
+        : verificationReport.summary,
+      browserEvaluationReport,
+    };
+  }
+
   return {
     ...verificationReport,
     passed: false,

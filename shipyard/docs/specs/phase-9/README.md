@@ -3,7 +3,7 @@
 - Pack: Phase 9 Hosted Shipyard and Public Deploy
 - Estimate: 12-18 hours
 - Date: 2026-03-25
-- Status: In progress (`P9-S01` through `P9-S06` implemented; `P9-S07` drafted)
+- Status: Implemented (`P9-S01` through `P9-S07`)
 
 ## Pack Objectives
 
@@ -161,7 +161,15 @@
   - `shipyard/tests/ui-workbench.test.ts`
   - `shipyard/tests/scaffold-bootstrap.test.ts`
 - `P9-S07` Hosted Production Runtime Outcome Hardening:
-  - N/A until the story is implemented.
+  - `shipyard/src/preview/readiness.ts`
+  - `shipyard/src/agents/verifier.ts`
+  - `shipyard/src/agents/browser-evaluator.ts`
+  - `shipyard/src/agents/coordinator.ts`
+  - `shipyard/src/engine/graph.ts`
+  - `shipyard/src/tools/run-command.ts`
+  - `shipyard/tests/verifier-subagent.test.ts`
+  - `shipyard/tests/browser-evaluator.test.ts`
+  - `shipyard/tests/graph-runtime.test.ts`
 
 ### Representative Snippets
 
@@ -222,4 +230,30 @@ if (turnResult.status === "success" && turnProducedEdits) {
 
 ```ts
 types: ["vite/client"],
+```
+
+- Hosted verification now recognizes concrete ready evidence from long-lived
+  preview commands and preserves that signal through the verifier:
+
+```ts
+if (!report.passed && readiness) {
+  return {
+    ...report,
+    passed: true,
+    summary: createReadyBeforeTimeoutSummary(report, readiness),
+    commandReadiness: readiness,
+  };
+}
+```
+
+- Browser-evaluator dependency failures now degrade explicitly instead of
+  sending hosted runs into destructive recovery loops:
+
+```ts
+if (browserEvaluation.status === "infrastructure_failed") {
+  return {
+    ...verification,
+    summary: `${verification.summary} Browser evaluation degraded: ${browserSummary}`,
+  };
+}
 ```
