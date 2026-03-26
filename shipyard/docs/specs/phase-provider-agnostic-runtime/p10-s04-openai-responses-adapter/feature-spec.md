@@ -22,11 +22,11 @@ Once Anthropic is adapter-backed and provider routing exists, Shipyard still doe
 - As a Shipyard maintainer, I want OpenAI-specific request and response logic localized so future provider changes do not ripple through graph, raw loop, or UI runtime code.
 
 ## Acceptance Criteria
-- [ ] AC-1: Add an OpenAI adapter that implements the internal `ModelAdapter` contract using the Responses API.
-- [ ] AC-2: The adapter projects Shipyard tool definitions into OpenAI function-tool descriptors without changing the shared registry contract.
-- [ ] AC-3: The adapter normalizes OpenAI `function_call` items into Shipyard `ToolCall` values and can encode `ToolCallResult` values back into `function_call_output` inputs keyed by `call_id`.
-- [ ] AC-4: The OpenAI adapter integrates with provider/model routing and fails clearly when the OpenAI provider is selected but credentials or required config are missing.
-- [ ] AC-5: Focused tests cover request assembly, tool projection, tool-call normalization, tool-result round-trip encoding, and final-text extraction.
+- [x] AC-1: Add an OpenAI adapter that implements the internal `ModelAdapter` contract using the Responses API.
+- [x] AC-2: The adapter projects Shipyard tool definitions into OpenAI function-tool descriptors without changing the shared registry contract.
+- [x] AC-3: The adapter normalizes OpenAI `function_call` items into Shipyard `ToolCall` values and can encode `ToolCallResult` values back into `function_call_output` inputs keyed by `call_id`.
+- [x] AC-4: The OpenAI adapter integrates with provider/model routing and fails clearly when the OpenAI provider is selected but credentials or required config are missing.
+- [x] AC-5: Focused tests cover request assembly, tool projection, tool-call normalization, tool-result round-trip encoding, and final-text extraction.
 
 ## Edge Cases
 - Empty/null inputs: OpenAI still supports final-text-only turns without tools.

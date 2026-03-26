@@ -37,19 +37,19 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `OpenAI adapter fails clearly when credentials are missing`
+  - [x] `OpenAI adapter fails clearly when credentials are missing`
 - T002 tests:
-  - [ ] `provider tool projection produces OpenAI function tools`
-  - [ ] `Responses request assembly includes the resolved model and tools`
+  - [x] `provider tool projection produces OpenAI function tools`
+  - [x] `Responses request assembly includes the resolved model and tools`
 - T003 tests:
-  - [ ] `function_call items normalize into Shipyard tool calls`
-  - [ ] `tool-call results encode as function_call_output with call_id`
+  - [x] `function_call items normalize into Shipyard tool calls`
+  - [x] `tool-call results encode as function_call_output with call_id`
 - T004 tests:
-  - [ ] `OpenAI adapter extracts final text without tool calls`
-  - [ ] `malformed tool arguments fail descriptively`
+  - [x] `OpenAI adapter extracts final text without tool calls`
+  - [x] `malformed tool arguments fail descriptively`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale

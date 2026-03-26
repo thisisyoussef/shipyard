@@ -31,6 +31,8 @@ path for actual task execution.
   switching and enrichment flows
 - `anthropic.ts`: default Anthropic model adapter plus Anthropic client
   integration and request/response normalization
+- `openai.ts`: OpenAI Responses adapter plus OpenAI client integration and
+  request/response normalization
 - `live-verification.ts`: credentialed smoke helpers for end-to-end validation
 
 ## Ownership Rules

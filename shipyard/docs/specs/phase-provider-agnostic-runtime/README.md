@@ -3,7 +3,7 @@
 - Pack: Provider-Agnostic Model Runtime
 - Estimate: 16-24 hours
 - Date: 2026-03-26
-- Status: In progress (`P10-S01` through `P10-S03` implemented; `P10-S04` and `P10-S05` drafted)
+- Status: In progress (`P10-S01` through `P10-S04` implemented; `P10-S05` drafted)
 
 ## Pack Objectives
 
@@ -241,4 +241,49 @@ export function resolveAutomaticTargetEnrichmentCapability(
     requireAdapter: true,
   });
 }
+```
+
+- `P10-S04`: [`../../src/engine/openai.ts`](../../src/engine/openai.ts),
+  [`../../src/engine/model-routing.ts`](../../src/engine/model-routing.ts),
+  [`../../src/engine/README.md`](../../src/engine/README.md),
+  [`../../tests/openai-contract.test.ts`](../../tests/openai-contract.test.ts),
+  [`../../tests/model-routing.test.ts`](../../tests/model-routing.test.ts), and
+  [`../../package.json`](../../package.json)
+  add the OpenAI Responses adapter behind the shared `ModelAdapter`
+  contract, register OpenAI as a routable provider with a real adapter,
+  project Shipyard tools into OpenAI function tools, normalize
+  `function_call` / `function_call_output` items into provider-neutral
+  turn messages, and cover the adapter with focused contract and
+  loop-level tests.
+
+- `P10-S04` OpenAI adapter turn translation and stateless Responses request
+  assembly:
+
+```ts
+export function buildOpenAIResponseRequest(
+  input: OpenAIRequestInput,
+): ResponseCreateParamsNonStreaming {
+  const request: ResponseCreateParamsNonStreaming = {
+    instructions: systemPrompt,
+    input: toOpenAIInputItems(input.messages),
+    model: runtimeConfig.model,
+    max_output_tokens: runtimeConfig.maxTokens,
+    store: false,
+  };
+
+  if (input.tools !== undefined) {
+    request.tools = toOpenAIFunctionTools(input.tools);
+```
+
+- `P10-S04` routing now registers a concrete OpenAI adapter:
+
+```ts
+  openai: {
+    id: "openai",
+    requiredEnvironmentVariables: ["OPENAI_API_KEY"],
+    createAdapter(options = {}) {
+      return createOpenAIModelAdapter({
+        env: options.env,
+      });
+    },
 ```

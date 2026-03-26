@@ -3,6 +3,10 @@ import {
   resolveAnthropicRuntimeConfig,
 } from "./anthropic.js";
 import {
+  createOpenAIModelAdapter,
+  resolveOpenAIRuntimeConfig,
+} from "./openai.js";
+import {
   createUserTurnMessage,
   type ModelAdapter,
 } from "./model-adapter.js";
@@ -108,9 +112,15 @@ const modelProviderDefinitions: Record<string, ModelProviderDefinition> = {
   openai: {
     id: "openai",
     requiredEnvironmentVariables: ["OPENAI_API_KEY"],
+    createAdapter(options = {}) {
+      return createOpenAIModelAdapter({
+        env: options.env,
+      });
+    },
     resolveDefaultModel(options = {}) {
-      const env = options.env ?? process.env;
-      return normalizeOptionalString(env.SHIPYARD_OPENAI_MODEL) ?? null;
+      return resolveOpenAIRuntimeConfig({
+        env: options.env,
+      }).model;
     },
   },
 };
