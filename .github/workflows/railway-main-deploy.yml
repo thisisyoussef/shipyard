@@ -1,0 +1,58 @@
+name: Deploy Shipyard to Railway
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shipyard-railway-production
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    name: Deploy hosted Shipyard
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_PROJECT_ID: c7288cb4-d64f-497f-863d-f3914b76f48f
+      RAILWAY_ENVIRONMENT_ID: 0753d01d-fb6c-4f37-8753-412fb855dc0a
+      RAILWAY_SERVICE_ID: cb3f46eb-8591-467e-88ce-87672a24c666
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.20.2"
+
+      - name: Install Railway CLI
+        run: npm install --global @railway/cli@4.33.0
+
+      - name: Verify Railway credentials
+        run: |
+          if [ -z "${RAILWAY_TOKEN}" ] && [ -z "${RAILWAY_API_TOKEN}" ]; then
+            echo "Missing Railway deploy token. Set RAILWAY_TOKEN or RAILWAY_API_TOKEN in GitHub secrets." >&2
+            exit 1
+          fi
+
+      - name: Deploy shipyard/ to Railway
+        working-directory: shipyard
+        run: |
+          railway up . \
+            --path-as-root \
+            --ci \
+            --project "${RAILWAY_PROJECT_ID}" \
+            --environment "${RAILWAY_ENVIRONMENT_ID}" \
+            --service "${RAILWAY_SERVICE_ID}" \
+            --message "GitHub Actions deploy ${GITHUB_SHA}"
