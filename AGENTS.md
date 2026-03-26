@@ -26,6 +26,7 @@ Load context in this order before making non-trivial changes:
 
 - Start non-trivial work on a fresh `codex/` branch.
 - If the current worktree already contains unrelated in-progress changes or another active story, start the new story in a fresh `codex/` worktree/branch instead of layering onto the shared dirty tree.
+- When a story starts in a fresh branch or worktree, copy the required local `.env*` files (for example `shipyard/.env`) from the working `main` setup or previous story worktree before running project commands, and keep them untracked.
 - Do a preparation pass before edits: inspect the relevant code, contracts, and docs first.
 - Use TDD for behavior changes when practical.
 - Keep narrow corrections narrow; do not silently expand scope.

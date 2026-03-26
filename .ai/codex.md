@@ -21,6 +21,7 @@ Then use as needed:
 
 - New task preflight: run `agent-preflight`, publish the brief, and use a fresh `codex/` branch for non-trivial work before edits.
 - If the current worktree is already dirty from another story or agent, move the new work into a clean worktree instead of sharing the dirty tree.
+- When a story starts in a fresh branch or worktree, copy the required local `.env*` files (for example `shipyard/.env`) from the working `main` setup or previous story worktree before running project commands, and keep them untracked.
 - Story lookup: use `.ai/workflows/story-lookup.md` when the task needs local/external reconnaissance before implementation.
 - Story sizing: use `.ai/workflows/story-sizing.md` to classify `trivial` vs `standard`.
 - Feature stories: use `.ai/workflows/spec-driven-delivery.md` and `.ai/skills/spec-driven-development.md`.
