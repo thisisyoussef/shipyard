@@ -3,7 +3,7 @@
 - Pack: Phase 9 Hosted Shipyard and Public Deploy
 - Estimate: 12-18 hours
 - Date: 2026-03-25
-- Status: Implemented
+- Status: In progress (`P9-S01` through `P9-S06` implemented; `P9-S07` drafted)
 
 ## Pack Objectives
 
@@ -20,6 +20,9 @@
    redeploys, starting with a mounted volume at `/app/workspace`.
 6. Let hosted users upload local reference files into the chat flow so
    Shipyard can inspect them without relying on browser-only filesystem paths.
+7. Keep hosted production outcomes aligned with local quality by separating
+   environment degradation from real code failures and preventing verifier-led
+   recovery spirals.
 
 ## Scope Translation
 
@@ -57,6 +60,9 @@
 - Keep the first upload pass honest and bounded: support text-first reference
   files, validate extensions and size, and fail clearly for unsupported binary
   formats instead of pretending the current tool surface can read everything.
+- Hosted verification must distinguish infrastructure failures from
+  target-code failures. Missing browser dependencies or long-lived preview
+  semantics should not trigger destructive recovery loops.
 - Vercel is the first required target deployment platform. Railway deployment
   of the generated target app is explicitly deferred.
 - GitHub-backed production sync is out of scope for this first hosted pack.
@@ -71,6 +77,7 @@
 | P9-S06 | Browser File Upload and Shipyard Context Intake | Let hosted users attach local files in the chat flow, persist them into the hosted workspace, and feed safe references or previews into the next turn. | P9-S01, P9-S02, P9-S05 |
 | P9-S03 | Target Deploy Tool and Vercel Delivery Contract | Add a typed deploy tool that can publish the current target to Vercel from inside the hosted or local workspace and return the production URL. | P9-S01 |
 | P9-S04 | Deploy UX and Public URL Surfacing | Wire deploy into the browser workbench, persist the latest deploy result, and make the hosted Shipyard URL vs deployed app URL distinction obvious. | P9-S02, P9-S03, P9-S05 |
+| P9-S07 | Hosted Production Runtime Outcome Hardening | Harden the hosted verification and recovery path so Railway environment failures do not turn healthy code generation into bad outcomes. | P9-S01, P9-S05, Phase 7/runtime-hardening verification stack |
 
 ## Sequencing Rationale
 
@@ -88,6 +95,9 @@
   path, and env contract are defined.
 - `P9-S04` comes last because the workbench UX should reflect the real hosted
   and deploy contracts rather than inventing them up front.
+- `P9-S07` follows the initial hosted pack as a hardening story because real
+  production traces showed that environment-only verification failures can
+  still degrade output quality after the baseline hosted path ships.
 
 ## Whole-Pack Success Signal
 
@@ -107,6 +117,9 @@
 - The hosted workbench keeps the deployed target-app URL primary, auto-publishes
   successful edited turns when Vercel is configured, and stays honest about
   localhost-only preview limitations.
+- Hosted traces and runtime behavior distinguish degraded environment failures
+  from real code failures, and a broken browser-verification dependency no
+  longer cascades into destructive file churn.
 
 ## Implementation Evidence
 
@@ -147,6 +160,8 @@
   - `shipyard/src/tools/target-manager/scaffolds.ts`
   - `shipyard/tests/ui-workbench.test.ts`
   - `shipyard/tests/scaffold-bootstrap.test.ts`
+- `P9-S07` Hosted Production Runtime Outcome Hardening:
+  - N/A until the story is implemented.
 
 ### Representative Snippets
 
