@@ -372,6 +372,62 @@ describe("file tools", () => {
     ).rejects.toThrowError(/Break the change into smaller edit_block calls/i);
   });
 
+  it("allows large rewrites for Shipyard scaffold starter files", async () => {
+    const directory = await createTempProject();
+    const relativePath = "src/App.css";
+    const originalContents = [
+      "/* shipyard-scaffold: react-ts-app-style */",
+      ".app-shell {",
+      '  font-family: "Inter", sans-serif;',
+      "}",
+      "",
+      ".app-card {",
+      "  padding: 2rem;",
+      "}",
+      "",
+      ".app-eyebrow {",
+      "  letter-spacing: 0.18em;",
+      "}",
+      "",
+      ...Array.from({ length: 120 }, (_, index) => `.filler-${index} { color: #111827; }`),
+      "",
+    ].join("\n");
+    const replacementContents = [
+      "/* shipyard-scaffold: react-ts-app-style */",
+      ".login-shell {",
+      "  min-height: 100vh;",
+      "  display: grid;",
+      "  place-items: center;",
+      "}",
+      "",
+      ...Array.from({ length: 120 }, (_, index) => `.login-filler-${index} { background: #f5f5f4; }`),
+      "",
+    ].join("\n");
+
+    await writeTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+      content: originalContents,
+    });
+
+    await readTargetFile({
+      targetDirectory: directory,
+      path: relativePath,
+    });
+
+    const result = await editBlock({
+      targetDirectory: directory,
+      path: relativePath,
+      old_string: originalContents,
+      new_string: replacementContents,
+    });
+
+    expect(result.changed).toBe(true);
+    await expect(readFile(path.join(directory, relativePath), "utf8")).resolves.toBe(
+      replacementContents,
+    );
+  });
+
   it("returns a no-op result when old_string equals new_string", async () => {
     const directory = await createTempProject();
     const relativePath = "no-change.ts";

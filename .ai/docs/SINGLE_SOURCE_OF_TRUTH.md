@@ -34,7 +34,7 @@
 - **Claude compatibility mirror**: `.ai/agents/claude.md`
 - **Root app package**: `shipyard/package.json`
 - **App runtime state**: `shipyard/.shipyard/`
-- **Branch rule**: start non-trivial work on a fresh `codex/` branch, and carry over required local `.env*` files into new branches/worktrees before project commands
+- **Branch rule**: start non-trivial work on a fresh `codex/` branch, carry over required local `.env*` files into new branches/worktrees, and run `pnpm --dir shipyard install` before project commands so missing local `node_modules` is treated as setup, not as a graph/runtime regression
 - **Default validation commands**:
   - `pnpm --dir shipyard test`
   - `pnpm --dir shipyard typecheck`

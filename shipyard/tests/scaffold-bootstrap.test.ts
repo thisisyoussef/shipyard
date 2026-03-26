@@ -47,7 +47,11 @@ describe("shared scaffold bootstrap", () => {
     expect(tsconfigContents).toContain('"types": [');
     expect(tsconfigContents).toContain('"vite/client"');
     expect(appContents).toContain('import "./App.css";');
+    expect(appContents).toContain("shipyard-scaffold: react-ts-app");
     expect(appCssContents).toContain(".app-shell");
+    expect(appCssContents).toContain("shipyard-scaffold: react-ts-app-style");
+    expect(appCssContents).not.toContain("rgba(59, 130, 246");
+    expect(appCssContents).not.toContain("#08111f");
     expect(viteEnvContents).toContain('/// <reference types="vite/client" />');
   });
 
@@ -166,6 +170,9 @@ describe("shared scaffold bootstrap", () => {
     expect(createCodePhase().tools).toContain("bootstrap_target");
     expect(getTool("bootstrap_target")).toBeDefined();
     expect(CODE_PHASE_SYSTEM_PROMPT).toContain("bootstrap_target");
+    expect(CODE_PHASE_SYSTEM_PROMPT).toContain("starter theme choices");
+    expect(CODE_PHASE_SYSTEM_PROMPT).toContain("generic dark-blue");
+    expect(CODE_PHASE_SYSTEM_PROMPT).toContain("orphaned CSS files");
     expect(CODE_PHASE_SYSTEM_PROMPT).toContain("write_file");
     expect(CODE_PHASE_SYSTEM_PROMPT).toContain("Read a file before you modify an existing file");
     expect(CODE_PHASE_SYSTEM_PROMPT).toContain("Batch coherent new-file writes");

@@ -41,6 +41,9 @@ Supporting files:
   text at the runtime.
 - Prefer small, deterministic tools that compose cleanly inside the phase
   runtime over large tools that try to handle multiple jobs at once.
+- Keep the `edit_block` rewrite guard in place for normal files, but let
+  tagged Shipyard starter scaffold files opt into safe whole-file restyles so
+  greenfield UI turns do not get stranded halfway through a template rewrite.
 - If a new capability belongs only to one phase, register it globally but
   expose it only through that phase's tool list.
 

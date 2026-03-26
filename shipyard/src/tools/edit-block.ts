@@ -22,6 +22,13 @@ const BLOCK_PREVIEW_LINES = 12;
 const BLOCK_PREVIEW_CHAR_LIMIT = 320;
 const LARGE_FILE_CHARACTER_THRESHOLD = 500;
 const MAX_REWRITE_RATIO = 0.6;
+const SHIPYARD_SCAFFOLD_MARKER = "shipyard-scaffold:";
+const STARTER_REWRITE_ALLOWED_PATHS = new Set([
+  "src/App.css",
+  "src/App.tsx",
+  "apps/web/src/App.css",
+  "apps/web/src/App.tsx",
+]);
 
 export interface EditBlockInput {
   targetDirectory: string;
@@ -140,12 +147,25 @@ function truncatePreview(contents: string): string {
   return preview;
 }
 
+function isStarterScaffoldRewrite(
+  relativePath: string,
+  currentContents: string,
+): boolean {
+  return STARTER_REWRITE_ALLOWED_PATHS.has(relativePath)
+    && currentContents.includes(SHIPYARD_SCAFFOLD_MARKER);
+}
+
 function shouldRejectLargeRewrite(
+  relativePath: string,
   currentContents: string,
   oldString: string,
   newString: string,
 ): boolean {
   if (currentContents.length <= LARGE_FILE_CHARACTER_THRESHOLD) {
+    return false;
+  }
+
+  if (isStarterScaffoldRewrite(relativePath, currentContents)) {
     return false;
   }
 
@@ -291,6 +311,7 @@ export async function editBlockTool(
 
   if (
     shouldRejectLargeRewrite(
+      current.path,
       current.contents,
       input.old_string,
       input.new_string,

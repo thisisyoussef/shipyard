@@ -387,6 +387,29 @@ describe("planner subagent", () => {
     expect(executionSpec.verificationIntent).not.toHaveLength(0);
   });
 
+  it("adds starter-theme and stylesheet continuity guidance for single-turn UI builds", () => {
+    const executionSpec = createLightweightExecutionSpec({
+      instruction: "Make a login page.",
+      contextEnvelope: createContextEnvelope(),
+    });
+
+    expect(executionSpec.deliverables).toContain(
+      "Choose a deliberate visual direction instead of reusing a generic dark-blue starter aesthetic.",
+    );
+    expect(executionSpec.deliverables).toContain(
+      "Replace any leftover starter branding or starter theme choices that conflict with the requested UI.",
+    );
+    expect(executionSpec.acceptanceCriteria).toContain(
+      "The resulting UI does not simply fall back to a generic starter palette or repeated dark-blue glassmorphism treatment without user direction.",
+    );
+    expect(executionSpec.acceptanceCriteria).toContain(
+      "Any stylesheet created or renamed for the UI is referenced from the relevant source files.",
+    );
+    expect(executionSpec.verificationIntent).toContain(
+      "Confirm any touched stylesheet is still referenced from the source tree.",
+    );
+  });
+
   it("can ignore recent touched files when lightweight scope widening is disabled", () => {
     const widenedContextEnvelope = createContextEnvelope();
 

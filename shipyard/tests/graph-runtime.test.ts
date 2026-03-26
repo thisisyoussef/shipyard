@@ -962,7 +962,7 @@ describe("Phase 4 graph runtime contract", () => {
       | EvaluationPlan
       | undefined;
 
-    expect(verifierCall?.checks).toHaveLength(2);
+    expect(verifierCall?.checks).toHaveLength(3);
     expect(verifierCall?.checks[0]).toMatchObject({
       label: "Confirm apps/web/src/App.tsx still exists",
       command:
@@ -972,6 +972,11 @@ describe("Phase 4 graph runtime contract", () => {
       "apps/web/src/login.css",
     );
     expect(verifierCall?.checks[1]?.command).toContain("login.css");
+    expect(verifierCall?.checks[2]).toMatchObject({
+      label: "Confirm touched UI classes are defined in touched stylesheets",
+    });
+    expect(verifierCall?.checks[2]?.command).toContain("apps/web/src/App.tsx");
+    expect(verifierCall?.checks[2]?.command).toContain("apps/web/src/login.css");
     expect(update.status).toBe("responding");
   });
 

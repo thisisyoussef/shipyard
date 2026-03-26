@@ -87,7 +87,7 @@ Capture repeatable patterns that match how this workspace actually works.
 - Repo rules and harness truth live at the root.
 - Product-specific implementation docs stay under `shipyard/`.
 - Durable workflow notes go in `.ai/memory/project/`; current-task notes go in `.ai/memory/session/`.
-- Fresh story branches and worktrees should copy the required local `.env*` files from the working `main` setup before running project commands, and those files stay untracked.
+- Fresh story branches and worktrees should copy the required local `.env*` files from the working `main` setup, run `pnpm --dir shipyard install` before project commands, and keep copied env files untracked.
 - Runtime-facing README and architecture docs must be verified against the
   current code before reusing historic phase-pack wording.
 

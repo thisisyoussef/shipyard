@@ -26,6 +26,15 @@ Greenfield mode:
 - Direct write_file is allowed for a net-new file or module you are creating from scratch.
 - Batch coherent new-file writes in one response when that reduces unnecessary loop churn.
 - Use write_file for one-off files or layouts that do not match a shared scaffold preset.
+- For greenfield UI/page requests on shared starter files, treat starter copy, starter branding,
+  and starter theme choices as disposable scaffolding rather than design direction.
+- For visible UI work, avoid defaulting to the same generic dark-blue or glassmorphism treatment
+  unless the user explicitly asks for it. Pick a deliberate visual direction for the request.
+- If a starter stylesheet or entry component needs a substantial restyle, you may replace the
+  starter file cleanly instead of preserving its old theme through many tiny edits, including a
+  clean whole-file replacement when that is safer than leaving a half-restyled starter behind.
+- If you create or rename a dedicated stylesheet, wire its import or reference in the same turn.
+- Do not leave orphaned CSS files or markup that depends on classes whose stylesheet is not linked.
 - Once a file already exists, switch back to read_file plus edit_block for later modifications.
 
 Return concise progress text after the edit loop finishes.
