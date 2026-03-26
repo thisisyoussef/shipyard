@@ -2,18 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type {
-  Message,
-  MessageCreateParamsNonStreaming,
-  Model,
-} from "@anthropic-ai/sdk/resources/messages";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type {
   DiscoveryReport,
   ExecutionSpec,
 } from "../src/artifacts/types.js";
-import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
 import { PLANNER_MODEL_ROUTE } from "../src/engine/model-routing.js";
 import { createSessionState } from "../src/engine/state.js";
 import { createInstructionRuntimeState } from "../src/engine/turn.js";
@@ -25,64 +19,13 @@ import {
 } from "../src/plans/store.js";
 import { executePlanningTurn } from "../src/plans/turn.js";
 import "../src/tools/index.js";
+import {
+  createFakeModelAdapter,
+  createFakeTextTurnResult,
+  createFakeToolCallTurnResult,
+} from "./support/fake-model-adapter.js";
 
 const createdDirectories: string[] = [];
-
-interface MockAnthropicClient {
-  messages: {
-    create: (request: MessageCreateParamsNonStreaming) => Promise<Message>;
-  };
-  calls: MessageCreateParamsNonStreaming[];
-}
-
-function createAssistantMessage(options: {
-  content: unknown[];
-  stopReason: Message["stop_reason"];
-  model?: Model;
-}): Message {
-  return {
-    id: `msg_${Math.random().toString(36).slice(2)}`,
-    container: null,
-    content: options.content as Message["content"],
-    model: options.model ?? DEFAULT_ANTHROPIC_MODEL,
-    role: "assistant",
-    stop_reason: options.stopReason,
-    stop_sequence: null,
-    type: "message",
-    usage: {
-      cache_creation: null,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-      inference_geo: null,
-      input_tokens: 42,
-      output_tokens: 19,
-      server_tool_use: null,
-      service_tier: "standard",
-    },
-  };
-}
-
-function createMockAnthropicClient(
-  responses: Message[],
-): MockAnthropicClient {
-  const calls: MessageCreateParamsNonStreaming[] = [];
-
-  return {
-    calls,
-    messages: {
-      async create(request) {
-        calls.push(request);
-        const response = responses[calls.length - 1];
-
-        if (!response) {
-          throw new Error("No mock Claude response configured.");
-        }
-
-        return response;
-      },
-    },
-  };
-}
 
 async function createTempDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), prefix));
@@ -211,17 +154,8 @@ describe("plan mode", () => {
   it("passes the planner model route into raw-loop option creation", async () => {
     const targetDirectory = await createTempDirectory("shipyard-plan-route-");
     const createRawLoopRouteIds: string[] = [];
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(createExecutionSpec()),
-            citations: null,
-          },
-        ],
-      }),
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult(JSON.stringify(createExecutionSpec())),
     ]);
     const sessionState = createSessionState({
       sessionId: "plan-route-session",
@@ -237,7 +171,7 @@ describe("plan mode", () => {
           }
 
           return {
-            client,
+            modelAdapter,
             logger: {
               log() {},
             },
@@ -304,39 +238,23 @@ describe("plan mode", () => {
       discovery: createDiscovery(),
     });
     const executionSpec = createExecutionSpec();
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_load_spec",
-            name: "load_spec",
-            input: {
-              path: "docs/specs/feature-spec.md",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_load_spec",
+          name: "load_spec",
+          input: {
+            path: "docs/specs/feature-spec.md",
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(executionSpec),
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify(executionSpec)),
     ]);
     const runtimeState = createInstructionRuntimeState({
       projectRules: "Prefer the persisted plan before implementation.",
       runtimeDependencies: {
         createRawLoopOptions: () => ({
-          client,
+          modelAdapter,
           logger: {
             log() {},
           },

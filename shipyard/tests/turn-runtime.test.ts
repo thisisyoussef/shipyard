@@ -2,14 +2,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type {
-  Message,
-  MessageCreateParamsNonStreaming,
-  Model,
-} from "@anthropic-ai/sdk/resources/messages";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
 import { TARGET_MANAGER_PHASE_MODEL_ROUTE } from "../src/engine/model-routing.js";
 import { createSessionState } from "../src/engine/state.js";
 import * as graphRuntime from "../src/engine/graph.js";
@@ -20,113 +14,39 @@ import {
   executeInstructionTurn,
 } from "../src/engine/turn.js";
 import * as langsmith from "../src/tracing/langsmith.js";
+import {
+  createAbortError,
+  createFakeModelAdapter,
+  createFakeTextTurnResult,
+  createFakeToolCallTurnResult,
+} from "./support/fake-model-adapter.js";
 
 const createdDirectories: string[] = [];
-
-interface MockAnthropicClient {
-  messages: {
-    create: (
-      request: MessageCreateParamsNonStreaming,
-      options?: Record<string, unknown>,
-    ) => Promise<Message>;
-  };
-  calls: MessageCreateParamsNonStreaming[];
-}
-
-function createAssistantMessage(options: {
-  content: unknown[];
-  stopReason: Message["stop_reason"];
-  model?: Model;
-}): Message {
-  return {
-    id: `msg_${Math.random().toString(36).slice(2)}`,
-    container: null,
-    content: options.content as Message["content"],
-    model: options.model ?? DEFAULT_ANTHROPIC_MODEL,
-    role: "assistant",
-    stop_reason: options.stopReason,
-    stop_sequence: null,
-    type: "message",
-    usage: {
-      cache_creation: null,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-      inference_geo: null,
-      input_tokens: 42,
-      output_tokens: 19,
-      server_tool_use: null,
-      service_tier: "standard",
-    },
-  };
-}
-
-function createMockAnthropicClient(
-  responses: Message[],
-): MockAnthropicClient {
-  const calls: MessageCreateParamsNonStreaming[] = [];
-
-  return {
-    calls,
-    messages: {
-      async create(request) {
-        calls.push(request);
-        const response = responses[calls.length - 1];
-
-        if (!response) {
-          throw new Error("No mock Claude response configured.");
-        }
-
-        return response;
-      },
-    },
-  };
-}
-
-function createAbortAwareMockAnthropicClient(options?: {
+function createAbortAwareFakeModelAdapter(options?: {
   finalText?: string;
-}): MockAnthropicClient {
-  const calls: MessageCreateParamsNonStreaming[] = [];
+}) {
+  return createFakeModelAdapter(async (_input, context) => {
+    if (context.turnNumber === 1) {
+      return await new Promise((_, reject) => {
+        const rejectAsAborted = () => {
+          reject(createAbortError());
+        };
 
-  return {
-    calls,
-    messages: {
-      async create(request, requestOptions) {
-        calls.push(request);
-
-        if (calls.length === 1) {
-          const signal = requestOptions?.signal instanceof AbortSignal
-            ? requestOptions.signal
-            : undefined;
-
-          return await new Promise<Message>((_resolve, reject) => {
-            const rejectAsAborted = () => {
-              const error = new Error("The operation was aborted.");
-              error.name = "AbortError";
-              reject(error);
-            };
-
-            if (signal?.aborted) {
-              rejectAsAborted();
-              return;
-            }
-
-            signal?.addEventListener("abort", rejectAsAborted, { once: true });
-          });
+        if (context.signal?.aborted) {
+          rejectAsAborted();
+          return;
         }
 
-        return createAssistantMessage({
-          stopReason: "end_turn",
-          content: [
-            {
-              type: "text",
-              text: options?.finalText ?? "Follow-up turn complete.",
-              citations: null,
-            },
-          ],
+        context.signal?.addEventListener("abort", rejectAsAborted, {
+          once: true,
         });
-      },
-    },
-  };
+      });
+    }
+
+    return createFakeTextTurnResult(
+      options?.finalText ?? "Follow-up turn complete.",
+    );
+  });
 }
 
 async function createTempDirectory(prefix: string): Promise<string> {
@@ -176,24 +96,15 @@ describe("instruction runtime handoff", () => {
         projectName: "shipyard-turn-target",
       },
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Inspection complete.",
-            citations: null,
-          },
-        ],
-      }),
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult("Inspection complete."),
     ]);
     const runtimeState = createInstructionRuntimeState({
       projectRules: "",
       baseInjectedContext: ["Use the current scripts as the source of truth."],
       runtimeDependencies: {
         createRawLoopOptions: () => ({
-          client,
+          modelAdapter,
           logger: {
             log() {},
           },
@@ -209,20 +120,20 @@ describe("instruction runtime handoff", () => {
 
     expect(result.runtimeMode).toBe("graph");
     expect(result.status).toBe("success");
-    expect(client.calls).toHaveLength(1);
-    expect(client.calls[0]?.system).toContain("Project Context");
-    expect(client.calls[0]?.system).toContain("Project Rules");
-    expect(client.calls[0]?.system).toContain("Injected Context");
-    expect(client.calls[0]?.system).toContain("Session History");
-    expect(client.calls[0]?.system).toContain("Recent Errors");
-    expect(client.calls[0]?.system).toContain("Blocked Files");
-    expect(client.calls[0]?.system).toContain(
+    expect(modelAdapter.calls).toHaveLength(1);
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("Project Context");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("Project Rules");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("Injected Context");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("Session History");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("Recent Errors");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("Blocked Files");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain(
       "Always inspect the target file before editing.",
     );
-    expect(client.calls[0]?.system).toContain(
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain(
       "Use the current scripts as the source of truth.",
     );
-    expect(client.calls[0]?.messages).toEqual([
+    expect(modelAdapter.calls[0]?.messages).toEqual([
       {
         role: "user",
         content: "inspect package.json",
@@ -311,93 +222,52 @@ describe("instruction runtime handoff", () => {
         projectName: "shipyard-subagent-tools",
       },
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_search_auth",
+          name: "search_files",
+          input: {
+            pattern: "authenticateUser",
+          },
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        query: "Identify the files most relevant to this request: Fix the auth flow",
+        findings: [
           {
-            type: "tool_use",
-            id: "toolu_search_auth",
-            name: "search_files",
-            input: {
-              pattern: "authenticateUser",
-            },
-            caller: {
-              type: "direct",
-            },
+            filePath: "src/auth.ts",
+            excerpt: "export async function authenticateUser(token: string) {",
+            relevanceNote: "This file owns the auth entry point.",
           },
         ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              query: "Identify the files most relevant to this request: Fix the auth flow",
-              findings: [
-                {
-                  filePath: "src/auth.ts",
-                  excerpt: "export async function authenticateUser(token: string) {",
-                  relevanceNote: "This file owns the auth entry point.",
-                },
-              ],
-            }),
-            citations: null,
+      })),
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read_auth",
+          name: "read_file",
+          input: {
+            path: "src/auth.ts",
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_read_auth",
-            name: "read_file",
-            input: {
-              path: "src/auth.ts",
-            },
-            caller: {
-              type: "direct",
-            },
-          },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              instruction: "Fix the auth flow",
-              goal: "Repair the auth flow without widening scope.",
-              deliverables: ["Update the auth entry point."],
-              acceptanceCriteria: ["Authentication succeeds for valid credentials."],
-              verificationIntent: ["Run the auth-focused tests."],
-              targetFilePaths: ["src/auth.ts"],
-              risks: ["Regression risk in authentication state handling."],
-            }),
-            citations: null,
-          },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Auth flow updated safely.",
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        instruction: "Fix the auth flow",
+        goal: "Repair the auth flow without widening scope.",
+        deliverables: ["Update the auth entry point."],
+        acceptanceCriteria: ["Authentication succeeds for valid credentials."],
+        verificationIntent: ["Run the auth-focused tests."],
+        targetFilePaths: ["src/auth.ts"],
+        risks: ["Regression risk in authentication state handling."],
+      })),
+      createFakeTextTurnResult("Auth flow updated safely."),
     ]);
     const toolCalls: string[] = [];
     const runtimeState = createInstructionRuntimeState({
       projectRules: "",
       runtimeDependencies: {
         createRawLoopOptions: () => ({
-          client,
+          modelAdapter,
           logger: {
             log() {},
           },
@@ -442,14 +312,14 @@ describe("instruction runtime handoff", () => {
         projectName: null,
       },
     });
-    const client = createAbortAwareMockAnthropicClient({
+    const modelAdapter = createAbortAwareFakeModelAdapter({
       finalText: "Follow-up turn complete.",
     });
     const runtimeState = createInstructionRuntimeState({
       projectRules: "",
       runtimeDependencies: {
         createRawLoopOptions: () => ({
-          client,
+          modelAdapter,
           logger: {
             log() {},
           },
@@ -483,7 +353,7 @@ describe("instruction runtime handoff", () => {
     });
 
     await vi.waitFor(() => {
-      expect(client.calls).toHaveLength(1);
+      expect(modelAdapter.calls).toHaveLength(1);
     });
     cancellationController.abort("Operator interrupted the active turn.");
 
@@ -537,43 +407,18 @@ describe("instruction runtime handoff", () => {
         projectName: "shipyard-bootstrap-follow-up",
       },
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_bootstrap_workspace",
-            name: "bootstrap_target",
-            input: {
-              description: "Scaffold a full-stack workspace for follow-up continuation tests.",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_bootstrap_workspace",
+          name: "bootstrap_target",
+          input: {
+            description: "Scaffold a full-stack workspace for follow-up continuation tests.",
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Workspace bootstrapped successfully.",
-            citations: null,
-          },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Continued the scaffold without extra planning.",
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult("Workspace bootstrapped successfully."),
+      createFakeTextTurnResult("Continued the scaffold without extra planning."),
     ]);
     const runExplorerSubagent = vi.fn(async () => ({
       query: "Continue the scaffold with a dashboard view.",
@@ -592,7 +437,7 @@ describe("instruction runtime handoff", () => {
       projectRules: "",
       runtimeDependencies: {
         createRawLoopOptions: () => ({
-          client,
+          modelAdapter,
           logger: {
             log() {},
           },
@@ -645,25 +490,17 @@ describe("instruction runtime handoff", () => {
         projectName: null,
       },
     });
-    const client = createMockAnthropicClient(
+    const modelAdapter = createFakeModelAdapter(
       Array.from({ length: 10 }, (_, index) =>
-        createAssistantMessage({
-          stopReason: "end_turn",
-          content: [
-            {
-              type: "text",
-              text: `Handled turn ${String(index + 1)}.`,
-              citations: null,
-            },
-          ],
-        })),
+        createFakeTextTurnResult(`Handled turn ${String(index + 1)}.`),
+      ),
     );
     const runtimeState = createInstructionRuntimeState({
       projectRules: "",
       baseInjectedContext: ["Base context for every turn."],
       runtimeDependencies: {
         createRawLoopOptions: () => ({
-          client,
+          modelAdapter,
           logger: {
             log() {},
           },
@@ -683,9 +520,9 @@ describe("instruction runtime handoff", () => {
     }
 
     expect(sessionState.turnCount).toBe(10);
-    expect(client.calls).toHaveLength(10);
+    expect(modelAdapter.calls).toHaveLength(10);
 
-    const finalSystemPrompt = client.calls[9]?.system ?? "";
+    const finalSystemPrompt = modelAdapter.calls[9]?.systemPrompt ?? "";
 
     expect(finalSystemPrompt).toContain("Base context for every turn.");
     expect(finalSystemPrompt).toContain("Context for turn 10");
@@ -731,40 +568,26 @@ describe("instruction runtime handoff", () => {
         projectName: "targets",
       },
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "tool-select-1",
-            name: "select_target",
-            input: {
-              target_path: selectedTargetDirectory,
-            },
-            caller: {
-              type: "assistant",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "tool-select-1",
+          name: "select_target",
+          input: {
+            target_path: selectedTargetDirectory,
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Selected alpha-app and prepared the coding session.",
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(
+        "Selected alpha-app and prepared the coding session.",
+      ),
     ]);
     const runtimeState = createInstructionRuntimeState({
       projectRules: "",
       baseInjectedContext: [`Targets directory: ${targetsDirectory}`],
       runtimeDependencies: {
         createRawLoopOptions: () => ({
-          client,
+          modelAdapter,
           logger: {
             log() {},
           },
@@ -782,8 +605,8 @@ describe("instruction runtime handoff", () => {
     expect(result.status).toBe("success");
     expect(result.selectedTargetPath).toBe(selectedTargetDirectory);
     expect(runtimeState.pendingTargetSelectionPath).toBe(selectedTargetDirectory);
-    expect(client.calls[0]?.system).toContain("target-manager mode");
-    expect(client.calls[0]?.system).toContain("select_target");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("target-manager mode");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("select_target");
   });
 
   it("fails clearly instead of using the offline preview path when ANTHROPIC_API_KEY is missing", async () => {
@@ -870,38 +693,19 @@ describe("instruction runtime handoff", () => {
         projectName: path.basename(targetsDirectory),
       },
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "text",
-            text: "Selecting target.",
-            citations: null,
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_select_beta",
+          name: "select_target",
+          input: {
+            target_path: selectedTargetDirectory,
           },
-          {
-            type: "tool_use",
-            id: "toolu_select_beta",
-            name: "select_target",
-            input: {
-              target_path: selectedTargetDirectory,
-            },
-            caller: {
-              type: "direct",
-            },
-          },
-        ],
+        },
+      ], {
+        text: "Selecting target.",
       }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Selected the beta-app target.",
-            citations: null,
-          },
-        ],
-      }),
+      createFakeTextTurnResult("Selected the beta-app target."),
     ]);
     const runtimeState = createInstructionRuntimeState({
       projectRules: "",
@@ -912,7 +716,7 @@ describe("instruction runtime handoff", () => {
           }
 
           return {
-            client,
+            modelAdapter,
             logger: {
               log() {},
             },

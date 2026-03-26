@@ -3,16 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type {
-  Message,
-  MessageCreateParamsNonStreaming,
-  Model,
-} from "@anthropic-ai/sdk/resources/messages";
 import WebSocket from "ws";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { discoverTarget } from "../src/context/discovery.js";
-import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
 import {
   createSessionState,
   ensureShipyardDirectories,
@@ -32,6 +26,12 @@ import {
   startUiRuntimeServer,
 } from "../src/ui/server.js";
 import { queueInstructionTurn } from "../ui/src/view-models.js";
+import {
+  createAbortError,
+  createFakeModelAdapter,
+  createFakeTextTurnResult,
+  createFakeToolCallTurnResult,
+} from "./support/fake-model-adapter.js";
 import { scaffoldPreviewableTarget } from "./support/preview-target.js";
 
 const createdDirectories: string[] = [];
@@ -39,15 +39,6 @@ const socketMessageBuffers = new WeakMap<WebSocket, BackendToFrontendMessage[]>(
 const trackedSockets = new WeakSet<WebSocket>();
 const workspaceDirectory = path.resolve(process.cwd(), "..");
 const originalEnv = { ...process.env };
-
-interface MockAnthropicClient {
-  messages: {
-    create: (
-      request: MessageCreateParamsNonStreaming,
-      options?: Record<string, unknown>,
-    ) => Promise<Message>;
-  };
-}
 
 interface RawCommandResult {
   stdout: string;
@@ -159,97 +150,29 @@ function createTargetManagerDiscovery(targetsDirectory: string) {
     ),
   };
 }
-
-function createAssistantMessage(options: {
-  content: unknown[];
-  stopReason: Message["stop_reason"];
-  model?: Model;
-}): Message {
-  return {
-    id: `msg_${Math.random().toString(36).slice(2)}`,
-    container: null,
-    content: options.content as Message["content"],
-    model: options.model ?? DEFAULT_ANTHROPIC_MODEL,
-    role: "assistant",
-    stop_reason: options.stopReason,
-    stop_sequence: null,
-    type: "message",
-    usage: {
-      cache_creation: null,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-      inference_geo: null,
-      input_tokens: 42,
-      output_tokens: 19,
-      server_tool_use: null,
-      service_tier: "standard",
-    },
-  };
-}
-
-function createMockAnthropicClient(responses: Message[]): MockAnthropicClient {
-  let callIndex = 0;
-
-  return {
-    messages: {
-      async create() {
-        const response = responses[callIndex];
-        callIndex += 1;
-
-        if (!response) {
-          throw new Error("No mock Claude response configured.");
-        }
-
-        return response;
-      },
-    },
-  };
-}
-
-function createAbortAwareMockAnthropicClient(options?: {
+function createAbortAwareFakeModelAdapter(options?: {
   followUpText?: string;
-}): MockAnthropicClient {
-  let callIndex = 0;
+}) {
+  return createFakeModelAdapter(async (_input, context) => {
+    if (context.turnNumber === 1) {
+      return await new Promise((_, reject) => {
+        const rejectAsAborted = () => reject(createAbortError());
 
-  return {
-    messages: {
-      async create(_request, requestOptions) {
-        callIndex += 1;
-
-        if (callIndex === 1) {
-          const signal = requestOptions?.signal instanceof AbortSignal
-            ? requestOptions.signal
-            : undefined;
-
-          return await new Promise<Message>((_resolve, reject) => {
-            const rejectAsAborted = () => {
-              const error = new Error("The operation was aborted.");
-              error.name = "AbortError";
-              reject(error);
-            };
-
-            if (signal?.aborted) {
-              rejectAsAborted();
-              return;
-            }
-
-            signal?.addEventListener("abort", rejectAsAborted, { once: true });
-          });
+        if (context.signal?.aborted) {
+          rejectAsAborted();
+          return;
         }
 
-        return createAssistantMessage({
-          stopReason: "end_turn",
-          content: [
-            {
-              type: "text",
-              text: options?.followUpText ?? "Follow-up browser turn complete.",
-              citations: null,
-            },
-          ],
+        context.signal?.addEventListener("abort", rejectAsAborted, {
+          once: true,
         });
-      },
-    },
-  };
+      });
+    }
+
+    return createFakeTextTurnResult(
+      options?.followUpText ?? "Follow-up browser turn complete.",
+    );
+  });
 }
 
 function waitForSocketMessage(
@@ -956,32 +879,19 @@ describe("ui runtime contract", () => {
     const discovery = await discoverTarget(targetDirectory);
     let expectedStoredPath: string | null = null;
     let expectedOriginalName: string | null = null;
-    const client: MockAnthropicClient = {
-      messages: {
-        async create(request) {
-          expect(expectedStoredPath).toBeTruthy();
-          expect(expectedOriginalName).toBeTruthy();
-          expect(request.system).toContain(
-            `Original filename: ${expectedOriginalName ?? ""}`,
-          );
-          expect(request.system).toContain(
-            `Stored path: ${expectedStoredPath ?? ""}`,
-          );
-          expect(request.system).toContain("Keep edits narrow.");
+    const modelAdapter = createFakeModelAdapter(async (input) => {
+      expect(expectedStoredPath).toBeTruthy();
+      expect(expectedOriginalName).toBeTruthy();
+      expect(input.systemPrompt).toContain(
+        `Original filename: ${expectedOriginalName ?? ""}`,
+      );
+      expect(input.systemPrompt).toContain(
+        `Stored path: ${expectedStoredPath ?? ""}`,
+      );
+      expect(input.systemPrompt).toContain("Keep edits narrow.");
 
-          return createAssistantMessage({
-            stopReason: "end_turn",
-            content: [
-              {
-                type: "text",
-                text: "Upload context inspected.",
-                citations: null,
-              },
-            ],
-          });
-        },
-      },
-    };
+      return createFakeTextTurnResult("Upload context inspected.");
+    });
     const runtime = await startUiRuntimeServer({
       sessionState: createSessionState({
         sessionId: "ui-upload-session",
@@ -995,7 +905,7 @@ describe("ui runtime contract", () => {
       runtimeDependencies: {
         async createRawLoopOptions() {
           return {
-            client,
+            modelAdapter,
           };
         },
       },
@@ -1480,7 +1390,7 @@ describe("ui runtime contract", () => {
     );
 
     const alphaDiscovery = await discoverTarget(alphaTargetDirectory);
-    const client = createAbortAwareMockAnthropicClient();
+    const modelAdapter = createAbortAwareFakeModelAdapter();
     const runtime = await startUiRuntimeServer({
       sessionState: createSessionState({
         sessionId: "ui-multi-project-alpha",
@@ -1496,7 +1406,7 @@ describe("ui runtime contract", () => {
       runtimeDependencies: {
         async createRawLoopOptions() {
           return {
-            client,
+            modelAdapter,
           };
         },
       },
@@ -2357,79 +2267,43 @@ describe("ui runtime contract", () => {
       targetDirectory,
       discovery,
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_read_file",
-            name: "read_file",
-            input: {
-              path: "package.json",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read_file",
+          name: "read_file",
+          input: {
+            path: "package.json",
           },
-          {
-            type: "tool_use",
-            id: "toolu_edit_block",
-            name: "edit_block",
-            input: {
-              path: "package.json",
-              old_string: '  "name": "ui-bridge-target",',
-              new_string: '  "name": "ui-bridge-target-smoke",',
-            },
-            caller: {
-              type: "direct",
-            },
+        },
+        {
+          id: "toolu_edit_block",
+          name: "edit_block",
+          input: {
+            path: "package.json",
+            old_string: '  "name": "ui-bridge-target",',
+            new_string: '  "name": "ui-bridge-target-smoke",',
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Inspection complete.",
-            citations: null,
+        },
+      ]),
+      createFakeTextTurnResult("Inspection complete."),
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_run_command",
+          name: "run_command",
+          input: {
+            command: "git diff --stat",
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_run_command",
-            name: "run_command",
-            input: {
-              command: "git diff --stat",
-            },
-            caller: {
-              type: "direct",
-            },
-          },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              command: "git diff --stat",
-              exitCode: 0,
-              passed: true,
-              stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
-              stderr: "",
-              summary: "Verification passed.",
-            }),
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        command: "git diff --stat",
+        exitCode: 0,
+        passed: true,
+        stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
+        stderr: "",
+        summary: "Verification passed.",
+      })),
     ]);
     const runtime = await startUiRuntimeServer({
       sessionState,
@@ -2440,7 +2314,7 @@ describe("ui runtime contract", () => {
       runtimeDependencies: {
         async createRawLoopOptions() {
           return {
-            client,
+            modelAdapter,
           };
         },
       },
@@ -2686,79 +2560,43 @@ describe("ui runtime contract", () => {
       targetDirectory,
       discovery,
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_read_file_preview",
-            name: "read_file",
-            input: {
-              path: "package.json",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read_file_preview",
+          name: "read_file",
+          input: {
+            path: "package.json",
           },
-          {
-            type: "tool_use",
-            id: "toolu_edit_block_preview",
-            name: "edit_block",
-            input: {
-              path: "package.json",
-              old_string: '  "name": "ui-preview-target",',
-              new_string: '  "name": "ui-preview-target-edited",',
-            },
-            caller: {
-              type: "direct",
-            },
+        },
+        {
+          id: "toolu_edit_block_preview",
+          name: "edit_block",
+          input: {
+            path: "package.json",
+            old_string: '  "name": "ui-preview-target",',
+            new_string: '  "name": "ui-preview-target-edited",',
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Preview-ready edit complete.",
-            citations: null,
+        },
+      ]),
+      createFakeTextTurnResult("Preview-ready edit complete."),
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_run_command_preview",
+          name: "run_command",
+          input: {
+            command: "git diff --stat",
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_run_command_preview",
-            name: "run_command",
-            input: {
-              command: "git diff --stat",
-            },
-            caller: {
-              type: "direct",
-            },
-          },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              command: "git diff --stat",
-              exitCode: 0,
-              passed: true,
-              stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
-              stderr: "",
-              summary: "Verification passed.",
-            }),
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        command: "git diff --stat",
+        exitCode: 0,
+        passed: true,
+        stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
+        stderr: "",
+        summary: "Verification passed.",
+      })),
     ]);
     const runtime = await startUiRuntimeServer({
       sessionState,
@@ -2769,7 +2607,7 @@ describe("ui runtime contract", () => {
       runtimeDependencies: {
         async createRawLoopOptions() {
           return {
-            client,
+            modelAdapter,
           };
         },
       },
@@ -2908,79 +2746,43 @@ describe("ui runtime contract", () => {
       targetDirectory,
       discovery,
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_read_file_starter_canvas",
-            name: "read_file",
-            input: {
-              path: "package.json",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read_file_starter_canvas",
+          name: "read_file",
+          input: {
+            path: "package.json",
           },
-          {
-            type: "tool_use",
-            id: "toolu_edit_block_starter_canvas",
-            name: "edit_block",
-            input: {
-              path: "package.json",
-              old_string: '  "name": "ui-starter-preview",',
-              new_string: '  "name": "ui-starter-preview-ready",',
-            },
-            caller: {
-              type: "direct",
-            },
+        },
+        {
+          id: "toolu_edit_block_starter_canvas",
+          name: "edit_block",
+          input: {
+            path: "package.json",
+            old_string: '  "name": "ui-starter-preview",',
+            new_string: '  "name": "ui-starter-preview-ready",',
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Starter canvas target updated.",
-            citations: null,
+        },
+      ]),
+      createFakeTextTurnResult("Starter canvas target updated."),
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_run_command_starter_canvas",
+          name: "run_command",
+          input: {
+            command: "git diff --stat",
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_run_command_starter_canvas",
-            name: "run_command",
-            input: {
-              command: "git diff --stat",
-            },
-            caller: {
-              type: "direct",
-            },
-          },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              command: "git diff --stat",
-              exitCode: 0,
-              passed: true,
-              stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
-              stderr: "",
-              summary: "Verification passed.",
-            }),
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        command: "git diff --stat",
+        exitCode: 0,
+        passed: true,
+        stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
+        stderr: "",
+        summary: "Verification passed.",
+      })),
     ]);
     const runtime = await startUiRuntimeServer({
       sessionState,
@@ -2991,7 +2793,7 @@ describe("ui runtime contract", () => {
       runtimeDependencies: {
         async createRawLoopOptions() {
           return {
-            client,
+            modelAdapter,
           };
         },
       },
@@ -3237,7 +3039,7 @@ describe("ui runtime contract", () => {
       targetDirectory,
       discovery,
     });
-    const client = createAbortAwareMockAnthropicClient({
+    const modelAdapter = createAbortAwareFakeModelAdapter({
       followUpText: "Follow-up browser turn complete.",
     });
     const runtime = await startUiRuntimeServer({
@@ -3250,7 +3052,7 @@ describe("ui runtime contract", () => {
       runtimeDependencies: {
         async createRawLoopOptions() {
           return {
-            client,
+            modelAdapter,
           };
         },
       },
@@ -3664,80 +3466,44 @@ describe("ui runtime contract", () => {
       targetDirectory,
       discovery,
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_read_file_auto_deploy",
-            name: "read_file",
-            input: {
-              path: "package.json",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read_file_auto_deploy",
+          name: "read_file",
+          input: {
+            path: "package.json",
           },
-          {
-            type: "tool_use",
-            id: "toolu_edit_block_auto_deploy",
-            name: "edit_block",
-            input: {
-              path: "package.json",
-              old_string: '  "name": "ui-auto-deploy-target",',
-              new_string: '  "name": "ui-auto-deploy-target-updated",',
-            },
-            caller: {
-              type: "direct",
-            },
+        },
+        {
+          id: "toolu_edit_block_auto_deploy",
+          name: "edit_block",
+          input: {
+            path: "package.json",
+            old_string: '  "name": "ui-auto-deploy-target",',
+            new_string: '  "name": "ui-auto-deploy-target-updated",',
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Updated the target package metadata.",
-            citations: null,
+        },
+      ]),
+      createFakeTextTurnResult("Updated the target package metadata."),
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_run_command_auto_deploy",
+          name: "run_command",
+          input: {
+            command: "git diff --stat",
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_run_command_auto_deploy",
-            name: "run_command",
-            input: {
-              command: "git diff --stat",
-            },
-            caller: {
-              type: "direct",
-            },
-          },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              command: "git diff --stat",
-              exitCode: 0,
-              passed: true,
-              stdout:
-                " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
-              stderr: "",
-              summary: "Verification passed.",
-            }),
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        command: "git diff --stat",
+        exitCode: 0,
+        passed: true,
+        stdout:
+          " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
+        stderr: "",
+        summary: "Verification passed.",
+      })),
     ]);
     const deployInvocations: Array<{
       platform: string;
@@ -3752,7 +3518,7 @@ describe("ui runtime contract", () => {
       runtimeDependencies: {
         async createRawLoopOptions() {
           return {
-            client,
+            modelAdapter,
           };
         },
       },
@@ -4084,17 +3850,8 @@ describe("ui runtime contract", () => {
       targetDirectory,
       discovery,
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Uploaded context received.",
-            citations: null,
-          },
-        ],
-      }),
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult("Uploaded context received."),
     ]);
     const runtime = await startUiRuntimeServer({
       sessionState,
@@ -4105,7 +3862,7 @@ describe("ui runtime contract", () => {
       runtimeDependencies: {
         async createRawLoopOptions() {
           return {
-            client,
+            modelAdapter,
           };
         },
       },

@@ -4,25 +4,18 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-import type {
-  Message,
-  MessageCreateParamsNonStreaming,
-  Model,
-} from "@anthropic-ai/sdk/resources/messages";
 import WebSocket from "ws";
 
 import { discoverTarget } from "../../src/context/discovery.js";
-import { DEFAULT_ANTHROPIC_MODEL } from "../../src/engine/anthropic.js";
 import { createSessionState } from "../../src/engine/state.js";
 import type { BackendToFrontendMessage } from "../../src/ui/contracts.js";
 import { startUiRuntimeServer } from "../../src/ui/server.js";
+import {
+  createFakeModelAdapter,
+  createFakeTextTurnResult,
+  createFakeToolCallTurnResult,
+} from "../support/fake-model-adapter.js";
 import { scaffoldPreviewableTarget } from "../support/preview-target.js";
-
-interface MockAnthropicClient {
-  messages: {
-    create: (request: MessageCreateParamsNonStreaming) => Promise<Message>;
-  };
-}
 
 interface RawCommandResult {
   stdout: string;
@@ -90,49 +83,6 @@ async function initializeGitRepository(cwd: string): Promise<void> {
   await expectRawCommandSuccess(cwd, "git init");
   await expectRawCommandSuccess(cwd, "git config user.email shipyard@example.com");
   await expectRawCommandSuccess(cwd, "git config user.name 'Shipyard Tests'");
-}
-
-function createAssistantMessage(options: {
-  content: unknown[];
-  stopReason: Message["stop_reason"];
-  model?: Model;
-}): Message {
-  return {
-    id: `msg_${Math.random().toString(36).slice(2)}`,
-    container: null,
-    content: options.content as Message["content"],
-    model: options.model ?? DEFAULT_ANTHROPIC_MODEL,
-    role: "assistant",
-    stop_reason: options.stopReason,
-    stop_sequence: null,
-    type: "message",
-    usage: {
-      cache_creation: null,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-      inference_geo: null,
-      input_tokens: 42,
-      output_tokens: 19,
-      server_tool_use: null,
-      service_tier: "standard",
-    },
-  };
-}
-
-function createMockAnthropicClient(responses: Message[]): MockAnthropicClient {
-  let callIndex = 0;
-
-  return {
-    messages: {
-      async create() {
-        const response = responses[callIndex];
-        callIndex += 1;
-
-        assert(response, "No mock Claude response configured.");
-        return response;
-      },
-    },
-  };
 }
 
 async function waitForSocketOpen(socket: WebSocket): Promise<void> {
@@ -229,46 +179,26 @@ async function runPreviewableScenario(): Promise<PreviewScenarioResult> {
       targetDirectory,
       discovery,
     });
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_read_file_preview",
-            name: "read_file",
-            input: {
-              path: "package.json",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read_file_preview",
+          name: "read_file",
+          input: {
+            path: "package.json",
           },
-          {
-            type: "tool_use",
-            id: "toolu_edit_block_preview",
-            name: "edit_block",
-            input: {
-              path: "package.json",
-              old_string: '  "name": "phase5-preview-target",',
-              new_string: '  "name": "phase5-preview-target-updated",',
-            },
-            caller: {
-              type: "direct",
-            },
+        },
+        {
+          id: "toolu_edit_block_preview",
+          name: "edit_block",
+          input: {
+            path: "package.json",
+            old_string: '  "name": "phase5-preview-target",',
+            new_string: '  "name": "phase5-preview-target-updated",',
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Preview smoke edit complete.",
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult("Preview smoke edit complete."),
     ]);
     const runtime = await startUiRuntimeServer({
       sessionState,
@@ -279,7 +209,7 @@ async function runPreviewableScenario(): Promise<PreviewScenarioResult> {
       runtimeDependencies: {
         async createRawLoopOptions() {
           return {
-            client,
+            modelAdapter,
           };
         },
       },
