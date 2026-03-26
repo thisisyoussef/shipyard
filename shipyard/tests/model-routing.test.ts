@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_OPENAI_MODEL } from "../src/engine/openai.js";
 import {
   CODE_PHASE_MODEL_ROUTE,
   PLANNER_MODEL_ROUTE,
   TARGET_ENRICHMENT_MODEL_ROUTE,
   TARGET_MANAGER_PHASE_MODEL_ROUTE,
+  createModelAdapterForRoute,
   createModelRoutingConfig,
   resolveModelRoute,
   resolveModelRouteCapability,
@@ -112,5 +114,37 @@ describe("model routing", () => {
       missingEnvironmentVariables: ["ANTHROPIC_API_KEY"],
       reason: expect.stringMatching(/ANTHROPIC_API_KEY/i),
     });
+  });
+
+  it("resolves the OpenAI provider to a registered adapter with a default model", () => {
+    const env = {
+      OPENAI_API_KEY: "test-openai-key",
+    } as NodeJS.ProcessEnv;
+    const routing = createModelRoutingConfig({
+      defaultRoute: {
+        provider: "openai",
+      },
+      env,
+    });
+
+    expect(
+      resolveModelRoute({
+        routing,
+        routeId: CODE_PHASE_MODEL_ROUTE,
+        env,
+      }),
+    ).toMatchObject({
+      provider: "openai",
+      model: DEFAULT_OPENAI_MODEL,
+    });
+
+    const selection = createModelAdapterForRoute({
+      routing,
+      routeId: CODE_PHASE_MODEL_ROUTE,
+      env,
+    });
+
+    expect(selection.modelAdapter.provider).toBe("openai");
+    expect(selection.model).toBe(DEFAULT_OPENAI_MODEL);
   });
 });
