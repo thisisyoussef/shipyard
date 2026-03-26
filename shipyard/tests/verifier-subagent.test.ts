@@ -576,7 +576,7 @@ describe("verifier subagent", () => {
     const directory = await createTempProject();
     const command =
       "node -e \"console.log('VITE v5.0.8 ready in 145 ms'); console.log('Local: http://127.0.0.1:4173/'); setTimeout(() => {}, 2000)\"";
-    const client = createMockAnthropicClient([
+    const modelAdapter = createFakeModelAdapter([
       ...createVerifierCommandResponses({
         toolUseId: "toolu_preview_ready_timeout",
         command,
@@ -590,7 +590,7 @@ describe("verifier subagent", () => {
     ]);
 
     const result = await runVerifierSubagent(command, directory, {
-      client,
+      modelAdapter,
       logger: {
         log() {},
       },
