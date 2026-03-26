@@ -62,3 +62,18 @@ Capture failures so they are not repeated.
 - **Example**: Sending a continuation into read-only subagents even though the same session just bootstrapped or edited the relevant files
 - **Why it failed**: Shipyard pays extra model hops, hides tool activity from the operator, and burns the same loop budget on work it already knows how to scope locally.
 - **Prevention rule**: Reuse recent target-file evidence from bootstrap, edits, active tasks, and prior plans before escalating, and surface any remaining subagent work through the outer reporter path.
+
+- **Problem**: Compacting away every recent write-heavy turn right after a large generation step
+- **Example**: Letting raw-loop compaction drop the preserved write tail to zero after a big `write_file`, so the next turns fall back to `list_files` and re-read the files Shipyard just created.
+- **Why it failed**: The runtime saves characters by deleting the only concrete memory of new files, so later turns spend budget rebuilding orientation instead of finishing the feature.
+- **Prevention rule**: Store history-safe digests for completed write-heavy turns and always preserve at least one recent write-context tail within the compaction budget.
+
+- **Problem**: Treating the acting-iteration threshold as a terminal failure instead of a continuation checkpoint
+- **Example**: Throwing from the raw loop at 25 iterations and mapping that exception to `status: failed` even though a typed handoff contract already exists.
+- **Why it failed**: Long greenfield work looks broken to the operator and discards the checkpoint/resume system at the exact moment it is most useful.
+- **Prevention rule**: Emit a continuation or handoff result when the only issue is loop length, reserve `failed` for genuine runtime errors, and bound continuation with a higher-level wall-clock or turn budget.
+
+- **Problem**: Letting discovery and bootstrap disagree about doc-seeded targets
+- **Example**: `bootstrap_target` allows `AGENTS.md` or `README.md`, but discovery marks the same directory as non-greenfield and routes it into broad exploration loops.
+- **Why it failed**: Near-empty targets pay the cost of existing-repo discovery without any real code to discover.
+- **Prevention rule**: Use one shared bootstrap-ready rule or explicit flag across discovery, coordinator routing, and target bootstrap checks.
