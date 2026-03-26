@@ -510,6 +510,167 @@ describe("Phase 4 graph runtime contract", () => {
     expect(update.status).toBe("responding");
   });
 
+  it("verify node falls back to file-presence checks for greenfield targets without install markers", async () => {
+    const directory = await createTempProject();
+    const appPath = path.join(directory, "apps", "web", "src", "App.tsx");
+
+    await mkdir(path.dirname(appPath), { recursive: true });
+    await writeFile(appPath, "export function App() { return null; }\n", "utf8");
+
+    const contextEnvelope = createContextEnvelope();
+
+    contextEnvelope.stable.discovery = {
+      ...contextEnvelope.stable.discovery,
+      isGreenfield: true,
+      packageManager: null,
+      scripts: {},
+      topLevelFiles: [],
+      topLevelDirectories: [],
+      projectName: null,
+    };
+    contextEnvelope.stable.availableScripts = {};
+
+    const expectedCommand =
+      "test -f 'apps/web/src/App.tsx' && echo 'Edited file exists: apps/web/src/App.tsx'";
+    const runVerifierSubagent = vi.fn(async (input: string | EvaluationPlan) => ({
+      command: typeof input === "string" ? input : input.checks[0]?.command ?? "",
+      exitCode: 0,
+      passed: true,
+      stdout: "Edited file exists: apps/web/src/App.tsx\n",
+      stderr: "",
+      summary: "Verification passed.",
+      evaluationPlan: typeof input === "string" ? undefined : input,
+      checks: [],
+      firstHardFailure: null,
+      browserEvaluationReport: null,
+    }));
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runVerifierSubagent,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Bootstrap the target and update App.tsx",
+      contextEnvelope,
+      previewState: createPreviewState(),
+      targetDirectory: directory,
+      phaseConfig: createCodePhase(),
+      lastEditedFile: "apps/web/src/App.tsx",
+    });
+
+    const update = await nodes.verify(state);
+    const verifierCall = runVerifierSubagent.mock.calls.at(0)?.[0] as
+      | EvaluationPlan
+      | undefined;
+
+    expect(verifierCall).toEqual({
+      summary: "Run the verification command.",
+      checks: [
+        {
+          id: "check-1",
+          label: "Confirm apps/web/src/App.tsx still exists",
+          kind: "command",
+          command: expectedCommand,
+          required: true,
+        },
+      ],
+    });
+    expect(update.verificationReport).toEqual({
+      command: expectedCommand,
+      exitCode: 0,
+      passed: true,
+      stdout: "Edited file exists: apps/web/src/App.tsx\n",
+      stderr: "",
+      summary: "Verification passed.",
+      evaluationPlan: {
+        summary: "Run the verification command.",
+        checks: [
+          {
+            id: "check-1",
+            label: "Confirm apps/web/src/App.tsx still exists",
+            kind: "command",
+            command: expectedCommand,
+            required: true,
+          },
+        ],
+      },
+      checks: [],
+      firstHardFailure: null,
+      browserEvaluationReport: null,
+    });
+    expect(update.status).toBe("responding");
+  });
+
+  it("verify node avoids package-script verification when package manifests changed without an install", async () => {
+    const directory = await createTempProject();
+    const appPath = path.join(directory, "apps", "web", "src", "App.tsx");
+
+    await mkdir(path.dirname(appPath), { recursive: true });
+    await writeFile(appPath, "export function App() { return null; }\n", "utf8");
+
+    const contextEnvelope = createContextEnvelope();
+
+    contextEnvelope.stable.discovery = {
+      ...contextEnvelope.stable.discovery,
+      isGreenfield: false,
+      scripts: {
+        typecheck: "tsc -p tsconfig.json",
+        build: "vite build",
+      },
+      topLevelFiles: ["package.json", "pnpm-workspace.yaml"],
+      topLevelDirectories: ["apps", "packages"],
+    };
+    contextEnvelope.stable.availableScripts = {
+      typecheck: "tsc -p tsconfig.json",
+      build: "vite build",
+    };
+    contextEnvelope.session.recentTouchedFiles = [
+      "package.json",
+      "apps/web/src/App.tsx",
+    ];
+
+    const expectedCommand =
+      "test -f 'apps/web/src/App.tsx' && echo 'Edited file exists: apps/web/src/App.tsx'";
+    const runVerifierSubagent = vi.fn(async (input: string | EvaluationPlan) => ({
+      command: typeof input === "string" ? input : input.checks[0]?.command ?? "",
+      exitCode: 0,
+      passed: true,
+      stdout: "Edited file exists: apps/web/src/App.tsx\n",
+      stderr: "",
+      summary: "Verification passed.",
+      evaluationPlan: typeof input === "string" ? undefined : input,
+      checks: [],
+      firstHardFailure: null,
+      browserEvaluationReport: null,
+    }));
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runVerifierSubagent,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Continue the scaffolded app",
+      contextEnvelope,
+      previewState: createPreviewState(),
+      targetDirectory: directory,
+      phaseConfig: createCodePhase(),
+      lastEditedFile: "apps/web/src/App.tsx",
+    });
+
+    const update = await nodes.verify(state);
+    const verifierCall = runVerifierSubagent.mock.calls.at(0)?.[0] as
+      | EvaluationPlan
+      | undefined;
+
+    expect(verifierCall?.checks.map((check) => check.command)).toEqual([
+      expectedCommand,
+    ]);
+    expect(update.verificationReport?.command).toBe(expectedCommand);
+    expect(update.status).toBe("responding");
+  });
+
   it("verify node runs multi-check verification and browser evaluation for previewable UI work", async () => {
     const contextEnvelope = createContextEnvelope();
 
@@ -1006,7 +1167,7 @@ describe("Phase 4 graph runtime contract", () => {
           plannedSteps: [
             "Read the relevant files before editing.",
             "Implement the dashboard shell.",
-            "Verify the result after the edit.",
+            "Leave command-based verification to the verifier after the edit unless shell output is required now.",
           ],
         },
       },

@@ -1,28 +1,61 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { resolveAnthropicConfig } from "../../src/engine/anthropic.js";
+import type { HarnessRouteSummary } from "../../src/artifacts/types.js";
 import {
-  createTranscriptCollector,
-  extractToolCallsFromTranscript,
-  verifySurgicalEdit,
-} from "../../src/engine/live-verification.js";
-import { runRawToolLoop } from "../../src/engine/raw-loop.js";
+  resolveAnthropicConfig,
+  resolveAnthropicRuntimeConfig,
+} from "../../src/engine/anthropic.js";
+import { createTranscriptCollector } from "../../src/engine/live-verification.js";
+import { createSessionState, getSessionFilePath } from "../../src/engine/state.js";
 import {
-  CODE_PHASE_TOOL_NAMES,
-  createCodePhase,
-} from "../../src/phases/code/index.js";
+  createInstructionRuntimeState,
+  executeInstructionTurn,
+  type InstructionTurnReporter,
+} from "../../src/engine/turn.js";
 import { clearTrackedReadHashes } from "../../src/tools/index.js";
 
-interface ScenarioResult {
+interface TurnArtifacts {
+  rawTranscriptPath: string;
+  eventTranscriptPath: string;
+}
+
+interface TurnResultSummary {
   name: string;
+  status: "success" | "error" | "cancelled";
   finalText: string;
   toolCalls: string[];
-  transcriptPath: string;
+  harnessRoute: HarnessRouteSummary;
+  rawTranscriptPath: string;
+  eventTranscriptPath: string;
+  traceUrl: string | null;
 }
+
+interface ScenarioResult {
+  targetDirectory: string;
+  sessionFilePath: string;
+  runtimeConfig: ReturnType<typeof resolveAnthropicRuntimeConfig>;
+  turns: TurnResultSummary[];
+  recentTouchedFiles: string[];
+  summaryPath: string;
+}
+
+const BOOTSTRAP_AND_LARGE_WRITE_INSTRUCTION = [
+  "Bootstrap this target with the shared workspace scaffold.",
+  "Then create apps/web/src/lib/seed-data.ts exporting at least 120 issue-like records.",
+  "Each record must include id, title, status, assignee, estimate, dueDate, and tags.",
+  "After that, update apps/web/src/App.tsx so the app renders a compact summary of that seed data on first load.",
+  "Keep the large data payload in the dedicated seed-data file instead of inlining it into the component.",
+].join("\n");
+
+const FOLLOW_UP_CONTINUATION_INSTRUCTION = [
+  "Continue the same scaffolded app.",
+  "Group the seed data by status, render totals for each status, and list the next three due items.",
+  "Keep the change scoped to the files you just created or touched unless a re-read shows another file is necessary.",
+].join("\n");
 
 async function ensureAnthropicKey(): Promise<void> {
   resolveAnthropicConfig();
@@ -32,220 +65,298 @@ async function createScenarioDirectory(name: string): Promise<string> {
   return mkdtemp(path.join(tmpdir(), `shipyard-${name}-`));
 }
 
-async function writeTranscriptFile(
+async function writeTextFile(
   directory: string,
   fileName: string,
   lines: string[],
 ): Promise<string> {
-  const transcriptPath = path.join(directory, fileName);
-  await writeFile(transcriptPath, `${lines.join("\n")}\n`, "utf8");
-  return transcriptPath;
+  const filePath = path.join(directory, fileName);
+  await writeFile(filePath, `${lines.join("\n")}\n`, "utf8");
+  return filePath;
 }
 
-function printScenarioResult(result: ScenarioResult): void {
+async function writeJsonFile(
+  directory: string,
+  fileName: string,
+  value: unknown,
+): Promise<string> {
+  const filePath = path.join(directory, fileName);
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  return filePath;
+}
+
+function createTurnReporterCollector(): {
+  eventLines: string[];
+  toolCalls: string[];
+  reporter: InstructionTurnReporter;
+} {
+  const eventLines: string[] = [];
+  const toolCalls: string[] = [];
+
+  return {
+    eventLines,
+    toolCalls,
+    reporter: {
+      onThinking(message) {
+        eventLines.push(`[thinking] ${message}`);
+      },
+      onToolCall(event) {
+        toolCalls.push(event.toolName);
+        eventLines.push(`[tool_call] ${event.toolName} ${event.summary}`);
+      },
+      onToolResult(event) {
+        eventLines.push(
+          `[tool_result] ${event.toolName} ${event.success ? "success" : "failure"} ${event.summary}`,
+        );
+      },
+      onEdit(event) {
+        eventLines.push(`[edit] ${event.path} ${event.summary}`);
+      },
+      onText(text) {
+        eventLines.push(`[text] ${text}`);
+      },
+      onError(message) {
+        eventLines.push(`[error] ${message}`);
+      },
+      onDone(event) {
+        eventLines.push(`[done] ${event.status} ${event.summary}`);
+      },
+    },
+  };
+}
+
+function printTurnResult(result: TurnResultSummary): void {
   console.log(`[live-smoke] ${result.name}`);
+  console.log(`  status: ${result.status}`);
   console.log(`  tools: ${result.toolCalls.join(", ")}`);
-  console.log(`  transcript: ${result.transcriptPath}`);
+  console.log(`  route: ${result.harnessRoute.selectedPath}`);
+  console.log(`  explorer/planner: ${String(result.harnessRoute.usedExplorer)}/${String(result.harnessRoute.usedPlanner)}`);
+  console.log(`  raw transcript: ${result.rawTranscriptPath}`);
+  console.log(`  event transcript: ${result.eventTranscriptPath}`);
+  console.log(`  trace: ${result.traceUrl ?? "(none)"}`);
   console.log(`  final: ${result.finalText}`);
 }
 
-async function runReadScenario(systemPrompt: string): Promise<ScenarioResult> {
-  clearTrackedReadHashes();
-  const directory = await createScenarioDirectory("phase3-read-");
-  const relativePath = "src/demo.ts";
-  const source = [
-    "export function alpha() {",
-    '  return "alpha";',
-    "}",
-    "",
-    "export function beta() {",
-    '  return "beta";',
-    "}",
-    "",
-    "export function gamma() {",
-    '  return "gamma";',
-    "}",
-    "",
-  ].join("\n");
-
-  await mkdir(path.join(directory, "src"), { recursive: true });
-  await writeFile(path.join(directory, relativePath), source, "utf8");
-
-  const transcript = createTranscriptCollector();
-  const finalText = await runRawToolLoop(
-    systemPrompt,
-    [
-      "Read src/demo.ts and tell me which exported functions are defined.",
-      "Use the available tools to inspect the file before answering.",
-    ].join("\n"),
-    CODE_PHASE_TOOL_NAMES,
-    directory,
-    {
-      logger: transcript.logger,
-    },
+async function persistTurnArtifacts(options: {
+  directory: string;
+  prefix: string;
+  rawLines: string[];
+  eventLines: string[];
+}): Promise<TurnArtifacts> {
+  const rawTranscriptPath = await writeTextFile(
+    options.directory,
+    `${options.prefix}-raw.log`,
+    options.rawLines,
   );
-  const toolCalls = extractToolCallsFromTranscript(transcript.lines);
-  const transcriptPath = await writeTranscriptFile(
-    directory,
-    "read-transcript.log",
-    transcript.lines,
+  const eventTranscriptPath = await writeTextFile(
+    options.directory,
+    `${options.prefix}-events.log`,
+    options.eventLines,
   );
-
-  assert(toolCalls.includes("read_file"), "Read scenario did not use read_file.");
-  assert.match(finalText, /alpha/i);
-  assert.match(finalText, /beta/i);
-  assert.match(finalText, /gamma/i);
 
   return {
-    name: "read",
-    finalText,
-    toolCalls,
-    transcriptPath,
+    rawTranscriptPath,
+    eventTranscriptPath,
   };
 }
 
-async function runSurgicalEditScenario(systemPrompt: string): Promise<ScenarioResult> {
+async function runRuntimeHardeningScenario(): Promise<ScenarioResult> {
   clearTrackedReadHashes();
-  const directory = await createScenarioDirectory("phase3-surgical-");
-  const relativePath = "src/math.ts";
-  const beforeContents = [
-    "export function add(a: number, b: number) {",
-    "  return a + b;",
-    "}",
-    "",
-    "export function multiply(a: number, b: number) {",
-    "  return a * b;",
-    "}",
-    "",
-    "export function label() {",
-    '  return "stable";',
-    "}",
-    "",
-  ].join("\n");
-  const oldBlock = [
-    "export function multiply(a: number, b: number) {",
-    "  return a * b;",
-    "}",
-  ].join("\n");
-  const newBlock = [
-    "export function multiply(a: number, b: number) {",
-    "  return a * b * 2;",
-    "}",
-  ].join("\n");
+  const targetDirectory = await createScenarioDirectory("phase3-runtime-hardening-");
+  await writeFile(
+    path.join(targetDirectory, "AGENTS.md"),
+    "Prefer the smallest possible changes and re-read files before editing them.\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(targetDirectory, "README.md"),
+    "Seed docs for the runtime hardening live smoke.\n",
+    "utf8",
+  );
 
-  await mkdir(path.join(directory, "src"), { recursive: true });
-  await writeFile(path.join(directory, relativePath), beforeContents, "utf8");
-
-  const transcript = createTranscriptCollector();
-  const finalText = await runRawToolLoop(
-    systemPrompt,
-    [
-      "Update src/math.ts so only the existing multiply function changes.",
-      "Change it to return a * b * 2.",
-      "Do not rewrite the file or recreate it. Read the file first, then make a surgical edit to the existing file.",
-    ].join("\n"),
-    CODE_PHASE_TOOL_NAMES,
-    directory,
-    {
-      logger: transcript.logger,
+  const runtimeConfig = resolveAnthropicRuntimeConfig();
+  const sessionState = createSessionState({
+    sessionId: "phase3-runtime-hardening-smoke",
+    targetDirectory,
+    discovery: {
+      isGreenfield: true,
+      language: null,
+      framework: null,
+      packageManager: null,
+      scripts: {},
+      hasReadme: true,
+      hasAgentsMd: true,
+      topLevelFiles: ["AGENTS.md", "README.md"],
+      topLevelDirectories: [],
+      projectName: "phase3-runtime-hardening-smoke",
     },
-  );
-  const toolCalls = extractToolCallsFromTranscript(transcript.lines);
-  const afterContents = await readFile(path.join(directory, relativePath), "utf8");
-  const verification = verifySurgicalEdit(
-    beforeContents,
-    afterContents,
-    oldBlock,
-    newBlock,
-  );
-  const transcriptPath = await writeTranscriptFile(
-    directory,
-    "surgical-edit-transcript.log",
-    transcript.lines,
+  });
+
+  let activeRawTranscript = createTranscriptCollector();
+  const runtimeState = createInstructionRuntimeState({
+    projectRules: "",
+    runtimeDependencies: {
+      createRawLoopOptions: () => ({
+        logger: activeRawTranscript.logger,
+      }),
+    },
+  });
+
+  activeRawTranscript = createTranscriptCollector();
+  const bootstrapCollector = createTurnReporterCollector();
+  const bootstrapTurn = await executeInstructionTurn({
+    sessionState,
+    runtimeState,
+    instruction: BOOTSTRAP_AND_LARGE_WRITE_INSTRUCTION,
+    reporter: bootstrapCollector.reporter,
+  });
+  const bootstrapArtifacts = await persistTurnArtifacts({
+    directory: targetDirectory,
+    prefix: "turn-1-bootstrap-large-write",
+    rawLines: activeRawTranscript.lines,
+    eventLines: bootstrapCollector.eventLines,
+  });
+  const seedDataPath = path.join(
+    targetDirectory,
+    "apps",
+    "web",
+    "src",
+    "lib",
+    "seed-data.ts",
   );
 
-  assert(toolCalls.includes("read_file"), "Surgical edit scenario did not read the file first.");
-  assert(toolCalls.includes("edit_block"), "Surgical edit scenario did not use edit_block.");
-  assert(!toolCalls.includes("write_file"), "Surgical edit scenario incorrectly used write_file.");
+  assert.equal(bootstrapTurn.status, "success");
+  assert(
+    bootstrapCollector.toolCalls.includes("bootstrap_target"),
+    "Bootstrap turn did not use bootstrap_target.",
+  );
+  assert(
+    bootstrapCollector.toolCalls.includes("write_file"),
+    "Bootstrap turn did not create any new file with write_file.",
+  );
+  await access(seedDataPath);
+  const seedDataContents = await readFile(seedDataPath, "utf8");
+  assert(
+    seedDataContents.split("\n").length >= 120,
+    "Bootstrap turn did not leave behind a large enough seed-data file.",
+  );
+
+  activeRawTranscript = createTranscriptCollector();
+  const followUpCollector = createTurnReporterCollector();
+  const followUpTurn = await executeInstructionTurn({
+    sessionState,
+    runtimeState,
+    instruction: FOLLOW_UP_CONTINUATION_INSTRUCTION,
+    reporter: followUpCollector.reporter,
+  });
+  const followUpArtifacts = await persistTurnArtifacts({
+    directory: targetDirectory,
+    prefix: "turn-2-follow-up",
+    rawLines: activeRawTranscript.lines,
+    eventLines: followUpCollector.eventLines,
+  });
+
+  assert.equal(followUpTurn.status, "success");
   assert.equal(
-    verification.changedOnlyTarget,
-    true,
-    `Surgical edit changed bytes outside the target block. Verification: ${JSON.stringify(verification)}`,
+    followUpTurn.harnessRoute.usedExplorer,
+    false,
+    "Follow-up turn escalated into explorer unexpectedly.",
   );
-  assert.match(afterContents, /return a \* b \* 2;/);
+  assert.equal(
+    followUpTurn.harnessRoute.usedPlanner,
+    false,
+    "Follow-up turn escalated into planner unexpectedly.",
+  );
+  assert(
+    sessionState.recentTouchedFiles.includes("apps/web/src/lib/seed-data.ts"),
+    "Recent touched files did not retain the large write target.",
+  );
 
-  return {
-    name: "surgical-edit",
-    finalText,
-    toolCalls,
-    transcriptPath,
-  };
-}
-
-async function runGreenfieldScenario(systemPrompt: string): Promise<ScenarioResult> {
-  clearTrackedReadHashes();
-  const directory = await createScenarioDirectory("phase3-greenfield-");
-  const relativePath = "src/greeting.ts";
-
-  const transcript = createTranscriptCollector();
-  const finalText = await runRawToolLoop(
-    systemPrompt,
-    [
-      "This target directory is empty.",
-      "Create src/greeting.ts exporting a function named greet that returns the string \"hello from shipyard\".",
-    ].join("\n"),
-    CODE_PHASE_TOOL_NAMES,
-    directory,
+  const summaryPath = await writeJsonFile(
+    targetDirectory,
+    "phase3-live-loop-smoke-summary.json",
     {
-      logger: transcript.logger,
+      targetDirectory,
+      sessionFilePath: getSessionFilePath(targetDirectory, sessionState.sessionId),
+      runtimeConfig,
+      recentTouchedFiles: sessionState.recentTouchedFiles,
+      turns: [
+        {
+          name: "bootstrap-large-write",
+          status: bootstrapTurn.status,
+          finalText: bootstrapTurn.finalText,
+          toolCalls: bootstrapCollector.toolCalls,
+          harnessRoute: bootstrapTurn.harnessRoute,
+          rawTranscriptPath: bootstrapArtifacts.rawTranscriptPath,
+          eventTranscriptPath: bootstrapArtifacts.eventTranscriptPath,
+          traceUrl: bootstrapTurn.langSmithTrace?.traceUrl ?? null,
+        },
+        {
+          name: "follow-up",
+          status: followUpTurn.status,
+          finalText: followUpTurn.finalText,
+          toolCalls: followUpCollector.toolCalls,
+          harnessRoute: followUpTurn.harnessRoute,
+          rawTranscriptPath: followUpArtifacts.rawTranscriptPath,
+          eventTranscriptPath: followUpArtifacts.eventTranscriptPath,
+          traceUrl: followUpTurn.langSmithTrace?.traceUrl ?? null,
+        },
+      ],
     },
   );
-  const toolCalls = extractToolCallsFromTranscript(transcript.lines);
-  const createdFilePath = path.join(directory, relativePath);
-  const transcriptPath = await writeTranscriptFile(
-    directory,
-    "greenfield-transcript.log",
-    transcript.lines,
-  );
-
-  await access(createdFilePath);
-  const createdContents = await readFile(createdFilePath, "utf8");
-
-  assert(toolCalls.includes("write_file"), "Greenfield scenario did not use write_file.");
-  assert.match(createdContents, /export function greet/i);
-  assert.match(createdContents, /hello from shipyard/i);
 
   return {
-    name: "greenfield",
-    finalText,
-    toolCalls,
-    transcriptPath,
+    targetDirectory,
+    sessionFilePath: getSessionFilePath(targetDirectory, sessionState.sessionId),
+    runtimeConfig,
+    recentTouchedFiles: [...sessionState.recentTouchedFiles],
+    summaryPath,
+    turns: [
+      {
+        name: "bootstrap-large-write",
+        status: bootstrapTurn.status,
+        finalText: bootstrapTurn.finalText,
+        toolCalls: bootstrapCollector.toolCalls,
+        harnessRoute: bootstrapTurn.harnessRoute,
+        rawTranscriptPath: bootstrapArtifacts.rawTranscriptPath,
+        eventTranscriptPath: bootstrapArtifacts.eventTranscriptPath,
+        traceUrl: bootstrapTurn.langSmithTrace?.traceUrl ?? null,
+      },
+      {
+        name: "follow-up",
+        status: followUpTurn.status,
+        finalText: followUpTurn.finalText,
+        toolCalls: followUpCollector.toolCalls,
+        harnessRoute: followUpTurn.harnessRoute,
+        rawTranscriptPath: followUpArtifacts.rawTranscriptPath,
+        eventTranscriptPath: followUpArtifacts.eventTranscriptPath,
+        traceUrl: followUpTurn.langSmithTrace?.traceUrl ?? null,
+      },
+    ],
   };
 }
 
 async function main(): Promise<void> {
   await ensureAnthropicKey();
 
-  const systemPrompt = createCodePhase().systemPrompt;
-  const results: ScenarioResult[] = [];
+  const result = await runRuntimeHardeningScenario();
 
-  try {
-    results.push(await runReadScenario(systemPrompt));
-    results.push(await runSurgicalEditScenario(systemPrompt));
-    results.push(await runGreenfieldScenario(systemPrompt));
-  } finally {
-    // Keep fixture directories for local inspection when the script succeeds or fails.
-  }
+  console.log("[live-smoke] Phase 3 runtime-hardening graph verification passed.");
+  console.log(`  target: ${result.targetDirectory}`);
+  console.log(`  session: ${result.sessionFilePath}`);
+  console.log(
+    `  budgets: model=${result.runtimeConfig.model} maxTokens=${String(result.runtimeConfig.maxTokens)} timeoutMs=${String(result.runtimeConfig.timeoutMs)}`,
+  );
+  console.log(`  summary: ${result.summaryPath}`);
+  console.log(`  recent touched files: ${result.recentTouchedFiles.join(", ")}`);
 
-  console.log("[live-smoke] Phase 3 live loop verification passed.");
-
-  for (const result of results) {
-    printScenarioResult(result);
+  for (const turn of result.turns) {
+    printTurnResult(turn);
   }
 }
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
-  console.error(`[live-smoke] Phase 3 live loop verification failed.\n${message}`);
+  console.error(`[live-smoke] Phase 3 runtime-hardening graph verification failed.\n${message}`);
   process.exitCode = 1;
 });

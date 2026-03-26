@@ -1,4 +1,10 @@
-import type { Message, MessageParam, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
+import type {
+  Message,
+  MessageParam,
+  Model,
+  TextBlock,
+  ToolUseBlock,
+} from "@anthropic-ai/sdk/resources/messages";
 import { traceable } from "langsmith/traceable";
 
 import {
@@ -9,8 +15,13 @@ import {
   createUserToolResultBlock,
   extractAssistantText,
   extractAssistantToolUseBlocks,
+  resolveAnthropicRuntimeConfig,
   type AnthropicMessagesClient,
 } from "./anthropic.js";
+import {
+  buildCompactedMessageHistory,
+  type CompletedToolTurn,
+} from "./history-compaction.js";
 import {
   createToolErrorResult,
   getAnthropicTools,
@@ -26,6 +37,9 @@ import {
 
 export const RAW_LOOP_MAX_ITERATIONS = 25;
 const LOG_PREVIEW_LIMIT = 160;
+const DEFAULT_MAX_TOKENS_RECOVERY_RETRIES = 1;
+const DEFAULT_MAX_TOKENS_RETRY_MULTIPLIER = 2;
+const DEFAULT_MAX_TOKENS_RETRY_CAP = 16_384;
 
 export interface RawLoopLogger {
   log: (message: string) => void;
@@ -66,12 +80,53 @@ export interface RawToolLoopOptions {
   logger?: RawLoopLogger;
   maxIterations?: number;
   signal?: AbortSignal;
+  model?: Model;
+  maxTokens?: number;
+  temperature?: number;
+  maxTokensRecoveryRetries?: number;
+  maxTokensRetryMultiplier?: number;
+  maxTokensRetryCap?: number;
   beforeToolExecution?: (
     context: RawLoopToolHookContext,
   ) => Promise<void> | void;
   afterToolExecution?: (
     context: RawLoopToolResultHookContext,
   ) => Promise<void> | void;
+}
+
+export class AnthropicOutputBudgetExceededError extends Error {
+  readonly stopReason = "max_tokens";
+  readonly turnNumber: number;
+  readonly maxTokens: number;
+  readonly recoveryAttempts: number;
+  readonly generatingToolCall: boolean;
+  readonly partialText: string;
+
+  constructor(options: {
+    turnNumber: number;
+    maxTokens: number;
+    recoveryAttempts: number;
+    generatingToolCall: boolean;
+    partialText?: string;
+  }) {
+    const target = options.generatingToolCall ? "a tool call" : "a final response";
+    const partialText = options.partialText?.trim() ?? "";
+    const partialTextLabel = partialText
+      ? ` Partial text preview: ${truncateForLog(partialText, 120)}`
+      : "";
+
+    super(
+      `Anthropic output budget exhausted on turn ${String(options.turnNumber)} ` +
+      `(stop_reason=max_tokens) while generating ${target} at max_tokens=${String(options.maxTokens)} ` +
+      `after ${String(options.recoveryAttempts)} recovery attempt(s).${partialTextLabel}`,
+    );
+    this.name = "AnthropicOutputBudgetExceededError";
+    this.turnNumber = options.turnNumber;
+    this.maxTokens = options.maxTokens;
+    this.recoveryAttempts = options.recoveryAttempts;
+    this.generatingToolCall = options.generatingToolCall;
+    this.partialText = partialText;
+  }
 }
 
 function ensureNonBlankString(value: string, fieldName: string): string {
@@ -98,6 +153,30 @@ function ensureValidIterationCap(maxIterations: number): number {
   }
 
   return maxIterations;
+}
+
+function ensureValidMaxTokensRecoveryRetries(value: number): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error("maxTokensRecoveryRetries must be a non-negative integer.");
+  }
+
+  return value;
+}
+
+function ensureValidRetryMultiplier(value: number): number {
+  if (!Number.isFinite(value) || value <= 1) {
+    throw new Error("maxTokensRetryMultiplier must be greater than 1.");
+  }
+
+  return value;
+}
+
+function ensureValidRetryCap(value: number): number {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error("maxTokensRetryCap must be a positive integer.");
+  }
+
+  return value;
 }
 
 function truncateForLog(value: string, limit = LOG_PREVIEW_LIMIT): string {
@@ -159,6 +238,33 @@ function extractEditedPath(
   return null;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function extractAssistantTextSafely(
+  message: Pick<Message, "content">,
+): string {
+  const textBlocks = message.content
+    .filter(
+      (block): block is TextBlock =>
+        isPlainObject(block) &&
+        block.type === "text" &&
+        typeof block.text === "string" &&
+        "citations" in block,
+    );
+
+  return textBlocks.map((block) => block.text).join("\n\n").trim();
+}
+
+function hasToolUseLikeBlock(
+  message: Pick<Message, "content">,
+): boolean {
+  return message.content.some(
+    (block) => isPlainObject(block) && block.type === "tool_use",
+  );
+}
+
 function createUserToolResultHistoryMessage(
   toolResultBlocks: MessageParam["content"],
 ): MessageParam {
@@ -195,6 +301,86 @@ function createCancelledLoopResult(options: {
     didEdit: options.lastEditedFile !== null,
     lastEditedFile: options.lastEditedFile,
   };
+}
+
+async function createAnthropicMessageWithBudgetRecovery(options: {
+  client: AnthropicMessagesClient;
+  systemPrompt: string;
+  messages: MessageParam[];
+  tools: ReturnType<typeof getAnthropicTools>;
+  model: Model;
+  maxTokens: number;
+  temperature?: number;
+  turnNumber: number;
+  logger: RawLoopLogger;
+  signal?: AbortSignal;
+  maxTokensRecoveryRetries: number;
+  maxTokensRetryMultiplier: number;
+  maxTokensRetryCap: number;
+}): Promise<Message> {
+  let currentMaxTokens = options.maxTokens;
+  let recoveryAttempts = 0;
+
+  while (true) {
+    const assistantMessage = await createAnthropicMessage(
+      options.client,
+      {
+        systemPrompt: options.systemPrompt,
+        messages: options.messages,
+        tools: options.tools,
+        model: options.model,
+        maxTokens: currentMaxTokens,
+        temperature: options.temperature,
+      },
+      {
+        signal: options.signal,
+      },
+    );
+
+    if (assistantMessage.stop_reason !== "max_tokens") {
+      return assistantMessage;
+    }
+
+    const partialText = extractAssistantTextSafely(assistantMessage);
+    const generatingToolCall =
+      hasToolUseLikeBlock(assistantMessage) || partialText.length === 0;
+
+    if (recoveryAttempts >= options.maxTokensRecoveryRetries) {
+      throw new AnthropicOutputBudgetExceededError({
+        turnNumber: options.turnNumber,
+        maxTokens: currentMaxTokens,
+        recoveryAttempts,
+        generatingToolCall,
+        partialText,
+      });
+    }
+
+    const scaledMaxTokens = Math.ceil(
+      currentMaxTokens * options.maxTokensRetryMultiplier,
+    );
+    const nextMaxTokens = Math.min(
+      Math.max(currentMaxTokens + 1, scaledMaxTokens),
+      options.maxTokensRetryCap,
+    );
+
+    if (nextMaxTokens <= currentMaxTokens) {
+      throw new AnthropicOutputBudgetExceededError({
+        turnNumber: options.turnNumber,
+        maxTokens: currentMaxTokens,
+        recoveryAttempts,
+        generatingToolCall,
+        partialText,
+      });
+    }
+
+    recoveryAttempts += 1;
+    options.logger.log(
+      `[raw-loop] turn ${String(options.turnNumber)} stop_reason=max_tokens ` +
+      `while generating ${generatingToolCall ? "a tool call" : "a final response"}; ` +
+      `retrying with max_tokens=${String(nextMaxTokens)}`,
+    );
+    currentMaxTokens = nextMaxTokens;
+  }
 }
 
 async function executeToolUse(
@@ -367,37 +553,69 @@ async function runRawToolLoopDetailedCore(
   const normalizedSystemPrompt = ensureNonBlankString(systemPrompt, "systemPrompt");
   const normalizedUserMessage = ensureNonBlankString(userMessage, "userMessage");
   const normalizedToolNames = ensureValidToolNames(toolNames);
+  const runtimeConfig = resolveAnthropicRuntimeConfig({
+    model: options.model,
+    maxTokens: options.maxTokens,
+  });
   const maxIterations = ensureValidIterationCap(
     options.maxIterations ?? RAW_LOOP_MAX_ITERATIONS,
+  );
+  const maxTokensRecoveryRetries = ensureValidMaxTokensRecoveryRetries(
+    options.maxTokensRecoveryRetries ?? DEFAULT_MAX_TOKENS_RECOVERY_RETRIES,
+  );
+  const maxTokensRetryMultiplier = ensureValidRetryMultiplier(
+    options.maxTokensRetryMultiplier ?? DEFAULT_MAX_TOKENS_RETRY_MULTIPLIER,
+  );
+  const maxTokensRetryCap = ensureValidRetryCap(
+    options.maxTokensRetryCap ?? DEFAULT_MAX_TOKENS_RETRY_CAP,
   );
   const client = options.client ?? createAnthropicClient();
   const logger = options.logger ?? console;
   const allowedToolNames = new Set(normalizedToolNames);
-  const messages: MessageParam[] = [createUserTextMessage(normalizedUserMessage)];
+  const initialUserMessage = createUserTextMessage(normalizedUserMessage);
+  const completedToolTurns: CompletedToolTurn[] = [];
   const anthropicTools = getAnthropicTools(normalizedToolNames);
   const toolExecutions: RawToolExecution[] = [];
   let lastEditedFile: string | null = null;
 
   for (let turnNumber = 1; turnNumber <= maxIterations; turnNumber += 1) {
     throwIfTurnCancelled(options.signal);
+    const requestHistory = buildCompactedMessageHistory({
+      initialUserMessage,
+      completedTurns: completedToolTurns,
+    });
+
+    if (requestHistory.didCompact) {
+      logger.log(
+        `[raw-loop] compacted ${String(requestHistory.compactedTurnCount)} completed tool cycle(s); ` +
+        `preserved_tail_cycles=${String(requestHistory.preservedTailTurnCount)} ` +
+        `history_chars=${String(requestHistory.estimatedCharsBefore)}->${String(requestHistory.estimatedCharsAfter)}`,
+      );
+    }
+
     logger.log(
-      `[raw-loop] turn ${String(turnNumber)} request messages=${String(messages.length)} tools=${String(anthropicTools.length)}`,
+      `[raw-loop] turn ${String(turnNumber)} request messages=${String(requestHistory.messages.length)} ` +
+      `tools=${String(anthropicTools.length)} max_tokens=${String(runtimeConfig.maxTokens)}`,
     );
 
     let assistantMessage: Message;
 
     try {
-      assistantMessage = await createAnthropicMessage(
+      assistantMessage = await createAnthropicMessageWithBudgetRecovery({
         client,
-        {
-          systemPrompt: normalizedSystemPrompt,
-          messages,
-          tools: anthropicTools,
-        },
-        {
-          signal: options.signal,
-        },
-      );
+        systemPrompt: normalizedSystemPrompt,
+        messages: requestHistory.messages,
+        tools: anthropicTools,
+        model: runtimeConfig.model,
+        maxTokens: runtimeConfig.maxTokens,
+        temperature: options.temperature,
+        turnNumber,
+        logger,
+        signal: options.signal,
+        maxTokensRecoveryRetries,
+        maxTokensRetryMultiplier,
+        maxTokensRetryCap,
+      });
     } catch (error) {
       const cancelledError = toTurnCancelledError(error, options.signal);
 
@@ -405,7 +623,7 @@ async function runRawToolLoopDetailedCore(
         return createCancelledLoopResult({
           signal: options.signal,
           fallbackReason: cancelledError.message,
-          messageHistory: messages,
+          messageHistory: requestHistory.messages,
           toolExecutions,
           iterations: Math.max(turnNumber - 1, 0),
           lastEditedFile,
@@ -445,7 +663,7 @@ async function runRawToolLoopDetailedCore(
           return createCancelledLoopResult({
             signal: options.signal,
             fallbackReason: cancelledError.message,
-            messageHistory: [...messages, assistantHistoryMessage],
+            messageHistory: [...requestHistory.messages, assistantHistoryMessage],
             toolExecutions,
             iterations: turnNumber,
             lastEditedFile,
@@ -464,24 +682,34 @@ async function runRawToolLoopDetailedCore(
         lastEditedFile = editedExecution.editedPath;
       }
 
+      const completedToolTurn: CompletedToolTurn = {
+        turnNumber,
+        assistantMessage: assistantHistoryMessage,
+        toolResultMessage: toolTurnResult.toolResultMessage,
+        toolExecutions: toolTurnResult.toolExecutions,
+      };
+
       if (options.signal?.aborted) {
         return createCancelledLoopResult({
           signal: options.signal,
-          messageHistory: [...messages, assistantHistoryMessage],
+          messageHistory: buildCompactedMessageHistory({
+            initialUserMessage,
+            completedTurns: [...completedToolTurns, completedToolTurn],
+          }).messages,
           toolExecutions,
           iterations: turnNumber,
           lastEditedFile,
         });
       }
 
-      messages.push(assistantHistoryMessage, toolTurnResult.toolResultMessage);
+      completedToolTurns.push(completedToolTurn);
       continue;
     }
 
     if (options.signal?.aborted) {
       return createCancelledLoopResult({
         signal: options.signal,
-        messageHistory: messages,
+        messageHistory: requestHistory.messages,
         toolExecutions,
         iterations: turnNumber,
         lastEditedFile,
@@ -500,12 +728,17 @@ async function runRawToolLoopDetailedCore(
       `[raw-loop] turn ${String(turnNumber)} final_text=${truncateForLog(finalText)}`,
     );
 
-    messages.push(createAssistantHistoryMessage(assistantMessage));
+    const finalAssistantMessage = createAssistantHistoryMessage(assistantMessage);
+    const finalMessageHistory = buildCompactedMessageHistory({
+      initialUserMessage,
+      completedTurns: completedToolTurns,
+      finalAssistantMessage,
+    });
 
     return {
       status: "completed",
       finalText,
-      messageHistory: messages,
+      messageHistory: finalMessageHistory.messages,
       toolExecutions,
       iterations: turnNumber,
       didEdit: lastEditedFile !== null,

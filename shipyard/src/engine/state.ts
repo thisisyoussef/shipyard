@@ -34,6 +34,7 @@ export interface SessionState {
   targetProfile?: TargetProfile;
   activePlanId: string | null;
   activeTask: ActiveTaskContext | null;
+  recentTouchedFiles: string[];
   workbenchState: WorkbenchViewState;
 }
 
@@ -57,6 +58,7 @@ export interface ContextEnvelope {
     rollingSummary: string;
     retryCountsByFile: Record<string, number>;
     blockedFiles: string[];
+    recentTouchedFiles?: string[];
     latestHandoff: LoadedExecutionHandoff | null;
     activeTask: ActiveTaskContext | null;
   };
@@ -78,6 +80,7 @@ export interface SessionSnapshot {
   targetProfile?: TargetProfile;
   activePlanId: string | null;
   activeTask: ActiveTaskContext | null;
+  recentTouchedFiles: string[];
   workbenchState: WorkbenchViewState;
 }
 
@@ -131,6 +134,7 @@ export function createSessionState(
     targetProfile: options.targetProfile,
     activePlanId: null,
     activeTask: null,
+    recentTouchedFiles: [],
     workbenchState,
   };
 }
@@ -150,6 +154,7 @@ export function createSessionSnapshot(state: SessionState): SessionSnapshot {
     targetProfile: state.targetProfile,
     activePlanId: state.activePlanId,
     activeTask: state.activeTask,
+    recentTouchedFiles: [...state.recentTouchedFiles],
     workbenchState: state.workbenchState,
   };
 }
@@ -291,6 +296,11 @@ export async function loadSessionState(
     targetProfile: parsed.targetProfile,
     activePlanId: parsed.activePlanId ?? null,
     activeTask: parsed.activeTask ?? null,
+    recentTouchedFiles: Array.isArray(parsed.recentTouchedFiles)
+      ? parsed.recentTouchedFiles.filter((filePath): filePath is string =>
+          typeof filePath === "string" && filePath.trim().length > 0
+        )
+      : [],
     workbenchState,
   } as SessionState;
 }

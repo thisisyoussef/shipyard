@@ -143,6 +143,25 @@ describe("shared scaffold bootstrap", () => {
     ).rejects.toThrow(/not empty|notes\.md/i);
   });
 
+  it("allows bootstrapping targets seeded only with AGENTS.md and README.md", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-bootstrap-seeded-");
+    await ensureShipyardDirectories(targetDirectory);
+    await writeFile(path.join(targetDirectory, "AGENTS.md"), "seed rules\n", "utf8");
+    await writeFile(path.join(targetDirectory, "README.md"), "seed readme\n", "utf8");
+
+    const result = await bootstrapTargetTool({
+      targetDirectory,
+      description: "Seeded target should still bootstrap safely.",
+    });
+
+    expect(result.discovery.isGreenfield).toBe(false);
+    expect(result.createdFiles).toContain("AGENTS.md");
+    expect(result.createdFiles).toContain("README.md");
+    await expect(
+      readFile(path.join(targetDirectory, "README.md"), "utf8"),
+    ).resolves.toContain("Seeded target should still bootstrap safely.");
+  });
+
   it("registers bootstrap_target for code phase and accepts the richer preset in browser create payloads", () => {
     expect(createCodePhase().tools).toContain("bootstrap_target");
     expect(getTool("bootstrap_target")).toBeDefined();

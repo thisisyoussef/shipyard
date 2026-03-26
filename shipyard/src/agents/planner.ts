@@ -84,15 +84,7 @@ export interface PlannerInput {
 }
 
 export interface PlannerRunOptions
-  extends Pick<
-    RawToolLoopOptions,
-    | "client"
-    | "logger"
-    | "maxIterations"
-    | "signal"
-    | "beforeToolExecution"
-    | "afterToolExecution"
-  > {}
+  extends RawToolLoopOptions {}
 
 function ensureNonBlankInstruction(instruction: string): string {
   const trimmed = instruction.trim();
@@ -295,14 +287,7 @@ export async function runPlannerSubagent(
     }),
     [...PLANNER_TOOL_NAMES],
     targetDirectory,
-    {
-      client: options.client,
-      logger: options.logger,
-      maxIterations: options.maxIterations,
-      signal: options.signal,
-      beforeToolExecution: options.beforeToolExecution,
-      afterToolExecution: options.afterToolExecution,
-    },
+    { ...options },
   );
 
   if (result.status === "cancelled") {

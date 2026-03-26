@@ -52,7 +52,7 @@ export function createStubCodeTaskPlan(instruction: string): TaskPlan {
     plannedSteps: [
       "Read the relevant files before editing.",
       "Choose the smallest unique anchor for each change.",
-      "Verify the result after the edit.",
+      "Leave command-based verification to the verifier after the edit unless shell output is required now.",
     ],
   };
 }

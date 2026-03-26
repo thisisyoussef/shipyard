@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  SERIALIZED_SESSION_HISTORY_CHAR_BUDGET,
   buildContextEnvelope,
   serializeContextEnvelope,
 } from "../src/context/envelope.js";
@@ -178,7 +179,7 @@ describe("context envelope", () => {
           plannedSteps: [
             "Read the relevant files before editing.",
             "Implement the dashboard shell.",
-            "Verify the result after the edit.",
+            "Leave command-based verification to the verifier after the edit unless shell output is required now.",
           ],
         },
       },
@@ -214,5 +215,47 @@ describe("context envelope", () => {
     expect(serialized).toContain(latestHandoff.artifactPath);
     expect(serialized).toContain("Trigger: iteration-threshold");
     expect(serialized).toContain("Resume from the handoff before making additional edits.");
+  });
+
+  it("truncates oversized session history with an explicit budget marker", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-envelope-budget-");
+    const longRollingSummary = `Turn 1: ${"x".repeat(4_500)}`;
+    const envelope = await buildContextEnvelope({
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: false,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: ["src"],
+        projectName: "shipyard",
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
+      },
+      currentInstruction: "continue the dashboard shell work",
+      rollingSummary: longRollingSummary,
+      recentErrors: ["A very long runtime error that still needs to be bounded."],
+      retryCountsByFile: {
+        "src/app.ts": 2,
+      },
+    });
+
+    const serialized = serializeContextEnvelope(envelope);
+    const sessionHistoryBody = serialized
+      .split("Session History\n")[1]
+      ?.split("\n\nLatest Handoff")[0]
+      ?? "";
+
+    expect(sessionHistoryBody).toContain("[truncated");
+    expect(sessionHistoryBody.length).toBeLessThanOrEqual(
+      SERIALIZED_SESSION_HISTORY_CHAR_BUDGET + 200,
+    );
   });
 });

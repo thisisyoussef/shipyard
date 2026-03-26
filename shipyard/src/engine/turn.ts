@@ -25,6 +25,7 @@ import { createCodePhase } from "../phases/code/index.js";
 import { createTargetManagerPhase } from "../phases/target-manager/index.js";
 import { gitDiffTool } from "../tools/index.js";
 import type { EditBlockResult } from "../tools/edit-block.js";
+import { normalizeTargetRelativePath } from "../tools/file-state.js";
 import type { ToolResult } from "../tools/registry.js";
 import type { RunCommandResult } from "../tools/run-command.js";
 import type { WriteFilePreviewData } from "../tools/write-file.js";
@@ -181,6 +182,7 @@ function createHarnessRouteForErrorState(
 
 const EXPLICIT_FILE_PATH_PATTERN =
   /(?:\.{1,2}\/)?[A-Za-z0-9_-]+(?:[/.][A-Za-z0-9_-]+)+/;
+const RECENT_TOUCHED_FILES_LIMIT = 24;
 
 function rememberRecent(
   values: string[],
@@ -191,6 +193,54 @@ function rememberRecent(
 
   while (values.length > limit) {
     values.shift();
+  }
+}
+
+function normalizeRecentFilePath(value: string): string | null {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return normalizeTargetRelativePath(trimmed);
+  } catch {
+    return trimmed;
+  }
+}
+
+function rememberRecentFilePath(
+  values: string[],
+  nextValue: string,
+  limit = RECENT_TOUCHED_FILES_LIMIT,
+): void {
+  const normalized = normalizeRecentFilePath(nextValue);
+
+  if (!normalized) {
+    return;
+  }
+
+  const existingIndex = values.indexOf(normalized);
+
+  if (existingIndex >= 0) {
+    values.splice(existingIndex, 1);
+  }
+
+  values.push(normalized);
+
+  while (values.length > limit) {
+    values.shift();
+  }
+}
+
+function rememberRecentFilePaths(
+  values: string[],
+  nextValues: Iterable<string>,
+  limit = RECENT_TOUCHED_FILES_LIMIT,
+): void {
+  for (const nextValue of nextValues) {
+    rememberRecentFilePath(values, nextValue, limit);
   }
 }
 
@@ -613,6 +663,13 @@ function createRuntimeDependencies(
               )
             : null;
 
+          if (context.result.success && context.toolExecution.editedPath) {
+            rememberRecentFilePath(
+              sessionState.recentTouchedFiles,
+              context.toolExecution.editedPath,
+            );
+          }
+
           if (immediateEditEvent) {
             editPreviewState.emitted = true;
             await reporter?.onEdit?.(immediateEditEvent);
@@ -640,6 +697,10 @@ function createRuntimeDependencies(
             isBootstrapTargetData(context.result.data)
           ) {
             sessionState.discovery = context.result.data.discovery;
+            rememberRecentFilePaths(
+              sessionState.recentTouchedFiles,
+              context.result.data.createdFiles,
+            );
           }
         },
       };
@@ -783,6 +844,7 @@ export async function executeInstructionTurn(
       rollingSummary: state.rollingSummary,
       retryCountsByFile: runtimeState.retryCountsByFile,
       blockedFiles: runtimeState.blockedFiles,
+      recentTouchedFiles: state.recentTouchedFiles,
       latestHandoff: loadedHandoff,
       activeTask: state.activeTask,
     });
@@ -829,13 +891,26 @@ export async function executeInstructionTurn(
         plannedSteps: [
           "Read the relevant files before editing.",
           "Choose the smallest unique anchor for each change.",
-          "Verify the result after the edit.",
+          "Leave command-based verification to the verifier after the edit unless shell output is required now.",
         ],
       };
       const executionSpec = finalState.executionSpec ?? null;
       const planningMode = finalState.planningMode;
       const finalText = finalState.finalResult
         ?? "Shipyard finished without a final response.";
+      rememberRecentFilePaths(state.recentTouchedFiles, taskPlan.targetFilePaths);
+      rememberRecentFilePaths(
+        state.recentTouchedFiles,
+        executionSpec?.targetFilePaths ?? [],
+      );
+
+      if (finalState.lastEditedFile) {
+        rememberRecentFilePath(
+          state.recentTouchedFiles,
+          finalState.lastEditedFile,
+        );
+      }
+
       const finalStateStatus = finalState.status === "failed"
         ? "failed"
         : finalState.status === "cancelled"

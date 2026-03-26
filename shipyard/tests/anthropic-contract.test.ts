@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_ANTHROPIC_MAX_TOKENS,
+  DEFAULT_ANTHROPIC_TIMEOUT_MS,
   DEFAULT_ANTHROPIC_MODEL,
   buildAnthropicMessageRequest,
   createAnthropicClient,
@@ -13,6 +14,7 @@ import {
   extractAssistantText,
   extractAssistantToolUseBlocks,
   normalizeAssistantResponseBlocks,
+  resolveAnthropicConfig,
 } from "../src/engine/anthropic.js";
 import "../src/tools/index.js";
 import { getAnthropicTools } from "../src/tools/registry.js";
@@ -81,6 +83,52 @@ describe("Anthropic client contract", () => {
         content: "Inspect package.json",
       },
     ]);
+  });
+
+  it("resolves Shipyard Anthropic env overrides for both client and request budgets", () => {
+    const env = {
+      ANTHROPIC_API_KEY: "test-key",
+      SHIPYARD_ANTHROPIC_MODEL: "claude-opus-4-1",
+      SHIPYARD_ANTHROPIC_MAX_TOKENS: "12288",
+      SHIPYARD_ANTHROPIC_TIMEOUT_MS: "90000",
+      SHIPYARD_ANTHROPIC_MAX_RETRIES: "2",
+    } as NodeJS.ProcessEnv;
+    const config = resolveAnthropicConfig({ env });
+    const request = buildAnthropicMessageRequest({
+      systemPrompt: "You are Shipyard.",
+      messages: [createUserTextMessage("Inspect package.json")],
+      env,
+    });
+
+    expect(config).toMatchObject({
+      apiKey: "test-key",
+      model: "claude-opus-4-1",
+      maxTokens: 12_288,
+      timeoutMs: 90_000,
+      maxRetries: 2,
+    });
+    expect(request.model).toBe("claude-opus-4-1");
+    expect(request.max_tokens).toBe(12_288);
+  });
+
+  it("rejects invalid Shipyard Anthropic env overrides clearly", () => {
+    expect(() =>
+      resolveAnthropicConfig({
+        apiKey: "test-key",
+        env: {
+          SHIPYARD_ANTHROPIC_MAX_TOKENS: "not-a-number",
+        },
+      }),
+    ).toThrowError(/SHIPYARD_ANTHROPIC_MAX_TOKENS/i);
+
+    expect(() =>
+      resolveAnthropicConfig({
+        apiKey: "test-key",
+        env: {
+          SHIPYARD_ANTHROPIC_TIMEOUT_MS: "-1",
+        },
+      }),
+    ).toThrowError(/SHIPYARD_ANTHROPIC_TIMEOUT_MS/i);
   });
 
   it("rejects blank prompts and blank user messages before request assembly", () => {

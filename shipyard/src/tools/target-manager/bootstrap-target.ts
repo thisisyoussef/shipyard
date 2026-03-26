@@ -83,7 +83,7 @@ export async function bootstrapTargetTool(
     name: targetName,
     description: input.description,
     scaffoldType,
-    allowedExistingEntries: [".shipyard", ".git"],
+    allowedExistingEntries: [".shipyard", ".git", "AGENTS.md", "README.md"],
   });
 
   await ensureShipyardDirectories(targetPath);

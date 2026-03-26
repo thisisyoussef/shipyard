@@ -7,6 +7,16 @@ import type {
   LoadedExecutionHandoff,
 } from "../artifacts/types.js";
 import type { ContextEnvelope } from "../engine/state.js";
+import { truncateText } from "../engine/turn-summary.js";
+
+export const SERIALIZED_SESSION_HISTORY_CHAR_BUDGET = 1_800;
+const SERIALIZED_PROJECT_RULES_CHAR_BUDGET = 1_800;
+const SERIALIZED_GIT_DIFF_CHAR_BUDGET = 1_500;
+const SERIALIZED_HANDOFF_CHAR_BUDGET = 1_500;
+const SERIALIZED_ACTIVE_TASK_CHAR_BUDGET = 1_200;
+const SERIALIZED_LIST_ITEM_CHAR_BUDGET = 180;
+const SERIALIZED_LIST_CHAR_BUDGET = 900;
+const SERIALIZED_INSTRUCTION_CHAR_BUDGET = 500;
 
 export interface BuildContextEnvelopeOptions {
   targetDirectory: string;
@@ -20,6 +30,7 @@ export interface BuildContextEnvelopeOptions {
   currentGitDiff?: string | null;
   retryCountsByFile?: Record<string, number>;
   blockedFiles?: string[];
+  recentTouchedFiles?: string[];
   latestHandoff?: LoadedExecutionHandoff | null;
   activeTask?: ActiveTaskContext | null;
   projectRules?: string;
@@ -37,6 +48,62 @@ function formatList(items: string[], emptyLabel = "(none)"): string {
   return items.map((item) => `- ${item}`).join("\n");
 }
 
+function truncateWithMarker(value: string, limit: number): string {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "(none)";
+  }
+
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+
+  const marker = `[truncated ${String(trimmed.length - limit)} chars to stay within Shipyard context budget]`;
+  const sliceLength = Math.max(limit - marker.length - 1, 1);
+
+  return `${trimmed.slice(0, sliceLength).trimEnd()}\n${marker}`;
+}
+
+function formatBoundedList(
+  items: string[],
+  options: {
+    emptyLabel?: string;
+    itemLimit?: number;
+    listLimit?: number;
+  } = {},
+): string {
+  if (items.length === 0) {
+    return options.emptyLabel ?? "(none)";
+  }
+
+  const itemLimit = options.itemLimit ?? SERIALIZED_LIST_ITEM_CHAR_BUDGET;
+  const listLimit = options.listLimit ?? SERIALIZED_LIST_CHAR_BUDGET;
+  const lines = items.map((item) => `- ${truncateText(item, itemLimit)}`);
+  let omittedCount = 0;
+
+  while (lines.length > 1) {
+    const omissionLine = omittedCount > 0
+      ? `- ${String(omittedCount)} earlier item(s) were omitted to stay within budget.`
+      : null;
+    const body = [
+      omissionLine,
+      ...lines,
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join("\n");
+
+    if (body.length <= listLimit) {
+      return body;
+    }
+
+    lines.shift();
+    omittedCount += 1;
+  }
+
+  return truncateWithMarker(lines.join("\n"), listLimit);
+}
+
 function formatScriptList(scripts: Record<string, string>): string {
   const scriptEntries = Object.entries(scripts).sort(([left], [right]) =>
     left.localeCompare(right),
@@ -47,7 +114,9 @@ function formatScriptList(scripts: Record<string, string>): string {
   }
 
   return scriptEntries
-    .map(([name, command]) => `- ${name}: ${command}`)
+    .map(([name, command]) =>
+      `- ${truncateText(name, 80)}: ${truncateText(command, 140)}`
+    )
     .join("\n");
 }
 
@@ -60,7 +129,9 @@ function formatRetryList(retryCountsByFile: Record<string, number>): string {
   }
 
   return retryEntries
-    .map(([filePath, retryCount]) => `- ${filePath}: ${String(retryCount)}`)
+    .map(([filePath, retryCount]) =>
+      `- ${truncateText(filePath, 140)}: ${String(retryCount)}`
+    )
     .join("\n");
 }
 
@@ -83,7 +154,7 @@ function formatLatestHandoff(handoff: LoadedExecutionHandoff | null): string {
     "Remaining Work:",
     formatList(handoff.handoff.remainingWork),
     "Touched Files:",
-    formatList(handoff.handoff.touchedFiles),
+    formatBoundedList(handoff.handoff.touchedFiles),
     `Latest Evaluation: ${latestEvaluation}`,
     `Next Recommended Action: ${handoff.handoff.nextRecommendedAction}`,
   ].join("\n");
@@ -158,6 +229,7 @@ export async function buildContextEnvelope(
       rollingSummary: options.rollingSummary,
       retryCountsByFile: { ...(options.retryCountsByFile ?? {}) },
       blockedFiles: [...(options.blockedFiles ?? [])],
+      recentTouchedFiles: [...(options.recentTouchedFiles ?? [])],
       latestHandoff: options.latestHandoff ?? null,
       activeTask: options.activeTask ?? null,
     },
@@ -168,7 +240,7 @@ export function serializeContextEnvelope(
   envelope: ContextEnvelope,
 ): string {
   const projectContextLines = [
-    `Instruction: ${envelope.task.currentInstruction}`,
+    `Instruction: ${truncateText(envelope.task.currentInstruction, SERIALIZED_INSTRUCTION_CHAR_BUDGET)}`,
     `Project: ${envelope.stable.discovery.projectName ?? "unknown"}`,
     `Target Type: ${envelope.stable.discovery.isGreenfield ? "greenfield" : "existing"}`,
     `Language: ${formatDiscoveryValue(envelope.stable.discovery.language)}`,
@@ -177,31 +249,49 @@ export function serializeContextEnvelope(
     "Available Scripts:",
     formatScriptList(envelope.stable.availableScripts),
     "Target Files:",
-    formatList(envelope.task.targetFilePaths),
+    formatBoundedList(envelope.task.targetFilePaths),
+    "Recent Touched Files:",
+    formatBoundedList(envelope.session.recentTouchedFiles ?? []),
     "Recent Tool Outputs:",
-    formatList(envelope.runtime.recentToolOutputs),
+    formatBoundedList(envelope.runtime.recentToolOutputs),
   ];
 
   if (envelope.runtime.currentGitDiff?.trim()) {
     projectContextLines.push(
       "Current Git Diff:",
-      envelope.runtime.currentGitDiff.trim(),
+      truncateWithMarker(
+        envelope.runtime.currentGitDiff.trim(),
+        SERIALIZED_GIT_DIFF_CHAR_BUDGET,
+      ),
     );
   } else {
     projectContextLines.push("Current Git Diff:", "(none)");
   }
 
-  const projectRulesBody = envelope.stable.projectRules.trim() || "(none)";
-  const injectedContextBody = formatList(envelope.task.injectedContext);
-  const sessionHistoryBody = [
+  const projectRulesBody = truncateWithMarker(
+    envelope.stable.projectRules,
+    SERIALIZED_PROJECT_RULES_CHAR_BUDGET,
+  );
+  const injectedContextBody = formatBoundedList(envelope.task.injectedContext);
+  const sessionHistoryBody = truncateWithMarker(
+    [
     `Rolling Summary: ${envelope.session.rollingSummary.trim() || "(none)"}`,
     "Retry Counts:",
     formatRetryList(envelope.session.retryCountsByFile),
-  ].join("\n");
-  const latestHandoffBody = formatLatestHandoff(envelope.session.latestHandoff);
-  const activeTaskBody = formatActiveTask(envelope.session.activeTask);
-  const recentErrorsBody = formatList(envelope.runtime.recentErrors);
-  const blockedFilesBody = formatList(envelope.session.blockedFiles);
+    ]
+      .join("\n"),
+    SERIALIZED_SESSION_HISTORY_CHAR_BUDGET,
+  );
+  const latestHandoffBody = truncateWithMarker(
+    formatLatestHandoff(envelope.session.latestHandoff),
+    SERIALIZED_HANDOFF_CHAR_BUDGET,
+  );
+  const activeTaskBody = truncateWithMarker(
+    formatActiveTask(envelope.session.activeTask),
+    SERIALIZED_ACTIVE_TASK_CHAR_BUDGET,
+  );
+  const recentErrorsBody = formatBoundedList(envelope.runtime.recentErrors);
+  const blockedFilesBody = formatBoundedList(envelope.session.blockedFiles);
 
   return [
     "Project Context",

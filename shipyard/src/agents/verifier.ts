@@ -100,10 +100,7 @@ Rules:
 `.trim();
 
 export interface VerifierRunOptions
-  extends Pick<
-    RawToolLoopOptions,
-    "client" | "logger" | "maxIterations" | "signal"
-  > {}
+  extends RawToolLoopOptions {}
 
 function ensureNonBlankCommand(command: string): string {
   const trimmed = command.trim();
@@ -351,12 +348,7 @@ async function runSingleVerificationCommand(
     normalizedCommand,
     [...VERIFIER_TOOL_NAMES],
     targetDirectory,
-    {
-      client: options.client,
-      logger: options.logger,
-      maxIterations: options.maxIterations,
-      signal: options.signal,
-    },
+    { ...options },
   );
 
   if (result.status === "cancelled") {

@@ -13,6 +13,7 @@ import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
 import { createSessionState } from "../src/engine/state.js";
 import * as graphRuntime from "../src/engine/graph.js";
 import { createCodePhase } from "../src/phases/code/index.js";
+import "../src/tools/index.js";
 import {
   createInstructionRuntimeState,
   executeInstructionTurn,
@@ -277,6 +278,151 @@ describe("instruction runtime handoff", () => {
     expect(sessionState.rollingSummary).toContain("completed via fallback");
   });
 
+  it("surfaces explorer and planner tool activity through the outer reporter", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-turn-subagent-tools-");
+    await mkdir(path.join(targetDirectory, "src"), { recursive: true });
+    await writeFile(
+      path.join(targetDirectory, "src", "auth.ts"),
+      "export async function authenticateUser(token: string) {\n  return token.length > 0;\n}\n",
+      "utf8",
+    );
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify({ name: "shipyard-subagent-tools" }, null, 2),
+      "utf8",
+    );
+
+    const sessionState = createSessionState({
+      sessionId: "turn-subagent-tools-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: false,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: ["src"],
+        projectName: "shipyard-subagent-tools",
+      },
+    });
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_search_auth",
+            name: "search_files",
+            input: {
+              pattern: "authenticateUser",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              query: "Identify the files most relevant to this request: Fix the auth flow",
+              findings: [
+                {
+                  filePath: "src/auth.ts",
+                  excerpt: "export async function authenticateUser(token: string) {",
+                  relevanceNote: "This file owns the auth entry point.",
+                },
+              ],
+            }),
+            citations: null,
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_read_auth",
+            name: "read_file",
+            input: {
+              path: "src/auth.ts",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              instruction: "Fix the auth flow",
+              goal: "Repair the auth flow without widening scope.",
+              deliverables: ["Update the auth entry point."],
+              acceptanceCriteria: ["Authentication succeeds for valid credentials."],
+              verificationIntent: ["Run the auth-focused tests."],
+              targetFilePaths: ["src/auth.ts"],
+              risks: ["Regression risk in authentication state handling."],
+            }),
+            citations: null,
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Auth flow updated safely.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+    const toolCalls: string[] = [];
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      runtimeDependencies: {
+        createRawLoopOptions: () => ({
+          client,
+          logger: {
+            log() {},
+          },
+        }),
+      },
+    });
+
+    const result = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "Fix the auth flow",
+      reporter: {
+        onToolCall(event) {
+          toolCalls.push(event.toolName);
+        },
+      },
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.harnessRoute.usedExplorer).toBe(true);
+    expect(result.harnessRoute.usedPlanner).toBe(true);
+    expect(toolCalls).toEqual(
+      expect.arrayContaining(["search_files", "read_file"]),
+    );
+  });
+
   it("treats operator cancellation as a first-class turn outcome and allows a follow-up turn", async () => {
     const targetDirectory = await createTempDirectory("shipyard-turn-cancel-");
     const sessionState = createSessionState({
@@ -367,6 +513,117 @@ describe("instruction runtime handoff", () => {
     expect(sessionState.rollingSummary).toContain(
       "Turn 2: summarize the repo now ->",
     );
+  });
+
+  it("keeps same-session bootstrap follow-ups on the lightweight path using recent touched files", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-turn-bootstrap-follow-up-");
+    await writeFile(path.join(targetDirectory, "AGENTS.md"), "seed rules\n", "utf8");
+    await writeFile(path.join(targetDirectory, "README.md"), "seed readme\n", "utf8");
+
+    const sessionState = createSessionState({
+      sessionId: "turn-bootstrap-follow-up-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: true,
+        hasAgentsMd: true,
+        topLevelFiles: ["AGENTS.md", "README.md"],
+        topLevelDirectories: [],
+        projectName: "shipyard-bootstrap-follow-up",
+      },
+    });
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_bootstrap_workspace",
+            name: "bootstrap_target",
+            input: {
+              description: "Scaffold a full-stack workspace for follow-up continuation tests.",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Workspace bootstrapped successfully.",
+            citations: null,
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Continued the scaffold without extra planning.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+    const runExplorerSubagent = vi.fn(async () => ({
+      query: "Continue the scaffold with a dashboard view.",
+      findings: [],
+    }));
+    const runPlannerSubagent = vi.fn(async () => ({
+      instruction: "Continue the scaffold with a dashboard view.",
+      goal: "Keep expanding the scaffold.",
+      deliverables: ["Add a dashboard view."],
+      acceptanceCriteria: ["The dashboard view exists."],
+      verificationIntent: ["Run the relevant checks."],
+      targetFilePaths: ["apps/web/src/App.tsx"],
+      risks: [],
+    }));
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      runtimeDependencies: {
+        createRawLoopOptions: () => ({
+          client,
+          logger: {
+            log() {},
+          },
+        }),
+        runExplorerSubagent,
+        runPlannerSubagent,
+      },
+    });
+
+    const bootstrapTurn = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "Bootstrap the current target with the shared workspace scaffold.",
+    });
+
+    expect(bootstrapTurn.status).toBe("success");
+    expect(sessionState.discovery.isGreenfield).toBe(false);
+    expect(sessionState.recentTouchedFiles).toContain("apps/web/src/App.tsx");
+
+    const followUpTurn = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "Continue the scaffold with a dashboard view.",
+    });
+
+    expect(followUpTurn.status).toBe("success");
+    expect(followUpTurn.harnessRoute.selectedPath).toBe("lightweight");
+    expect(followUpTurn.harnessRoute.usedExplorer).toBe(false);
+    expect(followUpTurn.harnessRoute.usedPlanner).toBe(false);
+    expect(followUpTurn.taskPlan.targetFilePaths).toContain("apps/web/src/App.tsx");
+    expect(runExplorerSubagent).not.toHaveBeenCalled();
+    expect(runPlannerSubagent).not.toHaveBeenCalled();
   });
 
   it("carries forward recent session history while keeping the rolling summary bounded", async () => {
@@ -666,7 +923,7 @@ describe("instruction runtime handoff", () => {
           plannedSteps: [
             "Read the relevant files before editing.",
             "Refine the main screen.",
-            "Verify the result after the edit.",
+            "Leave command-based verification to the verifier after the edit unless shell output is required now.",
           ],
         },
         harnessRoute: {
