@@ -91,3 +91,18 @@ Record durable workspace decisions here.
 - **Consequences**: Docs must distinguish routing layers clearly, session state
   must carry phase/task/handoff pointers explicitly, and browser/terminal
   surfaces can keep sharing the same runtime contracts.
+
+- **ADR-ID**: ADR-0010
+- **Date**: 2026-03-26
+- **Context**: The next architecture step needs to absorb patterns from
+  software-factory systems without losing Shipyard's current single-writer,
+  local-first strengths.
+- **Decision**: Sequence the next major runtime work through a dedicated
+  `phase-10` story pack: durable execution threads first, then policy and
+  sandboxing, then layered memory and repo indexing, then explicit routing and
+  verification, then isolated background tasks and readiness surfaces.
+- **Alternatives Considered**: Keep adding isolated improvements to the current
+  runtime one-off; pivot to a multi-writer swarm architecture immediately.
+- **Consequences**: Future architecture stories should map back to the `phase-10`
+  sequence, preserve the single-writer coordinator, and avoid introducing new
+  parallel persistence systems or unreviewed background mutation paths.

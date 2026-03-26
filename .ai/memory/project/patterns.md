@@ -51,6 +51,13 @@ Capture repeatable patterns that match how this workspace actually works.
 - New read-only helper roles should follow the explorer/verifier/planner shape:
   isolated history, explicit tool allowlist, local Zod validation, and fail-
   closed parsing before coordinator code consumes the result.
+- Plan larger runtime architecture work as ordered spec packs. The current
+  `phase-10` sequence is: durable threads -> policy/sandboxing -> layered
+  memory -> repo indexing -> routing/evals -> isolated background tasks ->
+  evented jobs and readiness.
+- Even when Shipyard borrows software-factory patterns, keep the single-writer
+  coordinator for the main target and make any parallelism read-only,
+  isolated, or review-before-apply.
 
 ## Greenfield Bootstrap Pattern
 

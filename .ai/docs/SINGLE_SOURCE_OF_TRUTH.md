@@ -23,6 +23,7 @@
 2. Continue building the persistent CLI loop, typed tools, and tracing inside `shipyard/`.
 3. Advance the drafted Phase 7 and Phase 8 packs incrementally on the shipped planner, handoff, and spec-loading foundations while keeping tests, docs, and runtime artifacts in sync.
 4. Use the drafted runtime-hardening follow-up pack to fix history-safe tool-turn storage, write-aware compaction, greenfield batching prompts, handoff fidelity, continuation-first loop thresholds, bootstrap-ready discovery, and task-aware loop budgets.
+5. Use the drafted Phase 10 architecture pack to sequence the next larger runtime upgrades: durable threads, policy controls, layered memory, repo indexing, explicit routing/evals, background tasks, and readiness surfaces.
 
 ---
 
