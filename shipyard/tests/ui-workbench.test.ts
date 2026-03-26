@@ -367,6 +367,19 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain('aria-label="Current location"');
   });
 
+  it("renders the footer status bar with the current agent fingerprint", () => {
+    const markup = renderWorkbench({
+      agentStatus:
+        "surface=ui phase=code planningMode=planner targetProfile=no preview=no browserEval=no model=anthropic/claude-sonnet-4-5-20250929",
+    });
+
+    expect(markup).toContain("Connected");
+    expect(markup).toContain("shipyard-workspace");
+    expect(markup).toContain(
+      "surface=ui phase=code planningMode=planner targetProfile=no preview=no browserEval=no model=anthropic/claude-sonnet-4-5-20250929",
+    );
+  });
+
   it("renders the public app link and auto-publish status in the target header", () => {
     const markup = renderWorkbench({
       primaryView: "preview",

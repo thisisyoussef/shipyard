@@ -21,6 +21,7 @@ import {
   type InstructionTurnReporter,
   type TurnStateEvent,
 } from "../engine/turn.js";
+import { formatTurnExecutionFingerprint } from "../engine/turn-fingerprint.js";
 import {
   executePlanningTurn,
   isPlanModeInstruction,
@@ -1987,6 +1988,7 @@ export async function startUiRuntimeServer(
     activeProjectId = project.projectId;
     project.sessionState.lastActiveAt = new Date().toISOString();
     createProjectBoardState();
+    await broadcastProjectsState();
 
     if (options.successMessage) {
       const nextTargetManagerState = await syncTargetManagerState(
@@ -2093,6 +2095,7 @@ export async function startUiRuntimeServer(
         injectedContext,
         reporter,
         signal,
+        runtimeSurface: "ui",
       });
       await project.traceLogger.log("instruction.plan", {
         instruction,
@@ -2104,6 +2107,10 @@ export async function startUiRuntimeServer(
         contextEnvelope: taskTurnResult.contextEnvelope,
         taskPlan: taskTurnResult.taskPlan,
         executionSpec: taskTurnResult.executionSpec,
+        executionFingerprint: taskTurnResult.executionFingerprint,
+        executionFingerprintLabel: taskTurnResult.executionFingerprint
+          ? formatTurnExecutionFingerprint(taskTurnResult.executionFingerprint)
+          : null,
         taskQueue: taskTurnResult.plan,
         planId: taskTurnResult.planId,
         taskId: taskTurnResult.taskId,
@@ -2148,6 +2155,7 @@ export async function startUiRuntimeServer(
         injectedContext,
         reporter,
         signal,
+        runtimeSurface: "ui",
       });
       await project.traceLogger.log("instruction.plan", {
         instruction,
@@ -2155,6 +2163,10 @@ export async function startUiRuntimeServer(
         runtimeMode: turnResult.runtimeMode,
         planningMode: turnResult.planningMode,
         harnessRoute: turnResult.harnessRoute,
+        executionFingerprint: turnResult.executionFingerprint,
+        executionFingerprintLabel: turnResult.executionFingerprint
+          ? formatTurnExecutionFingerprint(turnResult.executionFingerprint)
+          : null,
         contextEnvelope: turnResult.contextEnvelope,
         taskPlan: turnResult.taskPlan,
         executionSpec: turnResult.executionSpec,

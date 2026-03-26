@@ -3,7 +3,7 @@
    Art Deco Command · Lovable-style layout
 
    Two panels: conversation (left) + workspace (right).
-   Minimal header. No permanent sidebars. No footer.
+   Minimal header. No permanent sidebars. Optional footer.
    ─────────────────────────────────────────────── */
 
 /* ═══════════════════════════════════════════════
@@ -27,6 +27,11 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.shell-footer {
+  height: var(--shell-footer-h);
+  flex-shrink: 0;
 }
 
 /* Left panel: conversation */
@@ -380,6 +385,16 @@
   gap: var(--space-3);
 }
 
+.shell-footer-left {
+  flex-shrink: 0;
+}
+
+.shell-footer-right {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
 .shell-footer-text {
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
@@ -394,6 +409,9 @@
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ═══════════════════════════════════════════════

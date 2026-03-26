@@ -264,6 +264,14 @@ await rename(tempPath, absolutePath);
   LangSmith turn trace patches, return the root turn trace reference, and
   persist the same structured harness route in local JSONL logs for both
   terminal and browser surfaces.
+- `shipyard/src/engine/turn-fingerprint.ts`,
+  `shipyard/src/plans/task-runner.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/ui/src/ShipyardWorkbench.tsx`: derive one shared per-turn
+  execution fingerprint from the final harness route, carry it through normal
+  and task-runner turns, surface it in browser completion state and the shell
+  footer, and reuse the same label in CLI output, JSONL traces, and LangSmith
+  metadata so local vs hosted/runtime differences stay comparable.
 - `shipyard/tests/graph-runtime.test.ts`,
   `shipyard/tests/turn-runtime.test.ts`,
   `shipyard/tests/loop-runtime.test.ts`,
@@ -271,6 +279,11 @@ await rename(tempPath, absolutePath);
   `shipyard/tests/fixtures/evaluator-calibration.ts`: cover lightweight vs
   planner-backed routing, preview-backed browser verification, reset-backed
   trace metadata, and the golden scenario set for evaluator strictness.
+- `shipyard/tests/ui-runtime.test.ts`,
+  `shipyard/tests/ui-view-models.test.ts`, and
+  `shipyard/tests/ui-workbench.test.ts`: verify the browser runtime forwards the
+  fingerprint contract, the view-model records it in completion activity, and
+  the footer renders the current runtime fingerprint visibly in the workbench.
 
 #### Representative Snippets
 
@@ -313,4 +326,26 @@ if (
     },
   );
 }
+```
+
+```ts
+const executionFingerprint = createTurnExecutionFingerprint({
+  surface: options.runtimeSurface ?? "cli",
+  phase: options.phaseName === "target-manager" ? "target-manager" : "code",
+  planningMode: options.planningMode,
+  targetProfile: options.sessionState.targetProfile ?? null,
+  previewState: options.sessionState.workbenchState.previewState,
+  harnessRoute: options.harnessRoute,
+  modelProvider: options.modelProvider,
+  modelName: options.modelName,
+});
+```
+
+```tsx
+<ShellFooter
+  connectionState={props.connectionState}
+  sessionId={props.sessionState?.sessionId}
+  workspacePath={props.sessionState?.workspaceDirectory}
+  agentStatus={props.agentStatus}
+/>
 ```

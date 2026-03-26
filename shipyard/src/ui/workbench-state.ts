@@ -1,4 +1,5 @@
 import type { PreviewState } from "../artifacts/types.js";
+import { formatTurnExecutionFingerprint } from "../engine/turn-fingerprint.js";
 import {
   createInitialPreviewState,
   createIdlePreviewState,
@@ -354,6 +355,16 @@ function updateActiveTurn(
       turn.id === ensuredState.activeTurnId ? updater(turn) : turn,
     ),
   };
+}
+
+function createDoneAgentStatus(
+  message: Extract<BackendToFrontendMessage, { type: "agent:done" }>,
+): string {
+  if (message.executionFingerprint) {
+    return formatTurnExecutionFingerprint(message.executionFingerprint);
+  }
+
+  return message.summary;
 }
 
 function createContextReceipts(
@@ -863,10 +874,14 @@ export function applyBackendMessage(
 
     case "agent:done": {
       const activeTurnId = state.activeTurnId;
+      const doneAgentStatus = createDoneAgentStatus(message);
       const withActivity = appendActivity(state, {
         kind: "done",
         title: "Turn complete",
         detail: message.summary,
+        detailBody: message.executionFingerprint
+          ? formatTurnExecutionFingerprint(message.executionFingerprint)
+          : undefined,
         tone: createDoneTone(message.status),
       });
       const pendingFileEventIds = new Set(
@@ -894,7 +909,7 @@ export function applyBackendMessage(
           ),
         ),
         latestError: message.status === "error" ? message.summary : null,
-        agentStatus: message.summary,
+        agentStatus: doneAgentStatus,
         turns: withActivity.turns.map((turn) =>
           turn.id === activeTurnId
             ? {

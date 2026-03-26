@@ -843,6 +843,8 @@ describe("instruction runtime handoff", () => {
         lastEditedFile: "src/app.tsx",
         finalResult: "Polished the main screen.",
         status: "done",
+        modelProvider: "openai",
+        modelName: "gpt-5.4",
         verificationReport: {
           command: "pnpm test",
           exitCode: 0,
@@ -883,6 +885,19 @@ describe("instruction runtime handoff", () => {
       handoffEmitted: true,
       handoffReason: "iteration-threshold",
     });
+    expect(result.executionFingerprint).toEqual({
+      surface: "cli",
+      phase: "code",
+      planningMode: "planner",
+      targetProfile: "no",
+      preview: "no",
+      previewStatus: "unavailable",
+      browserEval: "yes",
+      browserEvaluationStatus: "passed",
+      model: "openai/gpt-5.4",
+      modelProvider: "openai",
+      modelName: "gpt-5.4",
+    });
     expect(result.langSmithTrace).toEqual(outerTrace);
     expect(capturedTraceMetadata).toEqual(
       expect.objectContaining({
@@ -891,6 +906,9 @@ describe("instruction runtime handoff", () => {
         usedBrowserEvaluator: true,
         handoffEmitted: true,
         handoffReason: "iteration-threshold",
+        runtimeSurface: "cli",
+        executionFingerprintLabel:
+          "surface=cli phase=code planningMode=planner targetProfile=no preview=no browserEval=yes model=openai/gpt-5.4",
       }),
     );
   });
