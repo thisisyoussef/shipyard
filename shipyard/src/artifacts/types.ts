@@ -191,15 +191,22 @@ export interface VerificationReport {
 }
 
 export type HarnessSelectedPath = "lightweight" | "planner-backed";
+export type HarnessActingMode = "raw-loop" | "direct-edit";
 export type HarnessTaskComplexity =
   | "unclassified"
   | "direct"
   | "targeted"
   | "broad";
-export type HarnessVerificationMode = "none" | "command" | "command+browser";
+export type HarnessVerificationMode =
+  | "none"
+  | "deterministic"
+  | "deterministic+command"
+  | "command"
+  | "command+browser";
 export type HarnessCommandReadinessStatus = "none" | "ready-before-timeout";
 export type ActingLoopBudgetReason =
   | "narrow-default"
+  | "direct-edit-fast-path"
   | "single-turn-ui-build"
   | "broad-greenfield"
   | "broad-continuation"
@@ -207,6 +214,7 @@ export type ActingLoopBudgetReason =
 
 export interface HarnessRouteSummary {
   selectedPath: HarnessSelectedPath;
+  actingMode: HarnessActingMode;
   taskComplexity: HarnessTaskComplexity;
   usedExplorer: boolean;
   usedPlanner: boolean;

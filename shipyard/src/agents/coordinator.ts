@@ -103,6 +103,27 @@ const targetedScopeKeywordPatterns = [
   /\bplaceholder\b/i,
   /\bpreview\b/i,
 ] as const;
+const directEditScopeKeywordPatterns = [
+  /\bbackground\b/i,
+  /\bcolor\b/i,
+  /\bcopy\b/i,
+  /\btext\b/i,
+  /\blabel\b/i,
+  /\btitle\b/i,
+  /\bheading\b/i,
+  /\bbutton\b/i,
+  /\bicon\b/i,
+  /\bpadding\b/i,
+  /\bmargin\b/i,
+  /\bspacing\b/i,
+  /\bfont\b/i,
+  /\bborder\b/i,
+  /\bshadow\b/i,
+  /\bstyle\b/i,
+  /\bcss\b/i,
+  /\bclass(?:name)?\b/i,
+  /\bplaceholder\b/i,
+] as const;
 const explicitBrowserEvaluationPatterns = [
   /\bverify\b/i,
   /\bevaluate\b/i,
@@ -404,6 +425,16 @@ function requestsExplicitBrowserEvaluation(instruction: string): boolean {
   );
 }
 
+export function looksLikeUiRelevantInstruction(instruction: string): boolean {
+  return browserEvaluationKeywordPatterns.some((pattern) =>
+    pattern.test(instruction)
+  );
+}
+
+export function looksLikeUiRelevantFilePath(filePath: string): boolean {
+  return uiFilePathPattern.test(filePath) || uiFileExtensionPattern.test(filePath);
+}
+
 export function createCoordinatorRouteDecision(options: {
   instruction: string;
   contextEnvelope: ContextEnvelope;
@@ -499,6 +530,54 @@ export function createCoordinatorRouteDecision(options: {
     usePlanner: true,
     reason: "Instruction is ambiguous enough to keep the heavier planning path.",
   };
+}
+
+export function shouldCoordinatorUseDirectEditFastPath(options: {
+  instruction: string;
+  contextEnvelope: ContextEnvelope;
+  planningMode?: PlanningMode;
+  taskComplexityHint?: CoordinatorRouteComplexity | null;
+  taskPlan?: TaskPlan | null;
+  executionSpec?: ExecutionSpec | null;
+  contextReport?: ContextReport | null;
+}): boolean {
+  if (requestsExplicitBrowserEvaluation(options.instruction)) {
+    return false;
+  }
+
+  if (options.contextEnvelope.session.latestHandoff !== null) {
+    return false;
+  }
+
+  const routeDecision = createCoordinatorRouteDecision(options);
+
+  if (routeDecision.useExplorer || routeDecision.usePlanner) {
+    return false;
+  }
+
+  if (
+    routeDecision.complexity !== "direct" &&
+    routeDecision.complexity !== "targeted"
+  ) {
+    return false;
+  }
+
+  const knownTargetFilePaths = getKnownTargetFilePaths(options);
+  const explicitTargetFilePaths = extractInstructionTargetFilePaths(
+    options.instruction,
+  );
+  const candidateFilePaths = uniqueStrings([
+    ...explicitTargetFilePaths,
+    ...knownTargetFilePaths,
+  ]);
+
+  if (candidateFilePaths.some((filePath) => !looksLikeUiRelevantFilePath(filePath))) {
+    return false;
+  }
+
+  return targetedChangeVerbPattern.test(options.instruction)
+    && directEditScopeKeywordPatterns.some((pattern) => pattern.test(options.instruction))
+    && countInstructionWords(options.instruction) <= targetedInstructionWordCeiling;
 }
 export function isSingleTurnUiBuildInstruction(instruction: string): boolean {
   const normalizedInstruction = instruction.trim().toLowerCase();
@@ -793,16 +872,6 @@ export function createVerificationPlan(options: {
       ?? `Run ${checks.length === 1 ? "the verification command" : "the verification checks"}.`,
     checks,
   };
-}
-
-function looksLikeUiRelevantInstruction(instruction: string): boolean {
-  return browserEvaluationKeywordPatterns.some((pattern) =>
-    pattern.test(instruction)
-  );
-}
-
-function looksLikeUiRelevantFilePath(filePath: string): boolean {
-  return uiFilePathPattern.test(filePath) || uiFileExtensionPattern.test(filePath);
 }
 
 export function shouldCoordinatorUseBrowserEvaluator(options: {

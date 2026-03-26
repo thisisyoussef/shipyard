@@ -85,9 +85,12 @@ flowchart TD
   `triage -> plan -> act -> verify -> recover -> respond` state machine. The
   front-door `triage` step is deterministic and classifies work as direct,
   targeted, or broad before planner or browser-evaluator delegation is even
-  considered. When the runtime is started in fallback mode, the system
-  preserves the same planning, tool, verification, and response contract, but
-  executes it through the lower-level loop in `src/engine/raw-loop.ts`.
+  considered. On the narrowest UI/copy lane, `act` can collapse into one
+  structured direct-edit pass and `verify` can stay deterministic instead of
+  invoking the heavier verifier helper. When the runtime is started in fallback
+  mode, the system preserves the same planning, tool, verification, and
+  response contract, but executes it through the lower-level loop in
+  `src/engine/raw-loop.ts`.
 
 ### Tool calls
 
@@ -108,7 +111,8 @@ appropriate, and schema-described before it reaches the model.
 - `AgentGraphState` in `src/engine/graph.ts` carries the active instruction,
   `messageHistory`, `taskPlan`, `executionSpec`, `planningMode`,
   `verificationReport`, `browserEvaluationReport`, `harnessRoute` (including
-  task complexity), `lastEditedFile`, recovery counters, and `langSmithTrace`.
+  task complexity plus `actingMode` / verification mode), `lastEditedFile`,
+  recovery counters, and `langSmithTrace`.
 - `PersistedTaskQueue` plus `ActiveTaskContext` in `src/plans/` carry reviewable
   multi-task work without stretching `rollingSummary`.
 - Checkpoints are stored under

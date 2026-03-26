@@ -37,11 +37,15 @@ when credentials are configured.
   planning mode, preview state, browser-evaluator usage, and resolved model are
   easy to compare across CLI and browser runs.
 - LangSmith trace metadata currently records `handoffLoaded`, `handoffPath`,
-  `handoffReason`, `selectedPath`, `taskComplexity`, `verificationMode`,
-  browser-evaluator usage, and the per-turn execution fingerprint so routing
-  is visible without opening raw prompts.
+  `handoffReason`, `selectedPath`, `actingMode`, `taskComplexity`,
+  `verificationMode`, browser-evaluator usage, and the per-turn execution
+  fingerprint so routing is visible without opening raw prompts.
 - Turn-level LangSmith traces now return the root turn run reference, while the
   nested runtime trace continues to capture graph-specific details underneath it.
+- Tiny direct-edit turns can intentionally use a one-shot trace lookup budget on
+  both the nested graph runtime and the outer instruction-turn wrapper. On that
+  lane, a returned `runId` plus project link is sufficient even when `traceUrl`
+  is still `null`.
 
 ## Operational Verification
 
@@ -58,6 +62,9 @@ when credentials are configured.
   - `pnpm --dir shipyard exec langsmith trace list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --limit 5 --full`
   - `pnpm --dir shipyard exec langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
   - `pnpm --dir shipyard exec langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3`
+- For tiny direct-edit performance checks, compare the local wall-clock turn
+  time against the root `shipyard.instruction-turn` duration. The remaining gap
+  is usually trace batching / lookup overhead, not model or tool execution.
 
 ## Diagram
 

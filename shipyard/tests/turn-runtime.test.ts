@@ -820,6 +820,7 @@ describe("instruction runtime handoff", () => {
         },
         harnessRoute: {
           selectedPath: "planner-backed",
+          actingMode: "raw-loop",
           taskComplexity: "broad",
           usedExplorer: true,
           usedPlanner: true,
@@ -912,6 +913,160 @@ describe("instruction runtime handoff", () => {
           "surface=cli phase=code planningMode=planner targetProfile=no preview=no browserEval=yes model=openai/gpt-5.4",
       }),
     );
+  });
+
+  it("uses one-shot LangSmith trace lookup for tiny direct-edit eligible turns", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-turn-trace-fast-");
+    const sessionState = createSessionState({
+      sessionId: "turn-trace-fast-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: false,
+        topLevelFiles: ["styles.css"],
+        topLevelDirectories: ["src"],
+        projectName: "turn-trace-fast-target",
+      },
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+    });
+    const outerTrace = {
+      projectName: "shipyard",
+      runId: "trace-turn-fast-123",
+      traceUrl: "https://smith.langchain.com/runs/trace-turn-fast-123",
+      projectUrl: "https://smith.langchain.com/projects/shipyard",
+    };
+    let capturedTraceOptions: Record<string, unknown> | null = null;
+
+    vi.spyOn(langsmith, "runWithLangSmithTrace").mockImplementationOnce(
+      async (traceOptions: any) => {
+        capturedTraceOptions = traceOptions;
+        const result = await traceOptions.fn(...traceOptions.args);
+
+        return {
+          result,
+          trace: outerTrace,
+        };
+      },
+    );
+
+    vi.spyOn(graphRuntime, "runAgentRuntime").mockResolvedValueOnce(
+      graphRuntime.createAgentGraphState({
+        sessionId: "turn-trace-fast-session",
+        instruction:
+          "Update styles.css to change the background color from white to #36454F.",
+        contextEnvelope: {
+          stable: {
+            discovery: sessionState.discovery,
+            projectRules: "",
+            availableScripts: sessionState.discovery.scripts,
+          },
+          task: {
+            currentInstruction:
+              "Update styles.css to change the background color from white to #36454F.",
+            injectedContext: [],
+            targetFilePaths: ["styles.css"],
+          },
+          runtime: {
+            recentToolOutputs: [],
+            recentErrors: [],
+            currentGitDiff: null,
+          },
+          session: {
+            rollingSummary: "",
+            retryCountsByFile: {},
+            blockedFiles: [],
+            latestHandoff: null,
+            activeTask: null,
+          },
+        },
+        previewState: sessionState.workbenchState.previewState,
+        targetDirectory,
+        phaseConfig: createCodePhase(),
+        planningMode: "lightweight",
+        executionSpec: {
+          instruction:
+            "Update styles.css to change the background color from white to #36454F.",
+          goal: "Update styles.css without widening scope.",
+          deliverables: ["Adjust the background color in styles.css."],
+          acceptanceCriteria: [
+            "The background color is updated in styles.css.",
+          ],
+          verificationIntent: ["Verify that only the requested block changed."],
+          targetFilePaths: ["styles.css"],
+          risks: [],
+        },
+        taskPlan: {
+          instruction:
+            "Update styles.css to change the background color from white to #36454F.",
+          goal: "Update styles.css without widening scope.",
+          targetFilePaths: ["styles.css"],
+          plannedSteps: [
+            "Read the relevant files before editing.",
+            "Update the background color in styles.css.",
+            "Leave command-based verification to the verifier after the edit unless shell output is required now.",
+          ],
+        },
+        harnessRoute: {
+          selectedPath: "lightweight",
+          actingMode: "direct-edit",
+          taskComplexity: "direct",
+          usedExplorer: false,
+          usedPlanner: false,
+          usedVerifier: false,
+          verificationMode: "deterministic",
+          verificationCheckCount: 1,
+          usedBrowserEvaluator: false,
+          browserEvaluationStatus: "not_run",
+          browserEvaluationFailureKind: null,
+          commandReadinessStatus: "none",
+          commandReadyUrl: null,
+          handoffLoaded: false,
+          handoffEmitted: false,
+          handoffReason: null,
+          checkpointRequested: false,
+          continuationCount: 0,
+          actingLoopBudget: 1,
+          actingLoopBudgetReason: "direct-edit-fast-path",
+          firstHardFailure: null,
+        },
+        actingIterations: 1,
+        lastEditedFile: "styles.css",
+        finalResult: "Changed body background color from white to #36454F.",
+        status: "done",
+        modelProvider: "openai",
+        modelName: "gpt-5.4",
+      }),
+    );
+
+    const result = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction:
+        "Update styles.css to change the background color from white to #36454F.",
+    });
+
+    expect(capturedTraceOptions).toMatchObject({
+      name: "shipyard.instruction-turn",
+      traceLookup: {
+        maxAttempts: 1,
+        delayMs: 0,
+      },
+    });
+    expect(result.langSmithTrace).toEqual(outerTrace);
+    expect(result.harnessRoute).toMatchObject({
+      actingMode: "direct-edit",
+      verificationMode: "deterministic",
+      actingLoopBudgetReason: "direct-edit-fast-path",
+    });
   });
 
   it("suppresses threshold handoffs for single-turn UI builds when the feature flag is enabled", async () => {

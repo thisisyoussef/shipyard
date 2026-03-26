@@ -63,4 +63,42 @@ describe("live verification helpers", () => {
     expect(verification.suffixUnchanged).toBe(true);
     expect(verification.changedOnlyTarget).toBe(true);
   });
+
+  it("detects when bytes changed outside the targeted block", () => {
+    const before = [
+      ".page {",
+      "  background: white;",
+      "}",
+      "",
+      ".button {",
+      "  color: black;",
+      "}",
+      "",
+    ].join("\n");
+    const after = [
+      ".page {",
+      "  background: #36454F;",
+      "}",
+      "",
+      ".button {",
+      "  color: black;",
+      "}",
+      "",
+      ".footer {",
+      "  color: white;",
+      "}",
+      "",
+    ].join("\n");
+    const verification = verifySurgicalEdit(
+      before,
+      after,
+      ['.page {', '  background: white;', '}'].join("\n"),
+      ['.page {', '  background: #36454F;', '}'].join("\n"),
+    );
+
+    expect(verification.oldBlockMatches).toBe(1);
+    expect(verification.newBlockMatches).toBe(1);
+    expect(verification.changedOnlyTarget).toBe(false);
+    expect(verification.suffixUnchanged).toBe(false);
+  });
 });

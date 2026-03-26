@@ -19,9 +19,11 @@ This folder holds small shared types that move between runtime layers.
 - `BrowserEvaluationPlan` and `BrowserEvaluationReport`: loopback preview
   inspection contracts for UI-backed verification, including explicit
   infrastructure-degradation outcomes when browser dependencies are unavailable
-- `HarnessRouteSummary`: selected lightweight vs planner-backed path, verifier
-  mode, browser-evaluator usage, browser failure kind, command readiness
-  status, and handoff facts for a turn
+- `HarnessRouteSummary`: selected lightweight vs planner-backed path,
+  `actingMode` (`raw-loop` vs `direct-edit`), verification mode
+  (`deterministic`, `deterministic+command`, or verifier-backed variants),
+  browser-evaluator usage, browser failure kind, command readiness status, and
+  handoff facts for a turn
 - `DiscoveryReport`, `TargetProfile`, and preview/deploy-related view-model
   inputs
 - `ExecutionHandoff` and `LoadedExecutionHandoff`: the durable long-run resume

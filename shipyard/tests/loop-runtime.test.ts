@@ -99,6 +99,7 @@ function createTurnResult(
     },
     harnessRoute: {
       selectedPath: "lightweight",
+      actingMode: "raw-loop",
       taskComplexity: "direct",
       usedExplorer: false,
       usedPlanner: false,
@@ -490,6 +491,7 @@ describe("terminal loop interrupts", () => {
         finalText: "Turn 1 completed with a handoff.",
         harnessRoute: {
           selectedPath: "planner-backed",
+          actingMode: "raw-loop",
           taskComplexity: "broad",
           usedExplorer: true,
           usedPlanner: true,
