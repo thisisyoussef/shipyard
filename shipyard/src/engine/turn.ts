@@ -804,6 +804,9 @@ function createInstructionTurnTraceMetadata(options: {
   targetDirectory: string;
   planningMode?: PlanningMode | null;
   harnessRoute?: HarnessRouteSummary | null;
+  turnStatus?: InstructionTurnResult["status"];
+  finalText?: string;
+  summary?: string;
 }): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
     sessionId: options.sessionId,
@@ -821,7 +824,63 @@ function createInstructionTurnTraceMetadata(options: {
     Object.assign(metadata, options.harnessRoute);
   }
 
+  if (options.turnStatus) {
+    metadata.turnStatus = options.turnStatus;
+  }
+
+  const runtimeFailure = classifyInstructionTurnFailure({
+    status: options.turnStatus,
+    finalText: options.finalText,
+    summary: options.summary,
+  });
+
+  if (runtimeFailure) {
+    metadata.runtimeFailureKind = runtimeFailure.kind;
+    metadata.runtimeFailureStopReason = runtimeFailure.stopReason;
+  }
+
   return metadata;
+}
+
+function classifyInstructionTurnFailure(options: {
+  status?: InstructionTurnResult["status"];
+  finalText?: string;
+  summary?: string;
+}): { kind: "cancelled" | "timeout" | "budget_exhausted" | "error"; stopReason: string | null } | null {
+  if (!options.status || options.status === "success") {
+    return null;
+  }
+
+  if (options.status === "cancelled") {
+    return {
+      kind: "cancelled",
+      stopReason: null,
+    };
+  }
+
+  const combinedMessage = `${options.summary ?? ""}\n${options.finalText ?? ""}`
+    .trim()
+    .toLowerCase();
+
+  if (combinedMessage.includes("stop_reason=max_tokens")
+    || combinedMessage.includes("output budget exhausted")) {
+    return {
+      kind: "budget_exhausted",
+      stopReason: "max_tokens",
+    };
+  }
+
+  if (combinedMessage.includes("timed out")) {
+    return {
+      kind: "timeout",
+      stopReason: null,
+    };
+  }
+
+  return {
+    kind: "error",
+    stopReason: null,
+  };
 }
 
 async function emitInstructionTurnOutcome(
@@ -1311,6 +1370,9 @@ export async function executeInstructionTurn(
         targetDirectory: state.targetDirectory,
         planningMode: result.planningMode,
         harnessRoute: result.harnessRoute,
+        turnStatus: result.status,
+        finalText: result.finalText,
+        summary: result.summary,
       }),
     fn: executeWithContinuations,
     args: [],

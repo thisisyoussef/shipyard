@@ -23,3 +23,29 @@
 - Anthropic budget defaults are realistic for code-writing loops and still configurable.
 - `max_tokens` is handled as an explicit truncation condition instead of a generic empty-response error.
 - Operators and maintainers can tell timeout, cancellation, and budget exhaustion apart from each other.
+
+## TDD Mapping
+
+- [x] `uses higher Anthropic defaults for code-writing loops`
+- [x] `wraps Anthropic timeouts with a targeted timeout message`
+- [x] `inherits Anthropic env overrides through adapter defaults`
+- [x] `retries stop_reason=max_tokens with a higher max_tokens budget`
+- [x] `raises a targeted budget error when max_tokens exhaustion persists`
+- [x] `does not re-execute completed tool turns when retrying a max_tokens response`
+- [x] `classifies timeout and budget-exhaustion failures in LangSmith turn metadata`
+
+## Completion Checklist
+
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to implemented coverage
+- [x] Runtime docs updated for the new Anthropic defaults
+- [x] No deferred tasks for this story
+
+## Implementation Evidence
+
+| Area | Evidence |
+|---|---|
+| Anthropic defaults and env plumbing | `shipyard/src/engine/anthropic.ts`, `shipyard/tests/anthropic-contract.test.ts` |
+| Bounded `max_tokens` recovery | `shipyard/src/engine/raw-loop.ts`, `shipyard/tests/raw-loop.test.ts` |
+| Failure classification in trace metadata | `shipyard/src/engine/turn.ts`, `shipyard/tests/turn-runtime.test.ts` |
+| Manual smoke prerequisites | `shipyard/tests/manual/README.md` |

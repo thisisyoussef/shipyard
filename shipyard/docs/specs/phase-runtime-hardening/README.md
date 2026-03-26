@@ -74,13 +74,43 @@
 - `RTH-S02` Anthropic budget defaults and `max_tokens` recovery
   Code References:
   - `shipyard/src/engine/anthropic.ts`
+  - `shipyard/src/engine/turn.ts`
+  - `shipyard/tests/anthropic-contract.test.ts`
+  - `shipyard/tests/raw-loop.test.ts`
+  - `shipyard/tests/turn-runtime.test.ts`
+  - `shipyard/tests/manual/README.md`
   Representative Snippet:
   ```ts
-  // No new code landed in this patch.
+  export const DEFAULT_ANTHROPIC_MAX_TOKENS = 12_288;
+  export const DEFAULT_ANTHROPIC_TIMEOUT_MS = 600_000;
+  ```
+  ```ts
+  if (error instanceof Anthropic.APIConnectionTimeoutError) {
+    const timeoutMs = input.timeoutMs
+      ?? resolveAnthropicRuntimeConfig({
+        model: input.model,
+        maxTokens: input.maxTokens,
+        env: input.env,
+      }).timeoutMs;
+
+    throw new Error(
+      `Anthropic API request timed out after ${String(timeoutMs)}ms during message creation. ` +
+      "Set SHIPYARD_ANTHROPIC_TIMEOUT_MS to override the default timeout if needed.",
+    );
+  }
   ```
   Notes:
-  - The live finish check exercised the existing `maxTokens=8192` and
-    `timeoutMs=120000` defaults already present on `main`.
+  - The Anthropic adapter now resolves env-aware default model and token budgets
+    before raw-loop execution, so fallback mode no longer hard-codes `8192`
+    when `SHIPYARD_ANTHROPIC_MAX_TOKENS` is configured.
+  - Turn trace metadata now classifies timeout versus
+    `budget_exhausted` failures so LangSmith finish checks can distinguish
+    provider timeout from `stop_reason=max_tokens`.
+  - Fresh LangSmith finish-check traces for this story:
+    `019d29b5-1c46-7000-8000-0050293db451` (graph success),
+    `019d29b5-5924-7000-8000-00b9bf66ae2b` (fallback success), and
+    `019d29b6-5634-7000-8000-0490382ca6bf` (forced budget exhaustion with
+    `runtimeFailureKind=budget_exhausted` on the outer instruction-turn trace).
 - `RTH-S03` Continuation-aware routing and subagent visibility
   Code References:
   - `shipyard/src/engine/graph.ts`

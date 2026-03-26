@@ -30,6 +30,8 @@ import {
 
 const createdDirectories: string[] = [];
 const LOGGER_TEST_TOOL_NAME = "loop_logger_test_tool";
+const MAX_TOKENS_RETRY_TEST_TOOL_NAME = "max_tokens_retry_test_tool";
+let maxTokensRetryToolExecutions = 0;
 
 async function createTempProject(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "shipyard-raw-loop-"));
@@ -56,6 +58,32 @@ if (!getTool(LOGGER_TEST_TOOL_NAME)) {
       return {
         success: true,
         output: `echo:${input.long_input}`,
+      };
+    },
+  });
+}
+
+if (!getTool(MAX_TOKENS_RETRY_TEST_TOOL_NAME)) {
+  registerTool<{ path: string }>({
+    name: MAX_TOKENS_RETRY_TEST_TOOL_NAME,
+    description: "Counts executions so raw-loop retries can prove prior tools are not duplicated.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Path label for the synthetic tool result.",
+        },
+      },
+      required: ["path"],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      maxTokensRetryToolExecutions += 1;
+
+      return {
+        success: true,
+        output: `counted:${input.path}`,
       };
     },
   });
@@ -401,6 +429,49 @@ describe("raw tool loop", () => {
         },
       ),
     ).rejects.toThrowError(/output budget exhausted|stop_reason=max_tokens/i);
+  });
+
+  it("does not re-execute completed tool turns when retrying a max_tokens response", async () => {
+    maxTokensRetryToolExecutions = 0;
+
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_count_once",
+          name: MAX_TOKENS_RETRY_TEST_TOOL_NAME,
+          input: {
+            path: "src/app.tsx",
+          },
+        },
+      ]),
+      createFakeModelTurnResult({
+        stopReason: "max_tokens",
+        rawStopReason: "max_tokens",
+        finalText: "Partial final response.",
+      }),
+      createFakeTextTurnResult("Recovered after the budget retry."),
+    ]);
+
+    const result = await runRawToolLoop(
+      "You are Shipyard.",
+      "Explain the repo status after the tool run.",
+      [MAX_TOKENS_RETRY_TEST_TOOL_NAME],
+      process.cwd(),
+      {
+        modelAdapter,
+        logger: {
+          log() {},
+        },
+        maxTokens: 1024,
+        maxTokensRecoveryRetries: 1,
+        maxTokensRetryMultiplier: 2,
+      },
+    );
+
+    expect(result).toBe("Recovered after the budget retry.");
+    expect(maxTokensRetryToolExecutions).toBe(1);
+    expect(modelAdapter.calls).toHaveLength(3);
+    expect(modelAdapter.calls[1]?.messages).toEqual(modelAdapter.calls[2]?.messages);
   });
 
   it("returns a continuation result after 25 iterations without a final response", async () => {
