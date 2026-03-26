@@ -3,7 +3,7 @@
  * Art Deco Command · Lovable-style architecture.
  *
  * Two panels: conversation (left) + workspace (right).
- * Minimal header. No sidebars. No footer.
+ * Minimal header, optional drawer, optional footer.
  */
 
 import type { ReactNode } from "react";
@@ -120,9 +120,9 @@ export function ShipyardShell({
         </aside>
       ) : null}
 
-      {/* Footer — minimal, hidden by default in split-pane mode */}
+      {/* Footer */}
       {footer ? (
-        <footer className="shell-footer" role="contentinfo" style={{ display: "none" }}>
+        <footer className="shell-footer" role="contentinfo">
           {footer}
         </footer>
       ) : null}

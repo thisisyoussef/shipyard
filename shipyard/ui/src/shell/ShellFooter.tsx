@@ -104,7 +104,9 @@ export function ShellFooter({
         >
           {workspaceFolder}
         </span>
-        <span className="shell-footer-label">{agentStatus}</span>
+        <span className="shell-footer-label" title={agentStatus}>
+          {agentStatus}
+        </span>
       </div>
     </div>
   );

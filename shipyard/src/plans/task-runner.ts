@@ -20,6 +20,7 @@ import {
   type InstructionTurnReporter,
   type InstructionTurnResult,
 } from "../engine/turn.js";
+import type { RuntimeSurface, TurnExecutionFingerprint } from "../engine/turn-fingerprint.js";
 import {
   createExecutionTurnSummary,
   truncateText,
@@ -55,6 +56,7 @@ export interface ExecuteTaskRunnerTurnOptions {
   injectedContext?: string[];
   reporter?: InstructionTurnReporter;
   signal?: AbortSignal;
+  runtimeSurface?: RuntimeSurface;
   executeTurn?: (
     options: ExecuteInstructionTurnOptions,
   ) => Promise<InstructionTurnResult>;
@@ -64,6 +66,7 @@ export interface TaskRunnerTurnResult {
   phaseName: string;
   runtimeMode: InstructionRuntimeMode;
   planningMode: PlanningMode;
+  executionFingerprint?: TurnExecutionFingerprint | null;
   contextEnvelope: ContextEnvelope | null;
   taskPlan: TaskPlan | null;
   executionSpec: ExecutionSpec | null;
@@ -614,6 +617,7 @@ export async function executeTaskRunnerTurn(
     ],
     reporter: options.reporter,
     signal: options.signal,
+    runtimeSurface: options.runtimeSurface,
   });
 
   const outcomeSummary = buildTaskOutcomeSummary(turnResult);
@@ -658,6 +662,7 @@ export async function executeTaskRunnerTurn(
     phaseName: turnResult.phaseName,
     runtimeMode: turnResult.runtimeMode,
     planningMode: turnResult.planningMode,
+    executionFingerprint: turnResult.executionFingerprint ?? null,
     contextEnvelope: turnResult.contextEnvelope,
     taskPlan: turnResult.taskPlan,
     executionSpec: turnResult.executionSpec,

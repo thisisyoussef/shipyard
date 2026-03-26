@@ -84,6 +84,19 @@ function createTurnResult(
     summary: options.finalText,
     selectedTargetPath: null,
     langSmithTrace: null,
+    executionFingerprint: {
+      surface: "cli",
+      phase: "code",
+      planningMode: "lightweight",
+      targetProfile: "no",
+      preview: "no",
+      previewStatus: "idle",
+      browserEval: "no",
+      browserEvaluationStatus: "not_run",
+      model: "openai/gpt-5.4",
+      modelProvider: "openai",
+      modelName: "gpt-5.4",
+    },
     harnessRoute: {
       selectedPath: "lightweight",
       usedExplorer: false,
@@ -365,9 +378,13 @@ describe("terminal loop interrupts", () => {
     await loopPromise;
 
     expect(executeTurn.mock.calls[0]?.[0].signal?.aborted).toBe(true);
+    expect(executeTurn.mock.calls[0]?.[0].runtimeSurface).toBe("cli");
     expect(sessionState.turnCount).toBe(2);
     expect(logSpy.mock.calls.flat()).toContain(
       "Interrupt requested. Waiting for Shipyard to stop the current turn...",
+    );
+    expect(logSpy.mock.calls.flat()).toContain(
+      "Execution fingerprint: surface=cli phase=code planningMode=lightweight targetProfile=no preview=no browserEval=no model=openai/gpt-5.4",
     );
     expect(logSpy.mock.calls.flat()).toContain("Turn 2 completed.");
     expect(errorSpy).not.toHaveBeenCalled();
@@ -567,6 +584,8 @@ describe("terminal loop interrupts", () => {
     expect(traceContents).toContain('"event":"instruction.plan"');
     expect(traceContents).toContain('"handoff"');
     expect(traceContents).toContain('"harnessRoute"');
+    expect(traceContents).toContain('"executionFingerprint"');
+    expect(traceContents).toContain('"executionFingerprintLabel"');
     expect(traceContents).toContain('"verificationMode":"command+browser"');
     expect(traceContents).toContain('"usedBrowserEvaluator":true');
     expect(traceContents).toContain(

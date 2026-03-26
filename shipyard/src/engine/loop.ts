@@ -27,6 +27,7 @@ import {
   type InstructionRuntimeMode,
   type InstructionTurnResult,
 } from "./turn.js";
+import { formatTurnExecutionFingerprint } from "./turn-fingerprint.js";
 import {
   executePlanningTurn,
   isPlanModeInstruction,
@@ -72,6 +73,16 @@ export interface RunShipyardLoopOptions {
 
 function printDivider(): void {
   console.log("");
+}
+
+function printExecutionFingerprint(
+  fingerprint?: InstructionTurnResult["executionFingerprint"] | TaskRunnerTurnResult["executionFingerprint"],
+): void {
+  if (!fingerprint) {
+    return;
+  }
+
+  console.log(`Execution fingerprint: ${formatTurnExecutionFingerprint(fingerprint)}`);
 }
 
 function printHelp(): void {
@@ -419,6 +430,7 @@ export async function runShipyardLoop(
               runtimeState,
               instruction: line,
               signal: turnController.signal,
+              runtimeSurface: "cli",
             });
             activeTurnController = null;
             const turnStatusLabel = taskTurnResult.status === "success"
@@ -430,6 +442,7 @@ export async function runShipyardLoop(
             console.log(
               `Turn ${state.turnCount} ${turnStatusLabel} in phase "${taskTurnResult.phaseName}" via ${taskTurnResult.runtimeMode} runtime.`,
             );
+            printExecutionFingerprint(taskTurnResult.executionFingerprint);
             if (taskTurnResult.taskPlan) {
               console.log(JSON.stringify(taskTurnResult.taskPlan, null, 2));
             }
@@ -449,6 +462,10 @@ export async function runShipyardLoop(
               contextEnvelope: taskTurnResult.contextEnvelope,
               taskPlan: taskTurnResult.taskPlan,
               executionSpec: taskTurnResult.executionSpec,
+              executionFingerprint: taskTurnResult.executionFingerprint,
+              executionFingerprintLabel: taskTurnResult.executionFingerprint
+                ? formatTurnExecutionFingerprint(taskTurnResult.executionFingerprint)
+                : null,
               taskQueue: taskTurnResult.plan,
               planId: taskTurnResult.planId,
               taskId: taskTurnResult.taskId,
@@ -501,6 +518,7 @@ export async function runShipyardLoop(
               runtimeState,
               instruction: line,
               signal: turnController.signal,
+              runtimeSurface: "cli",
             });
             activeTurnController = null;
             const turnStatusLabel = turnResult.status === "success"
@@ -512,6 +530,7 @@ export async function runShipyardLoop(
             console.log(
               `Turn ${state.turnCount} ${turnStatusLabel} in phase "${turnResult.phaseName}" via ${turnResult.runtimeMode} runtime.`,
             );
+            printExecutionFingerprint(turnResult.executionFingerprint);
             console.log(JSON.stringify(turnResult.taskPlan, null, 2));
             printDivider();
             console.log(turnResult.finalText);
@@ -525,6 +544,10 @@ export async function runShipyardLoop(
               runtimeMode: turnResult.runtimeMode,
               planningMode: turnResult.planningMode,
               harnessRoute: turnResult.harnessRoute,
+              executionFingerprint: turnResult.executionFingerprint,
+              executionFingerprintLabel: turnResult.executionFingerprint
+                ? formatTurnExecutionFingerprint(turnResult.executionFingerprint)
+                : null,
               contextEnvelope: turnResult.contextEnvelope,
               taskPlan: turnResult.taskPlan,
               executionSpec: turnResult.executionSpec,

@@ -58,6 +58,9 @@ Within those surfaces, Shipyard routes work through three turn types:
   in the browser workbench
 - checkpoint-backed recovery for surgical edits
 - local JSONL tracing with optional LangSmith trace export
+- per-turn execution fingerprints surfaced in terminal output, browser
+  completion state, and trace metadata so local vs hosted/runtime routing is
+  visible without digging through code
 - long-run `ExecutionHandoff` artifacts for reset-aware resume flows
 
 ## Quick Start

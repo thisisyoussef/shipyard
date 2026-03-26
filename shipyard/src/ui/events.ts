@@ -141,6 +141,7 @@ function createDoneMessage(event: DoneEvent): BackendToFrontendMessage {
     status: event.status,
     summary: event.summary,
     langSmithTrace: event.langSmithTrace ?? null,
+    executionFingerprint: event.executionFingerprint ?? null,
   };
 }
 

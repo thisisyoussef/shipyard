@@ -26,6 +26,7 @@ import { TargetHeader } from "./TargetHeader.js";
 import { TargetSwitcher } from "./TargetSwitcher.js";
 import {
   HeaderStrip,
+  ShellFooter,
   ShellSidebar,
   ShipyardShell,
 } from "./shell/index.js";
@@ -254,7 +255,14 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             <OutputPanel turns={props.turns} />
           </ShellSidebar>
         }
-        footer={null}
+        footer={
+          <ShellFooter
+            connectionState={props.connectionState}
+            sessionId={props.sessionState?.sessionId}
+            workspacePath={props.sessionState?.workspaceDirectory}
+            agentStatus={props.agentStatus}
+          />
+        }
         leftCollapsed={!drawerOpen}
         rightCollapsed={true}
       />

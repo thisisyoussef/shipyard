@@ -93,6 +93,26 @@ export const previewStateSchema = z.object({
   logTail: z.array(z.string()),
   lastRestartReason: z.string().nullable(),
 });
+const executionFingerprintPresenceSchema = z.enum(["yes", "no"]);
+export const turnExecutionFingerprintSchema = z.object({
+  surface: z.enum(["cli", "ui"]),
+  phase: z.enum(["code", "target-manager"]),
+  planningMode: z.enum(["lightweight", "planner"]),
+  targetProfile: executionFingerprintPresenceSchema,
+  preview: executionFingerprintPresenceSchema,
+  previewStatus: previewStatusSchema,
+  browserEval: executionFingerprintPresenceSchema,
+  browserEvaluationStatus: z.enum([
+    "passed",
+    "failed",
+    "infrastructure_failed",
+    "not_applicable",
+    "not_run",
+  ]),
+  model: z.string(),
+  modelProvider: z.string().nullable(),
+  modelName: z.string().nullable(),
+});
 export const langSmithTraceReferenceSchema = z.object({
   projectName: z.string().nullable(),
   runId: z.string().nullable(),
@@ -396,6 +416,7 @@ export const agentDoneMessageSchema = z.object({
   status: z.enum(["success", "error", "cancelled"]),
   summary: z.string(),
   langSmithTrace: langSmithTraceReferenceSchema.nullable().optional(),
+  executionFingerprint: turnExecutionFingerprintSchema.nullable().optional(),
 });
 
 export const agentErrorMessageSchema = z.object({
@@ -459,6 +480,9 @@ export type BackendToFrontendMessage = z.infer<
 >;
 export type UiLangSmithTraceReference = z.infer<
   typeof langSmithTraceReferenceSchema
+>;
+export type UiTurnExecutionFingerprint = z.infer<
+  typeof turnExecutionFingerprintSchema
 >;
 export type SessionRunSummary = z.infer<typeof sessionRunSummarySchema>;
 export type TargetManagerState = z.infer<typeof targetManagerStateSchema>;
