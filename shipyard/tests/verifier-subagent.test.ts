@@ -2,12 +2,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type {
-  Message,
-  MessageCreateParamsNonStreaming,
-  MessageParam,
-  Model,
-} from "@anthropic-ai/sdk/resources/messages";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { EvaluationPlan } from "../src/artifacts/types.js";
@@ -17,70 +11,16 @@ import {
   runVerifierSubagent,
   VERIFIER_TOOL_NAMES,
 } from "../src/agents/verifier.js";
-import {
-  DEFAULT_ANTHROPIC_MODEL,
-  projectToolsToAnthropicTools,
-} from "../src/engine/anthropic.js";
 import "../src/tools/index.js";
-import { getTools } from "../src/tools/registry.js";
+import {
+  createFakeModelAdapter,
+  createFakeTextTurnResult,
+  createFakeToolCallTurnResult,
+  getToolNamesFromCall,
+  getToolResultContentParts,
+} from "./support/fake-model-adapter.js";
 
 const createdDirectories: string[] = [];
-
-interface MockAnthropicClient {
-  messages: {
-    create: (request: MessageCreateParamsNonStreaming) => Promise<Message>;
-  };
-  calls: MessageCreateParamsNonStreaming[];
-}
-
-function createAssistantMessage(options: {
-  content: unknown[];
-  stopReason: Message["stop_reason"];
-  model?: Model;
-}): Message {
-  return {
-    id: `msg_${Math.random().toString(36).slice(2)}`,
-    container: null,
-    content: options.content as Message["content"],
-    model: options.model ?? DEFAULT_ANTHROPIC_MODEL,
-    role: "assistant",
-    stop_reason: options.stopReason,
-    stop_sequence: null,
-    type: "message",
-    usage: {
-      cache_creation: null,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-      inference_geo: null,
-      input_tokens: 42,
-      output_tokens: 19,
-      server_tool_use: null,
-      service_tier: "standard",
-    },
-  };
-}
-
-function createMockAnthropicClient(
-  responses: Message[],
-): MockAnthropicClient {
-  const calls: MessageCreateParamsNonStreaming[] = [];
-
-  return {
-    calls,
-    messages: {
-      async create(request) {
-        calls.push(request);
-        const response = responses[calls.length - 1];
-
-        if (!response) {
-          throw new Error("No mock Claude response configured.");
-        }
-
-        return response;
-      },
-    },
-  };
-}
 
 async function createTempProject(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "shipyard-verifier-"));
@@ -97,91 +37,27 @@ function createVerifierCommandResponses(options: {
   stderr: string;
   summary: string;
   timeoutSeconds?: number;
-}): Message[] {
+}) {
   return [
-    createAssistantMessage({
-      stopReason: "tool_use",
-      content: [
-        {
-          type: "tool_use",
-          id: options.toolUseId,
-          name: "run_command",
-          input: {
-            command: options.command,
-            timeout_seconds: options.timeoutSeconds ?? 2,
-          },
-          caller: {
-            type: "direct",
-          },
+    createFakeToolCallTurnResult([
+      {
+        id: options.toolUseId,
+        name: "run_command",
+        input: {
+          command: options.command,
+          timeout_seconds: options.timeoutSeconds ?? 2,
         },
-      ],
-    }),
-    createAssistantMessage({
-      stopReason: "end_turn",
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            command: options.command,
-            exitCode: options.exitCode,
-            passed: options.passed,
-            stdout: options.stdout,
-            stderr: options.stderr,
-            summary: options.summary,
-          }),
-          citations: null,
-        },
-      ],
-    }),
-  ];
-}
-
-function getLastUserToolResultMessage(
-  request: MessageCreateParamsNonStreaming,
-): MessageParam {
-  const lastMessage = request.messages.at(-1);
-
-  if (!lastMessage) {
-    throw new Error("Expected a last message.");
-  }
-
-  if (lastMessage.role !== "user" || typeof lastMessage.content === "string") {
-    throw new Error("Expected the last message to be a structured user tool_result message.");
-  }
-
-  return lastMessage;
-}
-
-function getToolResultPayloads(request: MessageCreateParamsNonStreaming): Array<{
-  toolUseId: string;
-  isError: boolean;
-  payload: {
-    success: boolean;
-    output: string;
-    error?: string;
-  };
-}> {
-  const toolResultMessage = getLastUserToolResultMessage(request);
-
-  if (typeof toolResultMessage.content === "string") {
-    throw new Error("Expected structured tool_result content.");
-  }
-
-  return toolResultMessage.content.map((block) => {
-    if (block.type !== "tool_result" || typeof block.content !== "string") {
-      throw new Error("Expected tool_result blocks with string content.");
-    }
-
-    return {
-      toolUseId: block.tool_use_id,
-      isError: block.is_error ?? false,
-      payload: JSON.parse(block.content) as {
-        success: boolean;
-        output: string;
-        error?: string;
       },
-    };
-  });
+    ]),
+    createFakeTextTurnResult(JSON.stringify({
+      command: options.command,
+      exitCode: options.exitCode,
+      passed: options.passed,
+      stdout: options.stdout,
+      stderr: options.stderr,
+      summary: options.summary,
+    })),
+  ];
 }
 
 describe("verifier subagent", () => {
@@ -197,80 +73,55 @@ describe("verifier subagent", () => {
 
   it("uses only the run_command allowlist and fails closed on unauthorized tool requests", async () => {
     const directory = await createTempProject();
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_read",
-            name: "read_file",
-            input: {
-              path: "README.md",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read",
+          name: "read_file",
+          input: {
+            path: "README.md",
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              command: "pnpm test",
-              exitCode: 0,
-              passed: true,
-              stdout: "",
-              stderr: "",
-              summary: "Verification passed.",
-            }),
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        command: "pnpm test",
+        exitCode: 0,
+        passed: true,
+        stdout: "",
+        stderr: "",
+        summary: "Verification passed.",
+      })),
     ]);
 
     await expect(
       runVerifierSubagent("pnpm test", directory, {
-        client,
+        modelAdapter,
         logger: {
           log() {},
         },
       }),
     ).rejects.toThrow(/read_file|command-only|not available|unauthorized/i);
 
-    expect(client.calls[0]?.tools).toEqual(
-      projectToolsToAnthropicTools(getTools([...VERIFIER_TOOL_NAMES])),
-    );
+    expect(getToolNamesFromCall(modelAdapter.calls[0]!)).toEqual([
+      ...VERIFIER_TOOL_NAMES,
+    ]);
   });
 
   it("does not inherit prior assistant or user history", async () => {
     const directory = await createTempProject();
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              command: "pnpm test",
-              exitCode: 0,
-              passed: true,
-              stdout: "",
-              stderr: "",
-              summary: "Verification passed.",
-            }),
-            citations: null,
-          },
-        ],
-      }),
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult(JSON.stringify({
+        command: "pnpm test",
+        exitCode: 0,
+        passed: true,
+        stdout: "",
+        stderr: "",
+        summary: "Verification passed.",
+      })),
     ]);
 
     const result = await runVerifierSubagent("pnpm test", directory, {
-      client,
+      modelAdapter,
       logger: {
         log() {},
       },
@@ -311,7 +162,7 @@ describe("verifier subagent", () => {
       ],
       firstHardFailure: null,
     });
-    expect(client.calls[0]?.messages).toEqual([
+    expect(modelAdapter.calls[0]?.messages).toEqual([
       {
         role: "user",
         content: "pnpm test",
@@ -321,48 +172,32 @@ describe("verifier subagent", () => {
 
   it("runs a passing command and returns a structured report", async () => {
     const directory = await createTempProject();
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_run",
-            name: "run_command",
-            input: {
-              command: "node -e \"console.log('ok')\"",
-              timeout_seconds: 2,
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_run",
+          name: "run_command",
+          input: {
+            command: "node -e \"console.log('ok')\"",
+            timeout_seconds: 2,
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              command: "node -e \"console.log('ok')\"",
-              exitCode: 0,
-              passed: true,
-              stdout: "ok\n",
-              stderr: "",
-              summary: "Command passed: node -e \"console.log('ok')\"",
-            }),
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        command: "node -e \"console.log('ok')\"",
+        exitCode: 0,
+        passed: true,
+        stdout: "ok\n",
+        stderr: "",
+        summary: "Command passed: node -e \"console.log('ok')\"",
+      })),
     ]);
 
     const result = await runVerifierSubagent(
       "node -e \"console.log('ok')\"",
       directory,
       {
-        client,
+        modelAdapter,
         logger: {
           log() {},
         },
@@ -405,13 +240,13 @@ describe("verifier subagent", () => {
       firstHardFailure: null,
     });
 
-    const toolResultPayloads = getToolResultPayloads(client.calls[1]!);
+    const toolResultPayloads = getToolResultContentParts(modelAdapter.calls[1]!);
 
     expect(toolResultPayloads).toHaveLength(1);
-    expect(toolResultPayloads[0]?.payload.success).toBe(true);
-    expect(toolResultPayloads[0]?.payload.output).toContain("Command: node -e");
-    expect(toolResultPayloads[0]?.payload.output).toContain("Exit code: 0");
-    expect(toolResultPayloads[0]?.payload.output).toContain("ok");
+    expect(toolResultPayloads[0]?.result.success).toBe(true);
+    expect(toolResultPayloads[0]?.result.output).toContain("Command: node -e");
+    expect(toolResultPayloads[0]?.result.output).toContain("Exit code: 0");
+    expect(toolResultPayloads[0]?.result.output).toContain("ok");
   });
 
   it("evaluation plan validation rejects empty or malformed plans", () => {
@@ -474,7 +309,7 @@ describe("verifier subagent", () => {
         },
       ],
     } satisfies EvaluationPlan;
-    const client = createMockAnthropicClient([
+    const modelAdapter = createFakeModelAdapter([
       ...createVerifierCommandResponses({
         toolUseId: "toolu_unit",
         command: "node -e \"console.log('unit ok')\"",
@@ -496,7 +331,7 @@ describe("verifier subagent", () => {
     ]);
 
     const result = await runVerifierSubagent(evaluationPlan, directory, {
-      client,
+      modelAdapter,
       logger: {
         log() {},
       },
@@ -571,48 +406,32 @@ describe("verifier subagent", () => {
 
   it("returns a structured failure report for a failing command", async () => {
     const directory = await createTempProject();
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_fail",
-            name: "run_command",
-            input: {
-              command: "node -e \"process.stderr.write('bad\\n'); process.exit(2)\"",
-              timeout_seconds: 2,
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_fail",
+          name: "run_command",
+          input: {
+            command: "node -e \"process.stderr.write('bad\\n'); process.exit(2)\"",
+            timeout_seconds: 2,
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              command: "node -e \"process.stderr.write('bad\\n'); process.exit(2)\"",
-              exitCode: 2,
-              passed: false,
-              stdout: "",
-              stderr: "bad\n",
-              summary: "Command failed with exit code 2.",
-            }),
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        command: "node -e \"process.stderr.write('bad\\n'); process.exit(2)\"",
+        exitCode: 2,
+        passed: false,
+        stdout: "",
+        stderr: "bad\n",
+        summary: "Command failed with exit code 2.",
+      })),
     ]);
 
     const result = await runVerifierSubagent(
       "node -e \"process.stderr.write('bad\\n'); process.exit(2)\"",
       directory,
       {
-        client,
+        modelAdapter,
         logger: {
           log() {},
         },
@@ -624,11 +443,11 @@ describe("verifier subagent", () => {
     expect(result.stderr).toContain("bad");
     expect(result.summary).toContain("exit code 2");
 
-    const toolResultPayloads = getToolResultPayloads(client.calls[1]!);
+    const toolResultPayloads = getToolResultContentParts(modelAdapter.calls[1]!);
 
-    expect(toolResultPayloads[0]?.isError).toBe(true);
-    expect(toolResultPayloads[0]?.payload.error).toContain("Exit code: 2");
-    expect(toolResultPayloads[0]?.payload.error).toContain("bad");
+    expect(toolResultPayloads[0]?.result.success).toBe(false);
+    expect(toolResultPayloads[0]?.result.error).toContain("Exit code: 2");
+    expect(toolResultPayloads[0]?.result.error).toContain("bad");
   });
 
   it("required failing checks fail the overall evaluation", async () => {
@@ -652,7 +471,7 @@ describe("verifier subagent", () => {
         },
       ],
     } satisfies EvaluationPlan;
-    const client = createMockAnthropicClient([
+    const modelAdapter = createFakeModelAdapter([
       ...createVerifierCommandResponses({
         toolUseId: "toolu_required_fail",
         command: "node -e \"process.stderr.write('bad\\n'); process.exit(2)\"",
@@ -665,7 +484,7 @@ describe("verifier subagent", () => {
     ]);
 
     const result = await runVerifierSubagent(evaluationPlan, directory, {
-      client,
+      modelAdapter,
       logger: {
         log() {},
       },
@@ -711,48 +530,32 @@ describe("verifier subagent", () => {
 
   it("returns a structured failure report for a timed out command", async () => {
     const directory = await createTempProject();
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_timeout",
-            name: "run_command",
-            input: {
-              command: "node -e \"setTimeout(() => console.log('done'), 2000)\"",
-              timeout_seconds: 1,
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_timeout",
+          name: "run_command",
+          input: {
+            command: "node -e \"setTimeout(() => console.log('done'), 2000)\"",
+            timeout_seconds: 1,
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              command: "node -e \"setTimeout(() => console.log('done'), 2000)\"",
-              exitCode: null,
-              passed: false,
-              stdout: "",
-              stderr: "",
-              summary: "Command timed out after 1 second.",
-            }),
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        command: "node -e \"setTimeout(() => console.log('done'), 2000)\"",
+        exitCode: null,
+        passed: false,
+        stdout: "",
+        stderr: "",
+        summary: "Command timed out after 1 second.",
+      })),
     ]);
 
     const result = await runVerifierSubagent(
       "node -e \"setTimeout(() => console.log('done'), 2000)\"",
       directory,
       {
-        client,
+        modelAdapter,
         logger: {
           log() {},
         },
@@ -763,10 +566,10 @@ describe("verifier subagent", () => {
     expect(result.exitCode).toBeNull();
     expect(result.summary).toContain("timed out");
 
-    const toolResultPayloads = getToolResultPayloads(client.calls[1]!);
+    const toolResultPayloads = getToolResultContentParts(modelAdapter.calls[1]!);
 
-    expect(toolResultPayloads[0]?.isError).toBe(true);
-    expect(toolResultPayloads[0]?.payload.error).toContain("Timed out: yes");
+    expect(toolResultPayloads[0]?.result.success).toBe(false);
+    expect(toolResultPayloads[0]?.result.error).toContain("Timed out: yes");
   });
 
   it("optional check failures do not mask required-check success", async () => {
@@ -790,7 +593,7 @@ describe("verifier subagent", () => {
         },
       ],
     } satisfies EvaluationPlan;
-    const client = createMockAnthropicClient([
+    const modelAdapter = createFakeModelAdapter([
       ...createVerifierCommandResponses({
         toolUseId: "toolu_required_pass",
         command: "node -e \"console.log('unit ok')\"",
@@ -812,7 +615,7 @@ describe("verifier subagent", () => {
     ]);
 
     const result = await runVerifierSubagent(evaluationPlan, directory, {
-      client,
+      modelAdapter,
       logger: {
         log() {},
       },

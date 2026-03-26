@@ -2,14 +2,8 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type {
-  Message,
-  MessageCreateParamsNonStreaming,
-  Model,
-} from "@anthropic-ai/sdk/resources/messages";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
 import { createTurnCancelledError } from "../src/engine/cancellation.js";
 import type { ContextEnvelope } from "../src/engine/state.js";
 import {
@@ -41,14 +35,13 @@ import {
   getTrackedReadHash,
   hashContents,
 } from "../src/tools/file-state.js";
+import {
+  createFakeModelAdapter,
+  createFakeTextTurnResult,
+  createFakeToolCallTurnResult,
+} from "./support/fake-model-adapter.js";
 
 const createdDirectories: string[] = [];
-
-interface MockAnthropicClient {
-  messages: {
-    create: (request: MessageCreateParamsNonStreaming) => Promise<Message>;
-  };
-}
 
 function createContextEnvelope(): ContextEnvelope {
   return {
@@ -105,52 +98,6 @@ function createPreviewState(
     logTail: [],
     lastRestartReason: null,
     ...overrides,
-  };
-}
-
-function createAssistantMessage(options: {
-  content: unknown[];
-  stopReason: Message["stop_reason"];
-  model?: Model;
-}): Message {
-  return {
-    id: `msg_${Math.random().toString(36).slice(2)}`,
-    container: null,
-    content: options.content as Message["content"],
-    model: options.model ?? DEFAULT_ANTHROPIC_MODEL,
-    role: "assistant",
-    stop_reason: options.stopReason,
-    stop_sequence: null,
-    type: "message",
-    usage: {
-      cache_creation: null,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-      inference_geo: null,
-      input_tokens: 42,
-      output_tokens: 19,
-      server_tool_use: null,
-      service_tier: "standard",
-    },
-  };
-}
-
-function createMockAnthropicClient(responses: Message[]): MockAnthropicClient {
-  let callIndex = 0;
-
-  return {
-    messages: {
-      async create() {
-        const response = responses[callIndex];
-        callIndex += 1;
-
-        if (!response) {
-          throw new Error("No mock Claude response configured.");
-        }
-
-        return response;
-      },
-    },
   };
 }
 
@@ -419,46 +366,26 @@ describe("Phase 4 graph runtime contract", () => {
     await mkdir(path.dirname(appPath), { recursive: true });
     await writeFile(appPath, "export const count = 1;\n", "utf8");
 
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_read_file",
-            name: "read_file",
-            input: {
-              path: "src/app.ts",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read_file",
+          name: "read_file",
+          input: {
+            path: "src/app.ts",
           },
-          {
-            type: "tool_use",
-            id: "toolu_edit_block",
-            name: "edit_block",
-            input: {
-              path: "src/app.ts",
-              old_string: "export const count = 1;\n",
-              new_string: "export const count = 2;\n",
-            },
-            caller: {
-              type: "direct",
-            },
+        },
+        {
+          id: "toolu_edit_block",
+          name: "edit_block",
+          input: {
+            path: "src/app.ts",
+            old_string: "export const count = 1;\n",
+            new_string: "export const count = 2;\n",
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "Updated src/app.ts.",
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult("Updated src/app.ts."),
     ]);
 
     const checkpointManager = {
@@ -476,7 +403,7 @@ describe("Phase 4 graph runtime contract", () => {
       dependencies: {
         createCheckpointManager: () => checkpointManager,
         createRawLoopOptions: () => ({
-          client,
+          modelAdapter,
           logger: {
             log() {},
           },

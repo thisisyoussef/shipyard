@@ -3,7 +3,7 @@
 - Pack: Provider-Agnostic Model Runtime
 - Estimate: 16-24 hours
 - Date: 2026-03-26
-- Status: In progress (`P10-S01` through `P10-S04` implemented; `P10-S05` drafted)
+- Status: Complete (`P10-S01` through `P10-S05` implemented)
 
 ## Pack Objectives
 
@@ -286,4 +286,40 @@ export function buildOpenAIResponseRequest(
         env: options.env,
       });
     },
+```
+
+- `P10-S05`: [`../../tests/support/fake-model-adapter.ts`](../../tests/support/fake-model-adapter.ts),
+  [`../../tests/fake-model-adapter.test.ts`](../../tests/fake-model-adapter.test.ts),
+  [`../../tests/raw-loop.test.ts`](../../tests/raw-loop.test.ts),
+  [`../../tests/turn-runtime.test.ts`](../../tests/turn-runtime.test.ts),
+  [`../../tests/graph-runtime.test.ts`](../../tests/graph-runtime.test.ts),
+  [`../../tests/planner-subagent.test.ts`](../../tests/planner-subagent.test.ts),
+  [`../../tests/explorer-subagent.test.ts`](../../tests/explorer-subagent.test.ts),
+  [`../../tests/verifier-subagent.test.ts`](../../tests/verifier-subagent.test.ts),
+  [`../../tests/plan-mode.test.ts`](../../tests/plan-mode.test.ts),
+  [`../../tests/ui-runtime.test.ts`](../../tests/ui-runtime.test.ts),
+  [`../../tests/provider-neutral-harness.test.ts`](../../tests/provider-neutral-harness.test.ts),
+  [`../../tests/README.md`](../../tests/README.md), and
+  [`../../tests/manual/phase5-local-preview-smoke.ts`](../../tests/manual/phase5-local-preview-smoke.ts)
+  add a shared fake `ModelAdapter` harness, migrate the broad runtime and UI
+  suites to inject provider-neutral adapters instead of Anthropic SDK wire
+  types, and add a guard test plus docs so future suites stay on the internal
+  seam while provider-specific fixtures remain isolated to adapter contracts.
+
+- `P10-S05` shared fake adapter seam and guard coverage:
+
+```ts
+export function createFakeModelAdapter(
+  responder: FakeModelTurnResponder,
+  options: FakeModelAdapterOptions = {},
+): FakeModelAdapter {
+  const calls: FakeModelAdapterCall[] = [];
+
+  return {
+    provider: options.provider ?? DEFAULT_FAKE_MODEL_PROVIDER,
+    defaultModel: options.defaultModel ?? DEFAULT_FAKE_MODEL_NAME,
+    calls,
+    async createTurn(input, turnOptions) {
+      const turnNumber = calls.length + 1;
+      calls.push(cloneModelTurnInput(input, turnNumber, turnOptions?.signal));
 ```

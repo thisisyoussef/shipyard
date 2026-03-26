@@ -22,11 +22,11 @@ Even if the runtime becomes provider-agnostic in production code, Shipyard will 
 - As a Shipyard reviewer, I want provider-specific wire-format tests to stay focused so regressions are easier to localize.
 
 ## Acceptance Criteria
-- [ ] AC-1: Add shared provider-neutral fake adapter helpers for runtime and UI tests.
-- [ ] AC-2: Core engine, subagent, target-manager, plan-mode, and UI runtime tests mock the internal adapter boundary instead of Anthropic SDK request/response types.
-- [ ] AC-3: Focused provider contract suites remain for Anthropic and OpenAI request/response translation, but broad shared-runtime tests no longer import provider SDK wire types.
-- [ ] AC-4: The broad test suite still covers tool-use turns, final-text turns, cancellation, verification, target enrichment, and UI runtime behavior through the provider-neutral test seam.
-- [ ] AC-5: Repo docs or test helper guidance reference the new adapter-based test seam so future tests do not reintroduce provider-specific coupling.
+- [x] AC-1: Add shared provider-neutral fake adapter helpers for runtime and UI tests.
+- [x] AC-2: Core engine, subagent, target-manager, plan-mode, and UI runtime tests mock the internal adapter boundary instead of Anthropic SDK request/response types.
+- [x] AC-3: Focused provider contract suites remain for Anthropic and OpenAI request/response translation, but broad shared-runtime tests no longer import provider SDK wire types.
+- [x] AC-4: The broad test suite still covers tool-use turns, final-text turns, cancellation, verification, target enrichment, and UI runtime behavior through the provider-neutral test seam.
+- [x] AC-5: Repo docs or test helper guidance reference the new adapter-based test seam so future tests do not reintroduce provider-specific coupling.
 
 ## Edge Cases
 - Empty/null inputs: fake adapters can represent no-tool and no-history turns cleanly.
@@ -55,3 +55,29 @@ Even if the runtime becomes provider-agnostic in production code, Shipyard will 
 - Broad runtime tests use provider-neutral fake adapters.
 - Provider-specific wire-format tests are isolated to focused adapter suites.
 - Future provider work can extend the test helpers without editing the whole runtime suite.
+
+## Implementation Evidence
+- Shared fake adapter helpers landed in
+  [`../../../../tests/support/fake-model-adapter.ts`](../../../../tests/support/fake-model-adapter.ts)
+  and focused helper coverage landed in
+  [`../../../../tests/fake-model-adapter.test.ts`](../../../../tests/fake-model-adapter.test.ts).
+- Broad runtime and subagent suites now inject provider-neutral adapters in
+  [`../../../../tests/raw-loop.test.ts`](../../../../tests/raw-loop.test.ts),
+  [`../../../../tests/turn-runtime.test.ts`](../../../../tests/turn-runtime.test.ts),
+  [`../../../../tests/graph-runtime.test.ts`](../../../../tests/graph-runtime.test.ts),
+  [`../../../../tests/planner-subagent.test.ts`](../../../../tests/planner-subagent.test.ts),
+  [`../../../../tests/explorer-subagent.test.ts`](../../../../tests/explorer-subagent.test.ts),
+  [`../../../../tests/verifier-subagent.test.ts`](../../../../tests/verifier-subagent.test.ts),
+  [`../../../../tests/plan-mode.test.ts`](../../../../tests/plan-mode.test.ts),
+  and [`../../../../tests/ui-runtime.test.ts`](../../../../tests/ui-runtime.test.ts).
+- The local preview smoke helper now uses the same seam in
+  [`../../../../tests/manual/phase5-local-preview-smoke.ts`](../../../../tests/manual/phase5-local-preview-smoke.ts).
+- Guardrail coverage and guidance landed in
+  [`../../../../tests/provider-neutral-harness.test.ts`](../../../../tests/provider-neutral-harness.test.ts)
+  and [`../../../../tests/README.md`](../../../../tests/README.md).
+
+## Validation Evidence
+- `pnpm --dir shipyard test`
+- `pnpm --dir shipyard typecheck`
+- `pnpm --dir shipyard build`
+- `git diff --check`

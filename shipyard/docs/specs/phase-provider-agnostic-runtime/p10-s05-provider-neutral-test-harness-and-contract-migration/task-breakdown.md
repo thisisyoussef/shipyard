@@ -37,20 +37,29 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `fake adapter can emit a tool-call turn`
-  - [ ] `fake adapter can emit a final-text turn`
+  - [x] `fake adapter can emit a tool-call turn`
+  - [x] `fake adapter can emit a final-text turn`
 - T002 tests:
-  - [ ] `graph and raw loop tests run without provider SDK request types`
-  - [ ] `planner, explorer, and verifier tests inject fake adapters`
+  - [x] `graph and raw loop tests run without provider SDK request types`
+  - [x] `planner, explorer, and verifier tests inject fake adapters`
 - T003 tests:
-  - [ ] `target enrichment and UI runtime tests inject fake adapters`
-  - [ ] `plan-mode tests no longer depend on Anthropic request fixtures`
+  - [x] `target enrichment and UI runtime tests inject fake adapters`
+  - [x] `plan-mode tests no longer depend on Anthropic request fixtures`
 - T004 tests:
-  - [ ] `adapter contract suites remain focused on provider translation only`
-  - [ ] `broad runtime test grep no longer finds provider wire imports outside focused adapter suites`
+  - [x] `adapter contract suites remain focused on provider translation only`
+  - [x] `broad runtime test grep no longer finds provider wire imports outside focused adapter suites`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Implementation Evidence
+
+| Task ID | Evidence |
+|---|---|
+| T001 | `shipyard/tests/support/fake-model-adapter.ts` adds reusable fake adapter helpers, normalized turn builders, and shared tool-result inspection helpers; `shipyard/tests/fake-model-adapter.test.ts` covers the seam directly. |
+| T002 | `shipyard/tests/raw-loop.test.ts`, `shipyard/tests/graph-runtime.test.ts`, `shipyard/tests/turn-runtime.test.ts`, `shipyard/tests/planner-subagent.test.ts`, `shipyard/tests/explorer-subagent.test.ts`, and `shipyard/tests/verifier-subagent.test.ts` now inject `modelAdapter` instead of Anthropic request/response fixtures. |
+| T003 | `shipyard/tests/plan-mode.test.ts`, `shipyard/tests/ui-runtime.test.ts`, and `shipyard/tests/manual/phase5-local-preview-smoke.ts` now route planner/UI/preview behavior through the provider-neutral fake adapter seam. |
+| T004 | `shipyard/tests/provider-neutral-harness.test.ts` guards against provider SDK wire imports in broad suites, while `shipyard/tests/anthropic-contract.test.ts` and `shipyard/tests/openai-contract.test.ts` remain the focused provider translation suites. |

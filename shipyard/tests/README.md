@@ -7,7 +7,8 @@ The automated suite lives here alongside a small set of manual smoke scripts.
 The Vitest suite exercises the main runtime boundaries:
 
 - runtime core: `cli-loop`, `loop-runtime`, `turn-runtime`, `raw-loop`,
-  `graph-runtime`, `anthropic-contract`, and `live-verification`
+  `graph-runtime`, `anthropic-contract`, `openai-contract`, and
+  `live-verification`
 - tool and edit safety: `tooling`, `checkpoint-manager`, `spec-loader`, and
   `scaffold-bootstrap`
 - repo understanding and context shaping: `discovery` and `context-envelope`
@@ -63,6 +64,11 @@ See [`manual/README.md`](./manual/README.md) for the current script map.
 
 - Prefer tests that exercise the nearest stable boundary rather than asserting
   against internal implementation details.
+- For broad runtime, subagent, plan-mode, and UI transport suites, inject
+  provider-neutral fakes from `tests/support/fake-model-adapter.ts` instead of
+  mocking Anthropic or OpenAI request/response wire objects directly.
+- Reserve provider-specific request/response fixtures for
+  `tests/anthropic-contract.test.ts` and `tests/openai-contract.test.ts`.
 - Add or update automated coverage when a change affects session state, plan
   queues, tool contracts, CLI behavior, browser runtime messaging, or deploy
   flows.

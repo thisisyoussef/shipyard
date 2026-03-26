@@ -2,12 +2,6 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type {
-  Message,
-  MessageCreateParamsNonStreaming,
-  MessageParam,
-  Model,
-} from "@anthropic-ai/sdk/resources/messages";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type {
@@ -24,71 +18,18 @@ import {
   createLightweightExecutionSpec,
   shouldCoordinatorUsePlanner,
 } from "../src/agents/coordinator.js";
-import {
-  DEFAULT_ANTHROPIC_MODEL,
-  projectToolsToAnthropicTools,
-} from "../src/engine/anthropic.js";
 import type { ContextEnvelope } from "../src/engine/state.js";
 import "../src/tools/index.js";
-import { getTools } from "../src/tools/registry.js";
+import {
+  DEFAULT_FAKE_MODEL_NAME,
+  createFakeModelAdapter,
+  createFakeTextTurnResult,
+  createFakeToolCallTurnResult,
+  getToolNamesFromCall,
+  getToolResultContentParts,
+} from "./support/fake-model-adapter.js";
 
 const createdDirectories: string[] = [];
-
-interface MockAnthropicClient {
-  messages: {
-    create: (request: MessageCreateParamsNonStreaming) => Promise<Message>;
-  };
-  calls: MessageCreateParamsNonStreaming[];
-}
-
-function createAssistantMessage(options: {
-  content: unknown[];
-  stopReason: Message["stop_reason"];
-  model?: Model;
-}): Message {
-  return {
-    id: `msg_${Math.random().toString(36).slice(2)}`,
-    container: null,
-    content: options.content as Message["content"],
-    model: options.model ?? DEFAULT_ANTHROPIC_MODEL,
-    role: "assistant",
-    stop_reason: options.stopReason,
-    stop_sequence: null,
-    type: "message",
-    usage: {
-      cache_creation: null,
-      cache_creation_input_tokens: null,
-      cache_read_input_tokens: null,
-      inference_geo: null,
-      input_tokens: 42,
-      output_tokens: 19,
-      server_tool_use: null,
-      service_tier: "standard",
-    },
-  };
-}
-
-function createMockAnthropicClient(
-  responses: Message[],
-): MockAnthropicClient {
-  const calls: MessageCreateParamsNonStreaming[] = [];
-
-  return {
-    calls,
-    messages: {
-      async create(request) {
-        calls.push(request);
-        const response = responses[calls.length - 1];
-
-        if (!response) {
-          throw new Error("No mock Claude response configured.");
-        }
-
-        return response;
-      },
-    },
-  };
-}
 
 async function createTempProject(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "shipyard-planner-"));
@@ -140,7 +81,7 @@ function createTargetProfile(
     },
     taskSuggestions: ["Add planner contract"],
     enrichedAt: "2026-03-25T12:00:00.000Z",
-    enrichmentModel: DEFAULT_ANTHROPIC_MODEL,
+    enrichmentModel: DEFAULT_FAKE_MODEL_NAME,
     discoverySnapshot: discovery,
   };
 }
@@ -187,54 +128,6 @@ function createContextEnvelope(): ContextEnvelope {
   };
 }
 
-function getLastUserToolResultMessage(
-  request: MessageCreateParamsNonStreaming,
-): MessageParam {
-  const lastMessage = request.messages.at(-1);
-
-  if (!lastMessage) {
-    throw new Error("Expected a last message.");
-  }
-
-  if (lastMessage.role !== "user" || typeof lastMessage.content === "string") {
-    throw new Error("Expected the last message to be a structured user tool_result message.");
-  }
-
-  return lastMessage;
-}
-
-function getToolResultPayloads(request: MessageCreateParamsNonStreaming): Array<{
-  toolUseId: string;
-  isError: boolean;
-  payload: {
-    success: boolean;
-    output: string;
-    error?: string;
-  };
-}> {
-  const toolResultMessage = getLastUserToolResultMessage(request);
-
-  if (typeof toolResultMessage.content === "string") {
-    throw new Error("Expected structured tool_result content.");
-  }
-
-  return toolResultMessage.content.map((block) => {
-    if (block.type !== "tool_result" || typeof block.content !== "string") {
-      throw new Error("Expected tool_result blocks with string content.");
-    }
-
-    return {
-      toolUseId: block.tool_use_id,
-      isError: block.is_error ?? false,
-      payload: JSON.parse(block.content) as {
-        success: boolean;
-        output: string;
-        error?: string;
-      },
-    };
-  });
-}
-
 describe("planner subagent", () => {
   afterEach(async () => {
     const directories = createdDirectories.splice(0, createdDirectories.length);
@@ -249,42 +142,26 @@ describe("planner subagent", () => {
   it("uses only the read-only tool allowlist and fails closed on unauthorized tool requests", async () => {
     const directory = await createTempProject();
     const discovery = createDiscoveryReport();
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_write",
-            name: "write_file",
-            input: {
-              path: "notes.md",
-              contents: "hello",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_write",
+          name: "write_file",
+          input: {
+            path: "notes.md",
+            contents: "hello",
           },
-        ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              instruction: "Fix the auth flow",
-              goal: "Fix the auth flow",
-              deliverables: ["Update the auth implementation."],
-              acceptanceCriteria: ["The auth flow works."],
-              verificationIntent: ["Run the test suite."],
-              targetFilePaths: ["src/auth.ts"],
-              risks: ["Regression risk in auth."],
-            }),
-            citations: null,
-          },
-        ],
-      }),
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        instruction: "Fix the auth flow",
+        goal: "Fix the auth flow",
+        deliverables: ["Update the auth implementation."],
+        acceptanceCriteria: ["The auth flow works."],
+        verificationIntent: ["Run the test suite."],
+        targetFilePaths: ["src/auth.ts"],
+        risks: ["Regression risk in auth."],
+      })),
     ]);
 
     await expect(
@@ -295,7 +172,7 @@ describe("planner subagent", () => {
         },
         directory,
         {
-          client,
+          modelAdapter,
           logger: {
             log() {},
           },
@@ -303,9 +180,9 @@ describe("planner subagent", () => {
       ),
     ).rejects.toThrow(/write_file|read-only|not available|unauthorized/i);
 
-    expect(client.calls[0]?.tools).toEqual(
-      projectToolsToAnthropicTools(getTools([...PLANNER_TOOL_NAMES])),
-    );
+    expect(getToolNamesFromCall(modelAdapter.calls[0]!)).toEqual([
+      ...PLANNER_TOOL_NAMES,
+    ]);
   });
 
   it("does not inherit prior history and includes discovery, target profile, and explorer findings in the prompt", async () => {
@@ -313,25 +190,16 @@ describe("planner subagent", () => {
     const discovery = createDiscoveryReport();
     const targetProfile = createTargetProfile(discovery);
     const contextReport = createContextReport();
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              instruction: "Fix the auth flow",
-              goal: "Fix the auth flow",
-              deliverables: ["Update the auth implementation."],
-              acceptanceCriteria: ["The auth flow works."],
-              verificationIntent: ["Run the auth tests."],
-              targetFilePaths: ["src/auth.ts"],
-              risks: ["Regression risk in auth."],
-            }),
-            citations: null,
-          },
-        ],
-      }),
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult(JSON.stringify({
+        instruction: "Fix the auth flow",
+        goal: "Fix the auth flow",
+        deliverables: ["Update the auth implementation."],
+        acceptanceCriteria: ["The auth flow works."],
+        verificationIntent: ["Run the auth tests."],
+        targetFilePaths: ["src/auth.ts"],
+        risks: ["Regression risk in auth."],
+      })),
     ]);
 
     const result = await runPlannerSubagent(
@@ -343,7 +211,7 @@ describe("planner subagent", () => {
       },
       directory,
       {
-        client,
+        modelAdapter,
         logger: {
           log() {},
         },
@@ -359,14 +227,14 @@ describe("planner subagent", () => {
       targetFilePaths: ["src/auth.ts"],
       risks: ["Regression risk in auth."],
     });
-    expect(client.calls[0]?.messages).toHaveLength(1);
-    expect(client.calls[0]?.messages[0]).toEqual({
+    expect(modelAdapter.calls[0]?.messages).toHaveLength(1);
+    expect(modelAdapter.calls[0]?.messages[0]).toEqual({
       role: "user",
       content: expect.stringContaining("Fix the auth flow"),
     });
-    expect(client.calls[0]?.messages[0]?.content).toContain('"projectName": "shipyard"');
-    expect(client.calls[0]?.messages[0]?.content).toContain('"name": "Shipyard"');
-    expect(client.calls[0]?.messages[0]?.content).toContain('"filePath": "src/auth.ts"');
+    expect(modelAdapter.calls[0]?.messages[0]?.content).toContain('"projectName": "shipyard"');
+    expect(modelAdapter.calls[0]?.messages[0]?.content).toContain('"name": "Shipyard"');
+    expect(modelAdapter.calls[0]?.messages[0]?.content).toContain('"filePath": "src/auth.ts"');
   });
 
   it("runs a broad planning request and returns a structured execution spec", async () => {
@@ -380,60 +248,40 @@ describe("planner subagent", () => {
       "utf8",
     );
 
-    const client = createMockAnthropicClient([
-      createAssistantMessage({
-        stopReason: "tool_use",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_search",
-            name: "search_files",
-            input: {
-              pattern: "authenticateUser",
-            },
-            caller: {
-              type: "direct",
-            },
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_search",
+          name: "search_files",
+          input: {
+            pattern: "authenticateUser",
           },
-          {
-            type: "tool_use",
-            id: "toolu_read",
-            name: "read_file",
-            input: {
-              path: "src/auth.ts",
-            },
-            caller: {
-              type: "direct",
-            },
+        },
+        {
+          id: "toolu_read",
+          name: "read_file",
+          input: {
+            path: "src/auth.ts",
           },
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        instruction: "Fix the auth flow",
+        goal: "Repair the authentication flow without widening scope.",
+        deliverables: [
+          "Update the auth entry point to match the requested behavior.",
         ],
-      }),
-      createAssistantMessage({
-        stopReason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              instruction: "Fix the auth flow",
-              goal: "Repair the authentication flow without widening scope.",
-              deliverables: [
-                "Update the auth entry point to match the requested behavior.",
-              ],
-              acceptanceCriteria: [
-                "Authentication succeeds for valid tokens.",
-                "The change stays within the auth surface.",
-              ],
-              verificationIntent: [
-                "Run the auth-focused test coverage.",
-                "Run the repo test suite if auth coverage is unclear.",
-              ],
-              targetFilePaths: ["src/auth.ts"],
-              risks: ["Regression risk in authentication state handling."],
-            }),
-            citations: null,
-          },
+        acceptanceCriteria: [
+          "Authentication succeeds for valid tokens.",
+          "The change stays within the auth surface.",
         ],
-      }),
+        verificationIntent: [
+          "Run the auth-focused test coverage.",
+          "Run the repo test suite if auth coverage is unclear.",
+        ],
+        targetFilePaths: ["src/auth.ts"],
+        risks: ["Regression risk in authentication state handling."],
+      })),
     ]);
 
     const result = await runPlannerSubagent(
@@ -443,7 +291,7 @@ describe("planner subagent", () => {
       },
       directory,
       {
-        client,
+        modelAdapter,
         logger: {
           log() {},
         },
@@ -468,13 +316,13 @@ describe("planner subagent", () => {
       risks: ["Regression risk in authentication state handling."],
     });
 
-    const toolResultPayloads = getToolResultPayloads(client.calls[1]!);
+    const toolResultPayloads = getToolResultContentParts(modelAdapter.calls[1]!);
 
     expect(toolResultPayloads).toHaveLength(2);
-    expect(toolResultPayloads[0]?.payload.success).toBe(true);
-    expect(toolResultPayloads[0]?.payload.output).toContain("src/auth.ts:1:");
-    expect(toolResultPayloads[1]?.payload.output).toContain("Path: src/auth.ts");
-    expect(toolResultPayloads[1]?.payload.output).toContain("authenticateUser");
+    expect(toolResultPayloads[0]?.result.success).toBe(true);
+    expect(toolResultPayloads[0]?.result.output).toContain("src/auth.ts:1:");
+    expect(toolResultPayloads[1]?.result.output).toContain("Path: src/auth.ts");
+    expect(toolResultPayloads[1]?.result.output).toContain("authenticateUser");
   });
 
   it("rejects malformed final report JSON", () => {
