@@ -30,16 +30,16 @@ when credentials are configured.
 - Local `instruction.plan` JSONL events can include a `handoff` payload with
   loaded, emitted, and load-error state.
 - Local `instruction.plan` JSONL events now also include a `harnessRoute`
-  payload with the selected lightweight vs planner-backed path, verifier mode,
-  browser-evaluator usage, and reset reason.
+  payload with the selected lightweight vs planner-backed path, task
+  complexity, verifier mode, browser-evaluator usage, and reset reason.
 - Local `instruction.plan` JSONL events can also include an
   `executionFingerprint` plus `executionFingerprintLabel` so the surface,
   planning mode, preview state, browser-evaluator usage, and resolved model are
   easy to compare across CLI and browser runs.
 - LangSmith trace metadata currently records `handoffLoaded`, `handoffPath`,
-  `handoffReason`, `selectedPath`, `verificationMode`, browser-evaluator
-  usage, and the per-turn execution fingerprint so routing is visible without
-  opening raw prompts.
+  `handoffReason`, `selectedPath`, `taskComplexity`, `verificationMode`,
+  browser-evaluator usage, and the per-turn execution fingerprint so routing
+  is visible without opening raw prompts.
 - Turn-level LangSmith traces now return the root turn run reference, while the
   nested runtime trace continues to capture graph-specific details underneath it.
 

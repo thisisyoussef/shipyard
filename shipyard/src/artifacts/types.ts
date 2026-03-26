@@ -191,6 +191,11 @@ export interface VerificationReport {
 }
 
 export type HarnessSelectedPath = "lightweight" | "planner-backed";
+export type HarnessTaskComplexity =
+  | "unclassified"
+  | "direct"
+  | "targeted"
+  | "broad";
 export type HarnessVerificationMode = "none" | "command" | "command+browser";
 export type HarnessCommandReadinessStatus = "none" | "ready-before-timeout";
 export type ActingLoopBudgetReason =
@@ -201,6 +206,7 @@ export type ActingLoopBudgetReason =
 
 export interface HarnessRouteSummary {
   selectedPath: HarnessSelectedPath;
+  taskComplexity: HarnessTaskComplexity;
   usedExplorer: boolean;
   usedPlanner: boolean;
   usedVerifier: boolean;

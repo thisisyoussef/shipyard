@@ -820,6 +820,7 @@ describe("instruction runtime handoff", () => {
         },
         harnessRoute: {
           selectedPath: "planner-backed",
+          taskComplexity: "broad",
           usedExplorer: true,
           usedPlanner: true,
           usedVerifier: true,

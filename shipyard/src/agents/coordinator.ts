@@ -4,6 +4,8 @@ import type {
   ContextReport,
   EvaluationPlan,
   ExecutionSpec,
+  HarnessTaskComplexity,
+  PlanningMode,
   PreviewState,
   TaskPlan,
   VerificationReport,
@@ -53,9 +55,78 @@ const lightweightInstructionPrefixes = [
   "typecheck",
   "build",
 ] as const;
+const broadInstructionKeywordPatterns = [
+  /\bacross\b/i,
+  /\ball\b/i,
+  /\bmultiple\b/i,
+  /\bseveral\b/i,
+  /\bworkflow\b/i,
+  /\bflow\b/i,
+  /\barchitecture\b/i,
+  /\bgraph\b/i,
+  /\brout(?:e|ing)\b/i,
+  /\bmode\b/i,
+  /\bcomplexity\b/i,
+  /\bphase\b/i,
+  /\brefactor\b/i,
+  /\boverhaul\b/i,
+  /\brebuild\b/i,
+  /\bmigrate\b/i,
+  /\bsystem\b/i,
+  /\bmulti(?:-|\s)?step\b/i,
+  /\bend-to-end\b/i,
+] as const;
+const targetedChangeVerbPattern =
+  /\b(change|update|set|rename|fix|remove|add|adjust|tweak|swap|replace|move|align|simplify|polish)\b/i;
+const targetedScopeKeywordPatterns = [
+  /\bbackground\b/i,
+  /\bcolor\b/i,
+  /\bcopy\b/i,
+  /\btext\b/i,
+  /\blabel\b/i,
+  /\btitle\b/i,
+  /\bheading\b/i,
+  /\bbutton\b/i,
+  /\bicon\b/i,
+  /\bpadding\b/i,
+  /\bmargin\b/i,
+  /\bspacing\b/i,
+  /\bfont\b/i,
+  /\bborder\b/i,
+  /\bshadow\b/i,
+  /\bexport\b/i,
+  /\bprop\b/i,
+  /\bclass(?:name)?\b/i,
+  /\bstyle\b/i,
+  /\bcss\b/i,
+  /\bplaceholder\b/i,
+  /\bpreview\b/i,
+] as const;
+const explicitBrowserEvaluationPatterns = [
+  /\bverify\b/i,
+  /\bevaluate\b/i,
+  /\bcheck\b/i,
+  /\bqa\b/i,
+  /\bbrowser\b/i,
+  /\bpreview\b/i,
+  /\bscreenshot\b/i,
+] as const;
+const targetedInstructionWordCeiling = 18;
 const uiFilePathPattern =
   /(^|\/)(app|components|pages|routes|ui)\//i;
 const uiFileExtensionPattern = /\.(?:tsx|jsx|css|scss|sass|less|html)$/i;
+
+export type CoordinatorRouteComplexity = Exclude<
+  HarnessTaskComplexity,
+  "unclassified"
+>;
+
+export interface CoordinatorRouteDecision {
+  complexity: CoordinatorRouteComplexity;
+  useExplorer: boolean;
+  usePlanner: boolean;
+  reason: string;
+}
 
 function uniqueStrings(values: Iterable<string>): string[] {
   return [...new Set(values)];
@@ -216,19 +287,13 @@ export function extractInstructionTargetFilePaths(
 export function shouldCoordinatorUseExplorer(options: {
   instruction: string;
   contextEnvelope: ContextEnvelope;
+  planningMode?: PlanningMode;
+  taskComplexityHint?: CoordinatorRouteComplexity | null;
   taskPlan?: TaskPlan | null;
   executionSpec?: ExecutionSpec | null;
   contextReport?: ContextReport | null;
 }): boolean {
-  if (isBootstrapReadyContext(options.contextEnvelope)) {
-    return false;
-  }
-
-  if (extractInstructionTargetFilePaths(options.instruction).length > 0) {
-    return false;
-  }
-
-  return getKnownTargetFilePaths(options).length === 0;
+  return createCoordinatorRouteDecision(options).useExplorer;
 }
 
 export function isClearlyLightweightInstruction(instruction: string): boolean {
@@ -239,39 +304,139 @@ export function isClearlyLightweightInstruction(instruction: string): boolean {
   );
 }
 
+function looksLikeBroadInstruction(instruction: string): boolean {
+  return broadInstructionKeywordPatterns.some((pattern) =>
+    pattern.test(instruction)
+  );
+}
+
+function countInstructionWords(instruction: string): number {
+  return instruction
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .length;
+}
+
+function looksLikeTargetedChangeInstruction(instruction: string): boolean {
+  return targetedChangeVerbPattern.test(instruction)
+    && targetedScopeKeywordPatterns.some((pattern) => pattern.test(instruction))
+    && countInstructionWords(instruction) <= targetedInstructionWordCeiling;
+}
+
+function requestsExplicitBrowserEvaluation(instruction: string): boolean {
+  return explicitBrowserEvaluationPatterns.some((pattern) =>
+    pattern.test(instruction)
+  );
+}
+
+export function createCoordinatorRouteDecision(options: {
+  instruction: string;
+  contextEnvelope: ContextEnvelope;
+  planningMode?: PlanningMode;
+  taskComplexityHint?: CoordinatorRouteComplexity | null;
+  taskPlan?: TaskPlan | null;
+  executionSpec?: ExecutionSpec | null;
+  contextReport?: ContextReport | null;
+}): CoordinatorRouteDecision {
+  const explicitTargetFilePaths = extractInstructionTargetFilePaths(
+    options.instruction,
+  );
+  const knownTargetFilePaths = getKnownTargetFilePaths(options);
+  const continuationTargetFilePaths = getContinuationTargetFilePaths({
+    contextEnvelope: options.contextEnvelope,
+    taskPlan: options.taskPlan,
+  });
+  const hasKnownTargetFilePaths =
+    explicitTargetFilePaths.length > 0 || knownTargetFilePaths.length > 0;
+  const useExplorerForBroad =
+    !isBootstrapReadyContext(options.contextEnvelope)
+    && !hasKnownTargetFilePaths;
+
+  if (options.taskComplexityHint) {
+    return {
+      complexity: options.taskComplexityHint,
+      useExplorer: options.taskComplexityHint === "broad" && useExplorerForBroad,
+      usePlanner: options.taskComplexityHint === "broad",
+      reason: "Graph triage already classified this instruction.",
+    };
+  }
+
+  if (options.planningMode === "planner") {
+    return {
+      complexity: "broad",
+      useExplorer: false,
+      usePlanner: true,
+      reason: "Planner-backed execution was already selected for this turn.",
+    };
+  }
+
+  if (isClearlyLightweightInstruction(options.instruction)) {
+    return {
+      complexity: "direct",
+      useExplorer: false,
+      usePlanner: false,
+      reason: "Instruction is an explicit lightweight operator command.",
+    };
+  }
+
+  if (isBootstrapReadyContext(options.contextEnvelope)) {
+    return {
+      complexity: "direct",
+      useExplorer: false,
+      usePlanner: false,
+      reason: "Bootstrap-ready targets stay on the lightweight path.",
+    };
+  }
+
+  if (
+    hasKnownTargetFilePaths
+    || continuationTargetFilePaths.length > 0
+  ) {
+    return {
+      complexity: "direct",
+      useExplorer: false,
+      usePlanner: false,
+      reason: "Instruction already has enough file context for the lightweight path.",
+    };
+  }
+
+  if (looksLikeBroadInstruction(options.instruction)) {
+    return {
+      complexity: "broad",
+      useExplorer: useExplorerForBroad,
+      usePlanner: true,
+      reason: "Instruction reads as architectural, cross-cutting, or multi-step work.",
+    };
+  }
+
+  if (looksLikeTargetedChangeInstruction(options.instruction)) {
+    return {
+      complexity: "targeted",
+      useExplorer: false,
+      usePlanner: false,
+      reason: "Instruction looks like a narrow change that the lightweight loop can handle directly.",
+    };
+  }
+
+  return {
+    complexity: "broad",
+    useExplorer: useExplorerForBroad,
+    usePlanner: true,
+    reason: "Instruction is ambiguous enough to keep the heavier planning path.",
+  };
+}
+
 export function shouldCoordinatorUsePlanner(options: {
   instruction: string;
   contextEnvelope: ContextEnvelope;
+  planningMode?: PlanningMode;
+  taskComplexityHint?: CoordinatorRouteComplexity | null;
   taskPlan?: TaskPlan | null;
   executionSpec?: ExecutionSpec | null;
   contextReport?: ContextReport | null;
 }): boolean {
-  if (options.executionSpec) {
-    return false;
-  }
-
-  if (isBootstrapReadyContext(options.contextEnvelope)) {
-    return false;
-  }
-
-  if (extractInstructionTargetFilePaths(options.instruction).length > 0) {
-    return false;
-  }
-
-  if (isClearlyLightweightInstruction(options.instruction)) {
-    return false;
-  }
-
-  if (
-    getContinuationTargetFilePaths({
-      contextEnvelope: options.contextEnvelope,
-      taskPlan: options.taskPlan,
-    }).length > 0
-  ) {
-    return false;
-  }
-
-  return true;
+  return createCoordinatorRouteDecision(options).usePlanner;
 }
 
 export function createExplorerQuery(instruction: string): string {
@@ -442,6 +607,9 @@ export function shouldCoordinatorUseBrowserEvaluator(options: {
   instruction: string;
   contextEnvelope: ContextEnvelope;
   previewState: PreviewState;
+  planningMode?: PlanningMode;
+  taskComplexityHint?: CoordinatorRouteComplexity | null;
+  routeDecision?: CoordinatorRouteDecision | null;
   executionSpec?: ExecutionSpec | null;
   contextReport?: ContextReport | null;
 }): boolean {
@@ -451,6 +619,16 @@ export function shouldCoordinatorUseBrowserEvaluator(options: {
   ) {
     return false;
   }
+
+  const routeDecision = options.routeDecision
+    ?? createCoordinatorRouteDecision({
+      instruction: options.instruction,
+      contextEnvelope: options.contextEnvelope,
+      planningMode: options.planningMode,
+      taskComplexityHint: options.taskComplexityHint,
+      executionSpec: options.executionSpec,
+      contextReport: options.contextReport,
+    });
 
   const targetFilePaths = getKnownTargetFilePaths({
     contextEnvelope: options.contextEnvelope,
@@ -464,10 +642,16 @@ export function shouldCoordinatorUseBrowserEvaluator(options: {
       looksLikeUiRelevantFilePath(filePath)
     )
   ) {
-    return true;
+    return routeDecision.complexity === "broad"
+      || requestsExplicitBrowserEvaluation(options.instruction);
   }
 
-  return looksLikeUiRelevantInstruction(options.instruction);
+  if (!looksLikeUiRelevantInstruction(options.instruction)) {
+    return false;
+  }
+
+  return routeDecision.complexity === "broad"
+    || requestsExplicitBrowserEvaluation(options.instruction);
 }
 
 export function createBrowserEvaluationPlan(options: {

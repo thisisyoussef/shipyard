@@ -283,6 +283,46 @@ describe("Phase 4 graph runtime contract", () => {
     expect(update.planningMode).toBe("lightweight");
   });
 
+  it("plan node keeps targeted no-path UI tweaks on the lightweight lane", async () => {
+    const runExplorerSubagent = vi.fn();
+    const runPlannerSubagent = vi.fn();
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runExplorerSubagent,
+        runPlannerSubagent,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Change the background color to charcoal.",
+      contextEnvelope: createContextEnvelope(),
+      previewState: createPreviewState(),
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+    });
+
+    const triagedState = {
+      ...state,
+      ...(await nodes.triage(state)),
+    };
+    const update = await nodes.plan(triagedState);
+
+    expect(runExplorerSubagent).not.toHaveBeenCalled();
+    expect(runPlannerSubagent).not.toHaveBeenCalled();
+    expect(update.executionSpec).toEqual(
+      expect.objectContaining({
+        instruction: "Change the background color to charcoal.",
+      }),
+    );
+    expect(update.harnessRoute).toMatchObject({
+      selectedPath: "lightweight",
+      taskComplexity: "targeted",
+      usedExplorer: false,
+      usedPlanner: false,
+    });
+    expect(update.planningMode).toBe("lightweight");
+  });
+
   it("plan node keeps bootstrap-ready doc-seeded targets on the lightweight path", async () => {
     const runExplorerSubagent = vi.fn();
     const runPlannerSubagent = vi.fn();
@@ -936,6 +976,63 @@ describe("Phase 4 graph runtime contract", () => {
       browserEvaluationStatus: "passed",
     });
     expect(update.status).toBe("responding");
+  });
+
+  it("verify node skips browser evaluation for targeted UI tweaks unless verification was requested", async () => {
+    const runVerifierSubagent = vi.fn(async (input: string | EvaluationPlan) => ({
+      command: typeof input === "string" ? input : input.checks.at(0)?.command ?? "",
+      exitCode: 0,
+      passed: true,
+      stdout: "ok\n",
+      stderr: "",
+      summary: "Verification passed.",
+      evaluationPlan: typeof input === "string" ? undefined : input,
+      checks: [],
+      firstHardFailure: null,
+      browserEvaluationReport: null,
+    }));
+    const runBrowserEvaluator = vi.fn();
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runVerifierSubagent,
+        runBrowserEvaluator,
+      },
+    });
+    const baseState = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Change the background color to charcoal.",
+      contextEnvelope: createContextEnvelope(),
+      previewState: createPreviewState({
+        status: "running",
+        summary: "Preview running.",
+        url: "http://127.0.0.1:4173/",
+      }),
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+      executionSpec: {
+        instruction: "Change the background color to charcoal.",
+        goal: "Change the background color without widening scope.",
+        deliverables: ["Update the background color."],
+        acceptanceCriteria: ["The requested background color is applied."],
+        verificationIntent: ["Run the verification checks."],
+        targetFilePaths: [],
+        risks: [],
+      },
+      lastEditedFile: "src/app.tsx",
+    });
+    const triagedState = {
+      ...baseState,
+      ...(await nodes.triage(baseState)),
+    };
+
+    const update = await nodes.verify(triagedState);
+
+    expect(runBrowserEvaluator).not.toHaveBeenCalled();
+    expect(update.harnessRoute).toMatchObject({
+      verificationMode: "command",
+      usedBrowserEvaluator: false,
+      browserEvaluationStatus: "not_run",
+    });
   });
 
   it("verify node does not enter recovery when browser evaluation infrastructure is unavailable", async () => {

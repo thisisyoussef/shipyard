@@ -28,15 +28,15 @@ import type {
 import {
   createCoordinatorTaskPlan,
   createBrowserEvaluationPlan,
+  createCoordinatorRouteDecision,
   createLightweightExecutionSpec,
   createExplorerQuery,
   extractInstructionTargetFilePaths,
   isClearlyLightweightInstruction,
   createVerificationPlan,
   mergeBrowserEvaluationIntoVerificationReport,
+  type CoordinatorRouteDecision,
   shouldCoordinatorUseBrowserEvaluator,
-  shouldCoordinatorUseExplorer,
-  shouldCoordinatorUsePlanner,
 } from "../agents/coordinator.js";
 import {
   runExplorerSubagent as executeExplorerSubagent,
@@ -224,7 +224,13 @@ export interface AgentRuntimeOptions {
   dependencies?: AgentRuntimeDependencies;
 }
 
-type AgentGraphNodeName = "plan" | "act" | "verify" | "recover" | "respond";
+type AgentGraphNodeName =
+  | "triage"
+  | "plan"
+  | "act"
+  | "verify"
+  | "recover"
+  | "respond";
 
 const DEFAULT_MAX_RECOVERIES_PER_FILE = 2;
 
@@ -291,6 +297,7 @@ function createInitialHarnessRouteSummary(
 
   return {
     selectedPath: "lightweight",
+    taskComplexity: "unclassified",
     usedExplorer: false,
     usedPlanner: false,
     usedVerifier: false,
@@ -514,18 +521,11 @@ function createDefaultVerificationReport(
 
 async function maybeExploreContext(
   state: AgentGraphState,
+  routeDecision: CoordinatorRouteDecision,
   dependencies: AgentRuntimeDependencies,
   signal?: AbortSignal,
 ): Promise<ContextReport | null> {
-  if (
-    !shouldCoordinatorUseExplorer({
-      instruction: state.currentInstruction,
-      contextEnvelope: state.contextEnvelope,
-      taskPlan: state.taskPlan,
-      executionSpec: state.executionSpec,
-      contextReport: state.contextReport,
-    })
-  ) {
+  if (!routeDecision.useExplorer) {
     return state.contextReport;
   }
 
@@ -547,6 +547,7 @@ async function maybeExploreContext(
 async function maybePlanExecutionSpec(
   state: AgentGraphState,
   contextReport: ContextReport | null,
+  routeDecision: CoordinatorRouteDecision,
   dependencies: AgentRuntimeDependencies,
   signal?: AbortSignal,
 ): Promise<{
@@ -577,15 +578,7 @@ async function maybePlanExecutionSpec(
     };
   }
 
-  if (
-    !shouldCoordinatorUsePlanner({
-      instruction: state.currentInstruction,
-      contextEnvelope: state.contextEnvelope,
-      taskPlan: state.taskPlan,
-      executionSpec: state.executionSpec,
-      contextReport,
-    })
-  ) {
+  if (!routeDecision.usePlanner) {
     return {
       executionSpec: createLightweightExecutionSpec({
         instruction: state.currentInstruction,
@@ -764,27 +757,28 @@ export function createAgentGraphState(
   };
 }
 
+function resolveRoutingDecision(state: AgentGraphState): CoordinatorRouteDecision {
+  return createCoordinatorRouteDecision({
+    instruction: state.currentInstruction,
+    contextEnvelope: state.contextEnvelope,
+    planningMode: state.planningMode,
+    taskComplexityHint: state.harnessRoute.taskComplexity === "unclassified"
+      ? null
+      : state.harnessRoute.taskComplexity,
+    taskPlan: state.taskPlan,
+    executionSpec: state.executionSpec,
+    contextReport: state.contextReport,
+  });
+}
+
 function createRuntimeTraceMetadata(
   state: AgentGraphState,
   runtimeMode: "graph" | "fallback",
 ): Record<string, unknown> {
   const latestHandoff = state.contextEnvelope.session.latestHandoff;
-  const predictedExplorerUsage = shouldCoordinatorUseExplorer({
-    instruction: state.currentInstruction,
-    contextEnvelope: state.contextEnvelope,
-    taskPlan: state.taskPlan,
-    executionSpec: state.executionSpec,
-    contextReport: state.contextReport,
-  });
-  const predictedPlannerUsage = shouldCoordinatorUsePlanner({
-    instruction: state.currentInstruction,
-    contextEnvelope: state.contextEnvelope,
-    taskPlan: state.taskPlan,
-    executionSpec: state.executionSpec,
-    contextReport: state.contextReport,
-  });
+  const routingDecision = resolveRoutingDecision(state);
   const selectedPath = state.harnessRoute.selectedPath === "lightweight" &&
-      predictedPlannerUsage
+      routingDecision.usePlanner
     ? "planner-backed"
     : state.harnessRoute.selectedPath;
 
@@ -795,8 +789,11 @@ function createRuntimeTraceMetadata(
     instruction: state.currentInstruction,
     targetDirectory: state.targetDirectory,
     selectedPath,
-    usedExplorer: state.harnessRoute.usedExplorer || predictedExplorerUsage,
-    usedPlanner: state.harnessRoute.usedPlanner || predictedPlannerUsage,
+    taskComplexity: state.harnessRoute.taskComplexity === "unclassified"
+      ? routingDecision.complexity
+      : state.harnessRoute.taskComplexity,
+    usedExplorer: state.harnessRoute.usedExplorer || routingDecision.useExplorer,
+    usedPlanner: state.harnessRoute.usedPlanner || routingDecision.usePlanner,
     usedVerifier: state.harnessRoute.usedVerifier,
     verificationMode: state.harnessRoute.verificationMode,
     verificationCheckCount: state.harnessRoute.verificationCheckCount,
@@ -866,6 +863,25 @@ function isActingIterationLimitError(message: string): boolean {
     || message.includes(`exceeded ${String(RAW_LOOP_MAX_ITERATIONS)} iterations`)
     || /iteration(?:-threshold| threshold| limit)/i.test(message)
   );
+}
+
+export function routeAfterTriage(
+  state: Pick<AgentGraphState, "status">,
+): "plan" | "respond" {
+  if (state.status === "planning") {
+    return "plan";
+  }
+
+  if (
+    state.status === "cancelled" ||
+    state.status === "responding" ||
+    state.status === "failed" ||
+    state.status === "done"
+  ) {
+    return "respond";
+  }
+
+  throw new Error(`Unsupported post-triage status: ${state.status}`);
 }
 
 export function routeAfterPlan(
@@ -954,6 +970,23 @@ export function createAgentRuntimeNodes(
   const signal = options.signal;
 
   return {
+    async triage(state) {
+      const cancelledBeforeTriage = createCancellationUpdate(signal);
+
+      if (cancelledBeforeTriage) {
+        return cancelledBeforeTriage;
+      }
+
+      const routingDecision = resolveRoutingDecision(state);
+
+      return {
+        harnessRoute: {
+          ...state.harnessRoute,
+          taskComplexity: routingDecision.complexity,
+        },
+        status: "planning",
+      };
+    },
     async plan(state) {
       const cancelledBeforePlan = createCancellationUpdate(signal);
 
@@ -962,14 +995,13 @@ export function createAgentRuntimeNodes(
       }
 
       try {
-        const shouldUseExplorer = shouldCoordinatorUseExplorer({
-          instruction: state.currentInstruction,
-          contextEnvelope: state.contextEnvelope,
-          taskPlan: state.taskPlan,
-          executionSpec: state.executionSpec,
-          contextReport: state.contextReport,
-        });
-        const contextReport = await maybeExploreContext(state, dependencies, signal);
+        const routingDecision = resolveRoutingDecision(state);
+        const contextReport = await maybeExploreContext(
+          state,
+          routingDecision,
+          dependencies,
+          signal,
+        );
         const cancelledAfterExplore = createCancellationUpdate(signal);
 
         if (cancelledAfterExplore) {
@@ -979,6 +1011,7 @@ export function createAgentRuntimeNodes(
         const planningArtifacts = await maybePlanExecutionSpec(
           state,
           contextReport,
+          routingDecision,
           dependencies,
           signal,
         );
@@ -1014,11 +1047,14 @@ export function createAgentRuntimeNodes(
           contextReport,
           harnessRoute: {
             ...state.harnessRoute,
+            taskComplexity: routingDecision.complexity,
             selectedPath: planningArtifacts.planningMode === "planner"
               ? "planner-backed"
               : "lightweight",
-            usedExplorer: shouldUseExplorer,
-            usedPlanner: planningArtifacts.planningMode === "planner",
+            usedExplorer: state.harnessRoute.usedExplorer
+              || routingDecision.useExplorer,
+            usedPlanner: state.harnessRoute.usedPlanner
+              || planningArtifacts.planningMode === "planner",
           },
           status: "acting",
           checkpointRequested: false,
@@ -1133,6 +1169,7 @@ export function createAgentRuntimeNodes(
       }
 
       try {
+        const routingDecision = resolveRoutingDecision(state);
         const verificationReport = await (dependencies.verifyState
           ? dependencies.verifyState(state)
           : defaultVerifyState(state, dependencies, signal));
@@ -1144,6 +1181,9 @@ export function createAgentRuntimeNodes(
             instruction: state.currentInstruction,
             contextEnvelope: state.contextEnvelope,
             previewState: state.previewState,
+            planningMode: state.planningMode,
+            taskComplexityHint: routingDecision.complexity,
+            routeDecision: routingDecision,
             executionSpec: state.executionSpec,
             contextReport: state.contextReport,
           })
@@ -1364,12 +1404,17 @@ export function createAgentRuntimeGraph(
   const nodes = createAgentRuntimeNodes(options);
 
   return new StateGraph(AgentGraphStateAnnotation)
+    .addNode("triage", nodes.triage)
     .addNode("plan", nodes.plan)
     .addNode("act", nodes.act)
     .addNode("verify", nodes.verify)
     .addNode("recover", nodes.recover)
     .addNode("respond", nodes.respond)
-    .addEdge(START, "plan")
+    .addEdge(START, "triage")
+    .addConditionalEdges("triage", routeAfterTriage, {
+      plan: "plan",
+      respond: "respond",
+    })
     .addConditionalEdges("plan", routeAfterPlan, {
       act: "act",
       respond: "respond",
@@ -1401,9 +1446,15 @@ export async function runFallbackRuntime(
   let state = applyStateUpdate(initialState, {
     fallbackMode: true,
   });
-  let nextNode: AgentGraphNodeName = "plan";
+  let nextNode: AgentGraphNodeName = "triage";
 
   while (true) {
+    if (nextNode === "triage") {
+      state = applyStateUpdate(state, await nodes.triage(state));
+      nextNode = routeAfterTriage(state);
+      continue;
+    }
+
     if (nextNode === "plan") {
       state = applyStateUpdate(state, await nodes.plan(state));
       nextNode = routeAfterPlan(state);

@@ -82,10 +82,12 @@ flowchart TD
   handoff artifacts, and persists updated session state after the turn
   completes.
 - `runAgentRuntime` in `src/engine/graph.ts` executes the explicit
-  `plan -> act -> verify -> recover -> respond` state machine. When the runtime
-  is started in fallback mode, the system preserves the same planning, tool,
-  verification, and response contract, but executes it through the lower-level
-  loop in `src/engine/raw-loop.ts`.
+  `triage -> plan -> act -> verify -> recover -> respond` state machine. The
+  front-door `triage` step is deterministic and classifies work as direct,
+  targeted, or broad before planner or browser-evaluator delegation is even
+  considered. When the runtime is started in fallback mode, the system
+  preserves the same planning, tool, verification, and response contract, but
+  executes it through the lower-level loop in `src/engine/raw-loop.ts`.
 
 ### Tool calls
 
@@ -105,8 +107,8 @@ appropriate, and schema-described before it reaches the model.
   `blockedFiles`, pending target selection, and the selected runtime mode.
 - `AgentGraphState` in `src/engine/graph.ts` carries the active instruction,
   `messageHistory`, `taskPlan`, `executionSpec`, `planningMode`,
-  `verificationReport`, `browserEvaluationReport`, `harnessRoute`,
-  `lastEditedFile`, recovery counters, and `langSmithTrace`.
+  `verificationReport`, `browserEvaluationReport`, `harnessRoute` (including
+  task complexity), `lastEditedFile`, recovery counters, and `langSmithTrace`.
 - `PersistedTaskQueue` plus `ActiveTaskContext` in `src/plans/` carry reviewable
   multi-task work without stretching `rollingSummary`.
 - Checkpoints are stored under
