@@ -116,6 +116,7 @@ const targetedInstructionWordCeiling = 18;
 const uiFilePathPattern =
   /(^|\/)(app|components|pages|routes|ui)\//i;
 const uiFileExtensionPattern = /\.(?:tsx|jsx|css|scss|sass|less|html)$/i;
+const uiMarkupFileExtensionPattern = /\.(?:tsx|jsx|html)$/i;
 const styleSheetFileExtensionPattern = /\.(?:css|scss|sass|less)$/i;
 const singleTurnUiBuildActionPattern =
   /\b(make|create|build|design|implement|craft|polish|restyle)\b/i;
@@ -263,6 +264,62 @@ function createFilePresenceVerificationCheck(
   return {
     id: "check-1",
     label: `Confirm ${normalizedFilePath} still exists`,
+    kind: "command",
+    command,
+    required: true,
+  };
+}
+
+function createStyleSheetClassCoverageCheck(options: {
+  sourceFiles: string[];
+  styleSheetFiles: string[];
+  checkId: string;
+}): EvaluationPlan["checks"][number] {
+  const sourceFiles = options.sourceFiles.map((filePath) =>
+    normalizeTargetRelativePath(filePath)
+  );
+  const styleSheetFiles = options.styleSheetFiles.map((filePath) =>
+    normalizeTargetRelativePath(filePath)
+  );
+  const script = [
+    "import { readFileSync } from \"node:fs\";",
+    "const sourceFiles = JSON.parse(process.argv[1]);",
+    "const styleSheetFiles = JSON.parse(process.argv[2]);",
+    "const classNames = new Set();",
+    "const classAttributePattern = /(className|class)\\s*=\\s*[\"'`]([^\"'`]+)[\"'`]/g;",
+    "for (const filePath of sourceFiles) {",
+    "  const source = readFileSync(filePath, \"utf8\");",
+    "  for (const match of source.matchAll(classAttributePattern)) {",
+    "    for (const token of match[2].split(/\\s+/).filter(Boolean)) {",
+    "      classNames.add(token);",
+    "    }",
+    "  }",
+    "}",
+    "const selectors = new Set();",
+    "const selectorPattern = /\\.([_a-zA-Z]+[\\w-]*)/g;",
+    "for (const filePath of styleSheetFiles) {",
+    "  const source = readFileSync(filePath, \"utf8\");",
+    "  for (const match of source.matchAll(selectorPattern)) {",
+    "    selectors.add(match[1]);",
+    "  }",
+    "}",
+    "const missing = [...classNames].filter((className) => !selectors.has(className));",
+    "if (missing.length > 0) {",
+    "  console.error(`Missing stylesheet selectors: ${missing.join(\", \")}`);",
+    "  process.exit(1);",
+    "}",
+    "console.log(\"Stylesheet selectors cover touched UI class names\");",
+  ].join("\n");
+  const command = [
+    "node --input-type=module -e",
+    quoteForShell(script),
+    quoteForShell(JSON.stringify(sourceFiles)),
+    quoteForShell(JSON.stringify(styleSheetFiles)),
+  ].join(" ");
+
+  return {
+    id: options.checkId,
+    label: "Confirm touched UI classes are defined in touched stylesheets",
     kind: "command",
     command,
     required: true,
@@ -490,6 +547,7 @@ export function createLightweightExecutionSpec(options: {
   executionSpec?: ExecutionSpec | null;
   contextReport?: ContextReport | null;
 }): ExecutionSpec {
+  const singleTurnUiBuild = isSingleTurnUiBuildInstruction(options.instruction);
   const explicitTargetFilePaths = extractInstructionTargetFilePaths(
     options.instruction,
   );
@@ -506,13 +564,30 @@ export function createLightweightExecutionSpec(options: {
     goal: options.contextReport?.query ?? options.instruction,
     deliverables: [
       `Address the request within ${targetLabel}.`,
+      ...(singleTurnUiBuild
+        ? [
+          "Choose a deliberate visual direction instead of reusing a generic dark-blue starter aesthetic.",
+          "Replace any leftover starter branding or starter theme choices that conflict with the requested UI.",
+          "Keep any entry-file and stylesheet references aligned if you create or rename CSS files.",
+        ]
+        : []),
     ],
     acceptanceCriteria: [
       `The requested change is applied within ${targetLabel}.`,
       "The resulting change stays aligned with the original instruction.",
+      ...(singleTurnUiBuild
+        ? [
+          "The resulting UI does not simply fall back to a generic starter palette or repeated dark-blue glassmorphism treatment without user direction.",
+          "The result does not depend on leftover starter copy or placeholder styling to satisfy the request.",
+          "Any stylesheet created or renamed for the UI is referenced from the relevant source files.",
+        ]
+        : []),
     ],
     verificationIntent: [
       "Run the most relevant verification command after the change.",
+      ...(singleTurnUiBuild
+        ? ["Confirm any touched stylesheet is still referenced from the source tree."]
+        : []),
     ],
     targetFilePaths,
     risks: [],
@@ -526,6 +601,7 @@ export function createCoordinatorTaskPlan(options: {
   executionSpec?: ExecutionSpec | null;
   contextReport?: ContextReport | null;
 }): TaskPlan {
+  const singleTurnUiBuild = isSingleTurnUiBuildInstruction(options.instruction);
   const explicitTargetFilePaths = extractInstructionTargetFilePaths(
     options.instruction,
   );
@@ -545,6 +621,13 @@ export function createCoordinatorTaskPlan(options: {
         `Deliver: ${deliverable}`
       ) ?? []),
       "Choose the smallest unique anchor for each change.",
+      ...(singleTurnUiBuild
+        ? [
+          "Choose a fresh visual direction rather than inheriting the starter palette by default.",
+          "Treat starter scaffold styling and placeholder branding as disposable if it conflicts with the requested UI.",
+          "If you create or rename a stylesheet, wire the import or reference before ending the turn.",
+        ]
+        : []),
       ...(options.executionSpec?.verificationIntent.map((intent) =>
         `Verify: ${intent}`
       ) ?? []),
@@ -609,6 +692,11 @@ function createVerificationChecks(
         styleSheetFileExtensionPattern.test(filePath)
       ),
     );
+    const touchedUiMarkupFiles = uniqueStrings(
+      (options.touchedFiles ?? []).filter((filePath) =>
+        uiMarkupFileExtensionPattern.test(filePath)
+      ),
+    );
     const shouldRequireStyleSheetReferences =
       featureFlags.enableStrictFreshUiVerification
       && touchedStyleSheets.length > 0
@@ -656,6 +744,16 @@ function createVerificationChecks(
           };
         }),
       );
+
+      if (touchedUiMarkupFiles.length > 0) {
+        fallbackChecks.push(
+          createStyleSheetClassCoverageCheck({
+            sourceFiles: touchedUiMarkupFiles,
+            styleSheetFiles: touchedStyleSheets,
+            checkId: `check-${String(touchedStyleSheets.length + 2)}`,
+          }),
+        );
+      }
     }
 
     return fallbackChecks;

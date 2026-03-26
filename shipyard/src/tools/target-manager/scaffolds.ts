@@ -486,13 +486,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     },
     {
       path: "src/App.tsx",
-      content: `import "./App.css";
+      content: `// shipyard-scaffold: react-ts-app
+import "./App.css";
 
 export function App() {
   return (
     <main className="app-shell">
       <section className="app-card">
-        <span className="app-eyebrow">Shipyard starter</span>
+        <span className="app-eyebrow">Starter canvas</span>
         <h1>${toDisplayName(name)}</h1>
         <p>${description}</p>
       </section>
@@ -503,50 +504,80 @@ export function App() {
     },
     {
       path: "src/App.css",
-      content: `.app-shell {
+      content: `/* shipyard-scaffold: react-ts-app-style */
+:root {
+  color: #1f2937;
+  background-color: #f8f5ef;
+  font-family: "Inter", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
   min-height: 100vh;
   display: grid;
   place-items: center;
   margin: 0;
   padding: 2rem;
   background:
-    radial-gradient(circle at top, rgba(59, 130, 246, 0.18), transparent 42%),
-    linear-gradient(180deg, #08111f 0%, #122032 100%);
-  color: #f8fafc;
-  font-family: "Inter", "Segoe UI", sans-serif;
+    radial-gradient(circle at top, rgba(212, 163, 115, 0.18), transparent 38%),
+    linear-gradient(180deg, #f8f5ef 0%, #ece7df 100%);
+  color: #111827;
 }
 
 .app-card {
   width: min(100%, 40rem);
-  padding: 2rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 2.25rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 1.5rem;
-  background: rgba(15, 23, 42, 0.78);
-  box-shadow: 0 24px 80px rgba(8, 15, 31, 0.45);
+  background: rgba(255, 252, 247, 0.88);
+  box-shadow: 0 24px 72px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(12px);
 }
 
 .app-card h1 {
-  margin: 0.5rem 0 0.75rem;
+  margin: 0.75rem 0 0.75rem;
   font-size: clamp(2rem, 4vw, 3rem);
   line-height: 1.1;
+  letter-spacing: -0.04em;
 }
 
 .app-card p {
   margin: 0;
   font-size: 1rem;
   line-height: 1.6;
-  color: rgba(226, 232, 240, 0.88);
+  color: rgba(31, 41, 55, 0.78);
 }
 
 .app-eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(180, 83, 9, 0.08);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #7dd3fc;
+  color: #9a3412;
 }
 `,
     },

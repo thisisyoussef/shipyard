@@ -175,8 +175,9 @@ exact-string anchor, hash tracking, and checkpoint-backed recovery.
 5. The tool counts occurrences of `old_string`. The edit only proceeds when the
    anchor matches exactly once.
 6. For larger files, `edit_block` rejects changes that would rewrite more than
-   60% of a file larger than 500 characters. This keeps "surgical edit" calls
-   from turning into disguised full-file rewrites.
+   60% of a file larger than 500 characters. The exception is Shipyard-tagged
+   starter scaffold files, which can be fully restyled without tripping the
+   generic rewrite limit.
 7. Under the graph runtime, a checkpoint is created before each `edit_block`
    call so failed verification can revert the file.
 8. After a successful write, the tool returns the updated contents, the new
@@ -198,7 +199,7 @@ exact-string anchor, hash tracking, and checkpoint-backed recovery.
 | File changed after read | Reject as stale and require a fresh read. |
 | Anchor not found | Reject and include the first 30 lines of the live file to help the coordinator re-anchor. |
 | Anchor matched multiple times | Reject and ask for more surrounding context so the match becomes unique. |
-| Edit is too large | Reject and require smaller `edit_block` calls. |
+| Edit is too large | Reject and require smaller `edit_block` calls unless the file is a tagged Shipyard starter scaffold that is meant to be replaced wholesale. |
 | Post-edit verification fails | Restore the checkpoint, re-read the file, increment retry state, and either replan or block the file. |
 
 This mechanism deliberately prefers false negatives over ambiguous writes. When

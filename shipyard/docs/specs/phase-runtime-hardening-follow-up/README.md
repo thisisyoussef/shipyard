@@ -154,3 +154,27 @@
     };
   }
   ```
+- `RHF-S08` Greenfield UI starter rewrites and stylesheet continuity recovery
+  Code References:
+  - `shipyard/src/tools/edit-block.ts`
+  - `shipyard/src/tools/target-manager/scaffolds.ts`
+  - `shipyard/src/phases/code/prompts.ts`
+  - `shipyard/src/agents/coordinator.ts`
+  - `shipyard/tests/tooling.test.ts`
+  - `shipyard/tests/graph-runtime.test.ts`
+  - `shipyard/tests/scaffold-bootstrap.test.ts`
+  - `shipyard/tests/planner-subagent.test.ts`
+  Representative Snippet:
+  ```ts
+  if (isStarterScaffoldRewrite(relativePath, currentContents)) {
+    return false;
+  }
+
+  fallbackChecks.push(
+    createStyleSheetClassCoverageCheck({
+      sourceFiles: touchedUiMarkupFiles,
+      styleSheetFiles: touchedStyleSheets,
+      checkId: `check-${String(touchedStyleSheets.length + 2)}`,
+    }),
+  );
+  ```
