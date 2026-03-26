@@ -20,6 +20,31 @@
   - provider-aware capability check helpers
 - Data flow summary: a turn or helper role identifies its route/profile, the provider resolver combines defaults and overrides into a concrete provider/model selection, and the runtime requests the matching adapter plus capability information before executing the turn.
 
+## Implementation Summary
+- Added a new routing module at
+  [`../../../../src/engine/model-routing.ts`](../../../../src/engine/model-routing.ts)
+  with:
+  - named route IDs for phases, helper roles, and target enrichment
+  - env-backed global defaults plus per-route overrides
+  - provider-aware capability resolution and adapter lookup
+- Extended `Phase` with a declarative `modelRoute` field in
+  [`../../../../src/phases/phase.ts`](../../../../src/phases/phase.ts) and
+  applied route IDs to the shipped code and target-manager phases in
+  [`../../../../src/phases/code/index.ts`](../../../../src/phases/code/index.ts)
+  and
+  [`../../../../src/phases/target-manager/index.ts`](../../../../src/phases/target-manager/index.ts).
+- Routed planner, explorer, verifier, and phase turns through the shared
+  resolver from
+  [`../../../../src/engine/graph.ts`](../../../../src/engine/graph.ts),
+  [`../../../../src/engine/turn.ts`](../../../../src/engine/turn.ts), and
+  [`../../../../src/plans/turn.ts`](../../../../src/plans/turn.ts).
+- Replaced Anthropic-only enrichment capability checks with provider-aware
+  resolution in
+  [`../../../../src/engine/target-enrichment.ts`](../../../../src/engine/target-enrichment.ts),
+  [`../../../../src/engine/target-command.ts`](../../../../src/engine/target-command.ts),
+  [`../../../../src/ui/server.ts`](../../../../src/ui/server.ts), and
+  [`../../../../src/tools/target-manager/enrich-target.ts`](../../../../src/tools/target-manager/enrich-target.ts).
+
 ## Pack Cohesion and Sequencing (for phase packs or multi-story planning)
 - Higher-level pack objectives:
   - introduce a provider-neutral runtime contract
@@ -72,6 +97,20 @@
   - ambiguous overrides
   - unknown route/profile IDs
   - missing credentials for a non-default provider
+
+## Validation Outcome
+- Added focused route-resolution and capability tests in
+  [`../../../../tests/model-routing.test.ts`](../../../../tests/model-routing.test.ts).
+- Extended runtime seam coverage in
+  [`../../../../tests/turn-runtime.test.ts`](../../../../tests/turn-runtime.test.ts),
+  [`../../../../tests/plan-mode.test.ts`](../../../../tests/plan-mode.test.ts),
+  and
+  [`../../../../tests/target-auto-enrichment.test.ts`](../../../../tests/target-auto-enrichment.test.ts).
+- Required validation commands passed after implementation:
+  - `pnpm --dir shipyard test`
+  - `pnpm --dir shipyard typecheck`
+  - `pnpm --dir shipyard build`
+  - `git diff --check`
 
 ## UI Implementation Plan (if applicable)
 - Behavior logic modules: Not applicable.

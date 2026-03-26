@@ -34,22 +34,45 @@
 | T003 | Replace Anthropic-only capability checks in target enrichment and related runtime code with provider-aware availability resolution. | blocked-by:T001,T002 | yes | `pnpm --dir shipyard test` |
 | T004 | Add focused tests for route precedence, invalid config, and provider-aware capability checks. | blocked-by:T003 | yes | `pnpm --dir shipyard test` |
 
+## Delivery Notes
+- T001 completed in
+  [`../../../../src/engine/model-routing.ts`](../../../../src/engine/model-routing.ts)
+  with deterministic default resolution, named route IDs, and provider-aware
+  capability diagnostics.
+- T002 completed in
+  [`../../../../src/phases/phase.ts`](../../../../src/phases/phase.ts),
+  [`../../../../src/phases/code/index.ts`](../../../../src/phases/code/index.ts),
+  [`../../../../src/phases/target-manager/index.ts`](../../../../src/phases/target-manager/index.ts),
+  [`../../../../src/engine/graph.ts`](../../../../src/engine/graph.ts), and
+  [`../../../../src/plans/turn.ts`](../../../../src/plans/turn.ts).
+- T003 completed in
+  [`../../../../src/engine/target-enrichment.ts`](../../../../src/engine/target-enrichment.ts),
+  [`../../../../src/engine/target-command.ts`](../../../../src/engine/target-command.ts),
+  [`../../../../src/ui/server.ts`](../../../../src/ui/server.ts), and
+  [`../../../../src/tools/target-manager/enrich-target.ts`](../../../../src/tools/target-manager/enrich-target.ts).
+- T004 completed in
+  [`../../../../tests/model-routing.test.ts`](../../../../tests/model-routing.test.ts),
+  [`../../../../tests/turn-runtime.test.ts`](../../../../tests/turn-runtime.test.ts),
+  [`../../../../tests/plan-mode.test.ts`](../../../../tests/plan-mode.test.ts),
+  and
+  [`../../../../tests/target-auto-enrichment.test.ts`](../../../../tests/target-auto-enrichment.test.ts).
+
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `global default provider and model resolve deterministically`
-  - [ ] `route-specific override wins over the global default`
+  - [x] `global default provider and model resolve deterministically`
+  - [x] `route-specific override wins over the global default`
 - T002 tests:
-  - [ ] `phase configuration carries a named model route without SDK types`
-  - [ ] `helper role can request an explicit route`
+  - [x] `phase configuration carries a named model route without SDK types`
+  - [x] `helper role can request an explicit route`
 - T003 tests:
-  - [ ] `automatic enrichment availability does not read ANTHROPIC_API_KEY directly`
-  - [ ] `missing provider credentials surface a provider-aware diagnostic`
+  - [x] `automatic enrichment availability does not read ANTHROPIC_API_KEY directly`
+  - [x] `missing provider credentials surface a provider-aware diagnostic`
 - T004 tests:
-  - [ ] `unknown route or provider configuration fails clearly`
+  - [x] `unknown route or provider configuration fails clearly`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale

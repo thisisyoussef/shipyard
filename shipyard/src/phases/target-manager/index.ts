@@ -1,4 +1,5 @@
 import "../../tools/target-manager/index.js";
+import { TARGET_MANAGER_PHASE_MODEL_ROUTE } from "../../engine/model-routing.js";
 import {
   getTools,
   type ToolDefinition,
@@ -18,6 +19,7 @@ export const targetManagerPhase: Phase = {
   description: "Guides target selection, creation, and enrichment before code work begins.",
   systemPrompt: TARGET_MANAGER_SYSTEM_PROMPT,
   tools: TARGET_MANAGER_TOOL_NAMES,
+  modelRoute: TARGET_MANAGER_PHASE_MODEL_ROUTE,
   approvalRequired: false,
   inputArtifact: "user_intent",
   outputArtifact: "target_selection",

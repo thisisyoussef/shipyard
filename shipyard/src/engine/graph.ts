@@ -81,6 +81,12 @@ import {
   getTurnCancellationReason,
   toTurnCancelledError,
 } from "./cancellation.js";
+import {
+  EXPLORER_MODEL_ROUTE,
+  PLANNER_MODEL_ROUTE,
+  VERIFIER_MODEL_ROUTE,
+  type ModelRouteId,
+} from "./model-routing.js";
 
 export type AgentRuntimeStatus =
   | "planning"
@@ -205,6 +211,9 @@ export interface AgentRuntimeDependencies {
   ) => CheckpointManagerLike;
   createRawLoopOptions?: (
     state: AgentGraphState,
+    request?: {
+      routeId?: ModelRouteId;
+    },
   ) => RawToolLoopOptions | Promise<RawToolLoopOptions>;
 }
 
@@ -431,10 +440,11 @@ function getRelativeToolPath(input: unknown): string | null {
 async function createSubagentLoopOptions(
   state: AgentGraphState,
   dependencies: AgentRuntimeDependencies,
+  routeId: ModelRouteId,
   signal?: AbortSignal,
 ): Promise<RawToolLoopOptions> {
   const rawLoopOptions =
-    await dependencies.createRawLoopOptions?.(state)
+    await dependencies.createRawLoopOptions?.(state, { routeId })
     ?? {};
 
   return {
@@ -522,7 +532,12 @@ async function maybeExploreContext(
   return runExplorerSubagent(
     createExplorerQuery(state.currentInstruction),
     state.targetDirectory,
-    await createSubagentLoopOptions(state, dependencies, signal),
+    await createSubagentLoopOptions(
+      state,
+      dependencies,
+      EXPLORER_MODEL_ROUTE,
+      signal,
+    ),
   );
 }
 
@@ -592,7 +607,12 @@ async function maybePlanExecutionSpec(
         contextReport,
       },
       state.targetDirectory,
-      await createSubagentLoopOptions(state, dependencies, signal),
+      await createSubagentLoopOptions(
+        state,
+        dependencies,
+        PLANNER_MODEL_ROUTE,
+        signal,
+      ),
     ),
     planningMode: "planner",
   };
@@ -631,7 +651,12 @@ async function defaultVerifyState(
       editedFilePath: state.lastEditedFile,
     }),
     state.targetDirectory,
-    await createSubagentLoopOptions(state, dependencies, signal),
+    await createSubagentLoopOptions(
+      state,
+      dependencies,
+      VERIFIER_MODEL_ROUTE,
+      signal,
+    ),
   );
 }
 
@@ -641,7 +666,9 @@ async function defaultActingLoop(
   signal?: AbortSignal,
 ): Promise<ActingLoopResult> {
   const rawLoopOptions =
-    await dependencies.createRawLoopOptions?.(state)
+    await dependencies.createRawLoopOptions?.(state, {
+      routeId: state.phaseConfig.modelRoute,
+    })
     ?? {};
   const budgetDecision = determineActingLoopBudget({
     instruction: state.currentInstruction,

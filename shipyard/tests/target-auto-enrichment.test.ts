@@ -6,10 +6,20 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { DiscoveryReport, TargetProfile } from "../src/artifacts/types.js";
+import {
+  TARGET_ENRICHMENT_MODEL_ROUTE,
+  createModelRoutingConfig,
+} from "../src/engine/model-routing.js";
 import { handleTargetCommand } from "../src/engine/target-command.js";
 import { createSessionState, ensureShipyardDirectories } from "../src/engine/state.js";
-import type { InstructionRuntimeState } from "../src/engine/turn.js";
-import { planAutomaticEnrichment } from "../src/engine/target-enrichment.js";
+import {
+  createInstructionRuntimeState,
+  type InstructionRuntimeState,
+} from "../src/engine/turn.js";
+import {
+  planAutomaticEnrichment,
+  resolveAutomaticTargetEnrichmentCapability,
+} from "../src/engine/target-enrichment.js";
 import { loadTargetProfile } from "../src/tools/target-manager/profile-io.js";
 
 const createdDirectories: string[] = [];
@@ -50,19 +60,8 @@ function createDiscovery(
 function createRuntimeState(
   description = "Automatic enrichment summary.",
 ): InstructionRuntimeState {
-  return {
+  return createInstructionRuntimeState({
     projectRules: "",
-    baseInjectedContext: [],
-    recentToolOutputs: [],
-    recentErrors: [],
-    retryCountsByFile: {},
-    blockedFiles: [],
-    pendingTargetSelectionPath: null,
-    runtimeMode: "graph",
-    continuationLimits: {
-      maxAutomaticResumes: 1,
-      maxWallClockMs: 8 * 60_000,
-    },
     targetEnrichmentInvoker: async () => ({
       text: JSON.stringify({
         name: "auto-target",
@@ -80,7 +79,7 @@ function createRuntimeState(
       }),
       model: "test-model",
     }),
-  };
+  });
 }
 
 function createProfile(
@@ -186,6 +185,46 @@ describe("target auto-enrichment planner", () => {
       }),
     ).toEqual({
       kind: "skip-existing-profile",
+    });
+  });
+
+  it("reports a provider-aware missing-credential diagnostic from the routed capability resolver", () => {
+    expect(
+      resolveAutomaticTargetEnrichmentCapability({
+        modelRouting: createModelRoutingConfig({
+          defaultRoute: {
+            provider: "anthropic",
+          },
+        }),
+        env: {},
+      }),
+    ).toMatchObject({
+      available: false,
+      routeId: TARGET_ENRICHMENT_MODEL_ROUTE,
+      provider: "anthropic",
+      missingEnvironmentVariables: ["ANTHROPIC_API_KEY"],
+      reason: expect.stringMatching(/ANTHROPIC_API_KEY/i),
+    });
+  });
+
+  it("uses an explicit enrichment invoker as available capability even without provider env", () => {
+    expect(
+      resolveAutomaticTargetEnrichmentCapability({
+        modelRouting: createModelRoutingConfig({
+          defaultRoute: {
+            provider: "anthropic",
+          },
+        }),
+        env: {},
+        invokeModel: async () => ({
+          text: "{}",
+          model: "test-model",
+        }),
+      }),
+    ).toMatchObject({
+      available: true,
+      provider: "custom",
+      missingEnvironmentVariables: [],
     });
   });
 });

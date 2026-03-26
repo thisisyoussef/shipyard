@@ -3,8 +3,10 @@ import readline from "node:readline";
 import { saveSessionState, switchTarget, type SessionState } from "./state.js";
 import type { InstructionRuntimeState } from "./turn.js";
 import {
+  getTargetEnrichmentInvoker,
   hasAutomaticTargetEnrichmentCapability,
   planAutomaticEnrichment,
+  resolveAutomaticTargetEnrichmentCapability,
 } from "./target-enrichment.js";
 import {
   createTargetTool,
@@ -207,7 +209,11 @@ async function runTargetEnrichment(
       userDescription: execution.userDescription,
     },
     {
-      invokeModel: options.runtimeState.targetEnrichmentInvoker,
+      invokeModel: getTargetEnrichmentInvoker({
+        invokeModel: options.runtimeState.targetEnrichmentInvoker,
+        modelRouting: options.runtimeState.modelRouting,
+        env: options.runtimeState.modelRoutingEnv,
+      }),
       onProgress(event) {
         writeLine(options, event.message);
       },
@@ -229,11 +235,13 @@ export async function maybeAutoEnrichTarget(
     return;
   }
 
-  if (
-    !hasAutomaticTargetEnrichmentCapability(
-      options.runtimeState.targetEnrichmentInvoker,
-    )
-  ) {
+  const capability = resolveAutomaticTargetEnrichmentCapability({
+    invokeModel: options.runtimeState.targetEnrichmentInvoker,
+    modelRouting: options.runtimeState.modelRouting,
+    env: options.runtimeState.modelRoutingEnv,
+  });
+
+  if (!capability.available) {
     return;
   }
 
@@ -276,6 +284,26 @@ async function handleTargetEnrich(
 ): Promise<void> {
   if (!hasSelectedCodeTarget(options.state)) {
     writeLine(options, "Select or create a target before running enrichment.");
+    return;
+  }
+
+  if (
+    !hasAutomaticTargetEnrichmentCapability({
+      invokeModel: options.runtimeState.targetEnrichmentInvoker,
+      modelRouting: options.runtimeState.modelRouting,
+      env: options.runtimeState.modelRoutingEnv,
+    })
+  ) {
+    const capability = resolveAutomaticTargetEnrichmentCapability({
+      invokeModel: options.runtimeState.targetEnrichmentInvoker,
+      modelRouting: options.runtimeState.modelRouting,
+      env: options.runtimeState.modelRoutingEnv,
+    });
+    writeLine(
+      options,
+      capability.reason
+        ?? "Target enrichment is unavailable until a model provider is configured.",
+    );
     return;
   }
 

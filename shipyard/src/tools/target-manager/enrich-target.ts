@@ -3,12 +3,9 @@ import path from "node:path";
 
 import type { DiscoveryReport, TargetProfile } from "../../artifacts/types.js";
 import {
-  DEFAULT_ANTHROPIC_MODEL,
-  createAnthropicClient,
-  createAnthropicMessage,
-  createUserTextMessage,
-  extractAssistantText,
-} from "../../engine/anthropic.js";
+  createModelRoutingConfig,
+  createTargetEnrichmentInvokerFromRouting,
+} from "../../engine/model-routing.js";
 import { discoverTarget } from "../../context/discovery.js";
 import { ToolError } from "../read-file.js";
 import {
@@ -279,19 +276,11 @@ export function parseEnrichmentResponse(
 async function defaultInvokeModel(
   prompt: string,
 ): Promise<EnrichmentInvocationResult> {
-  const client = createAnthropicClient();
-  const response = await createAnthropicMessage(client, {
-    systemPrompt:
-      "You analyze software projects. Return only valid JSON that matches the requested schema.",
-    messages: [createUserTextMessage(prompt)],
-    model: DEFAULT_ANTHROPIC_MODEL,
-    temperature: 0,
+  const invokeModel = createTargetEnrichmentInvokerFromRouting({
+    routing: createModelRoutingConfig(),
   });
 
-  return {
-    text: extractAssistantText(response),
-    model: response.model,
-  };
+  return invokeModel(prompt);
 }
 
 export async function enrichTargetTool(
