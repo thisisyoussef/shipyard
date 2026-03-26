@@ -27,3 +27,8 @@
   now match the shipped target-manager routing, `plan:` / `next` /
   `continue` flow, planner-backed graph runtime, browser evaluator, and the
   current split-pane browser workbench shell.
+- 2026-03-26: Drafted the `phase-10` architecture pack with eight stories that
+  sequence the next major runtime upgrades: durable threads, policy and
+  sandboxing, layered memory, repo indexing, explicit routing, richer
+  verification/evals, isolated background tasks, and evented readiness
+  surfaces.

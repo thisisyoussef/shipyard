@@ -86,3 +86,16 @@ Capture failures so they are not repeated.
   debugging or onboarding harder than reading the code directly.
 - **Prevention rule**: Re-check `ui/src/App.tsx`, `ui/src/ShipyardWorkbench.tsx`,
   and the current README surfaces before carrying forward older phase language.
+
+- **Problem**: Adopting software-factory features as isolated subsystems
+  without unifying execution state and review boundaries
+- **Example**: Adding background tasks, approvals, repo indexing, or eval jobs
+  as separate sidecar stores and flows that do not share one durable thread or
+  one reviewed apply path
+- **Why it failed**: The runtime becomes harder to reason about, resume
+  semantics drift, and parallel work starts mutating the main target without a
+  clear control plane.
+- **Prevention rule**: Sequence larger runtime upgrades through the `phase-10`
+  architecture pack, preserve the single-writer coordinator, and anchor new
+  capability surfaces to durable threads, explicit policy, and review-before-
+  apply boundaries.
