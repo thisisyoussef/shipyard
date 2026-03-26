@@ -137,9 +137,13 @@
   - `shipyard/src/bin/shipyard.ts`
   - `shipyard/tests/ui-runtime.test.ts`
 - Hosted access gate:
+  - `.github/workflows/railway-main-deploy.yml`
   - `shipyard/src/ui/access.ts`
   - `shipyard/src/ui/server.ts`
   - `shipyard/ui/src/HostedAccessGate.tsx`
+  - `scripts/print-hosted-access-url.mjs`
+  - `shipyard/README.md`
+  - `shipyard/docs/architecture/hosted-railway.md`
   - `shipyard/tests/ui-access.test.ts`
 - Browser file upload intake:
   - `shipyard/src/ui/uploads.ts`
@@ -201,6 +205,14 @@ run: |
     --project "${RAILWAY_PROJECT_ID}" \
     --environment "${RAILWAY_ENVIRONMENT_ID}" \
     --service "${RAILWAY_SERVICE_ID}"
+```
+
+- Hosted access-token rotations now ride the same deploy workflow and local
+  operators can print a bootstrap URL from the ignored env file:
+
+```yaml
+SHIPYARD_ACCESS_TOKEN: ${{ secrets.SHIPYARD_ACCESS_TOKEN }}
+printf '%s' "${SHIPYARD_ACCESS_TOKEN}" | railway variable set SHIPYARD_ACCESS_TOKEN --stdin
 ```
 
 - Upload receipts become next-turn context instead of raw websocket blobs:

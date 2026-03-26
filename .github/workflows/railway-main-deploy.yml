@@ -28,6 +28,7 @@ jobs:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SHIPYARD_ACCESS_TOKEN: ${{ secrets.SHIPYARD_ACCESS_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -47,17 +48,25 @@ jobs:
             exit 1
           fi
 
-      - name: Verify production model credentials
+      - name: Verify production credentials
         run: |
           if [ -z "${OPENAI_API_KEY}" ]; then
             echo "Missing OPENAI_API_KEY GitHub secret. Set it before deploying production." >&2
             exit 1
           fi
+          if [ -z "${SHIPYARD_ACCESS_TOKEN}" ]; then
+            echo "Missing SHIPYARD_ACCESS_TOKEN GitHub secret. Set it before deploying production." >&2
+            exit 1
+          fi
 
-      - name: Sync Railway production model variables
+      - name: Sync Railway production variables
         working-directory: shipyard
         run: |
           printf '%s' "${OPENAI_API_KEY}" | railway variable set OPENAI_API_KEY --stdin \
+            --skip-deploys \
+            --environment "${RAILWAY_ENVIRONMENT_ID}" \
+            --service "${RAILWAY_SERVICE_ID}"
+          printf '%s' "${SHIPYARD_ACCESS_TOKEN}" | railway variable set SHIPYARD_ACCESS_TOKEN --stdin \
             --skip-deploys \
             --environment "${RAILWAY_ENVIRONMENT_ID}" \
             --service "${RAILWAY_SERVICE_ID}"
