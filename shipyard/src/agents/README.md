@@ -1,30 +1,28 @@
 # Agents
 
-This folder defines the role contracts that Shipyard reasons about when it
-plans work. As Phase 6 lands, selected files also hold isolated helper
-runtimes behind those roles.
+This folder holds the coordinator heuristics and isolated helper runtimes that
+the graph runtime can call during standard code turns.
 
 ## Files
 
-- `coordinator.ts`: the only write-capable role; owns the task plan and the
-  final execution path plus delegation heuristics for explorer, planner, and
-  verifier
+- `coordinator.ts`: the only write-capable role; owns task-plan synthesis,
+  lightweight-vs-planner-backed routing, verifier/browser-evaluator
+  calibration, and file-path heuristics
 - `explorer.ts`: read-only search role plus the isolated explorer helper that
   returns `ContextReport`
 - `planner.ts`: read-only planning role that turns broad instructions into
-  typed `ExecutionSpec` artifacts
+  typed `ExecutionSpec` artifacts and can load named specs
 - `verifier.ts`: read-only validation role for ordered `EvaluationPlan`
-  checks, tests, lint, and structured verification reports; now also exposes
-  the isolated verifier helper runtime
-- `browser-evaluator.ts`: read-only browser helper that inspects loopback
-  previews and returns structured UI evidence without crossing the
+  checks, tests, lint, and structured verification reports
+- `browser-evaluator.ts`: read-only Playwright helper that inspects loopback
+  previews and returns structured browser evidence without crossing the
   coordinator-only write boundary
 
 ## Important Constraint
 
-Coordinator-only writes are a deliberate safety boundary. When the runtime
-grows into true multi-agent execution, this directory should keep that boundary
-explicit instead of allowing silent writes from helper roles.
+Coordinator-only writes are a deliberate safety boundary. Helper agents can
+search, plan, verify, or inspect previews, but they do not mutate the target
+repository directly.
 
 ## Diagram
 
@@ -36,25 +34,34 @@ flowchart LR
   Planner["planner"]
   Verifier["verifier"]
   BrowserEval["browser-evaluator"]
-  Writes["write operations"]
-  Checks["checks and evidence"]
+  Context["ContextReport"]
   Spec["ExecutionSpec"]
-  Eval["EvaluationPlan"]
-  BrowserEvidence["BrowserEvaluationReport"]
+  Verify["VerificationReport"]
+  Browser["BrowserEvaluationReport"]
+  Writes["write operations"]
 
   Instruction --> Coordinator
-  Coordinator --> Explorer
-  Coordinator --> Planner
-  Coordinator --> Verifier
-  Coordinator --> BrowserEval
-  Coordinator --> Writes
-  Explorer --> Checks
+  Coordinator -->|unknown target files| Explorer
+  Explorer --> Context
+  Context --> Coordinator
+  Coordinator -->|broad code request| Planner
   Planner --> Spec
   Spec --> Coordinator
-  Coordinator --> Eval
-  Eval --> Verifier
-  Verifier --> Checks
-  BrowserEval --> BrowserEvidence
-  BrowserEvidence --> Coordinator
-  Checks --> Coordinator
+  Coordinator --> Writes
+  Coordinator -->|command checks| Verifier
+  Verifier --> Verify
+  Verify --> Coordinator
+  Coordinator -->|preview-backed UI checks| BrowserEval
+  BrowserEval --> Browser
+  Browser --> Coordinator
 ```
+
+## Helper-Agent Rules
+
+- Helper agents start from fresh history instead of inheriting the
+  coordinator's full conversation.
+- Each helper has a tight tool allowlist and validates its own structured
+  output before the coordinator consumes it.
+- Explorer/planner work stays read-only and report-based.
+- Browser evaluation must stay on loopback preview URLs; production deploy URLs
+  are out of scope for this helper.

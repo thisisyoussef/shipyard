@@ -44,6 +44,11 @@
 - **Helper-script status**: some imported workflow docs describe optional repo-owned helpers under `scripts/`; unless those helpers exist in this repo, follow the manual workflow equivalent instead of assuming the commands are wired today.
 - **UI bridge flag**: `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES=1` makes `scripts/run-ui-phase-bridge.mjs` use Claude first for UI implementation, QA, critic, and final polish while preserving a Codex-first fallback when the flag is off.
 - **Greenfield bootstrap baseline**: shared scaffold presets now back both target creation and empty-target bootstrap in code phase; do not add a second scaffolding path when extending greenfield setup.
+- **Docs baseline**: runtime-facing README and architecture pages under
+  `shipyard/` now describe target-manager routing, plan/task queues,
+  planner-backed graph execution, browser evaluation, and the current
+  split-pane browser workbench. Keep those docs aligned when those surfaces
+  change.
 
 ---
 

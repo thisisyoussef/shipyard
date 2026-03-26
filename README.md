@@ -1,25 +1,33 @@
 # Shipyard Workspace
 
-This repository is split into two primary checked-in surfaces that work
-together but have different responsibilities:
+This repository has two primary checked-in surfaces that work together but
+serve different jobs:
 
 - `.ai/` is the helper harness for workflows, memory, templates, and execution
-  rules used while working in this workspace.
+  rules used while building inside this workspace.
 - `shipyard/` is the runnable TypeScript coding-agent application: CLI entry,
-  shared runtime, browser mode backend, React UI shell, tests, and product docs.
-- `test-targets/` holds checked-in manual target scaffolds for exercising
-  Shipyard against greenfield projects without self-targeting the app repo.
+  shared runtime, target-manager flow, planning/task-runner flow, browser
+  workbench backend, React frontend, tests, and product docs.
+- `test-targets/` holds checked-in sample targets for local verification
+  without pointing Shipyard back at its own source tree.
 
 ## Documentation Map
 
 - [`AGENTS.md`](./AGENTS.md): primary repository rulebook
 - [`.ai/README.md`](./.ai/README.md): helper-harness navigation guide
-- [`shipyard/README.md`](./shipyard/README.md): product overview and quick start
-- [`shipyard/docs/README.md`](./shipyard/docs/README.md): durable docs hub
+- [`shipyard/README.md`](./shipyard/README.md): product overview, quick start,
+  and operator flows
+- [`shipyard/docs/README.md`](./shipyard/docs/README.md): durable product docs
+  hub
 - [`shipyard/docs/architecture/README.md`](./shipyard/docs/architecture/README.md):
-  architecture diagrams and runtime flow notes
+  runtime, graph, session-artifact, and browser-workbench diagrams
 - [`shipyard/src/README.md`](./shipyard/src/README.md): source tree guide
-- [`shipyard/tests/README.md`](./shipyard/tests/README.md): test suite map
+- [`shipyard/src/plans/README.md`](./shipyard/src/plans/README.md): persisted
+  task-queue and task-runner flow
+- [`shipyard/src/ui/README.md`](./shipyard/src/ui/README.md): browser-runtime
+  backend guide
+- [`shipyard/tests/README.md`](./shipyard/tests/README.md): automated and
+  manual verification map
 
 ## Working From The Repo Root
 
@@ -31,13 +39,19 @@ pnpm --dir shipyard test
 pnpm --dir shipyard typecheck
 ```
 
-To run the built CLI from the root:
+To run the built CLI against a specific target:
 
 ```bash
 node shipyard/dist/bin/shipyard.js --target ./test-targets/tic-tac-toe
 ```
 
-To start the browser-first runtime after building:
+To start Shipyard in target-manager mode from the repo root:
+
+```bash
+node shipyard/dist/bin/shipyard.js --targets-dir ./test-targets
+```
+
+To launch the browser workbench after building:
 
 ```bash
 pnpm --dir shipyard test-target:ui
@@ -67,6 +81,9 @@ pnpm --dir shipyard test-target:ui
 - Product code and product-facing documentation live under `shipyard/`.
 - Helper-harness changes belong under `.ai/` and should stay generic to this
   repository.
-- Story packs under `shipyard/docs/specs/` explain phased implementation work.
-  Durable onboarding and architecture notes live in the new docs hub instead of
+- Shipyard keeps one shared session model but supports three operator turn
+  paths: target-manager turns, planning turns (`plan:`, `next`, `continue`),
+  and code turns.
+- Story packs under `shipyard/docs/specs/` explain phased delivery work.
+  Durable onboarding and architecture notes live in the docs hub instead of
   being hidden inside individual spec folders.

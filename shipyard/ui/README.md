@@ -5,27 +5,34 @@
 ## Key Files
 
 - `src/main.tsx`: frontend bootstrap
-- `src/App.tsx`: app root
-- `src/ShipyardWorkbench.tsx`: main workbench composition
-- `src/panels/RunHistoryPanel.tsx`: saved-run browser and resume controls
-- `src/view-models.ts`: frontend-side view shaping
-- `src/primitives.tsx`: shared UI primitives
-- `src/styles.css` and `src/tokens.css`: styling and design tokens
+- `src/App.tsx`: hosted-access bootstrap, upload handling, socket lifecycle,
+  transport state, and workbench state orchestration
+- `src/ShipyardWorkbench.tsx`: current split-pane shell composition
+- `src/TargetHeader.tsx`, `src/TargetSwitcher.tsx`,
+  `src/TargetCreationDialog.tsx`, `src/EnrichmentIndicator.tsx`,
+  `src/HostedAccessGate.tsx`: target-manager, deploy-status, and hosted-access
+  surfaces
+- `src/panels/*`: transcript, composer, file diff, output, session, run
+  history, and context panels
+- `src/socket-manager.ts`: reconnecting WebSocket transport manager
+- `src/view-models.ts`, `src/context-ui.ts`, and `src/activity-diff.ts`:
+  frontend state shaping and UI helpers
+- `src/styles.css` and `src/tokens/*`: styling and design tokens
 - `index.html`: Vite entry document
 
 ## Workbench Highlights
 
-- The left sidebar shows the active session, saved runs for the current target,
-  and injected-context history in separate panels.
-- The center workspace now has `Chat`, `Local preview`, and `Live view` tabs
-  so operators can switch between the conversation, the rendered target, and
-  step-by-step execution playback without leaving the current session.
-- `Live view` keeps streamed tool activity, immediate edit steps, terminal-like
-  detail, and before/after diff evidence visible while the run is still
-  progressing.
-- The right sidebar keeps file-level change evidence visible and preserves
-  repeated edits to the same path as separate timeline entries rather than
-  collapsing them together.
+- The header strip surfaces workspace identity, trace-copy, and refresh
+  controls.
+- The target header shows the active target, enrichment status, deploy
+  readiness, publish errors, and the latest production URL when available.
+- The left pane keeps the latest conversation and composer together.
+- The right pane focuses on file-level diff evidence and command output rather
+  than a dedicated preview/live-view tab set.
+- The drawer holds session details, saved runs, and injected context history.
+- Hosted sessions can require a shared access token before the workbench unlocks.
+- Upload receipts flow through the same workbench state as turns and context
+  history.
 
 ## Build Contract
 
@@ -41,14 +48,23 @@ See [`src/README.md`](./src/README.md) for the source-level guide.
 ```mermaid
 flowchart LR
   Vite["Vite root"]
-  Src["src/"]
-  Html["index.html"]
+  App["App.tsx"]
+  Workbench["ShipyardWorkbench.tsx"]
+  Panels["panels/*"]
+  TargetUi["TargetHeader / switcher / dialogs / gate"]
+  Socket["socket-manager.ts"]
+  ViewModels["view-models.ts"]
+  Styles["styles.css / tokens/*"]
   Build["dist/ui"]
   Backend["../src/ui/server.ts"]
 
-  Vite --> Src
-  Vite --> Html
-  Src --> Build
-  Html --> Build
+  Vite --> App
+  App --> Socket
+  App --> ViewModels
+  App --> Workbench
+  Workbench --> Panels
+  Workbench --> TargetUi
+  Workbench --> Styles
+  App --> Build
   Backend --> Build
 ```
