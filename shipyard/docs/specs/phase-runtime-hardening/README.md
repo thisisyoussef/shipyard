@@ -3,7 +3,7 @@
 - Pack: Runtime Hardening (Supplemental)
 - Estimate: 8-12 hours
 - Date: 2026-03-26
-- Status: Implemented on branch; live LangSmith finish-check pending provider credentials
+- Status: Implemented; live LangSmith finish-check passed on 2026-03-26
 
 ## Pack Objectives
 
@@ -57,12 +57,14 @@
   - `shipyard/src/engine/raw-loop.ts`
   - `shipyard/src/context/envelope.ts`
   - `shipyard/src/engine/turn-summary.ts`
+  - `shipyard/tests/raw-loop.test.ts`
   Representative Snippet:
   ```ts
-  const requestHistory = buildCompactedMessageHistory({
-    initialUserMessage,
-    completedTurns: completedToolTurns,
-  });
+  const forcedVerbatimTailTurns = shouldForcePreserveVerbatimTailTurn(
+    options.completedTurns.at(-1),
+  )
+    ? 1
+    : 0;
   ```
 - `RTH-S02` Anthropic budget defaults and `max_tokens` recovery
   Code References:
@@ -102,11 +104,10 @@
   Code References:
   - `shipyard/tests/manual/phase3-live-loop-smoke.ts`
   - `shipyard/tests/manual/README.md`
+  - `shipyard/src/agents/coordinator.ts`
+  - `shipyard/src/phases/code/prompts.ts`
+  - `shipyard/tests/graph-runtime.test.ts`
   Representative Snippet:
   ```ts
-  const followUpTurn = await executeInstructionTurn({
-    sessionState,
-    runtimeState,
-    instruction: FOLLOW_UP_CONTINUATION_INSTRUCTION,
-  });
+  "Leave command-based verification to the verifier after the edit unless shell output is required now."
   ```

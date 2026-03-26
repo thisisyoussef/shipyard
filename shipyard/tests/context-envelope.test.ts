@@ -179,7 +179,7 @@ describe("context envelope", () => {
           plannedSteps: [
             "Read the relevant files before editing.",
             "Implement the dashboard shell.",
-            "Verify the result after the edit.",
+            "Leave command-based verification to the verifier after the edit unless shell output is required now.",
           ],
         },
       },

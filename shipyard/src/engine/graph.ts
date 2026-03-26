@@ -343,6 +343,7 @@ function createDefaultVerificationReport(
   const evaluationPlan = createVerificationPlan({
     contextEnvelope: state.contextEnvelope,
     executionSpec: state.executionSpec,
+    editedFilePath: state.lastEditedFile,
   });
   const command = evaluationPlan.checks[0]?.command ?? "";
 
@@ -503,6 +504,7 @@ async function defaultVerifyState(
     createVerificationPlan({
       contextEnvelope: state.contextEnvelope,
       executionSpec: state.executionSpec,
+      editedFilePath: state.lastEditedFile,
     }),
     state.targetDirectory,
     await createSubagentLoopOptions(state, dependencies, signal),
@@ -936,6 +938,7 @@ export function createAgentRuntimeNodes(
         const plannedVerificationChecks = createVerificationPlan({
           contextEnvelope: state.contextEnvelope,
           executionSpec: state.executionSpec,
+          editedFilePath: state.lastEditedFile,
         }).checks.length;
         const cancelledAfterVerify = createCancellationUpdate(signal);
 

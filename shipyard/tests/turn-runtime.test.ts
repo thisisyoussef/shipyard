@@ -923,7 +923,7 @@ describe("instruction runtime handoff", () => {
           plannedSteps: [
             "Read the relevant files before editing.",
             "Refine the main screen.",
-            "Verify the result after the edit.",
+            "Leave command-based verification to the verifier after the edit unless shell output is required now.",
           ],
         },
         harnessRoute: {

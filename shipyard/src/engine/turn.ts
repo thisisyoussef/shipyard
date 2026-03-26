@@ -891,7 +891,7 @@ export async function executeInstructionTurn(
         plannedSteps: [
           "Read the relevant files before editing.",
           "Choose the smallest unique anchor for each change.",
-          "Verify the result after the edit.",
+          "Leave command-based verification to the verifier after the edit unless shell output is required now.",
         ],
       };
       const executionSpec = finalState.executionSpec ?? null;

@@ -160,6 +160,25 @@ function flattenCompletedTurns(completedTurns: CompletedToolTurn[]): MessagePara
   return completedTurns.flatMap((turn) => [turn.assistantMessage, turn.toolResultMessage]);
 }
 
+function shouldForcePreserveVerbatimTailTurn(
+  turn: CompletedToolTurn | undefined,
+): boolean {
+  if (!turn) {
+    return false;
+  }
+
+  const hasSuccessfulRead = turn.toolExecutions.some((execution) =>
+    execution.success && execution.toolName === "read_file"
+  );
+  const includesContextPoisoningWrite = turn.toolExecutions.some((execution) =>
+    execution.toolName === "write_file"
+    || execution.toolName === "edit_block"
+    || execution.toolName === "bootstrap_target"
+  );
+
+  return hasSuccessfulRead && !includesContextPoisoningWrite;
+}
+
 export function buildCompactedMessageHistory(options: {
   initialUserMessage: MessageParam;
   completedTurns: CompletedToolTurn[];
@@ -186,14 +205,23 @@ export function buildCompactedMessageHistory(options: {
     };
   }
 
+  const forcedVerbatimTailTurns = shouldForcePreserveVerbatimTailTurn(
+    options.completedTurns.at(-1),
+  )
+    ? 1
+    : 0;
   const maxTailCycles = Math.min(
     RAW_LOOP_PREFERRED_VERBATIM_TAIL_CYCLES,
+    options.completedTurns.length,
+  );
+  const minTailCycles = Math.min(
+    forcedVerbatimTailTurns,
     options.completedTurns.length,
   );
 
   for (
     let preservedTailTurnCount = maxTailCycles;
-    preservedTailTurnCount >= 0;
+    preservedTailTurnCount >= minTailCycles;
     preservedTailTurnCount -= 1
   ) {
     const compactedTurnCount =
@@ -225,7 +253,7 @@ export function buildCompactedMessageHistory(options: {
       };
     }
 
-    if (preservedTailTurnCount === 0) {
+    if (preservedTailTurnCount === minTailCycles) {
       return {
         messages,
         didCompact: true,

@@ -13,6 +13,16 @@ import type { ContextEnvelope } from "../engine/state.js";
 import { normalizeTargetRelativePath } from "../tools/file-state.js";
 
 const verificationScriptPriority = ["test", "typecheck", "build"] as const;
+const dependencyInstallMarkerDirectories = new Set(["node_modules", ".yarn"]);
+const dependencyInstallMarkerFiles = new Set([".pnp.cjs", ".pnp.js"]);
+const dependencyBootstrapTouchFiles = new Set([
+  "package.json",
+  "pnpm-workspace.yaml",
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "yarn.lock",
+  "bun.lockb",
+]);
 const browserEvaluationKeywordPatterns = [
   /\bui\b/i,
   /\bux\b/i,
@@ -118,6 +128,68 @@ function buildPackageManagerScriptCommand(
   }
 
   return `pnpm ${scriptName}`;
+}
+
+function quoteForShell(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+function hasDependencyInstallMarkers(
+  contextEnvelope: ContextEnvelope,
+): boolean {
+  const { topLevelDirectories, topLevelFiles } = contextEnvelope.stable.discovery;
+
+  return topLevelDirectories.some((directory) =>
+    dependencyInstallMarkerDirectories.has(directory)
+  ) || topLevelFiles.some((fileName) => dependencyInstallMarkerFiles.has(fileName));
+}
+
+function hasRecentBootstrapTouch(
+  contextEnvelope: ContextEnvelope,
+): boolean {
+  return (contextEnvelope.session.recentTouchedFiles ?? []).some((filePath) => {
+    const fileName = filePath.split("/").at(-1) ?? filePath;
+
+    return dependencyBootstrapTouchFiles.has(fileName);
+  });
+}
+
+function createFilePresenceVerificationCheck(
+  filePath: string,
+): EvaluationPlan["checks"][number] {
+  const normalizedFilePath = normalizeTargetRelativePath(filePath);
+  const command =
+    `test -f ${quoteForShell(normalizedFilePath)} && ` +
+    `echo ${quoteForShell(`Edited file exists: ${normalizedFilePath}`)}`;
+
+  return {
+    id: "check-1",
+    label: `Confirm ${normalizedFilePath} still exists`,
+    kind: "command",
+    command,
+    required: true,
+  };
+}
+
+function shouldUseNoInstallVerificationFallback(options: {
+  contextEnvelope: ContextEnvelope;
+  editedFilePath?: string | null;
+}): boolean {
+  const editedFilePath = options.editedFilePath?.trim();
+
+  if (!editedFilePath) {
+    return false;
+  }
+
+  if (hasDependencyInstallMarkers(options.contextEnvelope)) {
+    return false;
+  }
+
+  if (options.contextEnvelope.stable.discovery.isGreenfield) {
+    return true;
+  }
+
+  return hasRecentBootstrapTouch(options.contextEnvelope);
 }
 
 export function extractInstructionTargetFilePaths(
@@ -258,7 +330,7 @@ export function createCoordinatorTaskPlan(options: {
       ...(options.executionSpec?.verificationIntent.map((intent) =>
         `Verify: ${intent}`
       ) ?? []),
-      "Verify the result after the edit.",
+      "Leave command-based verification to the verifier after the edit unless shell output is required now.",
     ],
   );
 
@@ -289,6 +361,7 @@ export function createVerificationCommand(
 
 function createVerificationChecks(
   contextEnvelope: ContextEnvelope,
+  editedFilePath?: string | null,
 ): EvaluationPlan["checks"] {
   const packageManager = contextEnvelope.stable.discovery.packageManager;
   const checks = verificationScriptPriority
@@ -300,6 +373,15 @@ function createVerificationChecks(
       command: buildPackageManagerScriptCommand(packageManager, scriptName),
       required: true,
     }));
+
+  if (
+    shouldUseNoInstallVerificationFallback({
+      contextEnvelope,
+      editedFilePath,
+    })
+  ) {
+    return [createFilePresenceVerificationCheck(editedFilePath!)];
+  }
 
   if (checks.length > 0) {
     return checks;
@@ -319,8 +401,12 @@ function createVerificationChecks(
 export function createVerificationPlan(options: {
   contextEnvelope: ContextEnvelope;
   executionSpec?: ExecutionSpec | null;
+  editedFilePath?: string | null;
 }): EvaluationPlan {
-  const checks = createVerificationChecks(options.contextEnvelope);
+  const checks = createVerificationChecks(
+    options.contextEnvelope,
+    options.editedFilePath,
+  );
 
   return {
     summary: options.executionSpec?.verificationIntent[0]

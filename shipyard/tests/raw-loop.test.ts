@@ -703,4 +703,73 @@ describe("raw Claude tool loop", () => {
     expect(toolCallLog).not.toContain(longInput);
     expect(toolResultLog).not.toContain(`echo:${longInput}`);
   });
+
+  it("preserves the latest read-only tool cycle verbatim when compaction would otherwise drop fresh file contents", async () => {
+    const directory = await createTempProject();
+    const largeContents = `${"alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu\n".repeat(260)}`;
+
+    await writeFile(path.join(directory, "large.txt"), largeContents, "utf8");
+
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_read_large",
+            name: "read_file",
+            input: {
+              path: "large.txt",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Finished after keeping the read context.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+
+    const result = await runRawToolLoop(
+      "You are Shipyard.",
+      "Read the large file and then continue.",
+      ["read_file"],
+      directory,
+      {
+        client,
+        logger: {
+          log() {},
+        },
+      },
+    );
+
+    expect(result).toBe("Finished after keeping the read context.");
+    expect(client.calls).toHaveLength(2);
+    expect(client.calls[1]?.messages).toHaveLength(3);
+    expect(client.calls[1]?.messages[1]).toMatchObject({
+      role: "assistant",
+    });
+    expect(client.calls[1]?.messages[2]).toMatchObject({
+      role: "user",
+    });
+
+    const toolResultMessage = getLastUserToolResultMessage(client.calls[1]!);
+
+    expect(typeof toolResultMessage.content).not.toBe("string");
+    expect(toolResultMessage.content).toHaveLength(1);
+    expect(toolResultMessage.content[0]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "toolu_read_large",
+      is_error: false,
+    });
+  });
 });
