@@ -15,46 +15,52 @@ Submission template - fill in each section as you build. Do not write this at th
 
 ## Agent Architecture (MVP)
 
-Shipyard is a local-first coding agent with two entry surfaces, one shared turn
-executor, one tool layer, and one persisted session model. `src/bin/shipyard.ts`
-resolves the target, creates or resumes a session, refreshes discovery, loads
-target `AGENTS.md` rules, and then routes the operator into terminal REPL mode
-or browser `--ui` mode. Both surfaces call `executeInstructionTurn` in
-`src/engine/turn.ts`, which rebuilds the `ContextEnvelope`, selects the code
-phase, and runs either the graph runtime or the fallback raw tool loop.
+Shipyard is a local-first coding agent with two entry surfaces, one shared
+session model, one standard-turn executor, and two additional routed turn
+paths for planning and queued task execution. `src/bin/shipyard.ts` resolves
+either a concrete target or a targets directory, creates or resumes a session,
+refreshes discovery, loads target `AGENTS.md` rules when a target exists, and
+then routes the operator into terminal REPL mode or browser `--ui` mode. From
+there, the loop/UI router sends `plan:` into `src/plans/turn.ts`, sends `next`
+and `continue` into `src/plans/task-runner.ts`, and sends standard
+instructions into `src/engine/turn.ts`, which rebuilds the `ContextEnvelope`,
+selects the current phase (`code` or `target-manager`), and runs the graph
+runtime with raw fallback parity.
 
 ```mermaid
 flowchart TD
   Operator["Operator"]
-  Entry["CLI or UI entry"]
-  Bootstrap["Target resolution, session load/create, discovery, AGENTS.md load"]
+  Entry["Terminal loop or UI server"]
+  Bootstrap["Target/targets-dir resolution, session load/create, discovery, rules load"]
+  Router["Instruction router"]
+  PlanTurn["executePlanningTurn"]
+  TaskRunner["executeTaskRunnerTurn"]
   Turn["executeInstructionTurn"]
-  Envelope["Context envelope"]
-  Graph["Graph runtime"]
-  Raw["Fallback raw loop"]
-  Tools["Typed tools"]
+  Envelope["Context envelope + runtime context"]
+  Graph["Graph runtime / fallback"]
+  Tools["Typed tools + target-manager tools"]
   Target["Target repository"]
   Checkpoints["Checkpoint manager"]
-  Verify{"Verification passed?"}
-  Recover["Recover and retry"]
-  Respond["Final response"]
-  Session["Session persistence"]
+  Plans["Persisted task queues"]
+  Artifacts["Artifacts / uploads / handoffs"]
   Trace["Local JSONL / LangSmith trace"]
+  Respond["Final response + route metadata"]
+  Session["Session persistence / selected phase"]
 
   Operator --> Entry
   Entry --> Bootstrap
-  Bootstrap --> Turn
+  Bootstrap --> Router
+  Router --> PlanTurn
+  Router --> TaskRunner
+  Router --> Turn
+  PlanTurn --> Plans
+  TaskRunner --> Turn
   Turn --> Envelope
   Turn --> Graph
-  Turn --> Raw
   Graph --> Tools
-  Raw --> Tools
   Tools --> Target
   Graph --> Checkpoints
-  Graph --> Verify
-  Verify -- yes --> Respond
-  Verify -- no --> Recover
-  Recover --> Graph
+  Turn --> Artifacts
   Respond --> Session
   Turn --> Trace
 ```
@@ -62,23 +68,33 @@ flowchart TD
 ### Loop design
 
 - `runShipyardLoop` in `src/engine/loop.ts` keeps the process alive, exposes
-  utility commands like `read`, `list`, `search`, `run`, and `diff`, and sends
-  any other input into the shared instruction path.
+  utility commands like `read`, `list`, `search`, `run`, `diff`, `target`,
+  `plan:`, `next`, and `continue`, and routes the rest into the standard turn
+  path.
+- `executePlanningTurn` in `src/plans/turn.ts` runs the planner helper in a
+  read-only path, captures any loaded `spec:` refs, and persists a typed task
+  queue under `target/.shipyard/plans/`.
+- `executeTaskRunnerTurn` in `src/plans/task-runner.ts` reloads the active plan,
+  selects the right queued task, and then reuses `executeInstructionTurn` for
+  the actual code-writing turn.
 - `executeInstructionTurn` assembles stable runtime context, captures recent
-  tool output and error summaries, wires reporter callbacks, and persists
-  updated session state after the turn completes.
+  tool output and error summaries, wires reporter callbacks, emits or loads
+  handoff artifacts, and persists updated session state after the turn
+  completes.
 - `runAgentRuntime` in `src/engine/graph.ts` executes the explicit
   `plan -> act -> verify -> recover -> respond` state machine. When the runtime
-  is started in fallback mode, the system still preserves the same planning,
-  tool, and response contract, but executes it through the lower-level raw loop
-  in `src/engine/raw-loop.ts`.
+  is started in fallback mode, the system preserves the same planning, tool,
+  verification, and response contract, but executes it through the lower-level
+  loop in `src/engine/raw-loop.ts`.
 
 ### Tool calls
 
-The code phase currently exposes seven typed tools through the registry:
-`read_file`, `write_file`, `edit_block`, `list_files`, `search_files`,
-`run_command`, and `git_diff`. Tool execution is structured, target-relative,
-and schema-described before it reaches the model.
+The code phase currently exposes ten typed tools through the registry:
+`read_file`, `load_spec`, `write_file`, `bootstrap_target`, `edit_block`,
+`list_files`, `search_files`, `run_command`, `git_diff`, and `deploy_target`.
+Target-manager mode exposes `list_targets`, `select_target`, `create_target`,
+and `enrich_target`. Tool execution is structured, target-relative where
+appropriate, and schema-described before it reaches the model.
 
 ### State management
 
@@ -86,13 +102,18 @@ and schema-described before it reaches the model.
   `target/.shipyard/sessions/<sessionId>.json`.
 - `InstructionRuntimeState` in `src/engine/turn.ts` keeps per-session rolling
   context such as `recentToolOutputs`, `recentErrors`, `retryCountsByFile`,
-  `blockedFiles`, and the selected runtime mode.
+  `blockedFiles`, pending target selection, and the selected runtime mode.
 - `AgentGraphState` in `src/engine/graph.ts` carries the active instruction,
-  `messageHistory`, `taskPlan`, `verificationReport`, `lastEditedFile`,
-  recovery counters, and `langSmithTrace`.
+  `messageHistory`, `taskPlan`, `executionSpec`, `planningMode`,
+  `verificationReport`, `browserEvaluationReport`, `harnessRoute`,
+  `lastEditedFile`, recovery counters, and `langSmithTrace`.
+- `PersistedTaskQueue` plus `ActiveTaskContext` in `src/plans/` carry reviewable
+  multi-task work without stretching `rollingSummary`.
 - Checkpoints are stored under
   `target/.shipyard/checkpoints/<sessionId>/...checkpoint`, and local trace logs
   are stored under `target/.shipyard/traces/<sessionId>.jsonl`.
+- Plan queues are stored under `target/.shipyard/plans/<planId>.json`, and UI
+  uploads are stored under `target/.shipyard/uploads/<sessionId>/...`.
 - Long-running or unstable turns can emit typed `ExecutionHandoff` artifacts
   under `target/.shipyard/artifacts/<sessionId>/...handoff.json`. Session state
   keeps only `activeHandoffPath`, and resumed turns inject the loaded handoff
@@ -101,10 +122,11 @@ and schema-described before it reaches the model.
 
 ### Entry conditions
 
-- Target directory is resolved and `.shipyard/` runtime directories exist.
-- Discovery has been refreshed for the target repository.
-- Project rules from target `AGENTS.md` have been loaded into the stable context
-  layer when available.
+- Target directory or targets directory is resolved and `.shipyard/` runtime
+  directories exist.
+- Discovery has been refreshed for the selected repository or targets root.
+- Project rules from target `AGENTS.md` have been loaded into the stable
+  context layer when available.
 - A saved session has been resumed or a new session has been created.
 - Runtime mode has been chosen: graph by default, fallback when explicitly
   requested or injected.
@@ -113,7 +135,9 @@ and schema-described before it reaches the model.
 
 - The graph reaches `respond` and marks the turn `done`.
 - A fallback run returns final text without unhandled runtime errors.
-- Session state, rolling summaries, and trace references are saved.
+- A planning turn saves a typed plan queue and loaded spec refs.
+- Session state, plan/task metadata, rolling summaries, and trace references
+  are saved.
 - Terminal mode can later exit the process cleanly with `quit` or `exit`, which
   emits a `session.end` trace record and writes the final session snapshot.
 
@@ -125,6 +149,9 @@ and schema-described before it reaches the model.
   checkpoint is restored and the edited file is re-read before replanning.
 - If a file keeps failing verification beyond the retry cap, the file is added
   to `blockedFiles` and the coordinator escalates instead of writing again.
+- Hosted access, deploy, upload, and plan/task-runner errors stay structured at
+  the turn boundary rather than leaking untyped exceptions into the operator
+  shell.
 - Runtime-level failures produce a final `failed` status and preserve the last
   error in state.
 
@@ -178,14 +205,16 @@ more context.
 
 ## Multi-Agent Design (MVP)
 
-The shipped runtime still uses a single writing coordinator, and the graph
-runtime now routes broad discovery requests through the explorer helper, broad
-non-trivial planning requests through the planner helper, and post-edit checks
-through the verifier helper. `src/agents/coordinator.ts` owns the task plan,
-every write, the delegation heuristics, and the final merge of evidence.
-`src/agents/explorer.ts` defines the read-only discovery role,
-`src/agents/planner.ts` emits the typed `ExecutionSpec` artifact, and
-`src/agents/verifier.ts` exposes the isolated verification helper runtime.
+The shipped runtime still uses a single writing coordinator. The graph runtime
+routes broad discovery requests through the explorer helper, broad non-trivial
+planning requests through the planner helper, post-edit command checks through
+the verifier helper, and preview-backed UI checks through the browser
+evaluator. `src/agents/coordinator.ts` owns the task plan, every write, the
+delegation heuristics, and the final merge of evidence. `src/agents/explorer.ts`
+defines the read-only discovery role, `src/agents/planner.ts` emits the typed
+`ExecutionSpec` artifact, `src/agents/verifier.ts` executes ordered command
+checks, and `src/agents/browser-evaluator.ts` inspects loopback previews
+without crossing the coordinator-only write boundary.
 
 ```mermaid
 flowchart LR
@@ -194,9 +223,11 @@ flowchart LR
   Explorer["Explorer subagent"]
   Planner["Planner subagent"]
   Verifier["Verifier subagent"]
+  BrowserEval["Browser evaluator"]
   ContextReport["ContextReport"]
   ExecutionSpec["ExecutionSpec"]
   VerificationReport["VerificationReport"]
+  BrowserReport["BrowserEvaluationReport"]
   Tools["Typed tools"]
   Target["Target repository"]
 
@@ -211,13 +242,15 @@ flowchart LR
   Tools --> Target
   Coordinator -->|post-edit checks| Verifier
   Verifier -->|structured result| VerificationReport
+  Coordinator -->|preview-backed UI checks| BrowserEval
+  BrowserEval -->|structured preview evidence| BrowserReport
   VerificationReport --> Coordinator
+  BrowserReport --> Coordinator
 ```
 
 ### Orchestration model
 
-- The coordinator remains the only writer. This is true in the shipped runtime
-  and remains the phase-6 design rule.
+- The coordinator remains the only writer. This is the core safety rule.
 - Broad instructions without known target paths can trigger the explorer, while
   exact-path or greenfield instructions can skip that extra hop.
 - Broad non-trivial code-phase instructions can also trigger the planner, while
@@ -225,10 +258,12 @@ flowchart LR
   existing lightweight path.
 - The explorer starts from fresh history, uses only `read_file`, `list_files`,
   and `search_files`, and returns a `ContextReport`.
-- The planner starts from fresh history, uses only `read_file`, `list_files`,
-  and `search_files`, and returns an `ExecutionSpec`.
-- The verifier starts from fresh history, uses only `run_command`, and
-  returns a `VerificationReport`.
+- The planner starts from fresh history, uses only `read_file`, `load_spec`,
+  `list_files`, and `search_files`, and returns an `ExecutionSpec`.
+- The verifier starts from fresh history, uses only `run_command`, and returns
+  a `VerificationReport`.
+- The browser evaluator uses Playwright against loopback preview URLs only and
+  returns a `BrowserEvaluationReport`.
 - The coordinator decides when to spawn those helpers, how much of their output
   to keep, and whether to proceed, retry, recover, or escalate.
 
@@ -238,18 +273,21 @@ flowchart LR
 - Explorer output is shaped as `ContextFinding[]` inside a `ContextReport`.
 - Planner output is shaped as a typed `ExecutionSpec`.
 - Verifier output is shaped as a typed `VerificationReport`.
+- Browser-evaluator output is shaped as a `BrowserEvaluationReport`.
 - The coordinator summarizes those reports into its own planning state instead
   of copying raw logs or raw search hits wholesale.
 
 ### How parallel outputs are merged
 
-The phase-6 plan keeps merge authority centralized:
+The merge authority stays centralized:
 
 - discovery evidence narrows file selection and plan steps
 - planning evidence makes goals, deliverables, acceptance criteria, and risks
   explicit before edits
 - verification evidence decides whether edits are accepted, recovered, or
   blocked
+- browser-evaluator evidence can tighten a command-passing verification result
+  when the request is UI-facing and the preview surface is available
 - if exploration and verification disagree, verification wins because it is
   direct runtime evidence rather than a guess from code search
 
@@ -283,7 +321,7 @@ the entire rebuild:
 | Typed tool registry instead of ad hoc filesystem/shell access inside the loop | Tool schemas, registration, and structured results keep the model-facing surface inspectable and testable. | `de94cc6`, `4a9de9c` |
 | Anchor-based `edit_block` instead of line-number or full-file rewriting | A literal anchor plus hash checks works across TypeScript, JSON, Markdown, and config files without a language-specific AST stack. | `e3f3158`, `2e044c1` |
 | Checkpoint-backed recovery instead of "best effort" retries | If verification fails, the system can restore the file before trying again rather than compounding damage. | `4f02495`, `98fc167` |
-| Graph runtime with raw fallback instead of betting on one loop implementation | The graph model makes planning and recovery explicit, while fallback preserves a simpler escape hatch and trace parity. | `98fc167`, `e978152` |
+| Graph runtime with raw fallback instead of betting on one loop implementation | The graph model makes planning and recovery explicit, while fallback preserves a simpler operational escape hatch. | `98fc167`, `e978152` |
 | One shared turn executor for terminal and browser mode | This avoids maintaining two agent semantics and forced later UI fixes to improve the shared core instead of forking logic. | `46887a3`, `2dca737`, `c5b7d11`, `15bbdef` |
 | Single-writer coordinator with isolated read-only or verification helpers | Centralized merge authority kept the system understandable while phase-6 plans matured. | `5c672f5`, `2ef53ab`, `src/agents/*.ts` |
 | Local tracing first, LangSmith second | The repo can run offline or without vendor credentials, but still exposes trace links when configured. | `5c672f5`, `e978152`, `da74e4c` |

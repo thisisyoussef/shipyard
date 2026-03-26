@@ -75,3 +75,19 @@ Record durable workspace decisions here.
 - **Decision**: Persist typed `ExecutionHandoff` artifacts under `shipyard/.shipyard/artifacts/<sessionId>/` and keep only the active artifact path in session state, with the first landing anchored to the current `TaskPlan` plus latest verification outcome.
 - **Alternatives Considered**: Stretch `rollingSummary`; write ad hoc notes blobs; block the story on the unmerged planner branch.
 - **Consequences**: Resume state stays structured and target-local today, traces/logs must expose handoff metadata, and later planner work can enrich the existing handoff contract instead of inventing a second reset path.
+
+- **ADR-ID**: ADR-0009
+- **Date**: 2026-03-26
+- **Context**: Shipyard now supports no-target target-manager turns,
+  review-first planning turns, queued task execution, and standard code turns,
+  but all of those flows still need to stay legible and share one session
+  model.
+- **Decision**: Keep one shared session model and route work through three
+  explicit paths: target-manager turns, `plan:` / `next` / `continue` plan
+  turns, and standard code turns through the graph runtime.
+- **Alternatives Considered**: Split target-manager into a separate app; build a
+  second execution engine for plan/task work; hide plan/task routing inside the
+  standard code turn path.
+- **Consequences**: Docs must distinguish routing layers clearly, session state
+  must carry phase/task/handoff pointers explicitly, and browser/terminal
+  surfaces can keep sharing the same runtime contracts.

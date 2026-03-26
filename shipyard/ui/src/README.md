@@ -6,33 +6,41 @@ Shipyard browser workbench.
 ## Files
 
 - `main.tsx`: bootstraps React into the Vite root element
-- `App.tsx`: manages the WebSocket lifecycle, transport state, and instruction
-  submission flow
-- `ShipyardWorkbench.tsx`: composes the shell, panels, and target-manager
-  overlays into the operator-facing workbench
-- `view-models.ts`: re-exports the shared workbench view-model helpers from the
-  backend-side UI module
+- `App.tsx`: manages hosted-access bootstrap, upload flows, WebSocket lifecycle,
+  transport state, and workbench-state updates
+- `ShipyardWorkbench.tsx`: composes the current split-pane shell, drawer, and
+  target-manager chrome
+- `socket-manager.ts`: reconnecting WebSocket wrapper used by `App.tsx`
+- `view-models.ts`: frontend-facing state helpers that shape backend messages
+  into the workbench model
+- `context-ui.ts` and `activity-diff.ts`: context-draft and diff helpers
 - `primitives.tsx`: local UI primitives
-- `shell/`: shell layout, header strip, sidebars, and footer
-- `panels/`: composer, chat workspace, live playback, session, saved-run
-  history, context, and file panels
+- `shell/`: header strip, shell layout, icon rail, sidebars, and footer pieces
+- `panels/`: chat, composer, file, output, session, run-history, and context
+  panels; it also retains reusable preview/live-view components for future
+  compositions
 - `TargetHeader.tsx`, `TargetSwitcher.tsx`, `TargetCreationDialog.tsx`,
-  `EnrichmentIndicator.tsx`: target-manager browser controls
-- `styles.css` and `tokens/`: visual system and styling tokens
+  `EnrichmentIndicator.tsx`, `HostedAccessGate.tsx`: target-manager, deploy,
+  and hosted-access UI
+- `styles.css`, `components.css`, and `tokens/`: visual system and styling
+  tokens
 - `vite-env.d.ts`: Vite typing support
 
 ## Current Browser Behaviors
 
+- `App.tsx` sanitizes bootstrap `access_token` query params, negotiates
+  `/api/access`, and shows `HostedAccessGate` when the hosted runtime requires
+  it.
 - `App.tsx` sends `session:resume_request` messages so the browser can reopen a
   saved run without restarting the Shipyard process.
-- `panels/ChatWorkspace.tsx` renders the latest multi-turn transcript with
-  context receipts, assistant summaries, and trace-link access.
-- `panels/LiveViewPanel.tsx` renders in-flight step playback with terminal-like
-  detail for tool results and before/after previews for edits.
-- `panels/RunHistoryPanel.tsx` lists saved sessions for the active target and
-  surfaces a resume action for any non-current run.
-- `panels/FilePanel.tsx` keeps each file event distinct, even when one path is
-  touched multiple times during a single run.
+- `socket-manager.ts` retries disconnected sessions and blocks sends while the
+  transport is unavailable.
+- `ShipyardWorkbench.tsx` renders target/deploy status at the top, the
+  transcript plus composer on the left, and file/output evidence on the right.
+- File attachments go through `/api/uploads`, then appear as bounded receipts in
+  workbench state and the next-turn context preview.
+- `TargetSwitcher.tsx` and `TargetCreationDialog.tsx` drive target selection and
+  scaffold creation without leaving the active session.
 
 ## Diagram
 
@@ -40,13 +48,12 @@ Shipyard browser workbench.
 flowchart LR
   Main["main.tsx"]
   App["App.tsx"]
-  Socket["WebSocket transport"]
+  Socket["socket-manager.ts"]
   Vm["view-models.ts"]
   Workbench["ShipyardWorkbench.tsx"]
   Shell["shell/*"]
   Panels["panels/*"]
-  TargetUi["Target* / EnrichmentIndicator"]
-  Primitives["primitives.tsx"]
+  TargetUi["Target* / HostedAccessGate"]
   Styles["styles.css / tokens/*"]
   Backend["../../src/ui/*"]
 
@@ -58,6 +65,5 @@ flowchart LR
   Workbench --> Shell
   Workbench --> Panels
   Workbench --> TargetUi
-  Workbench --> Primitives
   Workbench --> Styles
 ```

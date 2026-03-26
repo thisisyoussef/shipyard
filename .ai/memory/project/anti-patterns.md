@@ -77,3 +77,12 @@ Capture failures so they are not repeated.
 - **Example**: `bootstrap_target` allows `AGENTS.md` or `README.md`, but discovery marks the same directory as non-greenfield and routes it into broad exploration loops.
 - **Why it failed**: Near-empty targets pay the cost of existing-repo discovery without any real code to discover.
 - **Prevention rule**: Use one shared bootstrap-ready rule or explicit flag across discovery, coordinator routing, and target bootstrap checks.
+
+- **Problem**: Reusing retired UI-shell wording in durable docs
+- **Example**: Describing the current browser workbench as a `Chat` /
+  `Local preview` / `Live view` tab set after the shipped shell moved to a
+  split conversation/file-output layout with a drawer
+- **Why it failed**: Architecture notes stop matching the live product and make
+  debugging or onboarding harder than reading the code directly.
+- **Prevention rule**: Re-check `ui/src/App.tsx`, `ui/src/ShipyardWorkbench.tsx`,
+  and the current README surfaces before carrying forward older phase language.

@@ -4,18 +4,23 @@ This folder holds small shared types that move between runtime layers.
 
 ## Current Artifacts
 
-- `TaskPlan`: the phase-level plan Shipyard produces before or during execution
-- `ExecutionSpec`: the richer planner artifact for broad or non-trivial work
-- `EvaluationPlan`: the richer verifier artifact for ordered command-backed
-  checks with required/optional policy
-- `PersistedTaskQueue`: the durable operator-facing plan artifact saved under
-  `.shipyard/plans/`
-- `ContextReport` and `ContextFinding`: structured evidence returned from
-  exploratory work
-- `EditIntent`: a typed description of a surgical file change
-- `VerificationReport`: the shape used to report validation outcomes,
-  including ordered per-check results when available
-- `DiscoveryReport`: the normalized summary of the target repository
+- `TaskPlan`: the coordinator-facing lightweight plan Shipyard produces before
+  or during execution
+- `ExecutionSpec`: the richer planner artifact for broad or non-trivial code
+  work
+- `PersistedTaskQueue`, `PlanTask`, and `ActiveTaskContext`: the operator-facing
+  planning/task-runner contracts saved under `.shipyard/plans/`
+- `ContextReport` and `ContextFinding`: structured evidence returned from the
+  explorer
+- `EvaluationPlan`: the verifier's ordered command-check contract
+- `VerificationReport` and `VerificationCheckResult`: structured validation
+  outcomes, including per-check details when available
+- `BrowserEvaluationPlan` and `BrowserEvaluationReport`: loopback preview
+  inspection contracts for UI-backed verification
+- `HarnessRouteSummary`: selected lightweight vs planner-backed path, verifier
+  mode, browser-evaluator usage, and handoff facts for a turn
+- `DiscoveryReport`, `TargetProfile`, and preview/deploy-related view-model
+  inputs
 - `ExecutionHandoff` and `LoadedExecutionHandoff`: the durable long-run resume
   contract persisted under `.shipyard/artifacts/<sessionId>/...handoff.json`
 
@@ -28,19 +33,25 @@ business logic.
 flowchart LR
   Discovery["DiscoveryReport"]
   Context["Context layer"]
-  Plan["TaskPlan"]
+  Task["TaskPlan"]
   Execution["ExecutionSpec"]
-  Engine["Engine runtime"]
+  Queue["PersistedTaskQueue"]
   Verify["VerificationReport"]
+  Browser["BrowserEvaluationReport"]
+  Route["HarnessRouteSummary"]
+  Engine["Engine runtime"]
   Handoff["ExecutionHandoff"]
-  Findings["ContextReport / ContextFinding"]
+  Findings["ContextReport"]
 
   Discovery --> Context
   Context --> Engine
-  Plan --> Engine
-  Execution --> Engine
   Findings --> Engine
+  Task --> Engine
+  Execution --> Engine
+  Queue --> Engine
   Verify --> Engine
+  Browser --> Engine
+  Route --> Engine
   Engine --> Handoff
 ```
 
