@@ -11,9 +11,12 @@ import type {
 import { afterEach, describe, expect, it } from "vitest";
 
 import { EXPLORER_TOOL_NAMES, parseContextReport, runExplorerSubagent } from "../src/agents/explorer.js";
-import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
+import {
+  DEFAULT_ANTHROPIC_MODEL,
+  projectToolsToAnthropicTools,
+} from "../src/engine/anthropic.js";
 import "../src/tools/index.js";
-import { getAnthropicTools } from "../src/tools/registry.js";
+import { getTools } from "../src/tools/registry.js";
 
 const createdDirectories: string[] = [];
 
@@ -183,7 +186,7 @@ describe("explorer subagent", () => {
     ).rejects.toThrow(/write_file|read-only|not available/i);
 
     expect(client.calls[0]?.tools).toEqual(
-      getAnthropicTools([...EXPLORER_TOOL_NAMES]),
+      projectToolsToAnthropicTools(getTools([...EXPLORER_TOOL_NAMES])),
     );
   });
 

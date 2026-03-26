@@ -11,12 +11,12 @@ import {
   getCodePhaseToolDefinitions,
 } from "../src/phases/code/index.js";
 import {
-  getAnthropicTools,
   getTool,
   getTools,
   registerTool,
   type ToolDefinition,
 } from "../src/tools/registry.js";
+import { projectToolsToAnthropicTools } from "../src/engine/anthropic.js";
 import {
   ToolError,
   clearTrackedReadHashes,
@@ -950,8 +950,17 @@ describe("tool registry", () => {
     ]);
   });
 
-  it("exports Anthropic-ready schemas for requested tools", () => {
-    const tools = getAnthropicTools(["read_file", "write_file"]);
+  it("keeps provider-specific tool projection out of the registry", async () => {
+    const registryModule = await import("../src/tools/registry.js");
+
+    expect("getAnthropicTools" in registryModule).toBe(false);
+    expect("AnthropicToolDefinition" in registryModule).toBe(false);
+  });
+
+  it("projects Anthropic-ready schemas from generic tool definitions", () => {
+    const tools = projectToolsToAnthropicTools(
+      getTools(["read_file", "write_file"]),
+    );
 
     expect(tools).toHaveLength(2);
     expect(tools[0]).toMatchObject({

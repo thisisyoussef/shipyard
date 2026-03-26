@@ -24,10 +24,13 @@ import {
   createLightweightExecutionSpec,
   shouldCoordinatorUsePlanner,
 } from "../src/agents/coordinator.js";
-import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
+import {
+  DEFAULT_ANTHROPIC_MODEL,
+  projectToolsToAnthropicTools,
+} from "../src/engine/anthropic.js";
 import type { ContextEnvelope } from "../src/engine/state.js";
 import "../src/tools/index.js";
-import { getAnthropicTools } from "../src/tools/registry.js";
+import { getTools } from "../src/tools/registry.js";
 
 const createdDirectories: string[] = [];
 
@@ -301,7 +304,7 @@ describe("planner subagent", () => {
     ).rejects.toThrow(/write_file|read-only|not available|unauthorized/i);
 
     expect(client.calls[0]?.tools).toEqual(
-      getAnthropicTools([...PLANNER_TOOL_NAMES]),
+      projectToolsToAnthropicTools(getTools([...PLANNER_TOOL_NAMES])),
     );
   });
 

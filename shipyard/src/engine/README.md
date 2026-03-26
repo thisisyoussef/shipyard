@@ -16,6 +16,8 @@ path for actual task execution.
   fallback parity
 - `raw-loop.ts`: lower-level model/tool loop used by the graph `act` node and
   helper subagents
+- `model-adapter.ts`: provider-neutral internal model contract for turn
+  messages, tool calls, and adapter boundaries
 - `state.ts`: persisted session shape plus `.shipyard/` directory helpers
 - `cancellation.ts`: active-turn cancellation normalization for terminal and UI
 - `runtime-context.ts`: injected-context builders for project rules and

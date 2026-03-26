@@ -14,10 +14,11 @@ import {
   extractAssistantText,
   extractAssistantToolUseBlocks,
   normalizeAssistantResponseBlocks,
+  projectToolsToAnthropicTools,
   resolveAnthropicConfig,
 } from "../src/engine/anthropic.js";
 import "../src/tools/index.js";
-import { getAnthropicTools } from "../src/tools/registry.js";
+import { getTools } from "../src/tools/registry.js";
 
 function createAssistantMessage(content: unknown[]): Message {
   return {
@@ -61,7 +62,9 @@ describe("Anthropic client contract", () => {
 
   it("assembles a Claude request from registry-produced tools unchanged", () => {
     const messages = [createUserTextMessage("Inspect package.json")];
-    const tools = getAnthropicTools(["read_file", "edit_block"]);
+    const tools = projectToolsToAnthropicTools(
+      getTools(["read_file", "edit_block"]),
+    );
     const request = buildAnthropicMessageRequest({
       systemPrompt: "You are Shipyard.",
       messages,

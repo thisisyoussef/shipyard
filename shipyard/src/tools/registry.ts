@@ -39,12 +39,6 @@ export interface ToolDefinition<Input = any> {
   ) => Promise<ToolResult>;
 }
 
-export interface AnthropicToolDefinition {
-  name: string;
-  description: string;
-  input_schema: ToolInputSchema;
-}
-
 const registeredTools = new Map<string, ToolDefinition<any>>();
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -123,14 +117,6 @@ export function getTools(names: string[]): ToolDefinition<any>[] {
   return names
     .map((name) => registeredTools.get(name))
     .filter((tool): tool is ToolDefinition<any> => tool !== undefined);
-}
-
-export function getAnthropicTools(names: string[]): AnthropicToolDefinition[] {
-  return getTools(names).map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.inputSchema,
-  }));
 }
 
 export function createToolSuccessResult(
