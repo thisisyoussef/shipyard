@@ -217,6 +217,131 @@ describe("context envelope", () => {
     expect(serialized).toContain("Resume from the handoff before making additional edits.");
   });
 
+  it("prioritizes touched files and next action when the latest handoff is oversized", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-envelope-priority-");
+    const latestHandoff: LoadedExecutionHandoff = {
+      artifactPath: ".shipyard/artifacts/session-123/turn-9.handoff.json",
+      handoff: {
+        version: 1,
+        sessionId: "session-123",
+        turnCount: 9,
+        createdAt: "2026-03-25T23:10:00.000Z",
+        instruction: "Continue the Trello-style dashboard build",
+        phaseName: "code",
+        runtimeMode: "graph",
+        status: "success",
+        summary: "Turn 9 checkpointed after a long greenfield continuation.",
+        goal: "Continue the Trello-style dashboard build",
+        completedWork: [
+          `Low-priority prose ${"x".repeat(1_800)}`,
+        ],
+        remainingWork: [
+          "Resume from the checkpoint and keep extending the just-created dashboard files.",
+        ],
+        touchedFiles: [
+          "apps/web/src/App.tsx",
+          "apps/web/src/lib/seed-data.ts",
+          "apps/web/src/components/status-summary.tsx",
+        ],
+        blockedFiles: [],
+        latestEvaluation: {
+          command: "pnpm typecheck",
+          exitCode: 0,
+          passed: true,
+          summary: "Typecheck passed after the checkpoint.",
+        },
+        nextRecommendedAction:
+          "Resume from the persisted handoff and continue in the touched dashboard files before widening scope.",
+        resetReason: {
+          kind: "iteration-threshold",
+          summary: "The acting loop crossed the long-run iteration threshold.",
+          thresholds: {
+            actingIterations: 4,
+            recoveryAttempts: 1,
+          },
+          metrics: {
+            actingIterations: 6,
+            recoveryAttempts: 0,
+            blockedFileCount: 0,
+          },
+        },
+        taskPlan: {
+          instruction: "Continue the Trello-style dashboard build",
+          goal: "Continue the Trello-style dashboard build",
+          targetFilePaths: ["apps/web/src/App.tsx"],
+          plannedSteps: [
+            "Continue the dashboard build safely.",
+          ],
+        },
+      },
+    };
+
+    const envelope = await buildContextEnvelope({
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: true,
+        topLevelFiles: ["package.json", "README.md", "AGENTS.md"],
+        topLevelDirectories: ["apps", "packages"],
+        projectName: "shipyard",
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
+      },
+      currentInstruction: "Continue the Trello-style dashboard build",
+      rollingSummary: "Turn 9 checkpointed after a long continuation.",
+      latestHandoff,
+    });
+
+    const serialized = serializeContextEnvelope(envelope);
+    const latestHandoffBody = serialized
+      .split("Latest Handoff\n")[1]
+      ?.split("\nActive Task")[0]
+      ?? "";
+
+    expect(latestHandoffBody).toContain("Touched Files:");
+    expect(latestHandoffBody).toContain("apps/web/src/lib/seed-data.ts");
+    expect(latestHandoffBody).toContain("Latest Evaluation: passed: Typecheck passed after the checkpoint.");
+    expect(latestHandoffBody).toContain("Next Recommended Action:");
+    expect(latestHandoffBody).not.toContain(`Low-priority prose ${"x".repeat(400)}`);
+  });
+
+  it("labels doc-seeded targets as bootstrap-ready instead of generic existing repos", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-envelope-bootstrap-ready-");
+    const envelope = await buildContextEnvelope({
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        bootstrapReady: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: true,
+        hasAgentsMd: true,
+        topLevelFiles: ["AGENTS.md", "README.md"],
+        topLevelDirectories: [],
+        projectName: null,
+        previewCapability: createUnavailablePreviewCapability(
+          "Seed docs exist but no supported local preview signal was detected yet.",
+        ),
+      },
+      currentInstruction: "Bootstrap this target",
+      rollingSummary: "",
+    });
+
+    const serialized = serializeContextEnvelope(envelope);
+
+    expect(serialized).toContain("Target Type: bootstrap-ready");
+  });
+
   it("truncates oversized session history with an explicit budget marker", async () => {
     const targetDirectory = await createTempDirectory("shipyard-envelope-budget-");
     const longRollingSummary = `Turn 1: ${"x".repeat(4_500)}`;

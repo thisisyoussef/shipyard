@@ -63,6 +63,16 @@ import { configureTargetManagerEnrichmentInvoker } from "../tools/target-manager
 
 export type InstructionRuntimeMode = "graph" | "fallback";
 
+export interface InstructionContinuationLimits {
+  maxAutomaticResumes: number;
+  maxWallClockMs: number;
+}
+
+const DEFAULT_INSTRUCTION_CONTINUATION_LIMITS: InstructionContinuationLimits = {
+  maxAutomaticResumes: 1,
+  maxWallClockMs: 8 * 60_000,
+};
+
 export interface InstructionRuntimeState {
   projectRules: string;
   baseInjectedContext: string[];
@@ -79,6 +89,7 @@ export interface InstructionRuntimeState {
   }>;
   runtimeMode: InstructionRuntimeMode;
   runtimeDependencies?: AgentRuntimeDependencies;
+  continuationLimits: InstructionContinuationLimits;
 }
 
 export interface TurnStateEvent {
@@ -176,6 +187,10 @@ function createHarnessRouteForErrorState(
     handoffLoaded: latestHandoff !== null,
     handoffEmitted: false,
     handoffReason: latestHandoff?.handoff.resetReason.kind ?? null,
+    checkpointRequested: false,
+    continuationCount: 0,
+    actingLoopBudget: 25,
+    actingLoopBudgetReason: "narrow-default",
     firstHardFailure: null,
   };
 }
@@ -663,10 +678,13 @@ function createRuntimeDependencies(
               )
             : null;
 
-          if (context.result.success && context.toolExecution.editedPath) {
-            rememberRecentFilePath(
+          if (
+            context.result.success
+            && context.toolExecution.touchedFiles.length > 0
+          ) {
+            rememberRecentFilePaths(
               sessionState.recentTouchedFiles,
-              context.toolExecution.editedPath,
+              context.toolExecution.touchedFiles,
             );
           }
 
@@ -712,6 +730,7 @@ export function createInstructionRuntimeState(
   options: {
     projectRules: string;
     baseInjectedContext?: string[];
+    continuationLimits?: Partial<InstructionContinuationLimits>;
     targetEnrichmentInvoker?: (
       prompt: string,
     ) => Promise<{
@@ -733,6 +752,14 @@ export function createInstructionRuntimeState(
     targetEnrichmentInvoker: options.targetEnrichmentInvoker,
     runtimeMode: options.runtimeMode ?? "graph",
     runtimeDependencies: options.runtimeDependencies,
+    continuationLimits: {
+      maxAutomaticResumes:
+        options.continuationLimits?.maxAutomaticResumes
+        ?? DEFAULT_INSTRUCTION_CONTINUATION_LIMITS.maxAutomaticResumes,
+      maxWallClockMs:
+        options.continuationLimits?.maxWallClockMs
+        ?? DEFAULT_INSTRUCTION_CONTINUATION_LIMITS.maxWallClockMs,
+    },
   };
 }
 
@@ -903,6 +930,10 @@ export async function executeInstructionTurn(
         state.recentTouchedFiles,
         executionSpec?.targetFilePaths ?? [],
       );
+      rememberRecentFilePaths(
+        state.recentTouchedFiles,
+        finalState.touchedFiles,
+      );
 
       if (finalState.lastEditedFile) {
         rememberRecentFilePath(
@@ -954,6 +985,7 @@ export async function executeInstructionTurn(
             retryCountsByFile: finalState.retryCountsByFile,
             blockedFiles: finalState.blockedFiles,
             lastEditedFile: finalState.lastEditedFile,
+            touchedFiles: finalState.touchedFiles,
             verificationReport: finalState.verificationReport,
             decision: handoffDecision,
           }),
@@ -976,6 +1008,7 @@ export async function executeInstructionTurn(
           ?? finalState.harnessRoute.handoffReason
           ?? loadedHandoff?.handoff.resetReason.kind
           ?? null,
+        checkpointRequested: finalState.checkpointRequested,
       };
 
       runtimeState.retryCountsByFile = { ...finalState.retryCountsByFile };
@@ -1167,6 +1200,60 @@ export async function executeInstructionTurn(
     }
   };
 
+  const executeWithContinuations = async (): Promise<InstructionTurnResult> => {
+    const startedAt = Date.now();
+    let continuationCount = 0;
+    let result = await executeCore();
+
+    while (
+      result.status === "success"
+      && result.harnessRoute.checkpointRequested
+      && result.handoff.emitted !== null
+      && !options.signal?.aborted
+    ) {
+      if (
+        continuationCount >= runtimeState.continuationLimits.maxAutomaticResumes
+        || Date.now() - startedAt >= runtimeState.continuationLimits.maxWallClockMs
+      ) {
+        const pausedMessage =
+          `Automatic continuation paused after ${String(continuationCount)} ` +
+          `resume attempt(s); continue from the persisted handoff.`;
+
+        return {
+          ...result,
+          summary: pausedMessage,
+          finalText: pausedMessage,
+          harnessRoute: {
+            ...result.harnessRoute,
+            continuationCount,
+          },
+        };
+      }
+
+      continuationCount += 1;
+      await options.reporter?.onThinking?.(
+        `Resuming from checkpoint-backed continuation (${String(continuationCount)}/${String(runtimeState.continuationLimits.maxAutomaticResumes)}).`,
+      );
+      result = await executeCore();
+    }
+
+    if (
+      result.status === "success"
+      && !result.harnessRoute.checkpointRequested
+      && result.handoff.emitted === null
+    ) {
+      state.activeHandoffPath = null;
+    }
+
+    return {
+      ...result,
+      harnessRoute: {
+        ...result.harnessRoute,
+        continuationCount,
+      },
+    };
+  };
+
   const tracedTurn = await runWithLangSmithTrace({
     name: "shipyard.instruction-turn",
     runType: "chain",
@@ -1188,7 +1275,7 @@ export async function executeInstructionTurn(
         planningMode: result.planningMode,
         harnessRoute: result.harnessRoute,
       }),
-    fn: executeCore,
+    fn: executeWithContinuations,
     args: [],
   });
   const result = tracedTurn.trace

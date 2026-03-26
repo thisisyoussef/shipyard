@@ -17,10 +17,24 @@ interface PackageManifest {
 }
 
 const IGNORED_TOP_LEVEL_NAMES = new Set([".git", ".shipyard", ".DS_Store"]);
+const BOOTSTRAP_SAFE_TOP_LEVEL_FILES = new Set(["AGENTS.md", "README.md"]);
+
+export function isBootstrapReadyTargetEntries(options: {
+  topLevelFiles: string[];
+  topLevelDirectories: string[];
+}): boolean {
+  return (
+    options.topLevelDirectories.length === 0
+    && options.topLevelFiles.every((fileName) =>
+      BOOTSTRAP_SAFE_TOP_LEVEL_FILES.has(fileName)
+    )
+  );
+}
 
 function createEmptyDiscoveryReport(): DiscoveryReport {
   return {
     isGreenfield: true,
+    bootstrapReady: true,
     language: null,
     framework: null,
     packageManager: null,
@@ -82,21 +96,33 @@ export function normalizeDiscoveryReport(
     return createEmptyDiscoveryReport();
   }
 
+  const topLevelFiles = [...(report.topLevelFiles ?? [])];
+  const topLevelDirectories = [...(report.topLevelDirectories ?? [])];
+  const bootstrapReady = report.bootstrapReady
+    ?? (
+      (report.isGreenfield ?? false)
+      || isBootstrapReadyTargetEntries({
+        topLevelFiles,
+        topLevelDirectories,
+      })
+    );
+
   return {
     isGreenfield: report.isGreenfield ?? true,
+    bootstrapReady,
     language: report.language ?? null,
     framework: report.framework ?? null,
     packageManager: report.packageManager ?? null,
     scripts: { ...(report.scripts ?? {}) },
     hasReadme: report.hasReadme ?? false,
     hasAgentsMd: report.hasAgentsMd ?? false,
-    topLevelFiles: [...(report.topLevelFiles ?? [])],
-    topLevelDirectories: [...(report.topLevelDirectories ?? [])],
+    topLevelFiles,
+    topLevelDirectories,
     projectName: report.projectName ?? null,
     previewCapability:
       report.previewCapability ??
       createUnavailablePreviewCapability(
-        report.isGreenfield
+        report.isGreenfield || bootstrapReady
           ? "Greenfield target; no supported local preview has been detected yet."
           : "No supported local preview signal was detected for this target.",
       ),
@@ -256,6 +282,10 @@ export function formatDiscoverySummary(report: DiscoveryReport): string {
     return "greenfield target";
   }
 
+  if (report.bootstrapReady) {
+    return "bootstrap-ready target";
+  }
+
   const parts = [
     report.language ?? "unknown language",
     report.framework ? `(${report.framework})` : null,
@@ -289,9 +319,14 @@ export async function discoverTarget(
 
   const packageManifest = await readPackageManifest(targetPath, topLevelFiles);
   const packageManager = detectPackageManager(topLevelFiles, packageManifest);
+  const bootstrapReady = isBootstrapReadyTargetEntries({
+    topLevelFiles,
+    topLevelDirectories,
+  });
 
   return normalizeDiscoveryReport({
     isGreenfield: false,
+    bootstrapReady,
     language: detectLanguage(topLevelFiles, packageManifest),
     framework: detectFramework(packageManifest),
     packageManager,

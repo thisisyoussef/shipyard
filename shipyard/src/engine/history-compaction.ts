@@ -2,22 +2,34 @@ import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 
 import { truncateText } from "./turn-summary.js";
 
-export const RAW_LOOP_MESSAGE_HISTORY_CHAR_BUDGET = 12_000;
+export const RAW_LOOP_MIN_MESSAGE_HISTORY_CHAR_BUDGET = 24_000;
+export const RAW_LOOP_MAX_MESSAGE_HISTORY_CHAR_BUDGET = 32_000;
 export const RAW_LOOP_COMPACTION_SUMMARY_CHAR_BUDGET = 2_600;
 export const RAW_LOOP_PREFERRED_VERBATIM_TAIL_CYCLES = 1;
+
+export interface ToolHistoryDigest {
+  requestLine: string;
+  resultLine: string;
+  isWriteLike: boolean;
+  prefersVerbatimTail: boolean;
+}
+
+export interface CompletedToolExecution {
+  toolName: string;
+  input: unknown;
+  success: boolean;
+  output: string;
+  error?: string;
+  editedPath: string | null;
+  touchedFiles: string[];
+  historyDigest: ToolHistoryDigest;
+}
 
 export interface CompletedToolTurn {
   turnNumber: number;
   assistantMessage: MessageParam;
   toolResultMessage: MessageParam;
-  toolExecutions: Array<{
-    toolName: string;
-    input: unknown;
-    success: boolean;
-    output: string;
-    error?: string;
-    editedPath: string | null;
-  }>;
+  toolExecutions: CompletedToolExecution[];
 }
 
 export interface CompactedMessageHistory {
@@ -25,8 +37,25 @@ export interface CompactedMessageHistory {
   didCompact: boolean;
   compactedTurnCount: number;
   preservedTailTurnCount: number;
+  preservedTailMode: "none" | "verbatim" | "compact";
+  historyCharBudget: number;
   estimatedCharsBefore: number;
   estimatedCharsAfter: number;
+}
+
+export function computeRawLoopMessageHistoryCharBudget(
+  maxTokens: number,
+): number {
+  if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
+    return RAW_LOOP_MIN_MESSAGE_HISTORY_CHAR_BUDGET;
+  }
+
+  const scaledBudget = Math.round(maxTokens * 3);
+
+  return Math.min(
+    RAW_LOOP_MAX_MESSAGE_HISTORY_CHAR_BUDGET,
+    Math.max(RAW_LOOP_MIN_MESSAGE_HISTORY_CHAR_BUDGET, scaledBudget),
+  );
 }
 
 function estimateMessageChars(message: MessageParam): number {
@@ -59,31 +88,9 @@ function summarizeInputPath(input: unknown): string | null {
 }
 
 function summarizeToolExecution(
-  execution: CompletedToolTurn["toolExecutions"][number],
+  execution: CompletedToolExecution,
 ): string {
-  const pathLabel = execution.editedPath
-    ?? summarizeInputPath(execution.input);
-  const toolLabel = pathLabel
-    ? `${execution.toolName}(${pathLabel})`
-    : execution.toolName;
-
-  if (!execution.success) {
-    const detail = truncateText(execution.error ?? execution.output, 90);
-    return `${toolLabel} failed: ${detail || "Tool failed."}`;
-  }
-
-  if (
-    execution.toolName === "write_file"
-    || execution.toolName === "edit_block"
-    || execution.toolName === "bootstrap_target"
-  ) {
-    return `${toolLabel} succeeded; exact generated contents were compacted. Re-read the workspace if details matter.`;
-  }
-
-  const detail = truncateText(execution.output, 90);
-  return detail
-    ? `${toolLabel} succeeded: ${detail}`
-    : `${toolLabel} succeeded.`;
+  return execution.historyDigest.resultLine;
 }
 
 function summarizeCompactedTurn(turn: CompletedToolTurn): string {
@@ -160,30 +167,78 @@ function flattenCompletedTurns(completedTurns: CompletedToolTurn[]): MessagePara
   return completedTurns.flatMap((turn) => [turn.assistantMessage, turn.toolResultMessage]);
 }
 
-function shouldForcePreserveVerbatimTailTurn(
+function buildCompactTurnMessages(
+  turn: CompletedToolTurn,
+): [MessageParam, MessageParam] {
+  const requestedActions = turn.toolExecutions
+    .map((execution) => `- ${execution.historyDigest.requestLine}`)
+    .join("\n");
+  const toolResults = turn.toolExecutions
+    .map((execution) => `- ${execution.historyDigest.resultLine}`)
+    .join("\n");
+
+  return [
+    {
+      role: "assistant",
+      content: [
+        `Completed tool requests from turn ${String(turn.turnNumber)} were compacted to keep replay history bounded.`,
+        "Requested Actions:",
+        requestedActions || "- (none)",
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: [
+        "Compact tool results for the same completed turn:",
+        toolResults || "- (none)",
+        "Re-read the file from disk if exact contents are needed before another edit.",
+      ].join("\n"),
+    },
+  ];
+}
+
+function flattenCompletedTurnsWithMode(
+  completedTurns: CompletedToolTurn[],
+  mode: "verbatim" | "compact",
+): MessageParam[] {
+  if (mode === "verbatim") {
+    return flattenCompletedTurns(completedTurns);
+  }
+
+  return completedTurns.flatMap((turn) => buildCompactTurnMessages(turn));
+}
+
+function shouldPreferVerbatimTailTurn(
   turn: CompletedToolTurn | undefined,
 ): boolean {
   if (!turn) {
     return false;
   }
 
-  const hasSuccessfulRead = turn.toolExecutions.some((execution) =>
-    execution.success && execution.toolName === "read_file"
-  );
-  const includesContextPoisoningWrite = turn.toolExecutions.some((execution) =>
-    execution.toolName === "write_file"
-    || execution.toolName === "edit_block"
-    || execution.toolName === "bootstrap_target"
-  );
+  return turn.toolExecutions.some((execution) =>
+    execution.historyDigest.prefersVerbatimTail
+  ) && !turn.toolExecutions.some((execution) => execution.historyDigest.isWriteLike);
+}
 
-  return hasSuccessfulRead && !includesContextPoisoningWrite;
+function isWriteHeavyTurn(
+  turn: CompletedToolTurn | undefined,
+): boolean {
+  if (!turn) {
+    return false;
+  }
+
+  return turn.toolExecutions.some((execution) => execution.historyDigest.isWriteLike);
 }
 
 export function buildCompactedMessageHistory(options: {
   initialUserMessage: MessageParam;
   completedTurns: CompletedToolTurn[];
   finalAssistantMessage?: MessageParam | null;
+  historyCharBudget?: number;
+  maxTokens?: number;
 }): CompactedMessageHistory {
+  const historyCharBudget = options.historyCharBudget
+    ?? computeRawLoopMessageHistoryCharBudget(options.maxTokens ?? RAW_LOOP_MAX_MESSAGE_HISTORY_CHAR_BUDGET);
   const finalAssistantMessages = options.finalAssistantMessage
     ? [options.finalAssistantMessage]
     : [];
@@ -193,75 +248,88 @@ export function buildCompactedMessageHistory(options: {
     ...finalAssistantMessages,
   ];
   const estimatedCharsBefore = estimateHistoryChars(rawMessages);
+  const latestTurn = options.completedTurns.at(-1);
 
-  if (estimatedCharsBefore <= RAW_LOOP_MESSAGE_HISTORY_CHAR_BUDGET) {
+  if (!latestTurn) {
     return {
       messages: rawMessages,
       didCompact: false,
       compactedTurnCount: 0,
-      preservedTailTurnCount: options.completedTurns.length,
+      preservedTailTurnCount: 0,
+      preservedTailMode: "none",
+      historyCharBudget,
       estimatedCharsBefore,
       estimatedCharsAfter: estimatedCharsBefore,
     };
   }
 
-  const forcedVerbatimTailTurns = shouldForcePreserveVerbatimTailTurn(
-    options.completedTurns.at(-1),
-  )
-    ? 1
-    : 0;
-  const maxTailCycles = Math.min(
-    RAW_LOOP_PREFERRED_VERBATIM_TAIL_CYCLES,
-    options.completedTurns.length,
+  const olderTurns = options.completedTurns.slice(
+    0,
+    Math.max(options.completedTurns.length - RAW_LOOP_PREFERRED_VERBATIM_TAIL_CYCLES, 0),
   );
-  const minTailCycles = Math.min(
-    forcedVerbatimTailTurns,
-    options.completedTurns.length,
+  const verbatimTailTurns = options.completedTurns.slice(
+    Math.max(options.completedTurns.length - RAW_LOOP_PREFERRED_VERBATIM_TAIL_CYCLES, 0),
   );
+  const prefersVerbatimTail = shouldPreferVerbatimTailTurn(latestTurn);
+  const allowCompactTail = isWriteHeavyTurn(latestTurn) || !prefersVerbatimTail;
+  const tailModes: Array<"verbatim" | "compact"> = allowCompactTail
+    ? ["verbatim", "compact"]
+    : ["verbatim"];
 
-  for (
-    let preservedTailTurnCount = maxTailCycles;
-    preservedTailTurnCount >= minTailCycles;
-    preservedTailTurnCount -= 1
-  ) {
-    const compactedTurnCount =
-      options.completedTurns.length - preservedTailTurnCount;
+  for (const preservedTailMode of tailModes) {
+    for (let summarizedOldTurnCount = 0; summarizedOldTurnCount <= olderTurns.length; summarizedOldTurnCount += 1) {
+      const summarizedOldTurns = olderTurns.slice(0, summarizedOldTurnCount);
+      const compactOldTurns = olderTurns.slice(summarizedOldTurnCount);
+      const compactedTailTurns = preservedTailMode === "compact"
+        ? verbatimTailTurns
+        : [];
+      const exactTailTurns = preservedTailMode === "verbatim"
+        ? verbatimTailTurns
+        : [];
+      const messages = [
+        options.initialUserMessage,
+        ...(summarizedOldTurns.length > 0
+          ? buildCompactionMessages(summarizedOldTurns)
+          : []),
+        ...flattenCompletedTurnsWithMode(compactOldTurns, "compact"),
+        ...flattenCompletedTurnsWithMode(compactedTailTurns, "compact"),
+        ...flattenCompletedTurnsWithMode(exactTailTurns, "verbatim"),
+        ...finalAssistantMessages,
+      ];
+      const estimatedCharsAfter = estimateHistoryChars(messages);
+      const compactedTurnCount =
+        summarizedOldTurns.length
+        + compactOldTurns.length
+        + compactedTailTurns.length;
 
-    if (compactedTurnCount <= 0) {
-      continue;
-    }
+      if (estimatedCharsAfter <= historyCharBudget) {
+        return {
+          messages,
+          didCompact: compactedTurnCount > 0,
+          compactedTurnCount,
+          preservedTailTurnCount: verbatimTailTurns.length,
+          preservedTailMode,
+          historyCharBudget,
+          estimatedCharsBefore,
+          estimatedCharsAfter,
+        };
+      }
 
-    const compactedTurns = options.completedTurns.slice(0, compactedTurnCount);
-    const preservedTailTurns = options.completedTurns.slice(compactedTurnCount);
-    const compactionMessages = buildCompactionMessages(compactedTurns);
-    const messages = [
-      options.initialUserMessage,
-      ...compactionMessages,
-      ...flattenCompletedTurns(preservedTailTurns),
-      ...finalAssistantMessages,
-    ];
-    const estimatedCharsAfter = estimateHistoryChars(messages);
-
-    if (estimatedCharsAfter <= RAW_LOOP_MESSAGE_HISTORY_CHAR_BUDGET) {
-      return {
-        messages,
-        didCompact: true,
-        compactedTurnCount,
-        preservedTailTurnCount,
-        estimatedCharsBefore,
-        estimatedCharsAfter,
-      };
-    }
-
-    if (preservedTailTurnCount === minTailCycles) {
-      return {
-        messages,
-        didCompact: true,
-        compactedTurnCount,
-        preservedTailTurnCount,
-        estimatedCharsBefore,
-        estimatedCharsAfter,
-      };
+      if (
+        summarizedOldTurnCount === olderTurns.length
+        && preservedTailMode === tailModes.at(-1)
+      ) {
+        return {
+          messages,
+          didCompact: compactedTurnCount > 0,
+          compactedTurnCount,
+          preservedTailTurnCount: verbatimTailTurns.length,
+          preservedTailMode,
+          historyCharBudget,
+          estimatedCharsBefore,
+          estimatedCharsAfter,
+        };
+      }
     }
   }
 
@@ -270,6 +338,8 @@ export function buildCompactedMessageHistory(options: {
     didCompact: false,
     compactedTurnCount: 0,
     preservedTailTurnCount: options.completedTurns.length,
+    preservedTailMode: "verbatim",
+    historyCharBudget,
     estimatedCharsBefore,
     estimatedCharsAfter: estimatedCharsBefore,
   };

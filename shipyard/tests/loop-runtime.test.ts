@@ -96,6 +96,10 @@ function createTurnResult(
       handoffLoaded: false,
       handoffEmitted: false,
       handoffReason: null,
+      checkpointRequested: false,
+      continuationCount: 0,
+      actingLoopBudget: 25,
+      actingLoopBudgetReason: "narrow-default",
       firstHardFailure: null,
     },
     handoff: {
@@ -475,6 +479,10 @@ describe("terminal loop interrupts", () => {
           handoffLoaded: false,
           handoffEmitted: true,
           handoffReason: "iteration-threshold",
+          checkpointRequested: true,
+          continuationCount: 0,
+          actingLoopBudget: 45,
+          actingLoopBudgetReason: "broad-continuation",
           firstHardFailure: null,
         },
         handoff: {

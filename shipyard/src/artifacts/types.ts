@@ -185,6 +185,11 @@ export interface VerificationReport {
 
 export type HarnessSelectedPath = "lightweight" | "planner-backed";
 export type HarnessVerificationMode = "none" | "command" | "command+browser";
+export type ActingLoopBudgetReason =
+  | "narrow-default"
+  | "broad-greenfield"
+  | "broad-continuation"
+  | "override";
 
 export interface HarnessRouteSummary {
   selectedPath: HarnessSelectedPath;
@@ -198,6 +203,10 @@ export interface HarnessRouteSummary {
   handoffLoaded: boolean;
   handoffEmitted: boolean;
   handoffReason: ExecutionHandoffResetKind | null;
+  checkpointRequested: boolean;
+  continuationCount: number;
+  actingLoopBudget: number;
+  actingLoopBudgetReason: ActingLoopBudgetReason;
   firstHardFailure: VerificationHardFailure | null;
 }
 
@@ -345,6 +354,7 @@ export interface PreviewState {
 
 export interface DiscoveryReport {
   isGreenfield: boolean;
+  bootstrapReady?: boolean;
   language: string | null;
   framework: string | null;
   packageManager: string | null;

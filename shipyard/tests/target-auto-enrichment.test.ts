@@ -59,6 +59,10 @@ function createRuntimeState(
     blockedFiles: [],
     pendingTargetSelectionPath: null,
     runtimeMode: "graph",
+    continuationLimits: {
+      maxAutomaticResumes: 1,
+      maxWallClockMs: 8 * 60_000,
+    },
     targetEnrichmentInvoker: async () => ({
       text: JSON.stringify({
         name: "auto-target",

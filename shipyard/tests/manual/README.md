@@ -6,7 +6,7 @@ credentialed, or otherwise unsuitable for the default automated test suite.
 ## Current Scripts
 
 - `phase2-tools-smoke.ts`: exercises the Phase 2 tool surface
-- `phase3-live-loop-smoke.ts`: checks the live graph-mode runtime path with bootstrap, large writes, and a same-session follow-up
+- `phase3-live-loop-smoke.ts`: checks the live graph-mode runtime path with bootstrap-ready seeded targets, large writes, a broad-greenfield first turn, and a same-session `broad-continuation` follow-up that should stay off explorer/planner
 - `phase4-langsmith-mvp.ts`: validates the LangSmith-backed MVP flow
 - `phase5-local-preview-smoke.ts`: verifies preview auto-start, refresh, and unavailable-state handling
 

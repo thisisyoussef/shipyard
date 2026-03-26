@@ -3,7 +3,7 @@
 - Pack: Runtime Hardening Follow-Up (Supplemental)
 - Estimate: 12-16 hours
 - Date: 2026-03-26
-- Status: Drafted for implementation
+- Status: Implemented; repo validation and live LangSmith finish-check passed on 2026-03-26
 
 ## Pack Objectives
 
@@ -54,4 +54,97 @@
 
 ## Implementation Evidence
 
-- N/A. This follow-up pack is planning-only in this change; no implementation landed yet.
+- `RHF-S01` History-safe tool turn records
+  Code References:
+  - `shipyard/src/engine/raw-loop.ts`
+  - `shipyard/src/engine/history-compaction.ts`
+  - `shipyard/tests/raw-loop.test.ts`
+  Representative Snippet:
+  ```ts
+  return {
+    requestLine:
+      `${label} lines=${String(lineCount)} chars=${String(input.content.length)} ` +
+      `fingerprint=${fingerprint} preview=${formatDigestValue(preview)}`,
+  };
+  ```
+- `RHF-S02` Write-aware compaction and adaptive history budgets
+  Code References:
+  - `shipyard/src/engine/history-compaction.ts`
+  - `shipyard/src/engine/raw-loop.ts`
+  - `shipyard/tests/raw-loop.test.ts`
+  Representative Snippet:
+  ```ts
+  export const RAW_LOOP_MIN_MESSAGE_HISTORY_CHAR_BUDGET = 24_000;
+  export const RAW_LOOP_MAX_MESSAGE_HISTORY_CHAR_BUDGET = 32_000;
+  export const RAW_LOOP_PREFERRED_VERBATIM_TAIL_CYCLES = 1;
+  ```
+- `RHF-S03` Greenfield construction prompt and batching policy
+  Code References:
+  - `shipyard/src/phases/code/prompts.ts`
+  - `shipyard/tests/context-envelope.test.ts`
+  - `shipyard/tests/manual/README.md`
+  Representative Snippet:
+  ```ts
+  - Direct write_file is allowed for a net-new file or module you are creating from scratch.
+  - Batch coherent new-file writes in one response when that reduces unnecessary loop churn.
+  - Once a file already exists, switch back to read_file plus edit_block for later modifications.
+  ```
+- `RHF-S04` Handoff signal compression and edited-file fidelity
+  Code References:
+  - `shipyard/src/artifacts/handoff.ts`
+  - `shipyard/src/context/envelope.ts`
+  - `shipyard/tests/handoff-artifacts.test.ts`
+  - `shipyard/tests/context-envelope.test.ts`
+  Representative Snippet:
+  ```ts
+  const touchedFiles = uniqueStrings([
+    ...options.touchedFiles,
+    ...options.taskPlan.targetFilePaths,
+    ...Object.keys(options.retryCountsByFile),
+  ]);
+  ```
+- `RHF-S05` Continuation-first iteration threshold resume
+  Code References:
+  - `shipyard/src/engine/raw-loop.ts`
+  - `shipyard/src/engine/graph.ts`
+  - `shipyard/src/engine/turn.ts`
+  - `shipyard/tests/handoff-artifacts.test.ts`
+  Representative Snippet:
+  ```ts
+  while (
+    result.status === "success"
+    && result.harnessRoute.checkpointRequested
+    && result.handoff.emitted !== null
+  ) {
+  ```
+  ```
+- `RHF-S06` Bootstrap-ready discovery alignment
+  Code References:
+  - `shipyard/src/context/discovery.ts`
+  - `shipyard/src/artifacts/types.ts`
+  - `shipyard/src/ui/contracts.ts`
+  - `shipyard/tests/discovery.test.ts`
+  - `shipyard/tests/scaffold-bootstrap.test.ts`
+  Representative Snippet:
+  ```ts
+  const bootstrapReady = isBootstrapReadyTargetEntries({
+    topLevelFiles,
+    topLevelDirectories,
+  });
+  ```
+- `RHF-S07` Task-aware loop budgets and long-run replay coverage
+  Code References:
+  - `shipyard/src/engine/graph.ts`
+  - `shipyard/tests/graph-runtime.test.ts`
+  - `shipyard/tests/manual/phase3-live-loop-smoke.ts`
+  - `shipyard/tests/manual/README.md`
+  Representative Snippet:
+  ```ts
+  const broadContinuation =
+    (latestHandoff?.handoff.resetReason.kind === "iteration-threshold"
+      && latestHandoff.handoff.touchedFiles.length >= 3)
+    || (
+      recentTouchedFiles.length > 0
+      && isBroadContinuationInstruction(options.instruction)
+    );
+  ```

@@ -9,6 +9,7 @@ import type {
   VerificationReport,
 } from "../src/artifacts/types.js";
 import {
+  createExecutionHandoff,
   createExecutionHandoffDecision,
   loadExecutionHandoff,
   saveExecutionHandoff,
@@ -42,7 +43,7 @@ function createVerificationReport(
   };
 }
 
-function createExecutionHandoff(
+function createMockExecutionHandoff(
   overrides: Partial<ExecutionHandoff> = {},
 ): ExecutionHandoff {
   return {
@@ -115,7 +116,7 @@ describe("execution handoff artifacts", () => {
     const targetDirectory = await createTempDirectory("shipyard-handoff-");
     const saved = await saveExecutionHandoff(
       targetDirectory,
-      createExecutionHandoff(),
+      createMockExecutionHandoff(),
     );
 
     expect(saved.artifactPath).toContain(".shipyard/artifacts/session-123/");
@@ -140,6 +141,55 @@ describe("execution handoff artifacts", () => {
 
     expect(loaded.handoff).toBeNull();
     expect(loaded.error).toMatch(/Malformed execution handoff/i);
+  });
+
+  it("creates concise completed work and keeps every observed touched file", () => {
+    const longGoal =
+      "Build a Trello-style board, write the seed data layer, add status summaries, and keep extending the freshly scaffolded app without widening scope.";
+    const decision = createExecutionHandoffDecision({
+      actingIterations: 6,
+      retryCountsByFile: {},
+      blockedFiles: [],
+    });
+    const handoff = createExecutionHandoff({
+      sessionId: "session-123",
+      turnCount: 4,
+      instruction: "Continue the Trello-style board build",
+      phaseName: "code",
+      runtimeMode: "graph",
+      status: "success",
+      summary: "Turn 4 checkpointed after a long greenfield continuation.",
+      taskPlan: {
+        instruction: "Continue the Trello-style board build",
+        goal: longGoal,
+        targetFilePaths: ["apps/web/src/App.tsx"],
+        plannedSteps: ["Continue the board build."],
+      },
+      actingIterations: 6,
+      retryCountsByFile: {},
+      blockedFiles: [],
+      lastEditedFile: "apps/web/src/App.tsx",
+      touchedFiles: [
+        "apps/web/src/App.tsx",
+        "apps/web/src/lib/seed-data.ts",
+        "apps/web/src/components/status-summary.tsx",
+      ],
+      verificationReport: createVerificationReport({
+        exitCode: 0,
+        passed: true,
+        summary: "Verification passed.",
+      }),
+      decision,
+      createdAt: "2026-03-25T22:00:00.000Z",
+    });
+
+    expect(handoff.completedWork[0]).toContain("Turn summary:");
+    expect(handoff.completedWork[0]).not.toContain(longGoal);
+    expect(handoff.touchedFiles).toEqual([
+      "apps/web/src/App.tsx",
+      "apps/web/src/lib/seed-data.ts",
+      "apps/web/src/components/status-summary.tsx",
+    ]);
   });
 
   it("keeps the lightweight path for trivial runs and emits handoffs for long or unstable runs", () => {
@@ -275,6 +325,170 @@ describe("execution handoff artifacts", () => {
     expect(sessionState.activeHandoffPath).toBeNull();
   });
 
+  it("automatically resumes from an emitted continuation handoff until the work finishes", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-handoff-autoresume-");
+    const sessionState = createSessionState({
+      sessionId: "handoff-autoresume-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: true,
+        topLevelFiles: ["package.json", "README.md", "AGENTS.md"],
+        topLevelDirectories: ["apps", "packages"],
+        projectName: "handoff-autoresume",
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
+      },
+    });
+    const runActingLoop = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "continuation",
+        finalText:
+          "Shipyard reached the acting iteration limit of 25 and needs a checkpoint-backed continuation.",
+        messageHistory: [],
+        iterations: 25,
+        didEdit: true,
+        lastEditedFile: "apps/web/src/App.tsx",
+        touchedFiles: [
+          "apps/web/src/App.tsx",
+          "apps/web/src/lib/seed-data.ts",
+        ],
+      })
+      .mockResolvedValueOnce({
+        finalText: "Resumed and finished the dashboard continuation.",
+        messageHistory: [],
+        iterations: 2,
+        didEdit: true,
+        lastEditedFile: "apps/web/src/App.tsx",
+        touchedFiles: [
+          "apps/web/src/App.tsx",
+          "apps/web/src/lib/seed-data.ts",
+          "apps/web/src/components/status-summary.tsx",
+        ],
+      });
+    sessionState.recentTouchedFiles = [
+      "apps/web/src/App.tsx",
+      "apps/web/src/lib/seed-data.ts",
+    ];
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      runtimeDependencies: {
+        runActingLoop,
+        verifyState: async () =>
+          createVerificationReport({
+            exitCode: 0,
+            passed: true,
+            summary: "Verification passed.",
+          }),
+      },
+    });
+
+    const result = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "Continue the Trello-style dashboard build.",
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.finalText).toBe("Resumed and finished the dashboard continuation.");
+    expect(runActingLoop).toHaveBeenCalledTimes(2);
+    expect(result.harnessRoute.continuationCount).toBe(1);
+    expect(sessionState.recentTouchedFiles).toEqual(
+      expect.arrayContaining([
+        "apps/web/src/App.tsx",
+        "apps/web/src/lib/seed-data.ts",
+        "apps/web/src/components/status-summary.tsx",
+      ]),
+    );
+    expect(sessionState.activeHandoffPath).toBeNull();
+  });
+
+  it("stops auto-resume once the higher-level continuation budget is exhausted", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-handoff-budget-");
+    const sessionState = createSessionState({
+      sessionId: "handoff-budget-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: true,
+        topLevelFiles: ["package.json", "README.md", "AGENTS.md"],
+        topLevelDirectories: ["apps", "packages"],
+        projectName: "handoff-budget",
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
+      },
+    });
+    const runActingLoop = vi
+      .fn()
+      .mockResolvedValue({
+        status: "continuation",
+        finalText:
+          "Shipyard reached the acting iteration limit of 25 and needs a checkpoint-backed continuation.",
+        messageHistory: [],
+        iterations: 25,
+        didEdit: true,
+        lastEditedFile: "apps/web/src/App.tsx",
+        touchedFiles: [
+          "apps/web/src/App.tsx",
+          "apps/web/src/lib/seed-data.ts",
+        ],
+      });
+    sessionState.recentTouchedFiles = [
+      "apps/web/src/App.tsx",
+      "apps/web/src/lib/seed-data.ts",
+    ];
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      continuationLimits: {
+        maxAutomaticResumes: 1,
+        maxWallClockMs: 120_000,
+      },
+      runtimeDependencies: {
+        runActingLoop,
+        verifyState: async () =>
+          createVerificationReport({
+            exitCode: 0,
+            passed: true,
+            summary: "Verification passed.",
+          }),
+      },
+    });
+
+    const result = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "Continue the Trello-style dashboard build.",
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.finalText).toContain("Automatic continuation paused");
+    expect(runActingLoop).toHaveBeenCalledTimes(2);
+    expect(result.handoff.emitted?.artifactPath).toContain(
+      ".shipyard/artifacts/handoff-budget-session/",
+    );
+    expect(result.harnessRoute.continuationCount).toBe(1);
+    expect(sessionState.activeHandoffPath).toBe(
+      result.handoff.emitted?.artifactPath,
+    );
+  });
+
   it("drops a corrupted active handoff pointer and falls back to normal execution", async () => {
     const targetDirectory = await createTempDirectory("shipyard-handoff-corrupt-");
     const sessionState = createSessionState({
@@ -319,6 +533,7 @@ describe("execution handoff artifacts", () => {
           iterations: 1,
           didEdit: false,
           lastEditedFile: null,
+          touchedFiles: [],
         }),
       },
     });

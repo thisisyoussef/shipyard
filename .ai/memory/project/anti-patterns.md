@@ -77,3 +77,8 @@ Capture failures so they are not repeated.
 - **Example**: `bootstrap_target` allows `AGENTS.md` or `README.md`, but discovery marks the same directory as non-greenfield and routes it into broad exploration loops.
 - **Why it failed**: Near-empty targets pay the cost of existing-repo discovery without any real code to discover.
 - **Prevention rule**: Use one shared bootstrap-ready rule or explicit flag across discovery, coordinator routing, and target bootstrap checks.
+
+- **Problem**: Letting exact-path shortcuts override broad greenfield or continuation budget signals
+- **Example**: A bootstrap or "continue the same app" instruction names `apps/web/src/App.tsx`, and the acting-loop budget drops to the narrow default before discovery, recent touched files, or handoff evidence are considered.
+- **Why it failed**: Long construction turns checkpoint too early and the smoke only passes if the runtime burns extra reread loops to compensate.
+- **Prevention rule**: Resolve broad greenfield and broad continuation intent before falling back to exact-path narrow defaults, and cover the distinction with both focused graph tests and a live smoke.
