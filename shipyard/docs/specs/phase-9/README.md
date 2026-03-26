@@ -113,10 +113,12 @@
 ### Code References
 
 - Hosted runtime + Railway contract:
+  - `.github/workflows/railway-main-deploy.yml`
   - `shipyard/src/bin/shipyard.ts`
   - `shipyard/src/ui/server.ts`
   - `shipyard/package.json`
   - `shipyard/railway.json`
+  - `shipyard/docs/architecture/hosted-railway.md`
 - Persistent hosted workspace:
   - `shipyard/src/hosting/workspace.ts`
   - `shipyard/src/bin/shipyard.ts`
@@ -163,6 +165,19 @@ if (envTargetsDirectory) {
 ```json
 "buildCommand": "pnpm install --frozen-lockfile && pnpm build",
 "startCommand": "pnpm start -- --ui"
+```
+
+- Repo-driven pushes to `main` can now redeploy the same hosted service without
+  a manual Railway upload:
+
+```yaml
+working-directory: shipyard
+run: |
+  railway up . \
+    --path-as-root \
+    --project "${RAILWAY_PROJECT_ID}" \
+    --environment "${RAILWAY_ENVIRONMENT_ID}" \
+    --service "${RAILWAY_SERVICE_ID}"
 ```
 
 - Upload receipts become next-turn context instead of raw websocket blobs:

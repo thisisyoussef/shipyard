@@ -81,6 +81,18 @@ path from the workbench.
 - If Railway is connected to the full repo, set the service root directory to
   `shipyard/` so `package.json`, `pnpm-lock.yaml`, and `railway.json` resolve
   together.
+- If you prefer repo-controlled auto-deploy instead of Railway's native GitHub
+  integration, add a root GitHub Actions workflow that runs on pushes to
+  `main`, changes into `shipyard/`, and deploys with
+  `railway up . --path-as-root --project <project-id> --environment <env-id> --service <service-id>`.
+- Repo-controlled auto-deploy should use a GitHub Actions secret for Railway
+  authentication. Prefer `RAILWAY_TOKEN` with a Railway project token; keep
+  `RAILWAY_API_TOKEN` as the fallback when you intentionally use a broader
+  account or workspace token.
+- Repo-controlled auto-deploy does not require the Railway service itself to be
+  GitHub-linked. Native Railway GitHub autodeploy remains optional and can be
+  enabled later from the service settings if you want Railway to watch a branch
+  directly.
 - Point Railway's config-as-code path at `/shipyard/railway.json` when the
   provider is watching the full repo, or keep `railway.json` at the uploaded
   app root when deploying only the `shipyard/` directory.
