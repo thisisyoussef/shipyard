@@ -1,6 +1,5 @@
 import path from "node:path";
 
-import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 import {
   Annotation,
   END,
@@ -66,6 +65,7 @@ import {
   type RawLoopToolHookContext,
   type RawToolLoopResult,
 } from "./raw-loop.js";
+import type { TurnMessage } from "./model-adapter.js";
 import {
   getArtifactDirectory,
   type ContextEnvelope,
@@ -94,7 +94,7 @@ export type AgentRuntimeStatus =
 
 export interface AgentGraphState {
   sessionId: string;
-  messageHistory: MessageParam[];
+  messageHistory: TurnMessage[];
   currentInstruction: string;
   contextEnvelope: ContextEnvelope;
   previewState: PreviewState;
@@ -117,6 +117,8 @@ export interface AgentGraphState {
   browserEvaluationReport: BrowserEvaluationReport | null;
   harnessRoute: HarnessRouteSummary;
   actingIterations: number;
+  modelProvider: string | null;
+  modelName: string | null;
   fallbackMode: boolean;
   lastError: string | null;
   langSmithTrace: LangSmithTraceReference | null;
@@ -130,7 +132,7 @@ export interface CreateAgentGraphStateOptions {
   targetProfile?: TargetProfile | null;
   targetDirectory: string;
   phaseConfig: Phase;
-  messageHistory?: MessageParam[];
+  messageHistory?: TurnMessage[];
   fileHashes?: FileHashMap;
   touchedFiles?: string[];
   retryCountsByFile?: Record<string, number>;
@@ -147,6 +149,8 @@ export interface CreateAgentGraphStateOptions {
   browserEvaluationReport?: BrowserEvaluationReport | null;
   harnessRoute?: HarnessRouteSummary;
   actingIterations?: number;
+  modelProvider?: string | null;
+  modelName?: string | null;
   fallbackMode?: boolean;
   lastError?: string | null;
   langSmithTrace?: LangSmithTraceReference | null;
@@ -155,13 +159,15 @@ export interface CreateAgentGraphStateOptions {
 export interface ActingLoopResult {
   status?: "completed" | "cancelled" | "continuation";
   finalText: string;
-  messageHistory: MessageParam[];
+  messageHistory: TurnMessage[];
   iterations: number;
   didEdit: boolean;
   lastEditedFile: string | null;
   touchedFiles?: string[];
   actingLoopBudget?: number;
   actingLoopBudgetReason?: ActingLoopBudgetReason;
+  modelProvider?: string | null;
+  modelName?: string | null;
 }
 
 export interface AgentRuntimeDependencies {
@@ -215,7 +221,7 @@ const DEFAULT_MAX_RECOVERIES_PER_FILE = 2;
 
 const AgentGraphStateAnnotation = Annotation.Root({
   sessionId: Annotation<string>(),
-  messageHistory: Annotation<MessageParam[]>(),
+  messageHistory: Annotation<TurnMessage[]>(),
   currentInstruction: Annotation<string>(),
   contextEnvelope: Annotation<ContextEnvelope>(),
   previewState: Annotation<PreviewState>(),
@@ -238,6 +244,8 @@ const AgentGraphStateAnnotation = Annotation.Root({
   browserEvaluationReport: Annotation<BrowserEvaluationReport | null>(),
   harnessRoute: Annotation<HarnessRouteSummary>(),
   actingIterations: Annotation<number>(),
+  modelProvider: Annotation<string | null>(),
+  modelName: Annotation<string | null>(),
   fallbackMode: Annotation<boolean>(),
   lastError: Annotation<string | null>(),
   langSmithTrace: Annotation<LangSmithTraceReference | null>(),
@@ -439,11 +447,11 @@ async function checkpointBeforeEdit(
   context: RawLoopToolHookContext,
   checkpointManager: CheckpointManagerLike,
 ): Promise<void> {
-  if (context.toolUse.name !== "edit_block") {
+  if (context.toolCall.name !== "edit_block") {
     return;
   }
 
-  const relativePath = getRelativeToolPath(context.toolUse.input);
+  const relativePath = getRelativeToolPath(context.toolCall.input);
 
   if (!relativePath) {
     throw new Error("edit_block requires a non-empty relative path before checkpointing.");
@@ -672,6 +680,8 @@ async function defaultActingLoop(
     touchedFiles: result.touchedFiles,
     actingLoopBudget: budgetDecision.maxIterations,
     actingLoopBudgetReason: budgetDecision.reason,
+    modelProvider: result.modelProvider,
+    modelName: result.modelName,
   };
 }
 
@@ -716,6 +726,8 @@ export function createAgentGraphState(
       options.harnessRoute
       ?? createInitialHarnessRouteSummary(options.contextEnvelope),
     actingIterations: options.actingIterations ?? 0,
+    modelProvider: options.modelProvider ?? null,
+    modelName: options.modelName ?? null,
     fallbackMode: options.fallbackMode ?? false,
     lastError: options.lastError ?? null,
     langSmithTrace: options.langSmithTrace ?? null,
@@ -771,6 +783,8 @@ function createRuntimeTraceMetadata(
     actingLoopBudget: state.harnessRoute.actingLoopBudget,
     actingLoopBudgetReason: state.harnessRoute.actingLoopBudgetReason,
     firstHardFailure: state.harnessRoute.firstHardFailure,
+    modelProvider: state.modelProvider,
+    modelName: state.modelName,
   };
 }
 
@@ -1008,6 +1022,8 @@ export function createAgentRuntimeNodes(
             actingIterations: actingLoop.iterations,
             lastEditedFile: actingLoop.lastEditedFile,
             touchedFiles: actingLoop.touchedFiles ?? [],
+            modelProvider: actingLoop.modelProvider ?? state.modelProvider,
+            modelName: actingLoop.modelName ?? state.modelName,
             finalResult:
               cancelledAfterAct?.finalResult ?? actingLoop.finalText,
             status: "cancelled",
@@ -1021,6 +1037,8 @@ export function createAgentRuntimeNodes(
           actingIterations: actingLoop.iterations,
           lastEditedFile: actingLoop.lastEditedFile,
           touchedFiles: actingLoop.touchedFiles ?? [],
+          modelProvider: actingLoop.modelProvider ?? state.modelProvider,
+          modelName: actingLoop.modelName ?? state.modelName,
           checkpointRequested: actingLoop.status === "continuation",
           finalResult: actingLoop.finalText,
           status: actingLoop.status === "continuation"

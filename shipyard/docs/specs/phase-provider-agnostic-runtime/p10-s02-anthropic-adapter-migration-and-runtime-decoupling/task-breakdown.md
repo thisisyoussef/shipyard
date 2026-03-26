@@ -37,19 +37,28 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `Anthropic adapter fails clearly when credentials are missing`
-  - [ ] `Anthropic adapter normalizes tool-call responses`
+  - [x] `Anthropic adapter fails clearly when credentials are missing`
+  - [x] `Anthropic adapter normalizes tool-call responses`
 - T002 tests:
-  - [ ] `raw loop no longer depends on Anthropic message types`
-  - [ ] `graph state stores provider-neutral turn history`
+  - [x] `raw loop no longer depends on Anthropic message types`
+  - [x] `graph state stores provider-neutral turn history`
 - T003 tests:
-  - [ ] `trace metadata reports provider and model from adapter execution`
+  - [x] `trace metadata reports provider and model from adapter execution`
 - T004 tests:
-  - [ ] `Anthropic-backed tool loop completes through the adapter`
-  - [ ] `Anthropic-backed cancellation still returns a cancelled turn result`
+  - [x] `Anthropic-backed tool loop completes through the adapter`
+  - [x] `Anthropic-backed cancellation still returns a cancelled turn result`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Implementation Evidence
+
+| Task ID | Evidence |
+|---|---|
+| T001 | `shipyard/src/engine/anthropic.ts` adds `createAnthropicModelAdapter`, provider-owned turn/message conversion, and adapter-backed request execution. |
+| T002 | `shipyard/src/engine/raw-loop.ts`, `shipyard/src/engine/history-compaction.ts`, `shipyard/src/engine/graph.ts`, `shipyard/src/engine/turn.ts`, and `shipyard/src/plans/turn.ts` now use `TurnMessage`, `ToolCall`, and `ModelAdapter` rather than Anthropic SDK types in shared orchestration. |
+| T003 | `shipyard/src/engine/raw-loop.ts` returns `modelProvider` / `modelName`, and `shipyard/src/engine/graph.ts` persists those fields into LangSmith runtime metadata. |
+| T004 | `shipyard/tests/anthropic-contract.test.ts`, `shipyard/tests/raw-loop.test.ts`, `shipyard/tests/history-compaction.test.ts`, and `shipyard/tests/graph-runtime.test.ts` cover adapter normalization, completion, cancellation, compaction, and trace metadata. |

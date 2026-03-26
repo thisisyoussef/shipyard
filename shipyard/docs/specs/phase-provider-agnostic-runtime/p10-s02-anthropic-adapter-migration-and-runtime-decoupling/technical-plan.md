@@ -89,3 +89,8 @@ pnpm --dir shipyard typecheck
 pnpm --dir shipyard build
 git diff --check
 ```
+
+## Implementation Notes
+- Implemented in `shipyard/src/engine/anthropic.ts` rather than a new `providers/` directory to keep the migration narrow while still making Anthropic the first concrete `ModelAdapter`.
+- Shared runtime history now stores `TurnMessage[]` in `shipyard/src/engine/history-compaction.ts` and `shipyard/src/engine/graph.ts`; adapter-specific replay blocks are reconstructed only inside `shipyard/src/engine/anthropic.ts`.
+- `shipyard/src/engine/raw-loop.ts` now defaults to `createAnthropicModelAdapter()` but executes turns entirely through the internal adapter contract and returns `modelProvider` / `modelName` for tracing.

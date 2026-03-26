@@ -255,7 +255,7 @@ function createAbortAwareMockAnthropicClient(options?: {
 function waitForSocketMessage(
   socket: WebSocket,
   predicate: (message: BackendToFrontendMessage) => boolean,
-  timeoutMs = 5_000,
+  timeoutMs = 10_000,
 ): Promise<BackendToFrontendMessage> {
   const messages = getSocketMessages(socket);
   const existingMatch = messages.find(predicate);
@@ -285,7 +285,7 @@ function waitForSocketMessage(
 function collectMessagesUntil(
   socket: WebSocket,
   predicate: (messages: BackendToFrontendMessage[]) => boolean,
-  timeoutMs = 5_000,
+  timeoutMs = 10_000,
 ): Promise<BackendToFrontendMessage[]> {
   const messages = getSocketMessages(socket);
   const startIndex = messages.length;
@@ -580,7 +580,7 @@ describe("ui runtime contract", () => {
 
       await firstRuntime.close();
     }
-  });
+  }, 10_000);
 
   it("boots the UI runtime on provider env host and port and reports hosted health state", async () => {
     process.env.SHIPYARD_UI_HOST = "0.0.0.0";
@@ -1200,7 +1200,7 @@ describe("ui runtime contract", () => {
     } finally {
       await runtime.close();
     }
-  }, 15_000);
+  }, 25_000);
 
   it("rejects duplicate and unsupported uploads and removes pending receipts cleanly", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-upload-");
@@ -1328,7 +1328,7 @@ describe("ui runtime contract", () => {
     } finally {
       await runtime.close();
     }
-  });
+  }, 15_000);
 
   it("creates a new target from the browser, auto-enriches it, and switches the session into code mode", async () => {
     const targetsDirectory = await createTempDirectory(

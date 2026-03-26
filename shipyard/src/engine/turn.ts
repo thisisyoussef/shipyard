@@ -639,9 +639,9 @@ function createRuntimeDependencies(
           }
 
           await reporter?.onToolCall?.({
-            callId: context.toolUse.id,
-            toolName: context.toolUse.name,
-            summary: summarizeToolCallInput(context.toolUse.input),
+            callId: context.toolCall.id,
+            toolName: context.toolCall.name,
+            summary: summarizeToolCallInput(context.toolCall.input),
           });
         },
         afterToolExecution: async (context: RawLoopToolResultHookContext) => {
@@ -656,24 +656,24 @@ function createRuntimeDependencies(
           if (context.result.success) {
             rememberRecent(
               runtimeState.recentToolOutputs,
-              `${context.toolUse.name} ${summary}`,
+              `${context.toolCall.name} ${summary}`,
             );
           } else {
             rememberRecent(runtimeState.recentErrors, summary);
           }
 
           await reporter?.onToolResult?.({
-            callId: context.toolUse.id,
-            toolName: context.toolUse.name,
+            callId: context.toolCall.id,
+            toolName: context.toolCall.name,
             success: context.result.success,
             summary,
             detail: getToolResultDetail(context.result),
-            command: extractCommandFromToolInput(context.toolUse.input),
+            command: extractCommandFromToolInput(context.toolCall.input),
           });
 
           const immediateEditEvent = context.result.success
             ? createImmediateEditEvent(
-                context.toolUse.name,
+                context.toolCall.name,
                 context.result.data,
               )
             : null;
@@ -695,7 +695,7 @@ function createRuntimeDependencies(
 
           if (
             context.result.success &&
-            context.toolUse.name === "select_target" &&
+            context.toolCall.name === "select_target" &&
             isTargetSelectionData(context.result.data)
           ) {
             runtimeState.pendingTargetSelectionPath = context.result.data.path;
@@ -703,7 +703,7 @@ function createRuntimeDependencies(
 
           if (
             context.result.success &&
-            context.toolUse.name === "enrich_target" &&
+            context.toolCall.name === "enrich_target" &&
             isTargetProfileData(context.result.data)
           ) {
             sessionState.targetProfile = context.result.data;
@@ -711,7 +711,7 @@ function createRuntimeDependencies(
 
           if (
             context.result.success &&
-            context.toolUse.name === "bootstrap_target" &&
+            context.toolCall.name === "bootstrap_target" &&
             isBootstrapTargetData(context.result.data)
           ) {
             sessionState.discovery = context.result.data.discovery;

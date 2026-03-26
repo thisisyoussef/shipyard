@@ -3,7 +3,7 @@
 - Pack: Provider-Agnostic Model Runtime
 - Estimate: 16-24 hours
 - Date: 2026-03-26
-- Status: In progress (`P10-S01` implemented; `P10-S02` through `P10-S05` drafted)
+- Status: In progress (`P10-S01` and `P10-S02` implemented; `P10-S03` through `P10-S05` drafted)
 
 ## Pack Objectives
 
@@ -97,6 +97,8 @@
 ```ts
 export interface ModelAdapter<TProjectedTool = unknown> {
   readonly provider: string;
+  readonly defaultModel?: string;
+  readonly defaultMaxTokens?: number;
   projectTools: (tools: ToolDefinition[]) => TProjectedTool[];
   createTurn: (
     input: ModelTurnInput,
@@ -119,11 +121,55 @@ export function projectToolsToAnthropicTools(
 }
 ```
 
-- `P10-S01` raw loop now consumes generic tool definitions before provider
-  projection:
+- `P10-S02`: [`../../src/engine/anthropic.ts`](../../src/engine/anthropic.ts),
+  [`../../src/engine/raw-loop.ts`](../../src/engine/raw-loop.ts),
+  [`../../src/engine/history-compaction.ts`](../../src/engine/history-compaction.ts),
+  [`../../src/engine/graph.ts`](../../src/engine/graph.ts),
+  [`../../src/engine/turn.ts`](../../src/engine/turn.ts),
+  [`../../src/plans/turn.ts`](../../src/plans/turn.ts),
+  [`../../tests/anthropic-contract.test.ts`](../../tests/anthropic-contract.test.ts),
+  [`../../tests/raw-loop.test.ts`](../../tests/raw-loop.test.ts), and
+  [`../../tests/graph-runtime.test.ts`](../../tests/graph-runtime.test.ts)
+  move Anthropic request/response normalization behind `createAnthropicModelAdapter`,
+  store provider-neutral `TurnMessage[]` history in the shared runtime,
+  thread provider/model metadata through graph tracing, and regress the
+  Anthropic-backed loop through the adapter boundary.
+
+- `P10-S02` adapter-backed Anthropic turns:
 
 ```ts
-const anthropicTools = projectToolsToAnthropicTools(
-  getTools(normalizedToolNames),
-);
+export function createAnthropicModelAdapter(
+  options: AnthropicModelAdapterOptions = {},
+): ModelAdapter<AnthropicToolDefinition> {
+  const client = options.client ?? createAnthropicClient({
+    env: options.env,
+  });
+
+  return {
+    provider: "anthropic",
+    defaultModel: DEFAULT_ANTHROPIC_MODEL,
+    defaultMaxTokens: DEFAULT_ANTHROPIC_MAX_TOKENS,
+    projectTools: projectToolsToAnthropicTools,
+    async createTurn(input, requestOptions) {
+      const response = await createAnthropicMessage(client, {
+        systemPrompt: input.systemPrompt,
+        messages: input.messages,
+        tools: input.tools
+          ? projectToolsToAnthropicTools(input.tools)
+          : undefined,
+```
+
+- `P10-S02` shared raw loop now runs against `ModelAdapter` and returns
+  provider/model metadata:
+
+```ts
+const modelAdapter = options.modelAdapter ?? createAnthropicModelAdapter({
+  client: options.client as never,
+});
+
+const modelTurn = await createModelTurnWithBudgetRecovery({
+  modelAdapter,
+  systemPrompt: normalizedSystemPrompt,
+  messages: requestHistory.messages,
+  tools: toolDefinitions,
 ```

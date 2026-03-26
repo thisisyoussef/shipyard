@@ -221,6 +221,37 @@ describe("raw Claude tool loop", () => {
     expect(client.calls[0]?.tools).toEqual([]);
   });
 
+  it("reports provider-neutral model metadata for completed turns", async () => {
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Finished without tools.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+
+    const result = await runRawToolLoopDetailed(
+      "You are Shipyard.",
+      "Summarize the workspace.",
+      [],
+      process.cwd(),
+      {
+        client,
+        logger: {
+          log() {},
+        },
+      },
+    );
+
+    expect(result.modelProvider).toBe("anthropic");
+    expect(result.modelName).toBe(DEFAULT_ANTHROPIC_MODEL);
+  });
+
   it("continues after a tool_use response and sends tool_result blocks back", async () => {
     const directory = await createTempProject();
     await writeFile(path.join(directory, "README.md"), "# Shipyard\n", "utf8");

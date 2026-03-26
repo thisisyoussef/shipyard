@@ -1216,19 +1216,32 @@ describe("Phase 4 graph runtime contract", () => {
           iterations: 1,
           didEdit: false,
           lastEditedFile: null,
+          modelProvider: "anthropic",
+          modelName: "claude-sonnet-4-5",
         }),
       },
     });
 
     expect(finalState.status).toBe("done");
     expect(finalState.langSmithTrace).toEqual(trace);
+    expect(finalState.modelProvider).toBe("anthropic");
+    expect(finalState.modelName).toBe("claude-sonnet-4-5");
     expect(langsmith.getLangSmithCallbacksForCurrentTrace).toHaveBeenCalledTimes(1);
     expect(langsmith.runWithLangSmithTrace).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "shipyard.graph-runtime",
         tags: expect.arrayContaining(["shipyard", "graph-runtime", "code"]),
+        getResultMetadata: expect.any(Function),
       }),
     );
+
+    const tracedOptions = vi.mocked(langsmith.runWithLangSmithTrace).mock.calls[0]?.[0];
+    const resultMetadata = tracedOptions?.getResultMetadata?.(finalState);
+
+    expect(resultMetadata).toMatchObject({
+      modelProvider: "anthropic",
+      modelName: "claude-sonnet-4-5",
+    });
   });
 
   it("marks graph trace metadata as using the explorer for broad instructions", async () => {

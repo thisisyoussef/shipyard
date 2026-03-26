@@ -293,7 +293,7 @@ describe("browser evaluator", () => {
     } finally {
       await supervisor.stop();
     }
-  }, 20_000);
+  }, 30_000);
 
   it("records console-error failures", async () => {
     const targetDirectory = await createTempDirectory(

@@ -71,6 +71,8 @@ export interface ModelTurnResult {
 
 export interface ModelAdapter<TProjectedTool = unknown> {
   readonly provider: string;
+  readonly defaultModel?: string;
+  readonly defaultMaxTokens?: number;
   projectTools: (tools: ToolDefinition[]) => TProjectedTool[];
   createTurn: (
     input: ModelTurnInput,

@@ -1,20 +1,22 @@
-import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 import { describe, expect, it } from "vitest";
 
 import {
   RAW_LOOP_MESSAGE_HISTORY_CHAR_BUDGET,
   buildCompactedMessageHistory,
 } from "../src/engine/history-compaction.js";
+import type { TurnMessage } from "../src/engine/model-adapter.js";
 
-function createStructuredToolResultMessage(content: string): MessageParam {
+function createStructuredToolResultMessage(content: string): TurnMessage {
   return {
     role: "user",
     content: [
       {
         type: "tool_result",
-        tool_use_id: "toolu_1",
-        content,
-        is_error: false,
+        toolCallId: "toolu_1",
+        result: {
+          success: true,
+          output: content,
+        },
       },
     ],
   };
@@ -36,15 +38,12 @@ describe("history compaction", () => {
             role: "assistant",
             content: [
               {
-                type: "tool_use",
-                id: "toolu_1",
-                name: "write_file",
+                type: "tool_call",
+                toolCallId: "toolu_1",
+                toolName: "write_file",
                 input: {
                   path: "src/data/seedData.ts",
                   content: "seed".repeat(4_000),
-                },
-                caller: {
-                  type: "direct",
                 },
               },
             ],

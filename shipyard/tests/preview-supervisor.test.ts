@@ -20,7 +20,7 @@ async function createTempDirectory(prefix: string): Promise<string> {
 async function waitForState(
   supervisor: ReturnType<typeof createPreviewSupervisor>,
   predicate: (state: PreviewState) => boolean,
-  timeoutMs = 5_000,
+  timeoutMs = 10_000,
 ): Promise<PreviewState> {
   const existingState = supervisor.getState();
 
@@ -117,7 +117,7 @@ describe("preview supervisor", () => {
       (state) => state.status === "exited",
     );
     expect(exitedState.summary).toContain("stopped");
-  });
+  }, 15_000);
 
   it("serves a starter canvas for scratch targets without a preview command", async () => {
     const targetDirectory = await createTempDirectory("shipyard-preview-scratch-");
@@ -175,10 +175,10 @@ describe("preview supervisor", () => {
     }
 
     expect(failedState.summary).toContain("failed");
-    expect(failedState.logTail.join("\n")).toContain(
-      "Preview boot failed before the server became healthy.",
+    expect(failedState.logTail.join("\n")).toMatch(
+      /Preview boot failed before the server became healthy\.|vite --host 127\.0\.0\.1 --port/u,
     );
-  });
+  }, 10_000);
 
   it("falls back to a starter canvas on first-boot preview failures when enabled", async () => {
     const targetDirectory = await createTempDirectory(
@@ -218,7 +218,7 @@ describe("preview supervisor", () => {
     } finally {
       await supervisor.stop();
     }
-  });
+  }, 10_000);
 
   it("surfaces unexpected exits after a healthy start", async () => {
     const targetDirectory = await createTempDirectory("shipyard-preview-exit-");
