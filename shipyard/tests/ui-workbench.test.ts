@@ -335,20 +335,16 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain('aria-label="Current location"');
   });
 
-  it("renders the deploy action and labels hosted, preview, and production URLs distinctly", () => {
+  it("renders deploy status and production URL in collapsible deploy section", () => {
     const markup = renderWorkbench({
       primaryView: "preview",
     });
 
     expect(markup).toContain("Deploy to Vercel");
-    expect(markup).toContain("Hosted Shipyard URL");
-    expect(markup).toContain("https://shipyard.example.com/workbench");
+    expect(markup).toContain("Deploy");
     expect(markup).toContain("Deployed target-app URL");
     expect(markup).toContain("https://shipyard-demo.vercel.app");
     expect(markup).toContain("Open deployed app");
-    expect(markup).toContain(
-      "This preview stays local to the hosted Shipyard workspace until you deploy the target.",
-    );
   });
 
   it("keeps deploy disabled with explicit guidance when hosted deploy prerequisites are missing", () => {
@@ -393,7 +389,7 @@ describe("ShipyardWorkbench", () => {
       ],
     });
 
-    expect(markup).toContain("Attach files");
+    expect(markup).toContain('aria-label="Attach files"');
     expect(markup).toContain("spec.md");
     expect(markup).toContain("notes.txt");
     expect(markup).toContain("unsupported binary content");
@@ -420,13 +416,12 @@ describe("ShipyardWorkbench", () => {
     expect(markup).not.toContain("Retry enrichment");
   });
 
-  it("renders preview status, inline result, and a direct preview link", () => {
+  it("renders preview iframe, toolbar, and deploy section when preview is running", () => {
     const markup = renderWorkbench({
       primaryView: "preview",
     });
 
     expect(markup).toContain("Local preview");
-    expect(markup).toContain("Preview is running on loopback.");
     expect(markup).toContain("Open preview");
     expect(markup).toContain('href="http://127.0.0.1:4173"');
     expect(markup).toContain('target="_blank"');
@@ -434,6 +429,10 @@ describe("ShipyardWorkbench", () => {
     expect(markup).toContain('title="Local preview"');
     expect(markup).toContain('src="http://127.0.0.1:4173"');
     expect(markup).toContain("VITE v5.0.8 ready in 145 ms");
+    // Preview toolbar shows URL
+    expect(markup).toContain("preview-toolbar");
+    // Deploy section is collapsible
+    expect(markup).toContain("preview-deploy-section");
   });
 
   // SKIP: UIV3 rebuild - full panel rendering reimplemented in S02-S08
