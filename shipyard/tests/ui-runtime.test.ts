@@ -2245,8 +2245,8 @@ describe("ui runtime contract", () => {
         const toolCalls = turnMessages.filter((message) => message.type === "agent:tool_call");
         const toolResults = turnMessages.filter((message) => message.type === "agent:tool_result");
         const editPreview = turnMessages.find((message) => message.type === "agent:edit");
-        expect(toolCalls).toHaveLength(2);
-        expect(toolResults).toHaveLength(2);
+        expect(toolCalls).toHaveLength(3);
+        expect(toolResults).toHaveLength(3);
         expect(toolCalls[0]).toMatchObject({
           type: "agent:tool_call",
           toolName: "read_file",
@@ -2256,6 +2256,11 @@ describe("ui runtime contract", () => {
           type: "agent:tool_call",
           toolName: "edit_block",
           summary: "path: package.json",
+        });
+        expect(toolCalls[2]).toMatchObject({
+          type: "agent:tool_call",
+          toolName: "run_command",
+          summary: expect.stringContaining("git diff --stat"),
         });
         expect(toolResults[0]).toMatchObject({
           type: "agent:tool_result",
@@ -2267,8 +2272,14 @@ describe("ui runtime contract", () => {
           toolName: "edit_block",
           success: true,
         });
+        expect(toolResults[2]).toMatchObject({
+          type: "agent:tool_result",
+          toolName: "run_command",
+          success: true,
+        });
         expect(toolResults[0]?.callId).toBe(toolCalls[0]?.callId);
         expect(toolResults[1]?.callId).toBe(toolCalls[1]?.callId);
+        expect(toolResults[2]?.callId).toBe(toolCalls[2]?.callId);
         expect(editPreview).toMatchObject({
           type: "agent:edit",
           path: "package.json",

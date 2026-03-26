@@ -79,9 +79,21 @@ function getKnownTargetFilePaths(options: {
 }): string[] {
   return uniqueStrings([
     ...options.contextEnvelope.task.targetFilePaths,
+    ...(options.contextEnvelope.session.recentTouchedFiles ?? []),
     ...(options.taskPlan?.targetFilePaths ?? []),
     ...(options.executionSpec?.targetFilePaths ?? []),
     ...(options.contextReport?.findings.map((finding) => finding.filePath) ?? []),
+  ]);
+}
+
+function getContinuationTargetFilePaths(options: {
+  contextEnvelope: ContextEnvelope;
+  taskPlan?: TaskPlan | null;
+}): string[] {
+  return uniqueStrings([
+    ...options.contextEnvelope.task.targetFilePaths,
+    ...(options.contextEnvelope.session.recentTouchedFiles ?? []),
+    ...(options.taskPlan?.targetFilePaths ?? []),
   ]);
 }
 
@@ -162,6 +174,15 @@ export function shouldCoordinatorUsePlanner(options: {
   }
 
   if (isClearlyLightweightInstruction(options.instruction)) {
+    return false;
+  }
+
+  if (
+    getContinuationTargetFilePaths({
+      contextEnvelope: options.contextEnvelope,
+      taskPlan: options.taskPlan,
+    }).length > 0
+  ) {
     return false;
   }
 

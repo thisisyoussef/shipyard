@@ -309,18 +309,14 @@ async function createSubagentLoopOptions(
   state: AgentGraphState,
   dependencies: AgentRuntimeDependencies,
   signal?: AbortSignal,
-): Promise<
-  Pick<RawToolLoopOptions, "client" | "logger" | "maxIterations" | "signal">
-> {
+): Promise<RawToolLoopOptions> {
   const rawLoopOptions =
     await dependencies.createRawLoopOptions?.(state)
     ?? {};
 
   return {
-    client: rawLoopOptions.client,
-    logger: rawLoopOptions.logger,
-    maxIterations: rawLoopOptions.maxIterations,
-    signal,
+    ...rawLoopOptions,
+    signal: signal ?? rawLoopOptions.signal,
   };
 }
 

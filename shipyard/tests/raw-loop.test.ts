@@ -377,6 +377,132 @@ describe("raw Claude tool loop", () => {
     expect(toolResults[1]?.payload.output).toContain("Path: package.json");
   });
 
+  it("compacts oversized completed tool turns before replaying them to Anthropic", async () => {
+    const directory = await createTempProject();
+    const largeFileContents =
+      `export const LARGE_PAYLOAD = "${"x".repeat(18_000)}";\n`;
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_big_write",
+            name: "write_file",
+            input: {
+              path: "src/big.ts",
+              content: largeFileContents,
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Large file written successfully.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+
+    const result = await runRawToolLoop(
+      "You are Shipyard.",
+      "Create a large TypeScript file.",
+      ["write_file"],
+      directory,
+      {
+        client,
+        logger: {
+          log() {},
+        },
+      },
+    );
+
+    const replayedHistory = JSON.stringify(client.calls[1]?.messages ?? []);
+
+    expect(result).toBe("Large file written successfully.");
+    expect(replayedHistory).not.toContain(largeFileContents);
+    expect(replayedHistory).toContain("Earlier completed tool cycles were compacted");
+    expect(replayedHistory).toContain("src/big.ts");
+  });
+
+  it("retries stop_reason=max_tokens with a higher max_tokens budget", async () => {
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "max_tokens",
+        content: [],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Recovered after raising the output budget.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+
+    const result = await runRawToolLoop(
+      "You are Shipyard.",
+      "Explain the repo status.",
+      [],
+      process.cwd(),
+      {
+        client,
+        logger: {
+          log() {},
+        },
+        maxTokens: 1024,
+        maxTokensRecoveryRetries: 1,
+        maxTokensRetryMultiplier: 2,
+      },
+    );
+
+    expect(result).toBe("Recovered after raising the output budget.");
+    expect(client.calls[0]?.max_tokens).toBe(1024);
+    expect(client.calls[1]?.max_tokens).toBe(2048);
+    expect(client.calls[0]?.messages).toEqual(client.calls[1]?.messages);
+  });
+
+  it("raises a targeted budget error when max_tokens exhaustion persists", async () => {
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "max_tokens",
+        content: [],
+      }),
+      createAssistantMessage({
+        stopReason: "max_tokens",
+        content: [],
+      }),
+    ]);
+
+    await expect(
+      runRawToolLoop(
+        "You are Shipyard.",
+        "Explain the repo status.",
+        [],
+        process.cwd(),
+        {
+          client,
+          logger: {
+            log() {},
+          },
+          maxTokens: 1024,
+          maxTokensRecoveryRetries: 1,
+          maxTokensRetryMultiplier: 2,
+        },
+      ),
+    ).rejects.toThrowError(/output budget exhausted|stop_reason=max_tokens/i);
+  });
+
   it("fails after 25 iterations without a final response", async () => {
     const client = createMockAnthropicClient((_request, turnNumber) =>
       createAssistantMessage({

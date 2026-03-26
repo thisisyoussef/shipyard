@@ -3,7 +3,7 @@
 - Pack: Runtime Hardening (Supplemental)
 - Estimate: 8-12 hours
 - Date: 2026-03-26
-- Status: Backlog
+- Status: Implemented on branch; live LangSmith finish-check pending provider credentials
 
 ## Pack Objectives
 
@@ -51,4 +51,62 @@
 
 ## Implementation Evidence
 
-- N/A. Planning-only supplemental pack drafted on 2026-03-26; no implementation landed in this change.
+- `RTH-S01` Context compaction and prompt budgets
+  Code References:
+  - `shipyard/src/engine/history-compaction.ts`
+  - `shipyard/src/engine/raw-loop.ts`
+  - `shipyard/src/context/envelope.ts`
+  - `shipyard/src/engine/turn-summary.ts`
+  Representative Snippet:
+  ```ts
+  const requestHistory = buildCompactedMessageHistory({
+    initialUserMessage,
+    completedTurns: completedToolTurns,
+  });
+  ```
+- `RTH-S02` Anthropic budget defaults and `max_tokens` recovery
+  Code References:
+  - `shipyard/src/engine/anthropic.ts`
+  - `shipyard/src/engine/raw-loop.ts`
+  - `shipyard/tests/anthropic-contract.test.ts`
+  - `shipyard/tests/raw-loop.test.ts`
+  Representative Snippet:
+  ```ts
+  if (assistantMessage.stop_reason === "max_tokens") {
+    // retry with a higher max_tokens budget before failing closed
+  }
+  ```
+- `RTH-S03` Continuation-aware routing and subagent visibility
+  Code References:
+  - `shipyard/src/engine/state.ts`
+  - `shipyard/src/engine/turn.ts`
+  - `shipyard/src/agents/coordinator.ts`
+  - `shipyard/src/engine/graph.ts`
+  - `shipyard/tests/turn-runtime.test.ts`
+  - `shipyard/tests/ui-runtime.test.ts`
+  Representative Snippet:
+  ```ts
+  if (context.toolExecution.editedPath) {
+    rememberRecentFilePath(sessionState.recentTouchedFiles, context.toolExecution.editedPath);
+  }
+  ```
+- `RTH-S04` Bootstrap seed-doc allowlist alignment
+  Code References:
+  - `shipyard/src/tools/target-manager/bootstrap-target.ts`
+  - `shipyard/tests/scaffold-bootstrap.test.ts`
+  Representative Snippet:
+  ```ts
+  allowedExistingEntries: [".shipyard", ".git", "AGENTS.md", "README.md"],
+  ```
+- `RTH-S05` Graph-aware long-run live smoke
+  Code References:
+  - `shipyard/tests/manual/phase3-live-loop-smoke.ts`
+  - `shipyard/tests/manual/README.md`
+  Representative Snippet:
+  ```ts
+  const followUpTurn = await executeInstructionTurn({
+    sessionState,
+    runtimeState,
+    instruction: FOLLOW_UP_CONTINUATION_INSTRUCTION,
+  });
+  ```

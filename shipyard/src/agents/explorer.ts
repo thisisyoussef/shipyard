@@ -67,10 +67,7 @@ Rules:
 `.trim();
 
 export interface ExplorerRunOptions
-  extends Pick<
-    RawToolLoopOptions,
-    "client" | "logger" | "maxIterations" | "signal"
-  > {}
+  extends RawToolLoopOptions {}
 
 function ensureNonBlankQuery(query: string): string {
   const trimmed = query.trim();
@@ -232,12 +229,7 @@ export async function runExplorerSubagent(
     normalizedQuery,
     [...EXPLORER_TOOL_NAMES],
     targetDirectory,
-    {
-      client: options.client,
-      logger: options.logger,
-      maxIterations: options.maxIterations,
-      signal: options.signal,
-    },
+    { ...options },
   );
 
   if (result.status === "cancelled") {

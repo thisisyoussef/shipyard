@@ -15,16 +15,24 @@ import { getLangSmithConfig } from "../tracing/langsmith.js";
 import { toTurnCancelledError } from "./cancellation.js";
 
 export const DEFAULT_ANTHROPIC_MODEL: Model = "claude-sonnet-4-5";
-export const DEFAULT_ANTHROPIC_MAX_TOKENS = 4_096;
-export const DEFAULT_ANTHROPIC_TIMEOUT_MS = 30_000;
+export const DEFAULT_ANTHROPIC_MAX_TOKENS = 8_192;
+export const DEFAULT_ANTHROPIC_TIMEOUT_MS = 120_000;
 export const DEFAULT_ANTHROPIC_MAX_RETRIES = 1;
 
-export interface AnthropicConfig {
-  apiKey: string;
+const SHIPYARD_ANTHROPIC_MODEL_ENV = "SHIPYARD_ANTHROPIC_MODEL";
+const SHIPYARD_ANTHROPIC_MAX_TOKENS_ENV = "SHIPYARD_ANTHROPIC_MAX_TOKENS";
+const SHIPYARD_ANTHROPIC_TIMEOUT_MS_ENV = "SHIPYARD_ANTHROPIC_TIMEOUT_MS";
+const SHIPYARD_ANTHROPIC_MAX_RETRIES_ENV = "SHIPYARD_ANTHROPIC_MAX_RETRIES";
+
+export interface AnthropicRuntimeConfig {
   model: Model;
   maxTokens: number;
   timeoutMs: number;
   maxRetries: number;
+}
+
+export interface AnthropicConfig extends AnthropicRuntimeConfig {
+  apiKey: string;
 }
 
 export interface ResolveAnthropicConfigOptions {
@@ -43,6 +51,7 @@ export interface ClaudeRequestInput {
   model?: Model;
   maxTokens?: number;
   temperature?: number;
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface AnthropicMessagesClient {
@@ -105,6 +114,44 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function parseOptionalPositiveIntegerEnv(
+  env: NodeJS.ProcessEnv,
+  envName: string,
+): number | undefined {
+  const rawValue = env[envName]?.trim();
+
+  if (!rawValue) {
+    return undefined;
+  }
+
+  if (!/^\d+$/u.test(rawValue)) {
+    throw new Error(
+      `${envName} must be a positive integer when set. Received: ${rawValue}`,
+    );
+  }
+
+  return ensurePositiveInteger(Number.parseInt(rawValue, 10), envName);
+}
+
+function parseOptionalNonNegativeIntegerEnv(
+  env: NodeJS.ProcessEnv,
+  envName: string,
+): number | undefined {
+  const rawValue = env[envName]?.trim();
+
+  if (!rawValue) {
+    return undefined;
+  }
+
+  if (!/^\d+$/u.test(rawValue)) {
+    throw new Error(
+      `${envName} must be a non-negative integer when set. Received: ${rawValue}`,
+    );
+  }
+
+  return ensureNonNegativeInteger(Number.parseInt(rawValue, 10), envName);
+}
+
 function assertTextBlock(block: unknown, index: number): asserts block is TextBlock {
   if (!isPlainObject(block) || typeof block.text !== "string") {
     throw new Error(
@@ -151,17 +198,39 @@ export function resolveAnthropicConfig(
 
   return {
     apiKey,
-    model: options.model ?? DEFAULT_ANTHROPIC_MODEL,
+    ...resolveAnthropicRuntimeConfig(options),
+  };
+}
+
+export function resolveAnthropicRuntimeConfig(
+  options: ResolveAnthropicConfigOptions = {},
+): AnthropicRuntimeConfig {
+  const env = options.env ?? process.env;
+  const model = ensureNonBlankString(
+    options.model
+      ?? (env[SHIPYARD_ANTHROPIC_MODEL_ENV] as Model | undefined)
+      ?? DEFAULT_ANTHROPIC_MODEL,
+    "model",
+  ) as Model;
+
+  return {
+    model,
     maxTokens: ensurePositiveInteger(
-      options.maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS,
+      options.maxTokens
+        ?? parseOptionalPositiveIntegerEnv(env, SHIPYARD_ANTHROPIC_MAX_TOKENS_ENV)
+        ?? DEFAULT_ANTHROPIC_MAX_TOKENS,
       "maxTokens",
     ),
     timeoutMs: ensurePositiveInteger(
-      options.timeoutMs ?? DEFAULT_ANTHROPIC_TIMEOUT_MS,
+      options.timeoutMs
+        ?? parseOptionalPositiveIntegerEnv(env, SHIPYARD_ANTHROPIC_TIMEOUT_MS_ENV)
+        ?? DEFAULT_ANTHROPIC_TIMEOUT_MS,
       "timeoutMs",
     ),
     maxRetries: ensureNonNegativeInteger(
-      options.maxRetries ?? DEFAULT_ANTHROPIC_MAX_RETRIES,
+      options.maxRetries
+        ?? parseOptionalNonNegativeIntegerEnv(env, SHIPYARD_ANTHROPIC_MAX_RETRIES_ENV)
+        ?? DEFAULT_ANTHROPIC_MAX_RETRIES,
       "maxRetries",
     ),
   };
@@ -291,6 +360,11 @@ export function buildAnthropicMessageRequest(
   input: ClaudeRequestInput,
 ): MessageCreateParamsNonStreaming {
   const systemPrompt = ensureNonBlankString(input.systemPrompt, "systemPrompt");
+  const runtimeConfig = resolveAnthropicRuntimeConfig({
+    model: input.model,
+    maxTokens: input.maxTokens,
+    env: input.env,
+  });
 
   if (input.messages.length === 0) {
     throw new Error("messages must contain at least one message.");
@@ -305,11 +379,8 @@ export function buildAnthropicMessageRequest(
     // Snapshot the request history so later loop mutations do not retroactively
     // change the payload we already sent to Anthropic.
     messages: [...input.messages],
-    model: input.model ?? DEFAULT_ANTHROPIC_MODEL,
-    max_tokens: ensurePositiveInteger(
-      input.maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS,
-      "maxTokens",
-    ),
+    model: runtimeConfig.model,
+    max_tokens: runtimeConfig.maxTokens,
   };
 
   if (input.temperature !== undefined) {
