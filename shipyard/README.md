@@ -216,7 +216,13 @@ held the original port.
 The current hosted Railway path keeps the existing browser runtime and
 target-manager flow:
 
-- run Shipyard in browser mode: `pnpm --dir shipyard start -- --ui`
+- if Railway is connected to the full repo, set the service `Root Directory`
+  to `/shipyard`
+- point Railway config-as-code at `/shipyard/railway.json`
+- let Railway run the checked-in build command from that app root:
+  `pnpm install --frozen-lockfile && pnpm build`
+- run Shipyard in browser mode from that same app root:
+  `pnpm start -- --ui`
 - set `SHIPYARD_TARGETS_DIR=/app/workspace`
 - set `SHIPYARD_UI_HOST=0.0.0.0`
 - let Railway provide `PORT`; Shipyard falls back to it when
@@ -231,7 +237,10 @@ target-manager flow:
 - set `VERCEL_TOKEN` to enable `deploy_target` and automatic public publishing
   after successful edited turns
 - use `/api/health` for the service health check
-- point Railway config-as-code at [`railway.json`](./railway.json)
+
+If you use the repo-owned GitHub Actions deploy instead of Railway's native
+GitHub sync, the workflow already uploads `shipyard/` with `--path-as-root`
+and does not require a separate Railway `Root Directory` setting.
 
 Hosted Shipyard keeps preview supervision for capability checks and browser
 evaluation, but the operator surface emphasizes target selection, file/output
