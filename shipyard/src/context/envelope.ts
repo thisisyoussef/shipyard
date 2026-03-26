@@ -6,6 +6,10 @@ import type {
   DiscoveryReport,
   LoadedExecutionHandoff,
 } from "../artifacts/types.js";
+import {
+  normalizeRuntimeFeatureFlags,
+  type RuntimeFeatureFlags,
+} from "../engine/runtime-flags.js";
 import type { ContextEnvelope } from "../engine/state.js";
 import { truncateText } from "../engine/turn-summary.js";
 
@@ -28,6 +32,7 @@ export interface BuildContextEnvelopeOptions {
   recentToolOutputs?: string[];
   recentErrors?: string[];
   currentGitDiff?: string | null;
+  featureFlags?: Partial<RuntimeFeatureFlags>;
   retryCountsByFile?: Record<string, number>;
   blockedFiles?: string[];
   recentTouchedFiles?: string[];
@@ -248,6 +253,7 @@ export async function buildContextEnvelope(
       recentToolOutputs: [...(options.recentToolOutputs ?? [])],
       recentErrors: [...(options.recentErrors ?? [])],
       currentGitDiff: options.currentGitDiff ?? null,
+      featureFlags: normalizeRuntimeFeatureFlags(options.featureFlags),
     },
     session: {
       rollingSummary: options.rollingSummary,

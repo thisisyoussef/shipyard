@@ -11,6 +11,7 @@ import type {
   VerificationReport,
 } from "../artifacts/types.js";
 import { createBrowserEvaluationTargetFromPreviewState } from "./browser-evaluator.js";
+import { normalizeRuntimeFeatureFlags } from "../engine/runtime-flags.js";
 import type { ContextEnvelope } from "../engine/state.js";
 import { normalizeTargetRelativePath } from "../tools/file-state.js";
 
@@ -115,6 +116,14 @@ const targetedInstructionWordCeiling = 18;
 const uiFilePathPattern =
   /(^|\/)(app|components|pages|routes|ui)\//i;
 const uiFileExtensionPattern = /\.(?:tsx|jsx|css|scss|sass|less|html)$/i;
+const styleSheetFileExtensionPattern = /\.(?:css|scss|sass|less)$/i;
+const singleTurnUiBuildActionPattern =
+  /\b(make|create|build|design|implement|craft|polish|restyle)\b/i;
+const singleTurnUiBuildSurfacePattern =
+  /\b(login|sign[ -]?in|signup|sign[ -]?up|auth(?:entication)?|landing|pricing|checkout|settings|profile|form|page|screen|modal|dialog|component)\b/i;
+const continuationInstructionPattern =
+  /\b(continue|resume|keep going|finish)\b/i;
+const broadScopeInstructionPattern = /\b(app|project|workspace|flow|system)\b/i;
 
 export type CoordinatorRouteComplexity = Exclude<
   HarnessTaskComplexity,
@@ -139,6 +148,10 @@ function isBootstrapReadyContext(
     contextEnvelope.stable.discovery.bootstrapReady
     || contextEnvelope.stable.discovery.isGreenfield,
   );
+}
+
+function getRuntimeFeatureFlags(contextEnvelope: ContextEnvelope) {
+  return normalizeRuntimeFeatureFlags(contextEnvelope.runtime.featureFlags);
 }
 
 function cleanInstructionToken(token: string): string {
@@ -167,9 +180,14 @@ function getKnownTargetFilePaths(options: {
   executionSpec?: ExecutionSpec | null;
   contextReport?: ContextReport | null;
 }): string[] {
+  const featureFlags = getRuntimeFeatureFlags(options.contextEnvelope);
+  const recentTouchedFiles = featureFlags.disableRecentTouchedScopeWidening
+    ? []
+    : (options.contextEnvelope.session.recentTouchedFiles ?? []);
+
   return uniqueStrings([
     ...options.contextEnvelope.task.targetFilePaths,
-    ...(options.contextEnvelope.session.recentTouchedFiles ?? []),
+    ...recentTouchedFiles,
     ...(options.taskPlan?.targetFilePaths ?? []),
     ...(options.executionSpec?.targetFilePaths ?? []),
     ...(options.contextReport?.findings.map((finding) => finding.filePath) ?? []),
@@ -303,7 +321,6 @@ export function isClearlyLightweightInstruction(instruction: string): boolean {
     normalizedInstruction.startsWith(prefix)
   );
 }
-
 function looksLikeBroadInstruction(instruction: string): boolean {
   return broadInstructionKeywordPatterns.some((pattern) =>
     pattern.test(instruction)
@@ -426,7 +443,30 @@ export function createCoordinatorRouteDecision(options: {
     reason: "Instruction is ambiguous enough to keep the heavier planning path.",
   };
 }
+export function isSingleTurnUiBuildInstruction(instruction: string): boolean {
+  const normalizedInstruction = instruction.trim().toLowerCase();
 
+  if (!normalizedInstruction) {
+    return false;
+  }
+
+  if (continuationInstructionPattern.test(normalizedInstruction)) {
+    return false;
+  }
+
+  if (!singleTurnUiBuildActionPattern.test(normalizedInstruction)) {
+    return false;
+  }
+
+  if (!singleTurnUiBuildSurfacePattern.test(normalizedInstruction)) {
+    return false;
+  }
+
+  return !(
+    broadScopeInstructionPattern.test(normalizedInstruction)
+    && !/\b(page|screen|form|modal|dialog|component)\b/i.test(normalizedInstruction)
+  );
+}
 export function shouldCoordinatorUsePlanner(options: {
   instruction: string;
   contextEnvelope: ContextEnvelope;
@@ -539,7 +579,10 @@ export function createVerificationCommand(
 
 function createVerificationChecks(
   contextEnvelope: ContextEnvelope,
-  editedFilePath?: string | null,
+  options: {
+    editedFilePath?: string | null;
+    touchedFiles?: string[];
+  } = {},
 ): EvaluationPlan["checks"] {
   const packageManager = contextEnvelope.stable.discovery.packageManager;
   const checks = verificationScriptPriority
@@ -551,6 +594,7 @@ function createVerificationChecks(
       command: buildPackageManagerScriptCommand(packageManager, scriptName),
       required: true,
     }));
+  const editedFilePath = options.editedFilePath;
 
   if (
     shouldUseNoInstallVerificationFallback({
@@ -558,7 +602,63 @@ function createVerificationChecks(
       editedFilePath,
     })
   ) {
-    return [createFilePresenceVerificationCheck(editedFilePath!)];
+    const fallbackChecks = [createFilePresenceVerificationCheck(editedFilePath!)];
+    const featureFlags = getRuntimeFeatureFlags(contextEnvelope);
+    const touchedStyleSheets = uniqueStrings(
+      (options.touchedFiles ?? []).filter((filePath) =>
+        styleSheetFileExtensionPattern.test(filePath)
+      ),
+    );
+    const shouldRequireStyleSheetReferences =
+      featureFlags.enableStrictFreshUiVerification
+      && touchedStyleSheets.length > 0
+      && (
+        looksLikeUiRelevantInstruction(contextEnvelope.task.currentInstruction)
+        || looksLikeUiRelevantFilePath(editedFilePath!)
+        || touchedStyleSheets.some((filePath) =>
+          looksLikeUiRelevantFilePath(filePath)
+        )
+      );
+
+    if (shouldRequireStyleSheetReferences) {
+      fallbackChecks.push(
+        ...touchedStyleSheets.map((filePath, index) => {
+          const normalizedFilePath = normalizeTargetRelativePath(filePath);
+          const fileName =
+            normalizedFilePath.split("/").at(-1) ?? normalizedFilePath;
+          const successMessage =
+            `Stylesheet reference found for ${normalizedFilePath}`;
+          const failureMessage =
+            `Stylesheet reference missing for ${normalizedFilePath}`;
+          const command = [
+            "search_paths=''",
+            "[ -d src ] && search_paths=\"$search_paths src\"",
+            "[ -d app ] && search_paths=\"$search_paths app\"",
+            "[ -d pages ] && search_paths=\"$search_paths pages\"",
+            "[ -d components ] && search_paths=\"$search_paths components\"",
+            "[ -d routes ] && search_paths=\"$search_paths routes\"",
+            "[ -f index.html ] && search_paths=\"$search_paths index.html\"",
+            "[ -n \"$search_paths\" ] || search_paths='.'",
+            `if rg -n --hidden --glob '!node_modules/**' --glob '!.shipyard/**' --glob '!dist/**' --glob '!build/**' --fixed-strings ${quoteForShell(fileName)} $search_paths; then`,
+            `  echo ${quoteForShell(successMessage)}`,
+            "else",
+            `  echo ${quoteForShell(failureMessage)} >&2`,
+            "  exit 1",
+            "fi",
+          ].join("\n");
+
+          return {
+            id: `check-${String(index + 2)}`,
+            label: `Confirm ${normalizedFilePath} is referenced from source files`,
+            kind: "command" as const,
+            command,
+            required: true,
+          };
+        }),
+      );
+    }
+
+    return fallbackChecks;
   }
 
   if (checks.length > 0) {
@@ -580,10 +680,14 @@ export function createVerificationPlan(options: {
   contextEnvelope: ContextEnvelope;
   executionSpec?: ExecutionSpec | null;
   editedFilePath?: string | null;
+  touchedFiles?: string[];
 }): EvaluationPlan {
   const checks = createVerificationChecks(
     options.contextEnvelope,
-    options.editedFilePath,
+    {
+      editedFilePath: options.editedFilePath,
+      touchedFiles: options.touchedFiles,
+    },
   );
 
   return {

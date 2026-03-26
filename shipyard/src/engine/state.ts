@@ -17,6 +17,7 @@ import {
   ensureWorkbenchStateDefaults,
   type WorkbenchViewState,
 } from "../ui/workbench-state.js";
+import type { RuntimeFeatureFlags } from "./runtime-flags.js";
 
 export type SessionPhase = "code" | "target-manager";
 
@@ -53,6 +54,7 @@ export interface ContextEnvelope {
     recentToolOutputs: string[];
     recentErrors: string[];
     currentGitDiff: string | null;
+    featureFlags?: RuntimeFeatureFlags;
   };
   session: {
     rollingSummary: string;

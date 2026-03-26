@@ -486,6 +486,24 @@ describe("Phase 4 graph runtime contract", () => {
   });
 
   it("derives narrow and broad acting-loop budgets from task shape", () => {
+    const singleTurnUiBudget = determineActingLoopBudget({
+      instruction: "Make a login page with a polished sign-in form.",
+      contextEnvelope: {
+        ...createContextEnvelope(),
+        runtime: {
+          ...createContextEnvelope().runtime,
+          featureFlags: {
+            disableRecentTouchedScopeWidening: false,
+            preferSingleTurnUiBuilds: true,
+            enableStrictFreshUiVerification: false,
+          },
+        },
+      },
+      taskPlan: null,
+      executionSpec: null,
+      contextReport: null,
+      latestHandoff: null,
+    });
     const broadBudget = determineActingLoopBudget({
       instruction:
         "Bootstrap this seeded target, create apps/web/src/lib/seed-data.ts, and update apps/web/src/App.tsx to build a Trello-style dashboard.",
@@ -629,6 +647,10 @@ describe("Phase 4 graph runtime contract", () => {
       latestHandoff: null,
     });
 
+    expect(singleTurnUiBudget).toEqual({
+      maxIterations: 60,
+      reason: "single-turn-ui-build",
+    });
     expect(broadBudget).toEqual({
       maxIterations: 45,
       reason: "broad-greenfield",
@@ -876,6 +898,80 @@ describe("Phase 4 graph runtime contract", () => {
       expectedCommand,
     ]);
     expect(update.verificationReport?.command).toBe(expectedCommand);
+    expect(update.status).toBe("responding");
+  });
+
+  it("verify node adds stylesheet reference checks for fresh UI fallback when strict verification is enabled", async () => {
+    const directory = await createTempProject();
+    const appPath = path.join(directory, "apps", "web", "src", "App.tsx");
+    const stylePath = path.join(directory, "apps", "web", "src", "login.css");
+
+    await mkdir(path.dirname(appPath), { recursive: true });
+    await writeFile(appPath, "export function App() { return null; }\n", "utf8");
+    await writeFile(stylePath, ".login { display: grid; }\n", "utf8");
+
+    const contextEnvelope = createContextEnvelope();
+
+    contextEnvelope.stable.discovery = {
+      ...contextEnvelope.stable.discovery,
+      isGreenfield: true,
+      packageManager: null,
+      scripts: {},
+      topLevelFiles: [],
+      topLevelDirectories: ["apps"],
+      projectName: null,
+    };
+    contextEnvelope.stable.availableScripts = {};
+    contextEnvelope.task.currentInstruction = "Make a login page.";
+    contextEnvelope.runtime.featureFlags = {
+      disableRecentTouchedScopeWidening: false,
+      preferSingleTurnUiBuilds: false,
+      enableStrictFreshUiVerification: true,
+    };
+
+    const runVerifierSubagent = vi.fn(async (input: string | EvaluationPlan) => ({
+      command: typeof input === "string" ? input : input.checks[0]?.command ?? "",
+      exitCode: 0,
+      passed: true,
+      stdout: "verification ok\n",
+      stderr: "",
+      summary: "Verification passed.",
+      evaluationPlan: typeof input === "string" ? undefined : input,
+      checks: [],
+      firstHardFailure: null,
+      browserEvaluationReport: null,
+    }));
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runVerifierSubagent,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Make a login page.",
+      contextEnvelope,
+      previewState: createPreviewState(),
+      targetDirectory: directory,
+      phaseConfig: createCodePhase(),
+      lastEditedFile: "apps/web/src/App.tsx",
+      touchedFiles: ["apps/web/src/App.tsx", "apps/web/src/login.css"],
+    });
+
+    const update = await nodes.verify(state);
+    const verifierCall = runVerifierSubagent.mock.calls.at(0)?.[0] as
+      | EvaluationPlan
+      | undefined;
+
+    expect(verifierCall?.checks).toHaveLength(2);
+    expect(verifierCall?.checks[0]).toMatchObject({
+      label: "Confirm apps/web/src/App.tsx still exists",
+      command:
+        "test -f 'apps/web/src/App.tsx' && echo 'Edited file exists: apps/web/src/App.tsx'",
+    });
+    expect(verifierCall?.checks[1]?.label).toContain(
+      "apps/web/src/login.css",
+    );
+    expect(verifierCall?.checks[1]?.command).toContain("login.css");
     expect(update.status).toBe("responding");
   });
 

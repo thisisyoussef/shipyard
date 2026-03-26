@@ -339,6 +339,7 @@ export async function executePlanningTurn(
       rollingSummary: state.rollingSummary,
       retryCountsByFile: runtimeState.retryCountsByFile,
       blockedFiles: runtimeState.blockedFiles,
+      featureFlags: runtimeState.featureFlags,
     });
 
     runtimeState.projectRules = contextEnvelope.stable.projectRules;

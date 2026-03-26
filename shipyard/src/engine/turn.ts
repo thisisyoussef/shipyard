@@ -21,6 +21,7 @@ import {
   buildContextEnvelope,
   composeSystemPrompt,
 } from "../context/envelope.js";
+import { isSingleTurnUiBuildInstruction } from "../agents/coordinator.js";
 import { createCodePhase } from "../phases/code/index.js";
 import { createTargetManagerPhase } from "../phases/target-manager/index.js";
 import { gitDiffTool } from "../tools/index.js";
@@ -68,6 +69,10 @@ import {
   type ModelRoutingOverrides,
 } from "./model-routing.js";
 import {
+  resolveRuntimeFeatureFlags,
+  type RuntimeFeatureFlags,
+} from "./runtime-flags.js";
+import {
   createTurnExecutionFingerprint,
   formatTurnExecutionFingerprint,
   type RuntimeSurface,
@@ -105,6 +110,7 @@ export interface InstructionRuntimeState {
   runtimeMode: InstructionRuntimeMode;
   runtimeDependencies?: AgentRuntimeDependencies;
   continuationLimits: InstructionContinuationLimits;
+  featureFlags: RuntimeFeatureFlags;
 }
 
 export interface TurnStateEvent {
@@ -787,6 +793,7 @@ export function createInstructionRuntimeState(
     baseInjectedContext?: string[];
     continuationLimits?: Partial<InstructionContinuationLimits>;
     modelRouting?: ModelRoutingOverrides;
+    featureFlags?: Partial<RuntimeFeatureFlags>;
     env?: NodeJS.ProcessEnv;
     targetEnrichmentInvoker?: (
       prompt: string,
@@ -802,6 +809,10 @@ export function createInstructionRuntimeState(
   const modelRouting = createModelRoutingConfig({
     env: modelRoutingEnv,
     ...options.modelRouting,
+  });
+  const featureFlags = resolveRuntimeFeatureFlags({
+    env: modelRoutingEnv,
+    overrides: options.featureFlags,
   });
 
   return {
@@ -825,6 +836,7 @@ export function createInstructionRuntimeState(
         options.continuationLimits?.maxWallClockMs
         ?? DEFAULT_INSTRUCTION_CONTINUATION_LIMITS.maxWallClockMs,
     },
+    featureFlags,
   };
 }
 
@@ -1013,6 +1025,7 @@ export async function executeInstructionTurn(
       recentTouchedFiles: state.recentTouchedFiles,
       latestHandoff: loadedHandoff,
       activeTask: state.activeTask,
+      featureFlags: runtimeState.featureFlags,
     });
 
     runtimeState.projectRules = contextEnvelope.stable.projectRules;
@@ -1100,6 +1113,14 @@ export async function executeInstructionTurn(
         actingIterations: finalState.actingIterations,
         retryCountsByFile: finalState.retryCountsByFile,
         blockedFiles: finalState.blockedFiles,
+        thresholds:
+          runtimeState.featureFlags.preferSingleTurnUiBuilds
+          && isSingleTurnUiBuildInstruction(options.instruction)
+            ? {
+              actingIterations: Number.MAX_SAFE_INTEGER,
+              recoveryAttempts: Number.MAX_SAFE_INTEGER,
+            }
+            : undefined,
       });
       let emittedHandoff: LoadedExecutionHandoff | null = null;
 
