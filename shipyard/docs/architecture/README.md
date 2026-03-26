@@ -107,6 +107,7 @@ how Shipyard routes standard code turns.
 
 ```mermaid
 flowchart TD
+  TriageNode["triage<br/>direct vs targeted vs broad"]
   PlanNode["plan"]
   NeedExplorer{"Explorer needed?"}
   Explorer["Explorer subagent<br/>read_file / list_files / search_files"]
@@ -123,6 +124,7 @@ flowchart TD
   RespondNode["respond"]
   TurnWrapper["turn.ts wrapper<br/>handoff decision + session save"]
 
+  TriageNode --> PlanNode
   PlanNode --> NeedExplorer
   NeedExplorer -- yes --> Explorer
   NeedExplorer -- no --> NeedPlanner
@@ -149,11 +151,16 @@ flowchart TD
 - `plan`: optionally gathers read-only context with the explorer, optionally
   upgrades broad instructions to a planner-backed `ExecutionSpec`, and always
   emits a coordinator `TaskPlan`.
+- `triage`: classifies the request up front so exact-path or clearly targeted
+  work can stay lightweight while broad, cross-cutting work keeps the heavier
+  planner/browser-evaluator lane.
 - `act`: runs the raw model/tool loop for the current phase. `edit_block`
   writes are checkpointed first.
 - `verify`: runs the verifier's command-based `EvaluationPlan`. If the request
-  looks UI-relevant and a loopback preview is running, Shipyard also runs the
-  browser evaluator and folds its result into the final verification report.
+  looks UI-relevant, the request was classified as broad (or explicitly asked
+  for preview verification), and a loopback preview is running, Shipyard also
+  runs the browser evaluator and folds its result into the final verification
+  report.
 - `recover`: restores the latest checkpoint, re-reads the edited file, and
   either replans or blocks the file after repeated failures.
 - `respond`: finalizes the turn outcome. `engine/turn.ts` then decides whether

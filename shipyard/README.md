@@ -42,7 +42,7 @@ Within those surfaces, Shipyard routes work through three turn types:
   `next`, and `continue`
 - shared turn execution used by terminal and browser mode for both code and
   target-manager phases
-- graph runtime with explicit `plan -> act -> verify -> recover -> respond`
+- graph runtime with explicit `triage -> plan -> act -> verify -> recover -> respond`
   routing plus raw fallback parity
 - coordinator heuristics that can escalate to explorer, planner, verifier, and
   browser-evaluator helpers when the request needs them
@@ -167,11 +167,10 @@ shipyard/
 3. `src/context/discovery.ts`, `src/context/envelope.ts`, and
    `src/engine/runtime-context.ts` build the stable, task, runtime, and session
    context for the selected phase.
-4. `src/engine/graph.ts` decides whether to stay lightweight or go
-   planner-backed, optionally uses explorer/planner helpers during `plan`,
-   executes the raw tool loop in `act`, verifies with command checks and
-   optional browser evaluation in `verify`, and restores checkpoints in
-   `recover`.
+4. `src/engine/graph.ts` first classifies the request in `triage`, then decides
+   whether to stay lightweight or go planner-backed in `plan`, executes the
+   raw tool loop in `act`, verifies with command checks and optional browser
+   evaluation in `verify`, and restores checkpoints in `recover`.
 5. `src/tools/*` and `src/tools/target-manager/*` interact with the target
    repository, target catalog, spec files, bootstrap presets, and deploy
    provider.

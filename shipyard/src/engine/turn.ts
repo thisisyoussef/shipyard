@@ -195,6 +195,7 @@ function createHarnessRouteForErrorState(
 
   return {
     selectedPath: "lightweight",
+    taskComplexity: "unclassified",
     usedExplorer: false,
     usedPlanner: false,
     usedVerifier: false,

@@ -123,6 +123,7 @@ function createInstructionTurnResult(
     langSmithTrace: null,
     harnessRoute: {
       selectedPath: "lightweight",
+      taskComplexity: "direct",
       usedExplorer: false,
       usedPlanner: false,
       usedVerifier: false,

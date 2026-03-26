@@ -52,3 +52,46 @@ Even with richer planner, evaluator, browser QA, and handoff contracts, Shipyard
 
 ## Done Definition
 - Shipyard can selectively use planner, richer evaluation, browser QA, and handoff routing based on task shape, and the chosen path is visible in traces and calibration fixtures.
+
+## Implementation Evidence
+
+### Code References
+- `shipyard/src/agents/coordinator.ts`
+- `shipyard/src/engine/graph.ts`
+- `shipyard/src/engine/turn.ts`
+- `shipyard/tests/graph-runtime.test.ts`
+- `shipyard/tests/turn-runtime.test.ts`
+
+### Representative Snippets
+
+```ts
+const routingDecision = createCoordinatorRouteDecision({
+  instruction: state.currentInstruction,
+  contextEnvelope: state.contextEnvelope,
+  planningMode: state.planningMode,
+  taskComplexityHint: state.harnessRoute.taskComplexity === "unclassified"
+    ? null
+    : state.harnessRoute.taskComplexity,
+  taskPlan: state.taskPlan,
+  executionSpec: state.executionSpec,
+  contextReport: state.contextReport,
+});
+```
+
+```ts
+if (
+  verificationReport.passed &&
+  shouldCoordinatorUseBrowserEvaluator({
+    instruction: state.currentInstruction,
+    contextEnvelope: state.contextEnvelope,
+    previewState: state.previewState,
+    planningMode: state.planningMode,
+    taskComplexityHint: routingDecision.complexity,
+    routeDecision: routingDecision,
+    executionSpec: state.executionSpec,
+    contextReport: state.contextReport,
+  })
+) {
+  // run browser evaluator only for broad or explicitly requested UI verification
+}
+```
