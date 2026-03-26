@@ -35,8 +35,8 @@ import type {
 } from "../tools/registry.js";
 
 export const DEFAULT_ANTHROPIC_MODEL: Model = "claude-sonnet-4-5";
-export const DEFAULT_ANTHROPIC_MAX_TOKENS = 8_192;
-export const DEFAULT_ANTHROPIC_TIMEOUT_MS = 120_000;
+export const DEFAULT_ANTHROPIC_MAX_TOKENS = 12_288;
+export const DEFAULT_ANTHROPIC_TIMEOUT_MS = 600_000;
 export const DEFAULT_ANTHROPIC_MAX_RETRIES = 1;
 
 const SHIPYARD_ANTHROPIC_MODEL_ENV = "SHIPYARD_ANTHROPIC_MODEL";
@@ -70,6 +70,7 @@ export interface ClaudeRequestInput {
   tools?: AnthropicToolDefinition[];
   model?: string;
   maxTokens?: number;
+  timeoutMs?: number;
   temperature?: number;
   env?: NodeJS.ProcessEnv;
 }
@@ -544,6 +545,20 @@ export async function createAnthropicMessage(
       throw cancelledError;
     }
 
+    if (error instanceof Anthropic.APIConnectionTimeoutError) {
+      const timeoutMs = input.timeoutMs
+        ?? resolveAnthropicRuntimeConfig({
+          model: input.model,
+          maxTokens: input.maxTokens,
+          env: input.env,
+        }).timeoutMs;
+
+      throw new Error(
+        `Anthropic API request timed out after ${String(timeoutMs)}ms during message creation. ` +
+        "Set SHIPYARD_ANTHROPIC_TIMEOUT_MS to override the default timeout if needed.",
+      );
+    }
+
     throw new Error(
       `Anthropic API request failed during message creation: ${getErrorMessage(error)}`,
     );
@@ -571,14 +586,17 @@ function mapAnthropicStopReason(
 export function createAnthropicModelAdapter(
   options: AnthropicModelAdapterOptions = {},
 ): ModelAdapter<AnthropicToolDefinition> {
+  const runtimeConfig = resolveAnthropicRuntimeConfig({
+    env: options.env,
+  });
   const client = options.client ?? createAnthropicClient({
     env: options.env,
   });
 
   return {
     provider: "anthropic",
-    defaultModel: DEFAULT_ANTHROPIC_MODEL,
-    defaultMaxTokens: DEFAULT_ANTHROPIC_MAX_TOKENS,
+    defaultModel: runtimeConfig.model,
+    defaultMaxTokens: runtimeConfig.maxTokens,
     projectTools: projectToolsToAnthropicTools,
     async createTurn(
       input: ModelTurnInput,
@@ -594,6 +612,7 @@ export function createAnthropicModelAdapter(
             : undefined,
           model: input.model,
           maxTokens: input.maxTokens,
+          timeoutMs: runtimeConfig.timeoutMs,
           temperature: input.temperature,
           env: options.env,
         },

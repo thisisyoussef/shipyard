@@ -904,4 +904,118 @@ describe("instruction runtime handoff", () => {
       }),
     );
   });
+
+  it("classifies timeout and budget-exhaustion failures in LangSmith turn metadata", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-turn-failure-");
+    const outerTrace = {
+      projectName: "shipyard",
+      runId: "trace-turn-failure-123",
+      traceUrl: "https://smith.langchain.com/runs/trace-turn-failure-123",
+      projectUrl: "https://smith.langchain.com/projects/shipyard",
+    };
+    const failureCases = [
+      {
+        errorMessage:
+          "Anthropic API request timed out after 600000ms during message creation.",
+        expectedKind: "timeout",
+        expectedStopReason: null,
+      },
+      {
+        errorMessage:
+          "Model output budget exhausted on turn 1 (stop_reason=max_tokens) while generating a final response at max_tokens=16384 after 1 recovery attempt(s).",
+        expectedKind: "budget_exhausted",
+        expectedStopReason: "max_tokens",
+      },
+    ] as const;
+
+    for (const failureCase of failureCases) {
+      const sessionState = createSessionState({
+        sessionId: `turn-failure-${failureCase.expectedKind}`,
+        targetDirectory,
+        discovery: {
+          isGreenfield: false,
+          language: "typescript",
+          framework: "React",
+          packageManager: "pnpm",
+          scripts: {
+            test: "vitest run",
+          },
+          hasReadme: true,
+          hasAgentsMd: false,
+          topLevelFiles: ["package.json"],
+          topLevelDirectories: ["src"],
+          projectName: "turn-failure-target",
+        },
+      });
+      const runtimeState = createInstructionRuntimeState({
+        projectRules: "",
+      });
+      let capturedTraceMetadata: Record<string, unknown> | null = null;
+
+      vi.spyOn(langsmith, "runWithLangSmithTrace").mockImplementationOnce(
+        async (traceOptions: any) => {
+          const result = await traceOptions.fn(...traceOptions.args);
+          capturedTraceMetadata = traceOptions.getResultMetadata?.(result) ?? null;
+
+          return {
+            result,
+            trace: outerTrace,
+          };
+        },
+      );
+
+      vi.spyOn(graphRuntime, "runAgentRuntime").mockResolvedValueOnce(
+        graphRuntime.createAgentGraphState({
+          sessionId: sessionState.sessionId,
+          instruction: "Explain the current failure.",
+          contextEnvelope: {
+            stable: {
+              discovery: sessionState.discovery,
+              projectRules: "",
+              availableScripts: sessionState.discovery.scripts,
+            },
+            task: {
+              currentInstruction: "Explain the current failure.",
+              injectedContext: [],
+              targetFilePaths: [],
+            },
+            runtime: {
+              recentToolOutputs: [],
+              recentErrors: [],
+              currentGitDiff: null,
+            },
+            session: {
+              rollingSummary: "",
+              retryCountsByFile: {},
+              blockedFiles: [],
+              latestHandoff: null,
+              activeTask: null,
+            },
+          },
+          previewState: sessionState.workbenchState.previewState,
+          targetDirectory,
+          phaseConfig: createCodePhase(),
+          planningMode: "lightweight",
+          finalResult: failureCase.errorMessage,
+          lastError: failureCase.errorMessage,
+          status: "failed",
+        }),
+      );
+
+      const result = await executeInstructionTurn({
+        sessionState,
+        runtimeState,
+        instruction: "Explain the current failure.",
+      });
+
+      expect(result.status).toBe("error");
+      expect(capturedTraceMetadata).toEqual(
+        expect.objectContaining({
+          turnStatus: "error",
+          runtimeFailureKind: failureCase.expectedKind,
+          runtimeFailureStopReason: failureCase.expectedStopReason,
+        }),
+      );
+    }
+  });
 });

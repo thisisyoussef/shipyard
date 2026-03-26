@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import type { Message } from "@anthropic-ai/sdk/resources/messages";
 import { describe, expect, it } from "vitest";
 
@@ -7,6 +8,7 @@ import {
   DEFAULT_ANTHROPIC_MODEL,
   buildAnthropicMessageRequest,
   createAnthropicClient,
+  createAnthropicMessage,
   createAnthropicModelAdapter,
   createAssistantHistoryMessage,
   createToolResultPayload,
@@ -70,6 +72,19 @@ describe("Anthropic client contract", () => {
     ).toThrowError(/Missing ANTHROPIC_API_KEY/i);
   });
 
+  it("uses higher Anthropic defaults for code-writing loops", () => {
+    const config = resolveAnthropicConfig({
+      env: {
+        ANTHROPIC_API_KEY: "test-key",
+      },
+    });
+
+    expect(config.maxTokens).toBe(12_288);
+    expect(config.timeoutMs).toBe(600_000);
+    expect(DEFAULT_ANTHROPIC_MAX_TOKENS).toBe(12_288);
+    expect(DEFAULT_ANTHROPIC_TIMEOUT_MS).toBe(600_000);
+  });
+
   it("assembles a Claude request from registry-produced tools unchanged", () => {
     const messages = [createUserTextMessage("Inspect package.json")];
     const tools = projectToolsToAnthropicTools(
@@ -122,6 +137,27 @@ describe("Anthropic client contract", () => {
     });
     expect(request.model).toBe("claude-opus-4-1");
     expect(request.max_tokens).toBe(12_288);
+  });
+
+  it("wraps Anthropic timeouts with a targeted timeout message", async () => {
+    await expect(
+      createAnthropicMessage(
+        {
+          messages: {
+            async create() {
+              throw new Anthropic.APIConnectionTimeoutError();
+            },
+          },
+        },
+        {
+          systemPrompt: "You are Shipyard.",
+          messages: [createUserTextMessage("Inspect package.json")],
+          timeoutMs: 600_000,
+        },
+      ),
+    ).rejects.toThrowError(
+      /Anthropic API request timed out after 600000ms during message creation/i,
+    );
   });
 
   it("maps Anthropic responses into the provider-neutral adapter contract", async () => {
@@ -186,6 +222,32 @@ describe("Anthropic client contract", () => {
         },
       ],
     });
+  });
+
+  it("inherits Anthropic env overrides through adapter defaults", () => {
+    const adapter = createAnthropicModelAdapter({
+      env: {
+        ANTHROPIC_API_KEY: "test-key",
+        SHIPYARD_ANTHROPIC_MODEL: "claude-opus-4-1",
+        SHIPYARD_ANTHROPIC_MAX_TOKENS: "24576",
+      },
+      client: {
+        messages: {
+          async create() {
+            return createAssistantMessage([
+              {
+                type: "text",
+                text: "Ready.",
+                citations: null,
+              },
+            ]);
+          },
+        },
+      },
+    });
+
+    expect(adapter.defaultModel).toBe("claude-opus-4-1");
+    expect(adapter.defaultMaxTokens).toBe(24_576);
   });
 
   it("rejects invalid Shipyard Anthropic env overrides clearly", () => {

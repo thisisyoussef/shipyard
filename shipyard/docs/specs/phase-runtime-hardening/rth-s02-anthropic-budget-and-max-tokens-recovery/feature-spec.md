@@ -22,11 +22,11 @@ Shipyard still uses Anthropic defaults that are too small for real code-writing 
 - As a maintainer, I want `max_tokens` and timeout failures to show up as explicit runtime conditions so I can tell whether a session needs retry, higher budget, or a prompt fix.
 
 ## Acceptance Criteria
-- [ ] AC-1: Anthropic config exposes higher code-writing defaults for request timeout and `max_tokens`, and both remain overrideable via environment variables or runtime options.
-- [ ] AC-2: The raw loop handles `stop_reason === "max_tokens"` explicitly and never throws the generic "completed without any final text blocks" error for that case.
-- [ ] AC-3: Recoverable `max_tokens` exhaustion can trigger one bounded continuation or higher-budget retry path without re-executing already completed tool calls; non-recoverable cases raise a targeted budget-exhaustion error naming the stop reason.
-- [ ] AC-4: Timeout, cancellation, and budget-exhaustion failures are distinguished clearly in runtime summaries, logs, or trace metadata.
-- [ ] AC-5: Focused tests cover config resolution, `max_tokens` with partial text, `max_tokens` with no final text, and timeout override plumbing.
+- [x] AC-1: Anthropic config exposes higher code-writing defaults for request timeout and `max_tokens`, and both remain overrideable via environment variables or runtime options.
+- [x] AC-2: The raw loop handles `stop_reason === "max_tokens"` explicitly and never throws the generic "completed without any final text blocks" error for that case.
+- [x] AC-3: Recoverable `max_tokens` exhaustion can trigger one bounded continuation or higher-budget retry path without re-executing already completed tool calls; non-recoverable cases raise a targeted budget-exhaustion error naming the stop reason.
+- [x] AC-4: Timeout, cancellation, and budget-exhaustion failures are distinguished clearly in runtime summaries, logs, or trace metadata.
+- [x] AC-5: Focused tests cover config resolution, `max_tokens` with partial text, `max_tokens` with no final text, and timeout override plumbing.
 
 ## Edge Cases
 - `max_tokens` can happen after partial assistant text, after a partially planned tool turn, or inside a subagent loop.
@@ -47,3 +47,59 @@ Shipyard still uses Anthropic defaults that are too small for real code-writing 
 
 ## Done Definition
 - Shipyard can survive realistic long-writing Anthropic turns with configurable budgets, and budget exhaustion is no longer surfaced as an opaque generic runtime error.
+
+## Implementation Evidence
+
+### Code References
+- `shipyard/src/engine/anthropic.ts`
+- `shipyard/src/engine/turn.ts`
+- `shipyard/tests/anthropic-contract.test.ts`
+- `shipyard/tests/raw-loop.test.ts`
+- `shipyard/tests/turn-runtime.test.ts`
+- `shipyard/tests/manual/README.md`
+
+### Representative Snippets
+```ts
+export const DEFAULT_ANTHROPIC_MAX_TOKENS = 12_288;
+export const DEFAULT_ANTHROPIC_TIMEOUT_MS = 600_000;
+```
+
+```ts
+if (error instanceof Anthropic.APIConnectionTimeoutError) {
+  const timeoutMs = input.timeoutMs
+    ?? resolveAnthropicRuntimeConfig({
+      model: input.model,
+      maxTokens: input.maxTokens,
+      env: input.env,
+    }).timeoutMs;
+
+  throw new Error(
+    `Anthropic API request timed out after ${String(timeoutMs)}ms during message creation. ` +
+    "Set SHIPYARD_ANTHROPIC_TIMEOUT_MS to override the default timeout if needed.",
+  );
+}
+```
+
+```ts
+expect(capturedTraceMetadata).toEqual(
+  expect.objectContaining({
+    turnStatus: "error",
+    runtimeFailureKind: failureCase.expectedKind,
+    runtimeFailureStopReason: failureCase.expectedStopReason,
+  }),
+);
+```
+
+## Validation Evidence
+- Focused: `pnpm exec vitest run tests/anthropic-contract.test.ts tests/raw-loop.test.ts tests/turn-runtime.test.ts`
+- Full validation:
+  - `pnpm test`
+  - `pnpm typecheck`
+  - `pnpm build`
+  - `git diff --check`
+- LangSmith / Monitoring:
+  - Happy-path graph trace: `019d29b5-1c46-7000-8000-0050293db451`
+  - Happy-path fallback trace: `019d29b5-5924-7000-8000-00b9bf66ae2b`
+  - Budget-exhaustion fallback trace: `019d29b6-5634-7000-8000-0490382ca6bf`
+  - Recent error review showed the expected `shipyard.raw-tool-loop` `ModelOutputBudgetExceededError` child run for the forced-budget scenario and no unexpected fresh errors.
+  - `langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3` returned `null`.

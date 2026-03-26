@@ -35,6 +35,10 @@ Useful env vars for long-running model turns:
 - `SHIPYARD_ANTHROPIC_MODEL`
 - `SHIPYARD_ANTHROPIC_MAX_TOKENS`
 
+Current Anthropic defaults for long-running code turns are `timeoutMs=600000`
+and `maxTokens=12288`. Set the env vars above when you need a different
+budget for a smoke run.
+
 The runner prints the scratch target path, session id, mounted spec path, and a
 JSON result artifact path so you can inspect the generated files after the run.
 
