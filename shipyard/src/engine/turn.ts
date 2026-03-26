@@ -21,7 +21,10 @@ import {
   buildContextEnvelope,
   composeSystemPrompt,
 } from "../context/envelope.js";
-import { isSingleTurnUiBuildInstruction } from "../agents/coordinator.js";
+import {
+  isSingleTurnUiBuildInstruction,
+  shouldCoordinatorUseDirectEditFastPath,
+} from "../agents/coordinator.js";
 import { createCodePhase } from "../phases/code/index.js";
 import { createTargetManagerPhase } from "../phases/target-manager/index.js";
 import { gitDiffTool } from "../tools/index.js";
@@ -90,6 +93,10 @@ const DEFAULT_INSTRUCTION_CONTINUATION_LIMITS: InstructionContinuationLimits = {
   maxAutomaticResumes: 1,
   maxWallClockMs: 8 * 60_000,
 };
+const FAST_TRACE_LOOKUP = {
+  maxAttempts: 1,
+  delayMs: 0,
+} as const;
 
 export interface InstructionRuntimeState {
   projectRules: string;
@@ -201,6 +208,7 @@ function createHarnessRouteForErrorState(
 
   return {
     selectedPath: "lightweight",
+    actingMode: "raw-loop",
     taskComplexity: "unclassified",
     usedExplorer: false,
     usedPlanner: false,
@@ -324,6 +332,51 @@ function summarizeGitDiffPreview(result: RunCommandResult): string | null {
 function extractExplicitFilePath(instruction: string): string | null {
   const match = instruction.match(EXPLICIT_FILE_PATH_PATTERN);
   return match?.[0] ?? null;
+}
+
+function shouldUseFastInstructionTurnTraceLookup(options: {
+  phaseName: string;
+  runtimeMode: InstructionRuntimeMode;
+  instruction: string;
+  sessionState: SessionState;
+  runtimeState: InstructionRuntimeState;
+  mergedInjectedContext: string[];
+  targetFilePaths: string[];
+  loadedHandoff: LoadedExecutionHandoff | null;
+}): boolean {
+  if (options.phaseName !== "code" || options.runtimeMode !== "graph") {
+    return false;
+  }
+
+  return shouldCoordinatorUseDirectEditFastPath({
+    instruction: options.instruction,
+    contextEnvelope: {
+      stable: {
+        discovery: options.sessionState.discovery,
+        projectRules: options.runtimeState.projectRules,
+        availableScripts: options.sessionState.discovery.scripts,
+      },
+      task: {
+        currentInstruction: options.instruction,
+        injectedContext: options.mergedInjectedContext,
+        targetFilePaths: options.targetFilePaths,
+      },
+      runtime: {
+        recentToolOutputs: options.runtimeState.recentToolOutputs,
+        recentErrors: options.runtimeState.recentErrors,
+        currentGitDiff: null,
+        featureFlags: options.runtimeState.featureFlags,
+      },
+      session: {
+        rollingSummary: options.sessionState.rollingSummary,
+        retryCountsByFile: options.runtimeState.retryCountsByFile,
+        blockedFiles: options.runtimeState.blockedFiles,
+        recentTouchedFiles: options.sessionState.recentTouchedFiles,
+        latestHandoff: options.loadedHandoff,
+        activeTask: options.sessionState.activeTask,
+      },
+    },
+  });
 }
 
 async function isGitRepository(targetDirectory: string): Promise<boolean> {
@@ -1451,6 +1504,18 @@ export async function executeInstructionTurn(
       },
     };
   };
+  const traceLookup = shouldUseFastInstructionTurnTraceLookup({
+    phaseName: phase.name,
+    runtimeMode: runtimeState.runtimeMode,
+    instruction: options.instruction,
+    sessionState: state,
+    runtimeState,
+    mergedInjectedContext,
+    targetFilePaths,
+    loadedHandoff,
+  })
+    ? FAST_TRACE_LOOKUP
+    : undefined;
 
   const tracedTurn = await runWithLangSmithTrace({
     name: "shipyard.instruction-turn",
@@ -1464,6 +1529,7 @@ export async function executeInstructionTurn(
       targetDirectory: state.targetDirectory,
       runtimeSurface: options.runtimeSurface,
     }),
+    traceLookup,
     getResultMetadata: (result) =>
       createInstructionTurnTraceMetadata({
         sessionId: state.sessionId,

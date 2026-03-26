@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -6,6 +7,7 @@ import {
   START,
   StateGraph,
 } from "@langchain/langgraph";
+import { z } from "zod";
 
 import {
   CheckpointManager,
@@ -17,6 +19,7 @@ import type {
   ContextReport,
   EvaluationPlan,
   ExecutionSpec,
+  HarnessActingMode,
   HarnessRouteSummary,
   LoadedExecutionHandoff,
   PlanningMode,
@@ -34,8 +37,11 @@ import {
   extractInstructionTargetFilePaths,
   isClearlyLightweightInstruction,
   isSingleTurnUiBuildInstruction,
+  looksLikeUiRelevantFilePath,
+  looksLikeUiRelevantInstruction,
   createVerificationPlan,
   mergeBrowserEvaluationIntoVerificationReport,
+  shouldCoordinatorUseDirectEditFastPath,
   type CoordinatorRouteDecision,
   shouldCoordinatorUseBrowserEvaluator,
 } from "../agents/coordinator.js";
@@ -57,16 +63,30 @@ import {
   type VerifierRunOptions,
 } from "../agents/verifier.js";
 import type { Phase } from "../phases/phase.js";
-import { readFileTool } from "../tools/read-file.js";
+import { editBlockTool, type EditBlockResult } from "../tools/edit-block.js";
 import { normalizeTargetRelativePath } from "../tools/file-state.js";
+import { listFilesTool } from "../tools/list-files.js";
+import { findReadyServerEvidence } from "../preview/readiness.js";
+import { readFileTool } from "../tools/read-file.js";
+import {
+  createToolSuccessResult,
+  type ToolResult,
+} from "../tools/registry.js";
+import { runCommandTool } from "../tools/run-command.js";
 import {
   RAW_LOOP_MAX_ITERATIONS,
   runRawToolLoopDetailed,
   type RawToolLoopOptions,
   type RawLoopToolHookContext,
+  type RawLoopToolResultHookContext,
+  type RawToolExecution,
   type RawToolLoopResult,
 } from "./raw-loop.js";
-import type { TurnMessage } from "./model-adapter.js";
+import {
+  createUserTurnMessage,
+  type ToolCall,
+  type TurnMessage,
+} from "./model-adapter.js";
 import {
   getArtifactDirectory,
   type ContextEnvelope,
@@ -89,6 +109,7 @@ import {
   VERIFIER_MODEL_ROUTE,
   type ModelRouteId,
 } from "./model-routing.js";
+import { verifySurgicalEdit } from "./live-verification.js";
 
 export type AgentRuntimeStatus =
   | "planning"
@@ -99,6 +120,21 @@ export type AgentRuntimeStatus =
   | "cancelled"
   | "done"
   | "failed";
+
+interface DirectEditCandidateFile {
+  filePath: string;
+  contents: string;
+  hash: string;
+}
+
+interface DirectEditArtifact {
+  filePath: string;
+  beforeContents: string;
+  afterContents: string;
+  oldBlock: string;
+  newBlock: string;
+  summary: string;
+}
 
 export interface AgentGraphState {
   sessionId: string;
@@ -125,6 +161,7 @@ export interface AgentGraphState {
   browserEvaluationReport: BrowserEvaluationReport | null;
   harnessRoute: HarnessRouteSummary;
   actingIterations: number;
+  directEditArtifact: DirectEditArtifact | null;
   modelProvider: string | null;
   modelName: string | null;
   fallbackMode: boolean;
@@ -157,6 +194,7 @@ export interface CreateAgentGraphStateOptions {
   browserEvaluationReport?: BrowserEvaluationReport | null;
   harnessRoute?: HarnessRouteSummary;
   actingIterations?: number;
+  directEditArtifact?: DirectEditArtifact | null;
   modelProvider?: string | null;
   modelName?: string | null;
   fallbackMode?: boolean;
@@ -174,6 +212,8 @@ export interface ActingLoopResult {
   touchedFiles?: string[];
   actingLoopBudget?: number;
   actingLoopBudgetReason?: ActingLoopBudgetReason;
+  actingMode?: HarnessActingMode;
+  directEditArtifact?: DirectEditArtifact | null;
   modelProvider?: string | null;
   modelName?: string | null;
 }
@@ -262,6 +302,7 @@ const AgentGraphStateAnnotation = Annotation.Root({
   browserEvaluationReport: Annotation<BrowserEvaluationReport | null>(),
   harnessRoute: Annotation<HarnessRouteSummary>(),
   actingIterations: Annotation<number>(),
+  directEditArtifact: Annotation<DirectEditArtifact | null>(),
   modelProvider: Annotation<string | null>(),
   modelName: Annotation<string | null>(),
   fallbackMode: Annotation<boolean>(),
@@ -300,6 +341,7 @@ function createInitialHarnessRouteSummary(
 
   return {
     selectedPath: "lightweight",
+    actingMode: "raw-loop",
     taskComplexity: "unclassified",
     usedExplorer: false,
     usedPlanner: false,
@@ -645,6 +687,705 @@ function createDefaultTaskPlan(
   });
 }
 
+const DIRECT_EDIT_MAX_CANDIDATES = 4;
+const DIRECT_EDIT_SCAN_DEPTH = 3;
+const DIRECT_EDIT_STYLE_SCOPE_PATTERN =
+  /\b(background|color|padding|margin|spacing|font|border|shadow|style|css|class(?:name)?)\b/i;
+const DIRECT_EDIT_COPY_SCOPE_PATTERN =
+  /\b(copy|text|label|title|heading|button|placeholder|icon)\b/i;
+const DIRECT_EDIT_SCAN_FILE_PATTERN = /\.(?:css|scss|sass|less|tsx|jsx|html)$/i;
+const DIRECT_EDIT_PREFERRED_FILE_NAME_PATTERN =
+  /(?:^|\/)(styles?|app|index|global|globals|theme|page|layout|button|header|footer)\.(?:css|scss|sass|less|tsx|jsx|html)$/i;
+const DIRECT_EDIT_SYSTEM_PROMPT = `
+You are Shipyard's direct-edit fast path.
+
+Return only valid JSON with one of these shapes:
+{"status":"edit","filePath":"relative/path","oldBlock":"exact old text","newBlock":"replacement text","summary":"short summary"}
+{"status":"fallback","reason":"why the fast path is unsafe"}
+
+Rules:
+- Pick exactly one provided candidate file.
+- Use exact text from that file for oldBlock.
+- oldBlock must be the smallest unique anchor that safely applies the change.
+- Keep indentation and surrounding formatting stable.
+- For CSS color changes, use a valid CSS literal such as a hex value, rgb(), hsl(), or an actual CSS keyword. Do not use descriptive words that are not valid CSS values.
+- If the request cannot be completed safely from exactly one candidate file, return fallback.
+- Do not wrap the JSON in markdown fences or extra commentary.
+`.trim();
+
+const directEditResponseSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("edit"),
+    filePath: z.string().trim().min(1),
+    oldBlock: z.string().min(1),
+    newBlock: z.string(),
+    summary: z.string().trim().min(1),
+  }),
+  z.object({
+    status: z.literal("fallback"),
+    reason: z.string().trim().min(1),
+  }),
+]);
+
+function uniqueStrings(values: Iterable<string>): string[] {
+  return [...new Set(values)];
+}
+
+function* extractJsonObjectCandidates(rawText: string): Generator<string> {
+  let objectStart = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < rawText.length; index += 1) {
+    const character = rawText[index];
+
+    if (objectStart === -1) {
+      if (character === "{") {
+        objectStart = index;
+        depth = 1;
+        inString = false;
+        escaped = false;
+      }
+
+      continue;
+    }
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (character === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (character === "\"") {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (character === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (character === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (character !== "}") {
+      continue;
+    }
+
+    depth -= 1;
+
+    if (depth === 0) {
+      yield rawText.slice(objectStart, index + 1);
+      objectStart = -1;
+    }
+  }
+}
+
+function parseStructuredJson(rawText: string): unknown {
+  const candidates = [rawText.trim()];
+
+  for (const candidate of extractJsonObjectCandidates(rawText)) {
+    const trimmed = candidate.trim();
+
+    if (trimmed && !candidates.includes(trimmed)) {
+      candidates.push(trimmed);
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error("Direct edit response was not valid JSON.");
+}
+
+function parseDirectEditResponse(rawText: string) {
+  return directEditResponseSchema.parse(parseStructuredJson(rawText));
+}
+
+function createDirectEditPrompt(
+  state: AgentGraphState,
+  candidates: DirectEditCandidateFile[],
+): string {
+  const goal = state.executionSpec?.goal ?? state.currentInstruction;
+  const acceptanceCriteria = state.executionSpec?.acceptanceCriteria ?? [];
+
+  return [
+    `Instruction: ${state.currentInstruction}`,
+    `Goal: ${goal}`,
+    acceptanceCriteria.length > 0
+      ? `Acceptance criteria:\n${acceptanceCriteria.map((criterion) => `- ${criterion}`).join("\n")}`
+      : null,
+    "Candidate files:",
+    ...candidates.flatMap((candidate) => [
+      `--- FILE: ${candidate.filePath} ---`,
+      candidate.contents,
+    ]),
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n\n");
+}
+
+function countPathDepth(filePath: string): number {
+  return filePath.split("/").length;
+}
+
+function scoreDirectEditCandidatePath(
+  filePath: string,
+  instruction: string,
+): number {
+  if (!DIRECT_EDIT_SCAN_FILE_PATTERN.test(filePath)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  let score = 0;
+  const lowerPath = filePath.toLowerCase();
+
+  if (DIRECT_EDIT_STYLE_SCOPE_PATTERN.test(instruction)) {
+    score += /\.(?:css|scss|sass|less)$/i.test(filePath) ? 120 : 40;
+  }
+
+  if (DIRECT_EDIT_COPY_SCOPE_PATTERN.test(instruction)) {
+    score += /\.(?:tsx|jsx|html)$/i.test(filePath) ? 110 : 25;
+  }
+
+  if (DIRECT_EDIT_PREFERRED_FILE_NAME_PATTERN.test(filePath)) {
+    score += 30;
+  }
+
+  if (
+    lowerPath.includes("/src/")
+    || lowerPath.startsWith("src/")
+    || lowerPath.includes("/app/")
+    || lowerPath.startsWith("app/")
+    || lowerPath.includes("/components/")
+    || lowerPath.startsWith("components/")
+  ) {
+    score += 12;
+  }
+
+  score -= countPathDepth(filePath) * 2;
+
+  return score;
+}
+
+function createSyntheticToolExecution(options: {
+  toolName: string;
+  input: unknown;
+  result: ToolResult;
+  touchedFiles?: string[];
+  editedPath?: string | null;
+}): RawToolExecution {
+  return {
+    toolName: options.toolName,
+    input: structuredClone(options.input),
+    success: options.result.success,
+    output: options.result.output,
+    ...(options.result.error ? { error: options.result.error } : {}),
+    ...(options.result.data === undefined ? {} : { data: options.result.data }),
+    editedPath: options.editedPath ?? null,
+    touchedFiles: options.touchedFiles ?? [],
+    historyDigest: {
+      requestLine: `${options.toolName} ${JSON.stringify(options.input)}`,
+      resultLine: options.result.success
+        ? options.result.output
+        : (options.result.error ?? options.result.output),
+      isWriteLike: options.toolName === "edit_block",
+      prefersVerbatimTail: false,
+    },
+  };
+}
+
+async function executeDirectToolWithHooks<Result>(options: {
+  rawLoopOptions: RawToolLoopOptions;
+  targetDirectory: string;
+  toolCall: ToolCall;
+  run: () => Promise<{
+    result: Result;
+    toolResult: ToolResult;
+    touchedFiles?: string[];
+    editedPath?: string | null;
+  }>;
+}): Promise<Result> {
+  const turnNumber = 1;
+
+  await options.rawLoopOptions.beforeToolExecution?.({
+    toolCall: options.toolCall,
+    turnNumber,
+    targetDirectory: options.targetDirectory,
+  });
+
+  let executionResult: Awaited<ReturnType<typeof options.run>> | null = null;
+  let toolResult: ToolResult;
+
+  try {
+    executionResult = await options.run();
+    toolResult = executionResult.toolResult;
+  } catch (error) {
+    toolResult = {
+      success: false,
+      output: "",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const toolExecution = createSyntheticToolExecution({
+    toolName: options.toolCall.name,
+    input: options.toolCall.input,
+    result: toolResult,
+    touchedFiles: executionResult?.touchedFiles,
+    editedPath: executionResult?.editedPath ?? null,
+  });
+
+  await options.rawLoopOptions.afterToolExecution?.({
+    toolCall: options.toolCall,
+    turnNumber,
+    targetDirectory: options.targetDirectory,
+    result: toolResult,
+    toolExecution,
+  } satisfies RawLoopToolResultHookContext);
+
+  if (!toolResult.success || executionResult === null) {
+    throw new Error(toolResult.error ?? `${options.toolCall.name} failed.`);
+  }
+
+  return executionResult.result;
+}
+
+function getDirectEditKnownCandidatePaths(
+  state: AgentGraphState,
+): string[] {
+  return uniqueStrings([
+    ...(state.executionSpec?.targetFilePaths ?? []),
+    ...(state.taskPlan?.targetFilePaths ?? []),
+    ...state.contextEnvelope.task.targetFilePaths,
+    ...(state.contextEnvelope.session.recentTouchedFiles ?? []),
+    ...(state.contextReport?.findings.map((finding) => finding.filePath) ?? []),
+  ]).filter((filePath) =>
+    !state.blockedFiles.includes(filePath)
+  );
+}
+
+async function getScannedDirectEditCandidatePaths(
+  state: AgentGraphState,
+  rawLoopOptions: RawToolLoopOptions,
+): Promise<string[]> {
+  if (
+    !looksLikeUiRelevantInstruction(state.currentInstruction)
+    && !DIRECT_EDIT_STYLE_SCOPE_PATTERN.test(state.currentInstruction)
+    && !DIRECT_EDIT_COPY_SCOPE_PATTERN.test(state.currentInstruction)
+  ) {
+    return [];
+  }
+
+  try {
+    const fileTree = await executeDirectToolWithHooks({
+      rawLoopOptions,
+      targetDirectory: state.targetDirectory,
+      toolCall: {
+        id: "fastpath_list_files",
+        name: "list_files",
+        input: {
+          depth: DIRECT_EDIT_SCAN_DEPTH,
+        },
+      },
+      run: async () => {
+        const result = await listFilesTool({
+          targetDirectory: state.targetDirectory,
+          depth: DIRECT_EDIT_SCAN_DEPTH,
+        });
+
+        return {
+          result,
+          toolResult: createToolSuccessResult(result.tree, result),
+        };
+      },
+    });
+
+    return fileTree.entries
+      .filter((entry) => !entry.isDirectory)
+      .filter((entry) => looksLikeUiRelevantFilePath(entry.path))
+      .map((entry) => entry.path)
+      .sort((left, right) =>
+        scoreDirectEditCandidatePath(right, state.currentInstruction) -
+        scoreDirectEditCandidatePath(left, state.currentInstruction) ||
+        left.localeCompare(right)
+      )
+      .slice(0, DIRECT_EDIT_MAX_CANDIDATES);
+  } catch {
+    return [];
+  }
+}
+
+async function collectDirectEditCandidateFiles(
+  state: AgentGraphState,
+  rawLoopOptions: RawToolLoopOptions,
+): Promise<DirectEditCandidateFile[]> {
+  const knownCandidatePaths = getDirectEditKnownCandidatePaths(state);
+  const candidatePaths = knownCandidatePaths.length > 0
+    ? knownCandidatePaths.slice(0, DIRECT_EDIT_MAX_CANDIDATES)
+    : await getScannedDirectEditCandidatePaths(state, rawLoopOptions);
+  const candidates: DirectEditCandidateFile[] = [];
+
+  for (const filePath of candidatePaths) {
+    try {
+      const result = await executeDirectToolWithHooks({
+        rawLoopOptions,
+        targetDirectory: state.targetDirectory,
+        toolCall: {
+          id: `fastpath_read_${candidates.length + 1}`,
+          name: "read_file",
+          input: {
+            path: filePath,
+          },
+        },
+        run: async () => {
+          const readResult = await readFileTool({
+            targetDirectory: state.targetDirectory,
+            path: filePath,
+          });
+
+          return {
+            result: readResult,
+            toolResult: createToolSuccessResult(
+              `Read ${readResult.path}`,
+              readResult,
+            ),
+            touchedFiles: [readResult.path],
+          };
+        },
+      });
+
+      candidates.push({
+        filePath: result.path,
+        contents: result.contents,
+        hash: result.hash,
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return candidates.slice(0, DIRECT_EDIT_MAX_CANDIDATES);
+}
+
+function isCheapDirectVerificationCommand(command: string): boolean {
+  const normalized = command.trim();
+
+  return normalized === "git diff --stat"
+    || normalized.startsWith("test -f ")
+    || normalized.startsWith("node --input-type=module -e")
+    || normalized.includes("rg -n");
+}
+
+function selectDirectEditVerificationCheck(
+  evaluationPlan: EvaluationPlan,
+): EvaluationPlan["checks"][number] | null {
+  return evaluationPlan.checks.find((check) =>
+    isCheapDirectVerificationCommand(check.command)
+  ) ?? null;
+}
+
+async function canRunDirectEditVerificationCommand(
+  targetDirectory: string,
+  command: string,
+): Promise<boolean> {
+  if (command.trim() !== "git diff --stat") {
+    return true;
+  }
+
+  try {
+    await access(path.join(targetDirectory, ".git"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function toDirectEditVerificationFailureReport(
+  summary: string,
+): VerificationReport {
+  return {
+    command: "deterministic-edit",
+    exitCode: 1,
+    passed: false,
+    stdout: "",
+    stderr: summary,
+    summary,
+    checks: [],
+    firstHardFailure: {
+      checkId: "direct-edit",
+      label: "Validate the targeted edit remained surgical",
+      command: "deterministic-edit",
+    },
+    browserEvaluationReport: null,
+  };
+}
+
+async function runDirectEditVerification(
+  state: AgentGraphState,
+  signal?: AbortSignal,
+): Promise<VerificationReport> {
+  const artifact = state.directEditArtifact;
+
+  if (!artifact) {
+    return createDefaultVerificationReport(state);
+  }
+
+  const currentFile = await readFileTool({
+    targetDirectory: state.targetDirectory,
+    path: artifact.filePath,
+  });
+  const surgicalVerification = verifySurgicalEdit(
+    artifact.beforeContents,
+    currentFile.contents,
+    artifact.oldBlock,
+    artifact.newBlock,
+  );
+
+  if (!surgicalVerification.changedOnlyTarget) {
+    return toDirectEditVerificationFailureReport(
+      `Deterministic surgical verification failed for ${artifact.filePath}: ` +
+      "the file changed outside the targeted block.",
+    );
+  }
+
+  const evaluationPlan = createVerificationPlan({
+    contextEnvelope: state.contextEnvelope,
+    executionSpec: state.executionSpec,
+    editedFilePath: artifact.filePath,
+    touchedFiles: state.touchedFiles,
+  });
+  const selectedDirectCheck = selectDirectEditVerificationCheck(evaluationPlan);
+  const directCheck = selectedDirectCheck &&
+    await canRunDirectEditVerificationCommand(
+      state.targetDirectory,
+      selectedDirectCheck.command,
+    )
+    ? selectedDirectCheck
+    : null;
+
+  if (!directCheck) {
+    return {
+      command: "deterministic-edit",
+      exitCode: 0,
+      passed: true,
+      stdout: "",
+      stderr: "",
+      summary: `Deterministic surgical edit verification passed for ${artifact.filePath}.`,
+      checks: [],
+      firstHardFailure: null,
+      browserEvaluationReport: null,
+    };
+  }
+
+  const commandResult = await runCommandTool({
+    targetDirectory: state.targetDirectory,
+    command: directCheck.command,
+    signal,
+  });
+  const readiness = commandResult.timedOut
+    ? findReadyServerEvidence(commandResult.combinedOutput)
+    : null;
+  const commandPassed = commandResult.exitCode === 0 || readiness !== null;
+  const commandSummary = commandPassed
+    ? `Command "${directCheck.command}" passed after deterministic verification.`
+    : `Command "${directCheck.command}" failed after deterministic verification.`;
+
+  return {
+    command: directCheck.command,
+    exitCode: commandResult.exitCode,
+    passed: commandPassed,
+    stdout: commandResult.stdout,
+    stderr: commandResult.stderr,
+    summary: commandPassed
+      ? `Deterministic surgical edit verification passed for ${artifact.filePath}. ${commandSummary}`
+      : commandSummary,
+    evaluationPlan: {
+      summary: evaluationPlan.summary,
+      checks: [directCheck],
+    },
+    checks: [
+      {
+        checkId: directCheck.id,
+        label: directCheck.label,
+        kind: directCheck.kind,
+        command: directCheck.command,
+        required: directCheck.required,
+        status: commandPassed ? "passed" : "failed",
+        exitCode: commandResult.exitCode,
+        stdout: commandResult.stdout,
+        stderr: commandResult.stderr,
+        summary: commandSummary,
+      },
+    ],
+    firstHardFailure: commandPassed
+      ? null
+      : {
+        checkId: directCheck.id,
+        label: directCheck.label,
+        command: directCheck.command,
+      },
+    ...(readiness
+      ? {
+        commandReadiness: {
+          status: "ready-before-timeout" as const,
+          readyUrl: readiness.readyUrl,
+          readyLine: readiness.readyLine,
+        },
+      }
+      : {}),
+    browserEvaluationReport: null,
+  };
+}
+
+async function maybeRunDirectEditFastPath(
+  state: AgentGraphState,
+  rawLoopOptions: RawToolLoopOptions,
+  signal?: AbortSignal,
+): Promise<ActingLoopResult | null> {
+  if (state.phaseConfig.name !== "code") {
+    return null;
+  }
+
+  if (!rawLoopOptions.modelAdapter) {
+    return null;
+  }
+
+  if (!shouldCoordinatorUseDirectEditFastPath({
+    instruction: state.currentInstruction,
+    contextEnvelope: state.contextEnvelope,
+    planningMode: state.planningMode,
+    taskComplexityHint: state.harnessRoute.taskComplexity === "unclassified"
+      ? null
+      : state.harnessRoute.taskComplexity,
+    taskPlan: state.taskPlan,
+    executionSpec: state.executionSpec,
+    contextReport: state.contextReport,
+  })) {
+    return null;
+  }
+
+  const candidates = await collectDirectEditCandidateFiles(state, rawLoopOptions);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  try {
+    const modelResult = await rawLoopOptions.modelAdapter.createTurn(
+      {
+        systemPrompt: DIRECT_EDIT_SYSTEM_PROMPT,
+        messages: [createUserTurnMessage(createDirectEditPrompt(state, candidates))],
+        model: rawLoopOptions.model,
+        maxTokens: rawLoopOptions.maxTokens,
+        temperature: 0,
+      },
+      { signal },
+    );
+
+    if (modelResult.stopReason !== "completed" || !modelResult.finalText.trim()) {
+      return null;
+    }
+
+    const parsedResponse = parseDirectEditResponse(modelResult.finalText);
+
+    if (parsedResponse.status === "fallback") {
+      return null;
+    }
+
+    const editResponse = parsedResponse;
+
+    const selectedCandidate = candidates.find((candidate) =>
+      candidate.filePath === normalizeTargetRelativePath(editResponse.filePath)
+    );
+
+    if (!selectedCandidate) {
+      return null;
+    }
+
+    let editResult: EditBlockResult;
+
+    try {
+      editResult = await executeDirectToolWithHooks({
+        rawLoopOptions,
+        targetDirectory: state.targetDirectory,
+        toolCall: {
+          id: "fastpath_edit_block",
+          name: "edit_block",
+          input: {
+            path: selectedCandidate.filePath,
+            old_string: editResponse.oldBlock,
+            new_string: editResponse.newBlock,
+          },
+        },
+        run: async () => {
+          const result = await editBlockTool({
+            targetDirectory: state.targetDirectory,
+            path: selectedCandidate.filePath,
+            old_string: editResponse.oldBlock,
+            new_string: editResponse.newBlock,
+          });
+
+          return {
+            result,
+            toolResult: createToolSuccessResult(
+              result.changed
+                ? `Edited ${result.path}`
+                : `No changes needed for ${result.path}`,
+              result,
+            ),
+            touchedFiles: [result.path],
+            editedPath: result.path,
+          };
+        },
+      });
+    } catch {
+      return null;
+    }
+
+    return {
+      status: "completed",
+      finalText: editResponse.summary,
+      messageHistory: state.messageHistory,
+      iterations: 1,
+      didEdit: editResult.changed,
+      lastEditedFile: editResult.path,
+      touchedFiles: [editResult.path],
+      actingLoopBudget: 1,
+      actingLoopBudgetReason: "direct-edit-fast-path",
+      actingMode: "direct-edit",
+      directEditArtifact: {
+        filePath: editResult.path,
+        beforeContents: selectedCandidate.contents,
+        afterContents: editResult.contents,
+        oldBlock: editResponse.oldBlock,
+        newBlock: editResponse.newBlock,
+        summary: editResponse.summary,
+      },
+      modelProvider: rawLoopOptions.modelAdapter.provider,
+      modelName: modelResult.model,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function defaultVerifyState(
   state: AgentGraphState,
   dependencies: AgentRuntimeDependencies,
@@ -652,6 +1393,10 @@ async function defaultVerifyState(
 ): Promise<VerificationReport> {
   if (!state.lastEditedFile) {
     return createDefaultVerificationReport(state);
+  }
+
+  if (state.directEditArtifact) {
+    return runDirectEditVerification(state, signal);
   }
 
   const runVerifierSubagent =
@@ -695,20 +1440,31 @@ async function defaultActingLoop(
   });
   const checkpointManager = getCheckpointManager(state, dependencies);
   const existingBeforeToolExecution = rawLoopOptions.beforeToolExecution;
+  const wrappedRawLoopOptions: RawToolLoopOptions = {
+    ...rawLoopOptions,
+    signal,
+    maxIterations: budgetDecision.maxIterations,
+    beforeToolExecution: async (context) => {
+      await checkpointBeforeEdit(context, checkpointManager);
+      await existingBeforeToolExecution?.(context);
+    },
+  };
+  const directEditResult = await maybeRunDirectEditFastPath(
+    state,
+    wrappedRawLoopOptions,
+    signal,
+  );
+
+  if (directEditResult) {
+    return directEditResult;
+  }
+
   const result: RawToolLoopResult = await runRawToolLoopDetailed(
     state.phaseConfig.systemPrompt,
     state.currentInstruction,
     state.phaseConfig.tools,
     state.targetDirectory,
-    {
-      ...rawLoopOptions,
-      signal,
-      maxIterations: budgetDecision.maxIterations,
-      beforeToolExecution: async (context) => {
-        await checkpointBeforeEdit(context, checkpointManager);
-        await existingBeforeToolExecution?.(context);
-      },
-    },
+    wrappedRawLoopOptions,
   );
 
   return {
@@ -721,6 +1477,8 @@ async function defaultActingLoop(
     touchedFiles: result.touchedFiles,
     actingLoopBudget: budgetDecision.maxIterations,
     actingLoopBudgetReason: budgetDecision.reason,
+    actingMode: "raw-loop",
+    directEditArtifact: null,
     modelProvider: result.modelProvider,
     modelName: result.modelName,
   };
@@ -767,6 +1525,7 @@ export function createAgentGraphState(
       options.harnessRoute
       ?? createInitialHarnessRouteSummary(options.contextEnvelope),
     actingIterations: options.actingIterations ?? 0,
+    directEditArtifact: options.directEditArtifact ?? null,
     modelProvider: options.modelProvider ?? null,
     modelName: options.modelName ?? null,
     fallbackMode: options.fallbackMode ?? false,
@@ -807,6 +1566,7 @@ function createRuntimeTraceMetadata(
     instruction: state.currentInstruction,
     targetDirectory: state.targetDirectory,
     selectedPath,
+    actingMode: state.harnessRoute.actingMode,
     taskComplexity: state.harnessRoute.taskComplexity === "unclassified"
       ? routingDecision.complexity
       : state.harnessRoute.taskComplexity,
@@ -834,6 +1594,23 @@ function createRuntimeTraceMetadata(
     modelProvider: state.modelProvider,
     modelName: state.modelName,
   };
+}
+
+function shouldUseFastTraceLookupPolicy(
+  state: AgentGraphState,
+): boolean {
+  return state.phaseConfig.name === "code"
+    && shouldCoordinatorUseDirectEditFastPath({
+      instruction: state.currentInstruction,
+      contextEnvelope: state.contextEnvelope,
+      planningMode: state.planningMode,
+      taskComplexityHint: state.harnessRoute.taskComplexity === "unclassified"
+        ? null
+        : state.harnessRoute.taskComplexity,
+      taskPlan: state.taskPlan,
+      executionSpec: state.executionSpec,
+      contextReport: state.contextReport,
+    });
 }
 
 function createCancellationUpdate(
@@ -1109,6 +1886,7 @@ export function createAgentRuntimeNodes(
             actingIterations: actingLoop.iterations,
             lastEditedFile: actingLoop.lastEditedFile,
             touchedFiles: actingLoop.touchedFiles ?? [],
+            directEditArtifact: actingLoop.directEditArtifact ?? null,
             modelProvider: actingLoop.modelProvider ?? state.modelProvider,
             modelName: actingLoop.modelName ?? state.modelName,
             finalResult:
@@ -1124,6 +1902,7 @@ export function createAgentRuntimeNodes(
           actingIterations: actingLoop.iterations,
           lastEditedFile: actingLoop.lastEditedFile,
           touchedFiles: actingLoop.touchedFiles ?? [],
+          directEditArtifact: actingLoop.directEditArtifact ?? null,
           modelProvider: actingLoop.modelProvider ?? state.modelProvider,
           modelName: actingLoop.modelName ?? state.modelName,
           checkpointRequested: actingLoop.status === "continuation",
@@ -1135,6 +1914,7 @@ export function createAgentRuntimeNodes(
               : "responding",
           harnessRoute: {
             ...state.harnessRoute,
+            actingMode: actingLoop.actingMode ?? state.harnessRoute.actingMode,
             checkpointRequested: actingLoop.status === "continuation",
             actingLoopBudget:
               actingLoop.actingLoopBudget ?? state.harnessRoute.actingLoopBudget,
@@ -1188,6 +1968,7 @@ export function createAgentRuntimeNodes(
 
       try {
         const routingDecision = resolveRoutingDecision(state);
+        const usedDeterministicVerification = state.directEditArtifact !== null;
         const verificationReport = await (dependencies.verifyState
           ? dependencies.verifyState(state)
           : defaultVerifyState(state, dependencies, signal));
@@ -1231,6 +2012,20 @@ export function createAgentRuntimeNodes(
           editedFilePath: state.lastEditedFile,
           touchedFiles: state.touchedFiles,
         }).checks.length;
+        const verificationMode = browserEvaluationReport
+          ? "command+browser"
+          : usedDeterministicVerification
+            ? (combinedVerificationReport.checks?.length ?? 0) > 0
+              ? "deterministic+command"
+              : "deterministic"
+            : "command";
+        const verificationCheckCount = usedDeterministicVerification
+          ? 1 + (combinedVerificationReport.checks?.length ?? 0)
+          : (
+            combinedVerificationReport.evaluationPlan?.checks.length
+            ?? combinedVerificationReport.checks?.length
+            ?? plannedVerificationChecks
+          );
         const cancelledAfterVerify = createCancellationUpdate(signal);
 
         if (cancelledAfterVerify) {
@@ -1246,15 +2041,12 @@ export function createAgentRuntimeNodes(
           browserEvaluationReport,
           harnessRoute: {
             ...state.harnessRoute,
-            usedVerifier: true,
+            usedVerifier: usedDeterministicVerification
+              ? state.harnessRoute.usedVerifier
+              : true,
             checkpointRequested: state.checkpointRequested,
-            verificationMode: browserEvaluationReport
-              ? "command+browser"
-              : "command",
-            verificationCheckCount:
-              combinedVerificationReport.evaluationPlan?.checks.length
-              ?? combinedVerificationReport.checks?.length
-              ?? plannedVerificationChecks,
+            verificationMode,
+            verificationCheckCount,
             usedBrowserEvaluator: browserEvaluationReport !== null,
             browserEvaluationStatus:
               browserEvaluationReport?.status ?? "not_run",
@@ -1379,6 +2171,7 @@ export function createAgentRuntimeNodes(
           blockedFiles,
           status: "responding",
           lastEditedFile: null,
+          directEditArtifact: null,
           checkpointRequested: false,
           verificationReport: null,
           browserEvaluationReport: null,
@@ -1392,6 +2185,7 @@ export function createAgentRuntimeNodes(
         retryCountsByFile,
         status: "planning",
         lastEditedFile: null,
+        directEditArtifact: null,
         checkpointRequested: false,
         verificationReport: null,
         browserEvaluationReport: null,
@@ -1536,6 +2330,12 @@ export async function runAgentRuntime(
   }
 
   const graph = createAgentRuntimeGraph(options);
+  const traceLookup = shouldUseFastTraceLookupPolicy(initialState)
+    ? {
+      maxAttempts: 1,
+      delayMs: 0,
+    }
+    : undefined;
 
   if (!langSmith.enabled) {
     const nextState = await graph.invoke(initialState);
@@ -1551,6 +2351,7 @@ export async function runAgentRuntime(
     runType: "chain",
     tags: ["shipyard", "graph-runtime", initialState.phaseConfig.name],
     metadata: createRuntimeTraceMetadata(initialState, "graph"),
+    traceLookup,
     getResultMetadata: (result) => createRuntimeTraceMetadata(result, "graph"),
     fn: async () => {
       const callbacks = await getLangSmithCallbacksForCurrentTrace();

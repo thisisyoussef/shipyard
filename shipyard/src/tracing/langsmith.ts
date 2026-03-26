@@ -20,6 +20,11 @@ export interface LangSmithTraceReference {
   projectUrl: string | null;
 }
 
+export interface LangSmithTraceLookupOptions {
+  maxAttempts?: number;
+  delayMs?: number;
+}
+
 export interface RunWithLangSmithTraceOptions<
   Args extends unknown[],
   Result,
@@ -31,6 +36,7 @@ export interface RunWithLangSmithTraceOptions<
   metadata?: Record<string, unknown>;
   client?: Client;
   env?: NodeJS.ProcessEnv;
+  traceLookup?: LangSmithTraceLookupOptions;
   getResultMetadata?: (
     result: Result,
   ) => Record<string, unknown> | null | undefined;
@@ -47,6 +53,26 @@ export interface RunWithLangSmithTraceResult<Result> {
 // Give the trace lookup a few extra seconds before surfacing a false-negative 404.
 const TRACE_LOOKUP_ATTEMPTS = 6;
 const TRACE_LOOKUP_DELAY_MS = 1_000;
+
+function resolveTraceLookupAttempts(
+  maxAttempts: number | undefined,
+): number {
+  if (!Number.isInteger(maxAttempts) || maxAttempts === undefined) {
+    return TRACE_LOOKUP_ATTEMPTS;
+  }
+
+  return Math.max(maxAttempts, 1);
+}
+
+function resolveTraceLookupDelay(
+  delayMs: number | undefined,
+): number {
+  if (typeof delayMs !== "number" || !Number.isFinite(delayMs)) {
+    return TRACE_LOOKUP_DELAY_MS;
+  }
+
+  return Math.max(Math.floor(delayMs), 0);
+}
 
 function normalizeEnvValue(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -126,21 +152,24 @@ export async function resolveLangSmithTraceReference(
   client: Client,
   projectName: string | null,
   runId: string | null,
+  options: LangSmithTraceLookupOptions = {},
 ): Promise<LangSmithTraceReference | null> {
   if (!runId) {
     return null;
   }
 
+  const maxAttempts = resolveTraceLookupAttempts(options.maxAttempts);
+  const delayMs = resolveTraceLookupDelay(options.delayMs);
   let traceUrl: string | null = null;
   let projectUrl: string | null = null;
 
-  for (let attempt = 1; attempt <= TRACE_LOOKUP_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       traceUrl = await client.getRunUrl({ runId });
       break;
     } catch (error) {
-      if (attempt < TRACE_LOOKUP_ATTEMPTS) {
-        await delay(TRACE_LOOKUP_DELAY_MS);
+      if (attempt < maxAttempts && delayMs > 0) {
+        await delay(delayMs);
       }
     }
   }
@@ -232,7 +261,12 @@ export async function runWithLangSmithTrace<
 
   return {
     result,
-    trace: await resolveLangSmithTraceReference(client, projectName, runId),
+    trace: await resolveLangSmithTraceReference(
+      client,
+      projectName,
+      runId,
+      options.traceLookup,
+    ),
   };
 }
 

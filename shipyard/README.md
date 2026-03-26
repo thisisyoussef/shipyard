@@ -43,7 +43,8 @@ Within those surfaces, Shipyard routes work through three turn types:
 - shared turn execution used by terminal and browser mode for both code and
   target-manager phases
 - graph runtime with explicit `triage -> plan -> act -> verify -> recover -> respond`
-  routing plus raw fallback parity
+  routing, a bounded direct-edit fast path for tiny UI/copy edits, and raw
+  fallback parity
 - coordinator heuristics that can escalate to explorer, planner, verifier, and
   browser-evaluator helpers when the request needs them
 - browser file attachments stored under
@@ -62,6 +63,8 @@ Within those surfaces, Shipyard routes work through three turn types:
   completion state, and trace metadata so local vs hosted/runtime routing is
   visible without digging through code
 - long-run `ExecutionHandoff` artifacts for reset-aware resume flows
+- deterministic verification for direct-edit happy paths, with explicit fallback
+  to the heavier verifier lane when bounded evidence is not enough
 
 ## Quick Start
 

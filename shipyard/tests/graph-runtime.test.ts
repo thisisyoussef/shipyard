@@ -832,6 +832,348 @@ describe("Phase 4 graph runtime contract", () => {
     expect(update.status).toBe("responding");
   });
 
+  it("uses the direct-edit fast path for a targeted no-path UI tweak", async () => {
+    const directory = await createTempProject();
+    const stylesPath = path.join(directory, "styles.css");
+
+    await writeFile(
+      stylesPath,
+      ['body {', '  background: white;', '}', ''].join("\n"),
+      "utf8",
+    );
+
+    const contextEnvelope = createContextEnvelope();
+    const instruction = "Change the background color to charcoal.";
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult(JSON.stringify({
+        status: "edit",
+        filePath: "styles.css",
+        oldBlock: ['body {', '  background: white;', '}'].join("\n"),
+        newBlock: ['body {', '  background: #36454F;', '}'].join("\n"),
+        summary: "Updated the background to charcoal.",
+      })),
+    ]);
+    const runVerifierSubagent = vi.fn();
+
+    contextEnvelope.task.currentInstruction = instruction;
+    contextEnvelope.stable.discovery = {
+      ...contextEnvelope.stable.discovery,
+      isGreenfield: true,
+      packageManager: null,
+      scripts: {},
+      topLevelFiles: ["styles.css"],
+      topLevelDirectories: [],
+      projectName: "tiny-ui-target",
+    };
+    contextEnvelope.stable.availableScripts = {};
+
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        createRawLoopOptions: () => ({
+          modelAdapter,
+          logger: {
+            log() {},
+          },
+        }),
+        runVerifierSubagent,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction,
+      contextEnvelope,
+      previewState: createPreviewState(),
+      targetDirectory: directory,
+      phaseConfig: createCodePhase(),
+    });
+    const triagedState = {
+      ...state,
+      ...(await nodes.triage(state)),
+    };
+    const plannedState = {
+      ...triagedState,
+      ...(await nodes.plan(triagedState)),
+    };
+    const actedState = {
+      ...plannedState,
+      ...(await nodes.act(plannedState)),
+    };
+    const verifyUpdate = await nodes.verify(actedState);
+
+    expect(modelAdapter.calls).toHaveLength(1);
+    expect(await readFile(stylesPath, "utf8")).toContain("#36454F");
+    expect(actedState.harnessRoute).toMatchObject({
+      actingMode: "direct-edit",
+    });
+    expect(runVerifierSubagent).not.toHaveBeenCalled();
+    expect(verifyUpdate.verificationReport).toMatchObject({
+      passed: true,
+    });
+    expect(verifyUpdate.harnessRoute).toMatchObject({
+      actingMode: "direct-edit",
+      verificationMode: "deterministic+command",
+      usedVerifier: false,
+    });
+    expect(verifyUpdate.status).toBe("responding");
+  });
+
+  it("falls back to the raw loop when the direct-edit fast path declines the change", async () => {
+    const directory = await createTempProject();
+    const stylesPath = path.join(directory, "styles.css");
+
+    await writeFile(
+      stylesPath,
+      ['body {', '  background: white;', '}', ''].join("\n"),
+      "utf8",
+    );
+
+    const contextEnvelope = createContextEnvelope();
+    const instruction = "Update styles.css to make the background charcoal.";
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult(JSON.stringify({
+        status: "fallback",
+        reason: "Need the generic loop.",
+      })),
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read_file",
+          name: "read_file",
+          input: {
+            path: "styles.css",
+          },
+        },
+        {
+          id: "toolu_edit_block",
+          name: "edit_block",
+          input: {
+            path: "styles.css",
+            old_string: ['body {', '  background: white;', '}', ''].join("\n"),
+            new_string: ['body {', '  background: #36454F;', '}', ''].join("\n"),
+          },
+        },
+      ]),
+      createFakeTextTurnResult("Updated styles.css."),
+    ]);
+
+    contextEnvelope.task.currentInstruction = instruction;
+    contextEnvelope.stable.discovery = {
+      ...contextEnvelope.stable.discovery,
+      isGreenfield: false,
+      packageManager: null,
+      scripts: {},
+      topLevelFiles: ["styles.css"],
+      topLevelDirectories: [],
+      projectName: "tiny-ui-target",
+    };
+    contextEnvelope.stable.availableScripts = {};
+
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        createRawLoopOptions: () => ({
+          modelAdapter,
+          logger: {
+            log() {},
+          },
+        }),
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction,
+      contextEnvelope,
+      previewState: createPreviewState(),
+      targetDirectory: directory,
+      phaseConfig: createCodePhase(),
+    });
+    const triagedState = {
+      ...state,
+      ...(await nodes.triage(state)),
+    };
+    const plannedState = {
+      ...triagedState,
+      ...(await nodes.plan(triagedState)),
+    };
+    const actUpdate = await nodes.act(plannedState);
+
+    expect(modelAdapter.calls).toHaveLength(3);
+    expect(await readFile(stylesPath, "utf8")).toContain("#36454F");
+    expect(actUpdate.harnessRoute).toMatchObject({
+      actingMode: "raw-loop",
+    });
+    expect(actUpdate.status).toBe("verifying");
+  });
+
+  it("routes deterministic direct-edit verification failures into recovery", async () => {
+    const directory = await createTempProject();
+    const stylesPath = path.join(directory, "styles.css");
+
+    await writeFile(
+      stylesPath,
+      ['body {', '  background: white;', '}', ''].join("\n"),
+      "utf8",
+    );
+
+    const contextEnvelope = createContextEnvelope();
+    const instruction = "Change the background color to charcoal.";
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult(JSON.stringify({
+        status: "edit",
+        filePath: "styles.css",
+        oldBlock: ['body {', '  background: white;', '}'].join("\n"),
+        newBlock: ['body {', '  background: #36454F;', '}'].join("\n"),
+        summary: "Updated the background to charcoal.",
+      })),
+    ]);
+
+    contextEnvelope.task.currentInstruction = instruction;
+    contextEnvelope.stable.discovery = {
+      ...contextEnvelope.stable.discovery,
+      isGreenfield: true,
+      packageManager: null,
+      scripts: {},
+      topLevelFiles: ["styles.css"],
+      topLevelDirectories: [],
+      projectName: "tiny-ui-target",
+    };
+    contextEnvelope.stable.availableScripts = {};
+
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        createRawLoopOptions: () => ({
+          modelAdapter,
+          logger: {
+            log() {},
+          },
+        }),
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction,
+      contextEnvelope,
+      previewState: createPreviewState(),
+      targetDirectory: directory,
+      phaseConfig: createCodePhase(),
+    });
+    const triagedState = {
+      ...state,
+      ...(await nodes.triage(state)),
+    };
+    const plannedState = {
+      ...triagedState,
+      ...(await nodes.plan(triagedState)),
+    };
+    const actedState = {
+      ...plannedState,
+      ...(await nodes.act(plannedState)),
+    };
+
+    await writeFile(
+      stylesPath,
+      [
+        'body {',
+        '  background: #36454F;',
+        '}',
+        '',
+        '.footer {',
+        '  color: white;',
+        '}',
+        '',
+      ].join("\n"),
+      "utf8",
+    );
+
+    const verifyUpdate = await nodes.verify(actedState);
+
+    expect(verifyUpdate.verificationReport).toMatchObject({
+      passed: false,
+      summary: expect.stringContaining("changed outside the targeted block"),
+    });
+    expect(verifyUpdate.harnessRoute).toMatchObject({
+      verificationMode: "deterministic",
+      usedVerifier: false,
+    });
+    expect(verifyUpdate.status).toBe("recovering");
+  });
+
+  it("skips git-diff direct verification when the target is not a git repo", async () => {
+    const directory = await createTempProject();
+    const stylesPath = path.join(directory, "styles.css");
+
+    await writeFile(
+      stylesPath,
+      ['body {', '  background: white;', '}', ''].join("\n"),
+      "utf8",
+    );
+
+    const contextEnvelope = createContextEnvelope();
+    const instruction = "Change the background color to charcoal.";
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult(JSON.stringify({
+        status: "edit",
+        filePath: "styles.css",
+        oldBlock: ['body {', '  background: white;', '}'].join("\n"),
+        newBlock: ['body {', '  background: #36454F;', '}'].join("\n"),
+        summary: "Updated the background to charcoal.",
+      })),
+    ]);
+
+    contextEnvelope.task.currentInstruction = instruction;
+    contextEnvelope.stable.discovery = {
+      ...contextEnvelope.stable.discovery,
+      isGreenfield: false,
+      packageManager: null,
+      scripts: {},
+      topLevelFiles: ["styles.css"],
+      topLevelDirectories: [],
+      projectName: "tiny-ui-target",
+    };
+    contextEnvelope.stable.availableScripts = {};
+
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        createRawLoopOptions: () => ({
+          modelAdapter,
+          logger: {
+            log() {},
+          },
+        }),
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction,
+      contextEnvelope,
+      previewState: createPreviewState(),
+      targetDirectory: directory,
+      phaseConfig: createCodePhase(),
+    });
+    const triagedState = {
+      ...state,
+      ...(await nodes.triage(state)),
+    };
+    const plannedState = {
+      ...triagedState,
+      ...(await nodes.plan(triagedState)),
+    };
+    const actedState = {
+      ...plannedState,
+      ...(await nodes.act(plannedState)),
+    };
+    const verifyUpdate = await nodes.verify(actedState);
+
+    expect(verifyUpdate.verificationReport).toMatchObject({
+      passed: true,
+      command: "deterministic-edit",
+    });
+    expect(verifyUpdate.harnessRoute).toMatchObject({
+      verificationMode: "deterministic",
+      verificationCheckCount: 1,
+      usedVerifier: false,
+    });
+    expect(verifyUpdate.status).toBe("responding");
+  });
+
   it("verify node avoids package-script verification when package manifests changed without an install", async () => {
     const directory = await createTempProject();
     const appPath = path.join(directory, "apps", "web", "src", "App.tsx");

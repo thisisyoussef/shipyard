@@ -12,6 +12,7 @@
 3. Keep same-session follow-up work on the lightweight path whenever recent edits already identify the target files, while surfacing any subagent work that still occurs.
 4. Remove avoidable greenfield bootstrap friction for near-empty targets seeded only with operator docs.
 5. Replace the tiny live smoke with a graph-aware, large-write, follow-up-capable runtime regression.
+6. Keep tiny targeted UI and copy edits on the cheapest safe lane by replacing repeated raw-loop and verifier hops with one bounded edit pass plus deterministic verification.
 
 ## Shared Constraints
 
@@ -32,6 +33,7 @@
 | RTH-S03 | Continuation-Aware Routing and Subagent Visibility | Keep same-session follow-ups on the lightweight path when recent edits already identify the target files, and surface subagent activity when heavy routing still occurs. | RTH-S01, RTH-S02, Phase 6/7/8 implementation |
 | RTH-S04 | Bootstrap Safe-File Allowlist Alignment | Let `bootstrap_target` treat `AGENTS.md` and `README.md` as seed files instead of rejecting otherwise empty targets. | Phase 8 `P8-S04` implementation |
 | RTH-S05 | Long-Run Graph and Follow-Up Smoke Coverage | Replace the tiny raw-loop smoke with a graph-aware, large-write, follow-up regression that reproduces the observed failure class. | RTH-S01, RTH-S02, RTH-S03, RTH-S04 |
+| RTH-S06 | Direct-Edit Fast Path and Deterministic Verification | Collapse tiny targeted UI/copy edits into one bounded edit pass, deterministic verification, and cheaper trace lookup so the lightweight lane stays fast in practice. | RTH-S03, Phase 7 routing/verification implementation |
 
 ## Sequencing Rationale
 
@@ -40,6 +42,7 @@
 - `RTH-S03` then retunes the coordinator and subagent surfaces around the stabilized loop, preserving the lightweight path for same-session continuations.
 - `RTH-S04` is intentionally narrow and can land in parallel, but it is included in the pack because it removes a repeated early-turn waste case from the same user journey.
 - `RTH-S05` closes the pack by proving the fixed runtime survives the long-write and follow-up scenarios that motivated the pack.
+- `RTH-S06` follows the smoke and routing hardening because the fresh traces exposed a smaller but still painful latency cliff on tiny direct edits; it sharpens the already-shipped lightweight lane without reopening the broader architecture pack.
 
 ## Whole-Pack Success Signal
 
@@ -48,6 +51,7 @@
 - Follow-up turns against a target Shipyard just scaffolded or edited stay on the cheap, visible path unless the runtime has a concrete reason to escalate into explorer or planner.
 - Empty targets seeded only with `AGENTS.md` or `README.md` bootstrap in one step instead of burning an extra turn.
 - The opt-in live smoke can reproduce and guard the real failure mode: graph mode, large writes, and same-session follow-up continuation.
+- Tiny targeted edits can finish through one bounded edit pass with deterministic verification and trace capture that does not dominate the wall-clock cost.
 
 ## Implementation Evidence
 
@@ -164,3 +168,39 @@
     `019d2845-b0c3-7000-8000-0409f9d6db2f`,
     `019d2847-1989-7000-8000-0661c83e9d63`,
     and `019d2847-589f-7000-8000-0442fef4e057`.
+- `RTH-S06` Direct-edit fast path and deterministic verification
+  Code References:
+  - `shipyard/src/agents/coordinator.ts`
+  - `shipyard/src/engine/graph.ts`
+  - `shipyard/src/engine/turn.ts`
+  - `shipyard/src/engine/live-verification.ts`
+  - `shipyard/src/tracing/langsmith.ts`
+  - `shipyard/tests/graph-runtime.test.ts`
+  - `shipyard/tests/live-verification.test.ts`
+  - `shipyard/tests/langsmith-tracing.test.ts`
+  - `shipyard/tests/turn-runtime.test.ts`
+  Representative Snippet:
+  ```ts
+  const traceLookup = shouldUseFastInstructionTurnTraceLookup({
+    phaseName: phase.name,
+    runtimeMode: runtimeState.runtimeMode,
+    instruction: options.instruction,
+    sessionState: state,
+    runtimeState,
+    mergedInjectedContext,
+    targetFilePaths,
+    loadedHandoff,
+  })
+    ? FAST_TRACE_LOOKUP
+    : undefined;
+  ```
+  Notes:
+  - Fresh traces on 2026-03-26 now show the bounded direct-edit lane succeeding
+    on a plain temp target with `actingMode=direct-edit` and
+    `verificationMode=deterministic`.
+  - Trace `019d2c2f-47fe-7000-8000-076c4a8df1a3` exposed the original non-git
+    `git diff --stat` regression, trace `019d2c32-9e6c-7000-8000-01dcd5067c8c`
+    confirmed the deterministic-verification fix, and trace
+    `019d2c35-04d1-7000-8000-01e7551221de` confirmed the follow-up outer
+    trace-lookup reduction that cut the same edit from about `8.4s` local wall
+    time to about `4.4s`.

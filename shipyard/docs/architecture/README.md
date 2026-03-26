@@ -114,8 +114,8 @@ flowchart TD
   NeedPlanner{"Planner needed?"}
   Planner["Planner subagent<br/>read_file / load_spec / list_files / search_files"]
   PlanArtifacts["TaskPlan + optional ExecutionSpec<br/>harnessRoute selected"]
-  ActNode["act<br/>raw tool loop<br/>checkpoint before edit_block"]
-  VerifyNode["verify<br/>verifier checks"]
+  ActNode["act<br/>direct-edit fast path or raw tool loop<br/>checkpoint before edit_block"]
+  VerifyNode["verify<br/>deterministic checks or verifier plan"]
   NeedBrowser{"Browser evaluator needed?"}
   BrowserEval["Browser evaluator<br/>loopback preview only"]
   Passed{"Verification passed?"}
@@ -154,13 +154,15 @@ flowchart TD
 - `triage`: classifies the request up front so exact-path or clearly targeted
   work can stay lightweight while broad, cross-cutting work keeps the heavier
   planner/browser-evaluator lane.
-- `act`: runs the raw model/tool loop for the current phase. `edit_block`
+- `act`: either runs one bounded direct-edit pass for tiny UI/copy changes or
+  falls back to the raw model/tool loop for everything broader. `edit_block`
   writes are checkpointed first.
-- `verify`: runs the verifier's command-based `EvaluationPlan`. If the request
-  looks UI-relevant, the request was classified as broad (or explicitly asked
-  for preview verification), and a loopback preview is running, Shipyard also
-  runs the browser evaluator and folds its result into the final verification
-  report.
+- `verify`: uses deterministic surgical-edit checks on the direct-edit happy
+  path, otherwise runs the verifier's command-based `EvaluationPlan`. If the
+  request looks UI-relevant, the request was classified as broad (or explicitly
+  asked for preview verification), and a loopback preview is running, Shipyard
+  also runs the browser evaluator and folds its result into the final
+  verification report.
 - `recover`: restores the latest checkpoint, re-reads the edited file, and
   either replans or blocks the file after repeated failures.
 - `respond`: finalizes the turn outcome. `engine/turn.ts` then decides whether

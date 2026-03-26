@@ -244,4 +244,35 @@ describe("LangSmith tracing helpers", () => {
     },
     15_000,
   );
+
+  it("can use a one-shot lookup policy for tiny direct-edit traces", async () => {
+    const client = {
+      getRunUrl: vi.fn(async () => {
+        throw new Error("Failed to fetch /runs/run-123. Received status [404]: Not Found.");
+      }),
+      getProjectUrl: vi.fn(async ({ projectName }: { projectName?: string }) =>
+        `https://smith.langchain.com/projects/${projectName ?? "missing"}`),
+    };
+
+    await expect(
+      resolveLangSmithTraceReference(
+        client as never,
+        "shipyard",
+        "run-123",
+        {
+          maxAttempts: 1,
+          delayMs: 0,
+        },
+      ),
+    ).resolves.toEqual({
+      projectName: "shipyard",
+      runId: "run-123",
+      traceUrl: null,
+      projectUrl: "https://smith.langchain.com/projects/shipyard",
+    });
+    expect(client.getRunUrl).toHaveBeenCalledTimes(1);
+    expect(client.getProjectUrl).toHaveBeenCalledWith({
+      projectName: "shipyard",
+    });
+  });
 });
