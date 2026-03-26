@@ -38,6 +38,7 @@ interface ScenarioResult {
   targetDirectory: string;
   sessionFilePath: string;
   runtimeConfig: ReturnType<typeof resolveAnthropicRuntimeConfig>;
+  initialBootstrapReady: boolean;
   turns: TurnResultSummary[];
   recentTouchedFiles: string[];
   summaryPath: string;
@@ -191,6 +192,13 @@ async function runRuntimeHardeningScenario(): Promise<ScenarioResult> {
       projectName: "phase3-runtime-hardening-smoke",
     },
   });
+  const initialBootstrapReady = sessionState.discovery.bootstrapReady ?? false;
+
+  assert.equal(
+    initialBootstrapReady,
+    true,
+    "Seed-doc target should stay bootstrap-ready.",
+  );
 
   let activeRawTranscript = createTranscriptCollector();
   const runtimeState = createInstructionRuntimeState({
@@ -226,6 +234,16 @@ async function runRuntimeHardeningScenario(): Promise<ScenarioResult> {
   );
 
   assert.equal(bootstrapTurn.status, "success");
+  assert.equal(
+    bootstrapTurn.harnessRoute.actingLoopBudget,
+    45,
+    "Bootstrap turn should use the broad greenfield acting budget.",
+  );
+  assert.equal(
+    bootstrapTurn.harnessRoute.actingLoopBudgetReason,
+    "broad-greenfield",
+    "Bootstrap turn should record the broad greenfield budget reason.",
+  );
   assert(
     bootstrapCollector.toolCalls.includes("bootstrap_target"),
     "Bootstrap turn did not use bootstrap_target.",
@@ -258,6 +276,16 @@ async function runRuntimeHardeningScenario(): Promise<ScenarioResult> {
 
   assert.equal(followUpTurn.status, "success");
   assert.equal(
+    followUpTurn.harnessRoute.actingLoopBudget,
+    45,
+    "Follow-up turn should keep the broad greenfield acting budget.",
+  );
+  assert.equal(
+    followUpTurn.harnessRoute.actingLoopBudgetReason,
+    "broad-continuation",
+    "Follow-up turn should record the broad continuation budget reason.",
+  );
+  assert.equal(
     followUpTurn.harnessRoute.usedExplorer,
     false,
     "Follow-up turn escalated into explorer unexpectedly.",
@@ -279,6 +307,7 @@ async function runRuntimeHardeningScenario(): Promise<ScenarioResult> {
       targetDirectory,
       sessionFilePath: getSessionFilePath(targetDirectory, sessionState.sessionId),
       runtimeConfig,
+      initialBootstrapReady,
       recentTouchedFiles: sessionState.recentTouchedFiles,
       turns: [
         {
@@ -309,6 +338,7 @@ async function runRuntimeHardeningScenario(): Promise<ScenarioResult> {
     targetDirectory,
     sessionFilePath: getSessionFilePath(targetDirectory, sessionState.sessionId),
     runtimeConfig,
+    initialBootstrapReady,
     recentTouchedFiles: [...sessionState.recentTouchedFiles],
     summaryPath,
     turns: [
@@ -347,6 +377,7 @@ async function main(): Promise<void> {
   console.log(
     `  budgets: model=${result.runtimeConfig.model} maxTokens=${String(result.runtimeConfig.maxTokens)} timeoutMs=${String(result.runtimeConfig.timeoutMs)}`,
   );
+  console.log(`  bootstrap-ready at start: ${String(result.initialBootstrapReady)}`);
   console.log(`  summary: ${result.summaryPath}`);
   console.log(`  recent touched files: ${result.recentTouchedFiles.join(", ")}`);
 

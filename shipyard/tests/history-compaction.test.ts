@@ -64,11 +64,14 @@ describe("history compaction", () => {
               success: true,
               output: "Created src/data/seedData.ts\nLines: 595",
               editedPath: "src/data/seedData.ts",
-              data: {
-                path: "src/data/seedData.ts",
-                totalLines: 595,
-                afterPreview:
-                  "export const seedData = {\n  boards: [\n    {\n      id: 'board-1',\n      name: 'Roadmap',\n    },\n  ],\n};",
+              touchedFiles: ["src/data/seedData.ts"],
+              historyDigest: {
+                requestLine:
+                  "write_file(src/data/seedData.ts) lines=595 chars=16000 fingerprint=test-hash preview=\"export const seedData = {\"",
+                resultLine:
+                  "write_file(src/data/seedData.ts) success lines=595 fingerprint=test-hash preview=\"export const seedData = {\\n  boards: [\\n    {\\n      id: 'board-1',\\n      name: 'Roadmap'\". Re-read the file from disk if exact contents are needed.",
+                isWriteLike: true,
+                prefersVerbatimTail: false,
               },
             },
           ],

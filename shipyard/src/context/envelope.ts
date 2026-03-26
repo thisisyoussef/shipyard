@@ -40,6 +40,18 @@ function formatDiscoveryValue(value: string | null): string {
   return value ?? "unknown";
 }
 
+function formatTargetType(discovery: DiscoveryReport): string {
+  if (discovery.isGreenfield) {
+    return "greenfield";
+  }
+
+  if (discovery.bootstrapReady) {
+    return "bootstrap-ready";
+  }
+
+  return "existing";
+}
+
 function formatList(items: string[], emptyLabel = "(none)"): string {
   if (items.length === 0) {
     return emptyLabel;
@@ -143,20 +155,32 @@ function formatLatestHandoff(handoff: LoadedExecutionHandoff | null): string {
   const latestEvaluation = handoff.handoff.latestEvaluation
     ? `${handoff.handoff.latestEvaluation.passed ? "passed" : "failed"}: ${handoff.handoff.latestEvaluation.summary}`
     : "(none)";
+  const touchedFiles = formatBoundedList(handoff.handoff.touchedFiles, {
+    itemLimit: 140,
+    listLimit: 420,
+  });
+  const remainingWork = formatBoundedList(handoff.handoff.remainingWork, {
+    itemLimit: 180,
+    listLimit: 280,
+  });
+  const completedWork = formatBoundedList(handoff.handoff.completedWork, {
+    itemLimit: 140,
+    listLimit: 220,
+  });
 
   return [
     `Path: ${handoff.artifactPath}`,
     `Created At: ${handoff.handoff.createdAt}`,
     `Trigger: ${handoff.handoff.resetReason.kind}`,
-    `Reason: ${handoff.handoff.resetReason.summary}`,
-    "Completed Work:",
-    formatList(handoff.handoff.completedWork),
-    "Remaining Work:",
-    formatList(handoff.handoff.remainingWork),
+    `Reason: ${truncateText(handoff.handoff.resetReason.summary, 220)}`,
     "Touched Files:",
-    formatBoundedList(handoff.handoff.touchedFiles),
+    touchedFiles,
+    "Remaining Work:",
+    remainingWork,
     `Latest Evaluation: ${latestEvaluation}`,
-    `Next Recommended Action: ${handoff.handoff.nextRecommendedAction}`,
+    `Next Recommended Action: ${truncateText(handoff.handoff.nextRecommendedAction, 220)}`,
+    "Completed Work:",
+    completedWork,
   ].join("\n");
 }
 
@@ -242,7 +266,7 @@ export function serializeContextEnvelope(
   const projectContextLines = [
     `Instruction: ${truncateText(envelope.task.currentInstruction, SERIALIZED_INSTRUCTION_CHAR_BUDGET)}`,
     `Project: ${envelope.stable.discovery.projectName ?? "unknown"}`,
-    `Target Type: ${envelope.stable.discovery.isGreenfield ? "greenfield" : "existing"}`,
+    `Target Type: ${formatTargetType(envelope.stable.discovery)}`,
     `Language: ${formatDiscoveryValue(envelope.stable.discovery.language)}`,
     `Framework: ${formatDiscoveryValue(envelope.stable.discovery.framework)}`,
     `Package Manager: ${formatDiscoveryValue(envelope.stable.discovery.packageManager)}`,

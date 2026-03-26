@@ -17,11 +17,24 @@ interface PackageManifest {
 }
 
 const IGNORED_TOP_LEVEL_NAMES = new Set([".git", ".shipyard", ".DS_Store"]);
-const BOOTSTRAP_SAFE_TOP_LEVEL_FILES = new Set(["AGENTS.md"]);
+const BOOTSTRAP_SAFE_TOP_LEVEL_FILES = new Set(["AGENTS.md", "README.md"]);
+
+export function isBootstrapReadyTargetEntries(options: {
+  topLevelFiles: string[];
+  topLevelDirectories: string[];
+}): boolean {
+  return (
+    options.topLevelDirectories.length === 0
+    && options.topLevelFiles.every((fileName) =>
+      BOOTSTRAP_SAFE_TOP_LEVEL_FILES.has(fileName)
+    )
+  );
+}
 
 function createEmptyDiscoveryReport(): DiscoveryReport {
   return {
     isGreenfield: true,
+    bootstrapReady: true,
     language: null,
     framework: null,
     packageManager: null,
@@ -83,21 +96,33 @@ export function normalizeDiscoveryReport(
     return createEmptyDiscoveryReport();
   }
 
+  const topLevelFiles = [...(report.topLevelFiles ?? [])];
+  const topLevelDirectories = [...(report.topLevelDirectories ?? [])];
+  const bootstrapReady = report.bootstrapReady
+    ?? (
+      (report.isGreenfield ?? false)
+      || isBootstrapReadyTargetEntries({
+        topLevelFiles,
+        topLevelDirectories,
+      })
+    );
+
   return {
     isGreenfield: report.isGreenfield ?? true,
+    bootstrapReady,
     language: report.language ?? null,
     framework: report.framework ?? null,
     packageManager: report.packageManager ?? null,
     scripts: { ...(report.scripts ?? {}) },
     hasReadme: report.hasReadme ?? false,
     hasAgentsMd: report.hasAgentsMd ?? false,
-    topLevelFiles: [...(report.topLevelFiles ?? [])],
-    topLevelDirectories: [...(report.topLevelDirectories ?? [])],
+    topLevelFiles,
+    topLevelDirectories,
     projectName: report.projectName ?? null,
     previewCapability:
       report.previewCapability ??
       createUnavailablePreviewCapability(
-        report.isGreenfield
+        report.isGreenfield || bootstrapReady
           ? "Greenfield target; no supported local preview has been detected yet."
           : "No supported local preview signal was detected for this target.",
       ),
@@ -238,10 +263,6 @@ function detectHasReadme(topLevelFiles: string[]): boolean {
   return topLevelFiles.some((filePath) => filePath.toLowerCase().startsWith("readme"));
 }
 
-function isBootstrapSafeTopLevelFile(filePath: string): boolean {
-  return BOOTSTRAP_SAFE_TOP_LEVEL_FILES.has(filePath) || detectHasReadme([filePath]);
-}
-
 async function readPackageManifest(
   targetPath: string,
   topLevelFiles: string[],
@@ -259,6 +280,10 @@ async function readPackageManifest(
 export function formatDiscoverySummary(report: DiscoveryReport): string {
   if (report.isGreenfield) {
     return "greenfield target";
+  }
+
+  if (report.bootstrapReady) {
+    return "bootstrap-ready target";
   }
 
   const parts = [
@@ -292,34 +317,16 @@ export async function discoverTarget(
     return createEmptyDiscoveryReport();
   }
 
-  const onlyBootstrapSafeFiles =
-    topLevelDirectories.length === 0 &&
-    topLevelFiles.length > 0 &&
-    topLevelFiles.every((filePath) => isBootstrapSafeTopLevelFile(filePath));
-
-  if (onlyBootstrapSafeFiles) {
-    return normalizeDiscoveryReport({
-      isGreenfield: true,
-      language: null,
-      framework: null,
-      packageManager: null,
-      scripts: {},
-      hasReadme: detectHasReadme(topLevelFiles),
-      hasAgentsMd: topLevelFiles.includes("AGENTS.md"),
-      topLevelFiles,
-      topLevelDirectories,
-      projectName: null,
-      previewCapability: createUnavailablePreviewCapability(
-        "Greenfield target; no supported local preview has been detected yet.",
-      ),
-    });
-  }
-
   const packageManifest = await readPackageManifest(targetPath, topLevelFiles);
   const packageManager = detectPackageManager(topLevelFiles, packageManifest);
+  const bootstrapReady = isBootstrapReadyTargetEntries({
+    topLevelFiles,
+    topLevelDirectories,
+  });
 
   return normalizeDiscoveryReport({
     isGreenfield: false,
+    bootstrapReady,
     language: detectLanguage(topLevelFiles, packageManifest),
     framework: detectFramework(packageManifest),
     packageManager,

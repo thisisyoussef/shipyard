@@ -61,6 +61,15 @@ function uniqueStrings(values: Iterable<string>): string[] {
   return [...new Set(values)];
 }
 
+function isBootstrapReadyContext(
+  contextEnvelope: ContextEnvelope,
+): boolean {
+  return Boolean(
+    contextEnvelope.stable.discovery.bootstrapReady
+    || contextEnvelope.stable.discovery.isGreenfield,
+  );
+}
+
 function cleanInstructionToken(token: string): string {
   return token.replace(/^[`"'([{<]+|[`"'.,!?;:)\]}>]+$/g, "");
 }
@@ -185,7 +194,7 @@ function shouldUseNoInstallVerificationFallback(options: {
     return false;
   }
 
-  if (options.contextEnvelope.stable.discovery.isGreenfield) {
+  if (isBootstrapReadyContext(options.contextEnvelope)) {
     return true;
   }
 
@@ -211,7 +220,7 @@ export function shouldCoordinatorUseExplorer(options: {
   executionSpec?: ExecutionSpec | null;
   contextReport?: ContextReport | null;
 }): boolean {
-  if (options.contextEnvelope.stable.discovery.isGreenfield) {
+  if (isBootstrapReadyContext(options.contextEnvelope)) {
     return false;
   }
 
@@ -222,7 +231,7 @@ export function shouldCoordinatorUseExplorer(options: {
   return getKnownTargetFilePaths(options).length === 0;
 }
 
-function isClearlyLightweightInstruction(instruction: string): boolean {
+export function isClearlyLightweightInstruction(instruction: string): boolean {
   const normalizedInstruction = instruction.trim().toLowerCase();
 
   return lightweightInstructionPrefixes.some((prefix) =>
@@ -238,6 +247,10 @@ export function shouldCoordinatorUsePlanner(options: {
   contextReport?: ContextReport | null;
 }): boolean {
   if (options.executionSpec) {
+    return false;
+  }
+
+  if (isBootstrapReadyContext(options.contextEnvelope)) {
     return false;
   }
 

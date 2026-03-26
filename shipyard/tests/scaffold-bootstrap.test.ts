@@ -167,6 +167,9 @@ describe("shared scaffold bootstrap", () => {
     expect(getTool("bootstrap_target")).toBeDefined();
     expect(CODE_PHASE_SYSTEM_PROMPT).toContain("bootstrap_target");
     expect(CODE_PHASE_SYSTEM_PROMPT).toContain("write_file");
+    expect(CODE_PHASE_SYSTEM_PROMPT).toContain("Read a file before you modify an existing file");
+    expect(CODE_PHASE_SYSTEM_PROMPT).toContain("Batch coherent new-file writes");
+    expect(CODE_PHASE_SYSTEM_PROMPT).not.toContain("Return small typed artifacts");
 
     expect(
       parseFrontendMessage(

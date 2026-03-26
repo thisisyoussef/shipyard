@@ -400,6 +400,22 @@ describe("raw Claude tool loop", () => {
         ],
       }),
       createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_read_package",
+            name: "read_file",
+            input: {
+              path: "src/big.ts",
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
         stopReason: "end_turn",
         content: [
           {
@@ -414,7 +430,7 @@ describe("raw Claude tool loop", () => {
     const result = await runRawToolLoop(
       "You are Shipyard.",
       "Create a large TypeScript file.",
-      ["write_file"],
+      ["write_file", "read_file"],
       directory,
       {
         client,
@@ -424,12 +440,87 @@ describe("raw Claude tool loop", () => {
       },
     );
 
-    const replayedHistory = JSON.stringify(client.calls[1]?.messages ?? []);
+    const replayedHistory = JSON.stringify(client.calls[2]?.messages ?? []);
 
     expect(result).toBe("Large file written successfully.");
     expect(replayedHistory).not.toContain(largeFileContents);
-    expect(replayedHistory).toContain("Earlier completed tool cycles were compacted");
     expect(replayedHistory).toContain("src/big.ts");
+    expect(replayedHistory).toContain("write_file");
+    expect(replayedHistory).toContain("fingerprint=");
+    expect(replayedHistory).toContain("Re-read the file from disk");
+    expect(replayedHistory).toContain("toolu_read_package");
+  });
+
+  it("compacts oversized run_command output after the turn completes", async () => {
+    const directory = await createTempProject();
+    const commandOutput = "x".repeat(5_400);
+    const client = createMockAnthropicClient([
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_run_large_command",
+            name: "run_command",
+            input: {
+              command: `node -e "process.stdout.write('${commandOutput}')"`
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "tool_use",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_list_after_command",
+            name: "list_files",
+            input: {
+              path: ".",
+              depth: 1,
+            },
+            caller: {
+              type: "direct",
+            },
+          },
+        ],
+      }),
+      createAssistantMessage({
+        stopReason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: "Finished after the long command output was compacted.",
+            citations: null,
+          },
+        ],
+      }),
+    ]);
+
+    const result = await runRawToolLoop(
+      "You are Shipyard.",
+      "Run a long command and then continue.",
+      ["run_command", "list_files"],
+      directory,
+      {
+        client,
+        logger: {
+          log() {},
+        },
+      },
+    );
+
+    const replayedHistory = JSON.stringify(client.calls[2]?.messages ?? []);
+
+    expect(result).toBe("Finished after the long command output was compacted.");
+    expect(replayedHistory).not.toContain(commandOutput);
+    expect(replayedHistory).toContain("run_command");
+    expect(replayedHistory).toContain("output_chars=");
+    expect(replayedHistory).toContain("fingerprint=");
+    expect(replayedHistory).toContain("toolu_list_after_command");
   });
 
   it("retries stop_reason=max_tokens with a higher max_tokens budget", async () => {
@@ -503,7 +594,7 @@ describe("raw Claude tool loop", () => {
     ).rejects.toThrowError(/output budget exhausted|stop_reason=max_tokens/i);
   });
 
-  it("returns a resumable checkpoint message after 25 iterations without a final response", async () => {
+  it("returns a continuation result after 25 iterations without a final response", async () => {
     const client = createMockAnthropicClient((_request, turnNumber) =>
       createAssistantMessage({
         stopReason: "tool_use",
@@ -536,8 +627,11 @@ describe("raw Claude tool loop", () => {
       },
     );
 
-    expect(result.status).toBe("limit_reached");
-    expect(result.finalText).toMatch(/handoff|fresh turn|checkpoint/i);
+    expect(result.status).toBe("continuation");
+    expect(result.finalText).toMatch(
+      new RegExp(`reached the acting iteration limit of ${String(RAW_LOOP_MAX_ITERATIONS)}`, "i"),
+    );
+    expect(result.didEdit).toBe(false);
     expect(result.iterations).toBe(RAW_LOOP_MAX_ITERATIONS);
     expect(client.calls).toHaveLength(RAW_LOOP_MAX_ITERATIONS);
   });

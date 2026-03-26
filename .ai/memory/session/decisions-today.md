@@ -23,12 +23,7 @@
   `shipyard-production-f2e5.up.railway.app` behind the shared access gate.
 - 2026-03-26: Drafted the `phase-runtime-hardening` supplemental spec pack to address long-loop prompt bloat, Anthropic budget exhaustion, continuation-aware routing, bootstrap seed-doc allowlists, and graph-aware live smoke coverage.
 - 2026-03-26: Drafted the `phase-runtime-hardening-follow-up` supplemental pack to address history-safe tool-turn storage, write-aware compaction, greenfield batching prompts, handoff fidelity, continuation-first iteration thresholds, bootstrap-ready discovery, and task-aware replay budgets.
-- 2026-03-26: Refreshed the runtime-facing README and architecture docs so they
-  now match the shipped target-manager routing, `plan:` / `next` /
-  `continue` flow, planner-backed graph runtime, browser evaluator, and the
-  current split-pane browser workbench shell.
-- 2026-03-26: Drafted the `phase-10` architecture pack with eight stories that
-  sequence the next major runtime upgrades: durable threads, policy and
-  sandboxing, layered memory, repo indexing, explicit routing, richer
-  verification/evals, isolated background tasks, and evented readiness
-  surfaces.
+- 2026-03-26: Refreshed the runtime-facing README and architecture docs so they now match the shipped target-manager routing, `plan:` / `next` / `continue` flow, planner-backed graph runtime, browser evaluator, and the current split-pane browser workbench shell.
+- 2026-03-26: Drafted the `phase-10` architecture pack with eight stories that sequence the next major runtime upgrades: durable threads, policy and sandboxing, layered memory, repo indexing, explicit routing, richer verification/evals, isolated background tasks, and evented readiness surfaces.
+- 2026-03-26: Implemented the `phase-runtime-hardening-follow-up` pack by digesting completed tool turns, preserving write-aware compaction tails, relaxing new-file prompt policy, compressing handoffs, aligning bootstrap-ready discovery, and auto-resuming threshold-hit loops through checkpoint-backed continuations.
+- 2026-03-26: Task-aware acting budgets now resolve broad greenfield and same-session continuation intent before exact-path narrow defaults; the live smoke and LangSmith traces confirmed a `broad-greenfield` bootstrap turn followed by a `broad-continuation` follow-up in the same session.

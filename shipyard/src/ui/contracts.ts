@@ -66,6 +66,7 @@ const deployStatusSchema = z.enum(["idle", "deploying", "success", "error"]);
 const nonEmptyTextSchema = z.string().trim().min(1);
 const discoverySchema = z.object({
   isGreenfield: z.boolean(),
+  bootstrapReady: z.boolean().optional(),
   language: z.string().nullable(),
   framework: z.string().nullable(),
   packageManager: z.string().nullable(),

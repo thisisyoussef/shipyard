@@ -16,6 +16,7 @@ import {
   createAgentGraphState,
   createAgentRuntimeGraph,
   createAgentRuntimeNodes,
+  determineActingLoopBudget,
   routeAfterAct,
   routeAfterVerify,
   runAgentRuntime,
@@ -335,6 +336,54 @@ describe("Phase 4 graph runtime contract", () => {
     expect(update.planningMode).toBe("lightweight");
   });
 
+  it("plan node keeps bootstrap-ready doc-seeded targets on the lightweight path", async () => {
+    const runExplorerSubagent = vi.fn();
+    const runPlannerSubagent = vi.fn();
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runExplorerSubagent,
+        runPlannerSubagent,
+      },
+    });
+    const contextEnvelope = createContextEnvelope();
+
+    contextEnvelope.stable.discovery = {
+      ...contextEnvelope.stable.discovery,
+      isGreenfield: false,
+      bootstrapReady: true,
+      language: null,
+      framework: null,
+      packageManager: null,
+      scripts: {},
+      hasReadme: true,
+      hasAgentsMd: true,
+      topLevelFiles: ["AGENTS.md", "README.md"],
+      topLevelDirectories: [],
+      projectName: null,
+    };
+    contextEnvelope.stable.availableScripts = {};
+
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction: "Bootstrap this seeded target with the shared scaffold.",
+      contextEnvelope,
+      previewState: createPreviewState(),
+      targetDirectory: "/tmp/shipyard-graph",
+      phaseConfig: createCodePhase(),
+    });
+
+    const update = await nodes.plan(state);
+
+    expect(runExplorerSubagent).not.toHaveBeenCalled();
+    expect(runPlannerSubagent).not.toHaveBeenCalled();
+    expect(update.planningMode).toBe("lightweight");
+    expect(update.harnessRoute).toMatchObject({
+      selectedPath: "lightweight",
+      usedExplorer: false,
+      usedPlanner: false,
+    });
+  });
+
   it("plan node converts explorer cancellation into a cancelled update", async () => {
     const nodes = createAgentRuntimeNodes({
       dependencies: {
@@ -441,6 +490,198 @@ describe("Phase 4 graph runtime contract", () => {
     expect(await readFile(appPath, "utf8")).toBe("export const count = 2;\n");
     expect(update.status).toBe("verifying");
     expect(update.lastEditedFile).toBe("src/app.ts");
+  });
+
+  it("act node converts raw-loop continuation into a checkpointed response instead of a failure", async () => {
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        runActingLoop: async () => ({
+          status: "continuation",
+          finalText:
+            "Shipyard reached the acting iteration limit of 25 and needs a checkpoint-backed continuation.",
+          messageHistory: [],
+          iterations: 25,
+          didEdit: true,
+          lastEditedFile: "src/app.ts",
+          touchedFiles: ["src/app.ts", "src/routes.tsx"],
+        }),
+      },
+    });
+    const update = await nodes.act(createInitialState());
+
+    expect(update.status).toBe("responding");
+    expect(update.finalResult).toContain("needs a checkpoint-backed continuation");
+    expect(update.actingIterations).toBe(25);
+    expect(update.lastEditedFile).toBe("src/app.ts");
+    expect(update.checkpointRequested).toBe(true);
+    expect(update.touchedFiles).toEqual(["src/app.ts", "src/routes.tsx"]);
+    expect(update.lastError).toBeNull();
+  });
+
+  it("derives narrow and broad acting-loop budgets from task shape", () => {
+    const broadBudget = determineActingLoopBudget({
+      instruction:
+        "Bootstrap this seeded target, create apps/web/src/lib/seed-data.ts, and update apps/web/src/App.tsx to build a Trello-style dashboard.",
+      contextEnvelope: {
+        ...createContextEnvelope(),
+        stable: {
+          ...createContextEnvelope().stable,
+          discovery: {
+            ...createContextEnvelope().stable.discovery,
+            isGreenfield: false,
+            bootstrapReady: true,
+            language: null,
+            framework: null,
+            packageManager: null,
+            scripts: {},
+            hasReadme: true,
+            hasAgentsMd: true,
+            topLevelFiles: ["AGENTS.md", "README.md"],
+            topLevelDirectories: [],
+            projectName: null,
+          },
+          availableScripts: {},
+        },
+      },
+      taskPlan: null,
+      executionSpec: null,
+      contextReport: null,
+      latestHandoff: null,
+    });
+    const narrowGreenfieldBudget = determineActingLoopBudget({
+      instruction: "Update apps/web/src/App.tsx to rename the exported component.",
+      contextEnvelope: {
+        ...createContextEnvelope(),
+        stable: {
+          ...createContextEnvelope().stable,
+          discovery: {
+            ...createContextEnvelope().stable.discovery,
+            isGreenfield: false,
+            bootstrapReady: true,
+            language: null,
+            framework: null,
+            packageManager: null,
+            scripts: {},
+            hasReadme: true,
+            hasAgentsMd: true,
+            topLevelFiles: ["AGENTS.md", "README.md"],
+            topLevelDirectories: [],
+            projectName: null,
+          },
+          availableScripts: {},
+        },
+      },
+      taskPlan: null,
+      executionSpec: null,
+      contextReport: null,
+      latestHandoff: null,
+    });
+    const narrowBudget = determineActingLoopBudget({
+      instruction: "Update src/app.tsx to rename the exported component.",
+      contextEnvelope: createContextEnvelope(),
+      taskPlan: null,
+      executionSpec: null,
+      contextReport: null,
+      latestHandoff: null,
+    });
+    const continuationBudget = determineActingLoopBudget({
+      instruction: "Continue the same dashboard build.",
+      contextEnvelope: createContextEnvelope(),
+      taskPlan: null,
+      executionSpec: null,
+      contextReport: null,
+      latestHandoff: {
+        artifactPath: ".shipyard/artifacts/session-123/turn-3.handoff.json",
+        handoff: {
+          version: 1,
+          sessionId: "session-123",
+          turnCount: 3,
+          createdAt: "2026-03-25T21:30:00.000Z",
+          instruction: "Build the dashboard",
+          phaseName: "code",
+          runtimeMode: "graph",
+          status: "success",
+          summary: "Checkpointed after a long greenfield build.",
+          goal: "Build the dashboard",
+          completedWork: ["Turn summary: Checkpointed after a long greenfield build."],
+          remainingWork: ["Resume the dashboard build from the touched files."],
+          touchedFiles: [
+            "apps/web/src/App.tsx",
+            "apps/web/src/lib/seed-data.ts",
+            "apps/web/src/components/status-summary.tsx",
+          ],
+          blockedFiles: [],
+          latestEvaluation: null,
+          nextRecommendedAction: "Resume from the checkpoint.",
+          resetReason: {
+            kind: "iteration-threshold",
+            summary: "The acting loop crossed the long-run iteration threshold.",
+            thresholds: {
+              actingIterations: 4,
+              recoveryAttempts: 1,
+            },
+            metrics: {
+              actingIterations: 5,
+              recoveryAttempts: 0,
+              blockedFileCount: 0,
+            },
+          },
+          taskPlan: {
+            instruction: "Build the dashboard",
+            goal: "Build the dashboard",
+            targetFilePaths: ["apps/web/src/App.tsx"],
+            plannedSteps: ["Continue the dashboard build."],
+          },
+        },
+      },
+    });
+    const sameSessionContinuationBudget = determineActingLoopBudget({
+      instruction: "Continue the same scaffolded app and finish the dashboard build.",
+      contextEnvelope: {
+        ...createContextEnvelope(),
+        session: {
+          ...createContextEnvelope().session,
+          recentTouchedFiles: [
+            "apps/web/src/App.tsx",
+            "apps/web/src/lib/seed-data.ts",
+            "apps/web/src/components/status-summary.tsx",
+          ],
+        },
+      },
+      taskPlan: {
+        instruction: "Continue the same scaffolded app and finish the dashboard build.",
+        goal: "Continue the same scaffolded app and finish the dashboard build.",
+        targetFilePaths: [
+          "apps/web/src/App.tsx",
+          "apps/web/src/lib/seed-data.ts",
+        ],
+        plannedSteps: ["Finish the dashboard build."],
+      },
+      executionSpec: null,
+      contextReport: null,
+      latestHandoff: null,
+    });
+
+    expect(broadBudget).toEqual({
+      maxIterations: 45,
+      reason: "broad-greenfield",
+    });
+    expect(narrowGreenfieldBudget).toEqual({
+      maxIterations: 25,
+      reason: "narrow-default",
+    });
+    expect(narrowBudget).toEqual({
+      maxIterations: 25,
+      reason: "narrow-default",
+    });
+    expect(continuationBudget).toEqual({
+      maxIterations: 45,
+      reason: "broad-continuation",
+    });
+    expect(sameSessionContinuationBudget).toEqual({
+      maxIterations: 45,
+      reason: "broad-continuation",
+    });
   });
 
   it("verify node delegates post-edit checks to the verifier helper", async () => {
@@ -1253,5 +1494,27 @@ describe("Phase 4 graph runtime contract", () => {
     expect(finalState.status).toBe("done");
     expect(finalState.finalResult).toBe("Inspection complete without edits.");
     expect(finalState.fallbackMode).toBe(false);
+  });
+
+  it("graph runtime carries checkpoint requests through to the final state without failing", async () => {
+    const finalState = await runAgentRuntime(createInitialState(), {
+      dependencies: {
+        runActingLoop: async () => ({
+          status: "continuation",
+          finalText:
+            "Shipyard reached the acting iteration limit of 25 and needs a checkpoint-backed continuation.",
+          messageHistory: [],
+          iterations: 25,
+          didEdit: true,
+          lastEditedFile: "src/app.ts",
+          touchedFiles: ["src/app.ts", "src/routes.tsx"],
+        }),
+      },
+    });
+
+    expect(finalState.status).toBe("done");
+    expect(finalState.finalResult).toContain("checkpoint-backed continuation");
+    expect(finalState.checkpointRequested).toBe(true);
+    expect(finalState.touchedFiles).toEqual(["src/app.ts", "src/routes.tsx"]);
   });
 });

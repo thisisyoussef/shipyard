@@ -107,7 +107,7 @@ export interface CreateExecutionHandoffOptions {
   retryCountsByFile: Record<string, number>;
   blockedFiles: string[];
   lastEditedFile: string | null;
-  touchedFiles?: string[];
+  touchedFiles: string[];
   verificationReport: VerificationReport | null;
   decision: ExecutionHandoffDecision;
   createdAt?: string;
@@ -263,13 +263,13 @@ function createRemainingWork(options: {
 }
 
 function createCompletedWork(options: {
-  taskPlan: TaskPlan;
+  summary: string;
   touchedFiles: string[];
   verificationReport: VerificationReport | null;
 }): string[] {
-  const completed = [
-    `Goal checkpointed: ${truncateText(options.taskPlan.goal, 180)}`,
-  ];
+  const completed = [`Turn summary: ${options.summary}`];
+
+  completed.push(`Goal checkpointed: ${options.summary}`);
 
   if (options.touchedFiles.length > 0) {
     completed.push(`Recent touched files: ${options.touchedFiles.join(", ")}`);
@@ -294,7 +294,7 @@ export function createExecutionHandoff(
   }
 
   const touchedFiles = uniqueStrings([
-    ...(options.touchedFiles ?? []),
+    ...options.touchedFiles,
     ...options.taskPlan.targetFilePaths,
     ...Object.keys(options.retryCountsByFile),
     ...options.blockedFiles,
@@ -318,7 +318,7 @@ export function createExecutionHandoff(
     summary: options.summary,
     goal: options.taskPlan.goal,
     completedWork: createCompletedWork({
-      taskPlan: options.taskPlan,
+      summary: truncateText(options.summary, 160),
       touchedFiles,
       verificationReport: options.verificationReport,
     }),

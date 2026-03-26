@@ -133,6 +133,10 @@ function createInstructionTurnResult(
       handoffLoaded: false,
       handoffEmitted: false,
       handoffReason: null,
+      checkpointRequested: false,
+      continuationCount: 0,
+      actingLoopBudget: 25,
+      actingLoopBudgetReason: "narrow-default",
       firstHardFailure: null,
     },
     handoff: {

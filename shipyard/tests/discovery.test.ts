@@ -24,6 +24,7 @@ describe("discoverTarget", () => {
     const report = await discoverTarget(shipPath);
 
     expect(report.isGreenfield).toBe(false);
+    expect(report.bootstrapReady).toBe(false);
     expect(report.language).toBe("typescript");
     expect(report.packageManager).toBe("pnpm");
     expect(Object.keys(report.scripts).length).toBeGreaterThan(0);
@@ -40,6 +41,7 @@ describe("discoverTarget", () => {
     const report = await discoverTarget(emptyDirectory);
 
     expect(report.isGreenfield).toBe(true);
+    expect(report.bootstrapReady).toBe(true);
     expect(report.language).toBeNull();
     expect(report.framework).toBeNull();
     expect(report.packageManager).toBeNull();
@@ -51,26 +53,36 @@ describe("discoverTarget", () => {
     expect(report.projectName).toBeNull();
   });
 
-  it("keeps README/AGENTS seeded targets bootstrap-ready", async () => {
+  it("treats AGENTS.md and README.md seed files as bootstrap-ready", async () => {
     const seededDirectory = await mkdtemp(path.join(tmpdir(), "shipyard-seeded-"));
     createdDirectories.push(seededDirectory);
-    await writeFile(
-      path.join(seededDirectory, "README.md"),
-      "# Seeded target\n",
-      "utf8",
-    );
-    await writeFile(
-      path.join(seededDirectory, "AGENTS.md"),
-      "Follow the local rules.\n",
-      "utf8",
-    );
+    await writeFile(path.join(seededDirectory, "AGENTS.md"), "seed rules\n", "utf8");
+    await writeFile(path.join(seededDirectory, "README.md"), "seed docs\n", "utf8");
 
     const report = await discoverTarget(seededDirectory);
 
-    expect(report.isGreenfield).toBe(true);
-    expect(report.hasReadme).toBe(true);
+    expect(report.isGreenfield).toBe(false);
+    expect(report.bootstrapReady).toBe(true);
     expect(report.hasAgentsMd).toBe(true);
+    expect(report.hasReadme).toBe(true);
     expect(report.topLevelFiles).toEqual(["AGENTS.md", "README.md"]);
+  });
+
+  it("does not treat real source or manifest files as bootstrap-ready", async () => {
+    const targetDirectory = await mkdtemp(path.join(tmpdir(), "shipyard-not-bootstrap-ready-"));
+    createdDirectories.push(targetDirectory);
+    await writeFile(path.join(targetDirectory, "README.md"), "seed docs\n", "utf8");
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify({ name: "already-real", scripts: { test: "vitest run" } }, null, 2),
+      "utf8",
+    );
+
+    const report = await discoverTarget(targetDirectory);
+
+    expect(report.isGreenfield).toBe(false);
+    expect(report.bootstrapReady).toBe(false);
+    expect(report.topLevelFiles).toEqual(["package.json", "README.md"]);
   });
 
   it("infers preview capability from a Vite dev script", async () => {

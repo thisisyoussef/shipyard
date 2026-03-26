@@ -13,11 +13,13 @@ import {
   type CheckpointManagerLike,
 } from "../checkpoints/manager.js";
 import type {
+  ActingLoopBudgetReason,
   BrowserEvaluationReport,
   ContextReport,
   EvaluationPlan,
   ExecutionSpec,
   HarnessRouteSummary,
+  LoadedExecutionHandoff,
   PlanningMode,
   PreviewState,
   TaskPlan,
@@ -29,6 +31,8 @@ import {
   createBrowserEvaluationPlan,
   createLightweightExecutionSpec,
   createExplorerQuery,
+  extractInstructionTargetFilePaths,
+  isClearlyLightweightInstruction,
   createVerificationPlan,
   mergeBrowserEvaluationIntoVerificationReport,
   shouldCoordinatorUseBrowserEvaluator,
@@ -57,11 +61,8 @@ import { readFileTool } from "../tools/read-file.js";
 import { normalizeTargetRelativePath } from "../tools/file-state.js";
 import {
   RAW_LOOP_MAX_ITERATIONS,
-  createRawLoopIterationLimitMessage,
-  isRawLoopIterationLimitError,
   runRawToolLoopDetailed,
   type RawToolLoopOptions,
-  type RawToolExecution,
   type RawLoopToolHookContext,
   type RawToolLoopResult,
 } from "./raw-loop.js";
@@ -101,10 +102,11 @@ export interface AgentGraphState {
   targetDirectory: string;
   phaseConfig: Phase;
   fileHashes: FileHashMap;
+  touchedFiles: string[];
   retryCountsByFile: Record<string, number>;
   blockedFiles: string[];
   lastEditedFile: string | null;
-  touchedFiles: string[];
+  checkpointRequested: boolean;
   status: AgentRuntimeStatus;
   finalResult: string | null;
   taskPlan: TaskPlan | null;
@@ -130,10 +132,11 @@ export interface CreateAgentGraphStateOptions {
   phaseConfig: Phase;
   messageHistory?: MessageParam[];
   fileHashes?: FileHashMap;
+  touchedFiles?: string[];
   retryCountsByFile?: Record<string, number>;
   blockedFiles?: string[];
   lastEditedFile?: string | null;
-  touchedFiles?: string[];
+  checkpointRequested?: boolean;
   status?: AgentRuntimeStatus;
   finalResult?: string | null;
   taskPlan?: TaskPlan | null;
@@ -150,13 +153,15 @@ export interface CreateAgentGraphStateOptions {
 }
 
 export interface ActingLoopResult {
-  status?: "completed" | "cancelled" | "limit_reached";
+  status?: "completed" | "cancelled" | "continuation";
   finalText: string;
   messageHistory: MessageParam[];
   iterations: number;
   didEdit: boolean;
   lastEditedFile: string | null;
   touchedFiles?: string[];
+  actingLoopBudget?: number;
+  actingLoopBudgetReason?: ActingLoopBudgetReason;
 }
 
 export interface AgentRuntimeDependencies {
@@ -218,10 +223,11 @@ const AgentGraphStateAnnotation = Annotation.Root({
   targetDirectory: Annotation<string>(),
   phaseConfig: Annotation<Phase>(),
   fileHashes: Annotation<FileHashMap>(),
+  touchedFiles: Annotation<string[]>(),
   retryCountsByFile: Annotation<Record<string, number>>(),
   blockedFiles: Annotation<string[]>(),
   lastEditedFile: Annotation<string | null>(),
-  touchedFiles: Annotation<string[]>(),
+  checkpointRequested: Annotation<boolean>(),
   status: Annotation<AgentRuntimeStatus>(),
   finalResult: Annotation<string | null>(),
   taskPlan: Annotation<TaskPlan | null>(),
@@ -278,7 +284,109 @@ function createInitialHarnessRouteSummary(
     handoffLoaded: latestHandoff !== null,
     handoffEmitted: false,
     handoffReason: latestHandoff?.handoff.resetReason.kind ?? null,
+    checkpointRequested: false,
+    continuationCount: 0,
+    actingLoopBudget: RAW_LOOP_MAX_ITERATIONS,
+    actingLoopBudgetReason: "narrow-default",
     firstHardFailure: null,
+  };
+}
+
+function isBroadGreenfieldBuildInstruction(instruction: string): boolean {
+  const normalizedInstruction = instruction.trim().toLowerCase();
+
+  return /\b(bootstrap|scaffold|generate|continue)\b/.test(normalizedInstruction)
+    || (
+      /\b(build|create|implement)\b/.test(normalizedInstruction)
+      && /\b(app|project|workspace|dashboard|screen|page|flow|module)\b/.test(normalizedInstruction)
+    );
+}
+
+function isBroadContinuationInstruction(instruction: string): boolean {
+  const normalizedInstruction = instruction.trim().toLowerCase();
+
+  return /\b(continue|resume|keep going|finish)\b/.test(normalizedInstruction)
+    && /\b(app|project|workspace|dashboard|build|flow|screen|page)\b/.test(normalizedInstruction);
+}
+
+export function determineActingLoopBudget(options: {
+  instruction: string;
+  contextEnvelope: ContextEnvelope;
+  taskPlan?: TaskPlan | null;
+  executionSpec?: ExecutionSpec | null;
+  contextReport?: ContextReport | null;
+  latestHandoff?: LoadedExecutionHandoff | null;
+  overrideMaxIterations?: number | null;
+}): {
+  maxIterations: number;
+  reason: ActingLoopBudgetReason;
+} {
+  if (
+    typeof options.overrideMaxIterations === "number"
+    && Number.isInteger(options.overrideMaxIterations)
+    && options.overrideMaxIterations > 0
+  ) {
+    return {
+      maxIterations: options.overrideMaxIterations,
+      reason: "override",
+    };
+  }
+
+  const discovery = options.contextEnvelope.stable.discovery;
+  const explicitTargetFilePaths = [
+    ...new Set([
+      ...extractInstructionTargetFilePaths(options.instruction),
+      ...(options.taskPlan?.targetFilePaths ?? []),
+      ...(options.executionSpec?.targetFilePaths ?? []),
+    ]),
+  ];
+  const broadGreenfieldBuild =
+    (discovery.bootstrapReady || discovery.isGreenfield)
+    && (
+      explicitTargetFilePaths.length > 1
+      || isBroadGreenfieldBuildInstruction(options.instruction)
+    );
+  const recentTouchedFiles = options.contextEnvelope.session.recentTouchedFiles ?? [];
+  const latestHandoff = options.latestHandoff
+    ?? options.contextEnvelope.session.latestHandoff
+    ?? null;
+  const broadContinuation =
+    (latestHandoff?.handoff.resetReason.kind === "iteration-threshold"
+      && latestHandoff.handoff.touchedFiles.length >= 3)
+    || (
+      recentTouchedFiles.length > 0
+      && isBroadContinuationInstruction(options.instruction)
+    );
+
+  if (broadContinuation) {
+    return {
+      maxIterations: 45,
+      reason: "broad-continuation",
+    };
+  }
+
+  if (
+    explicitTargetFilePaths.length > 0
+    || isClearlyLightweightInstruction(options.instruction)
+  ) {
+    if (!broadGreenfieldBuild) {
+      return {
+        maxIterations: RAW_LOOP_MAX_ITERATIONS,
+        reason: "narrow-default",
+      };
+    }
+  }
+
+  if (discovery.bootstrapReady || discovery.isGreenfield) {
+    return {
+      maxIterations: 45,
+      reason: "broad-greenfield",
+    };
+  }
+
+  return {
+    maxIterations: RAW_LOOP_MAX_ITERATIONS,
+    reason: "narrow-default",
   };
 }
 
@@ -310,48 +418,6 @@ function getRelativeToolPath(input: unknown): string | null {
   }
 
   return null;
-}
-
-function isBootstrapToolData(
-  data: unknown,
-): data is {
-  createdFiles: string[];
-} {
-  return (
-    typeof data === "object" &&
-    data !== null &&
-    "createdFiles" in data &&
-    Array.isArray(data.createdFiles) &&
-    data.createdFiles.every((item) => typeof item === "string")
-  );
-}
-
-function collectTouchedFiles(
-  toolExecutions: RawToolExecution[],
-): string[] {
-  const touchedFiles = new Set<string>();
-
-  for (const execution of toolExecutions) {
-    if (!execution.success) {
-      continue;
-    }
-
-    if (execution.editedPath) {
-      touchedFiles.add(execution.editedPath);
-      continue;
-    }
-
-    if (
-      execution.toolName === "bootstrap_target" &&
-      isBootstrapToolData(execution.data)
-    ) {
-      for (const createdFile of execution.data.createdFiles) {
-        touchedFiles.add(createdFile);
-      }
-    }
-  }
-
-  return [...touchedFiles];
 }
 
 async function createSubagentLoopOptions(
@@ -471,6 +537,7 @@ async function maybePlanExecutionSpec(
   if (
     state.phaseConfig.name !== "code"
     || state.contextEnvelope.stable.discovery.isGreenfield
+    || state.contextEnvelope.stable.discovery.bootstrapReady
   ) {
     return {
       executionSpec: createLightweightExecutionSpec({
@@ -568,6 +635,15 @@ async function defaultActingLoop(
   const rawLoopOptions =
     await dependencies.createRawLoopOptions?.(state)
     ?? {};
+  const budgetDecision = determineActingLoopBudget({
+    instruction: state.currentInstruction,
+    contextEnvelope: state.contextEnvelope,
+    taskPlan: state.taskPlan,
+    executionSpec: state.executionSpec,
+    contextReport: state.contextReport,
+    latestHandoff: state.contextEnvelope.session.latestHandoff,
+    overrideMaxIterations: rawLoopOptions.maxIterations ?? null,
+  });
   const checkpointManager = getCheckpointManager(state, dependencies);
   const existingBeforeToolExecution = rawLoopOptions.beforeToolExecution;
   const result: RawToolLoopResult = await runRawToolLoopDetailed(
@@ -578,7 +654,7 @@ async function defaultActingLoop(
     {
       ...rawLoopOptions,
       signal,
-      maxIterations: rawLoopOptions.maxIterations ?? RAW_LOOP_MAX_ITERATIONS,
+      maxIterations: budgetDecision.maxIterations,
       beforeToolExecution: async (context) => {
         await checkpointBeforeEdit(context, checkpointManager);
         await existingBeforeToolExecution?.(context);
@@ -587,18 +663,15 @@ async function defaultActingLoop(
   );
 
   return {
-    status:
-      result.status === "cancelled"
-        ? "cancelled"
-        : result.status === "limit_reached"
-          ? "limit_reached"
-          : "completed",
+    status: result.status,
     finalText: result.finalText,
     messageHistory: result.messageHistory,
     iterations: result.iterations,
     didEdit: result.didEdit,
     lastEditedFile: result.lastEditedFile,
-    touchedFiles: collectTouchedFiles(result.toolExecutions),
+    touchedFiles: result.touchedFiles,
+    actingLoopBudget: budgetDecision.maxIterations,
+    actingLoopBudgetReason: budgetDecision.reason,
   };
 }
 
@@ -626,10 +699,11 @@ export function createAgentGraphState(
     targetDirectory: options.targetDirectory,
     phaseConfig: options.phaseConfig,
     fileHashes: { ...(options.fileHashes ?? {}) },
+    touchedFiles: [...(options.touchedFiles ?? [])],
     retryCountsByFile: { ...(options.retryCountsByFile ?? {}) },
     blockedFiles: [...(options.blockedFiles ?? [])],
     lastEditedFile: options.lastEditedFile ?? null,
-    touchedFiles: [...(options.touchedFiles ?? [])],
+    checkpointRequested: options.checkpointRequested ?? false,
     status: options.status ?? "planning",
     finalResult: options.finalResult ?? null,
     taskPlan: options.taskPlan ?? null,
@@ -692,6 +766,10 @@ function createRuntimeTraceMetadata(
     handoffReason: state.harnessRoute.handoffReason
       ?? latestHandoff?.handoff.resetReason.kind
       ?? null,
+    checkpointRequested: state.harnessRoute.checkpointRequested || state.checkpointRequested,
+    continuationCount: state.harnessRoute.continuationCount,
+    actingLoopBudget: state.harnessRoute.actingLoopBudget,
+    actingLoopBudgetReason: state.harnessRoute.actingLoopBudgetReason,
     firstHardFailure: state.harnessRoute.firstHardFailure,
   };
 }
@@ -708,6 +786,7 @@ function createCancellationUpdate(
   return {
     status: "cancelled",
     finalResult: reason,
+    checkpointRequested: false,
     lastError: null,
   };
 }
@@ -725,8 +804,21 @@ function createCancellationUpdateFromError(
   return {
     status: "cancelled",
     finalResult: cancelledError.message,
+    checkpointRequested: false,
     lastError: null,
   };
+}
+
+function isActingIterationLimitError(message: string): boolean {
+  if (!message.trim()) {
+    return false;
+  }
+
+  return (
+    message.includes(`acting iteration limit of ${String(RAW_LOOP_MAX_ITERATIONS)}`)
+    || message.includes(`exceeded ${String(RAW_LOOP_MAX_ITERATIONS)} iterations`)
+    || /iteration(?:-threshold| threshold| limit)/i.test(message)
+  );
 }
 
 export function routeAfterPlan(
@@ -882,6 +974,7 @@ export function createAgentRuntimeNodes(
             usedPlanner: planningArtifacts.planningMode === "planner",
           },
           status: "acting",
+          checkpointRequested: false,
           lastError: null,
           verificationReport: null,
           browserEvaluationReport: null,
@@ -918,18 +1011,7 @@ export function createAgentRuntimeNodes(
             finalResult:
               cancelledAfterAct?.finalResult ?? actingLoop.finalText,
             status: "cancelled",
-            lastError: null,
-          };
-        }
-
-        if (actingLoop.status === "limit_reached") {
-          return {
-            messageHistory: actingLoop.messageHistory,
-            actingIterations: actingLoop.iterations,
-            lastEditedFile: actingLoop.lastEditedFile,
-            touchedFiles: actingLoop.touchedFiles ?? [],
-            finalResult: actingLoop.finalText,
-            status: "responding",
+            checkpointRequested: false,
             lastError: null,
           };
         }
@@ -939,8 +1021,22 @@ export function createAgentRuntimeNodes(
           actingIterations: actingLoop.iterations,
           lastEditedFile: actingLoop.lastEditedFile,
           touchedFiles: actingLoop.touchedFiles ?? [],
+          checkpointRequested: actingLoop.status === "continuation",
           finalResult: actingLoop.finalText,
-          status: actingLoop.didEdit ? "verifying" : "responding",
+          status: actingLoop.status === "continuation"
+            ? "responding"
+            : actingLoop.didEdit
+              ? "verifying"
+              : "responding",
+          harnessRoute: {
+            ...state.harnessRoute,
+            checkpointRequested: actingLoop.status === "continuation",
+            actingLoopBudget:
+              actingLoop.actingLoopBudget ?? state.harnessRoute.actingLoopBudget,
+            actingLoopBudgetReason:
+              actingLoop.actingLoopBudgetReason
+              ?? state.harnessRoute.actingLoopBudgetReason,
+          },
           lastError: null,
         };
       } catch (error) {
@@ -951,20 +1047,30 @@ export function createAgentRuntimeNodes(
         }
 
         const message = toErrorMessage(error);
-        const limitHit = isRawLoopIterationLimitError(
-          message,
-          RAW_LOOP_MAX_ITERATIONS,
-        );
+        const limitHit = isActingIterationLimitError(message);
+
+        if (limitHit) {
+          return {
+            actingIterations: RAW_LOOP_MAX_ITERATIONS,
+            checkpointRequested: true,
+            status: "responding",
+            finalResult: message.includes("checkpoint")
+              ? message
+              : `Shipyard reached the acting iteration limit of ${String(RAW_LOOP_MAX_ITERATIONS)} and needs a checkpoint-backed continuation.`,
+            harnessRoute: {
+              ...state.harnessRoute,
+              checkpointRequested: true,
+            },
+            lastError: null,
+          };
+        }
 
         return {
-          actingIterations: limitHit
-            ? RAW_LOOP_MAX_ITERATIONS
-            : state.actingIterations,
-          status: limitHit ? "responding" : "failed",
-          finalResult: limitHit
-            ? createRawLoopIterationLimitMessage(RAW_LOOP_MAX_ITERATIONS)
-            : message,
-          lastError: limitHit ? null : message,
+          actingIterations: state.actingIterations,
+          checkpointRequested: false,
+          status: "failed",
+          finalResult: message,
+          lastError: message,
         };
       }
     },
@@ -1031,6 +1137,7 @@ export function createAgentRuntimeNodes(
           harnessRoute: {
             ...state.harnessRoute,
             usedVerifier: true,
+            checkpointRequested: state.checkpointRequested,
             verificationMode: browserEvaluationReport
               ? "command+browser"
               : "command",
@@ -1045,6 +1152,7 @@ export function createAgentRuntimeNodes(
               combinedVerificationReport.firstHardFailure ?? null,
           },
           status: combinedVerificationReport.passed ? "responding" : "recovering",
+          checkpointRequested: false,
           lastError: combinedVerificationReport.passed
             ? null
             : combinedVerificationReport.summary,
@@ -1155,6 +1263,7 @@ export function createAgentRuntimeNodes(
           blockedFiles,
           status: "responding",
           lastEditedFile: null,
+          checkpointRequested: false,
           verificationReport: null,
           browserEvaluationReport: null,
           lastError: escalationSummary,
@@ -1167,6 +1276,7 @@ export function createAgentRuntimeNodes(
         retryCountsByFile,
         status: "planning",
         lastEditedFile: null,
+        checkpointRequested: false,
         verificationReport: null,
         browserEvaluationReport: null,
         lastError: null,
@@ -1181,6 +1291,7 @@ export function createAgentRuntimeNodes(
             : state.status === "cancelled"
               ? "cancelled"
               : "done",
+        checkpointRequested: state.checkpointRequested,
         finalResult:
           state.finalResult ??
           state.lastError ??

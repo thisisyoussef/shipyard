@@ -20,6 +20,7 @@ import {
 } from "./anthropic.js";
 import {
   buildCompactedMessageHistory,
+  type CompletedToolExecution,
   type CompletedToolTurn,
 } from "./history-compaction.js";
 import {
@@ -34,6 +35,12 @@ import {
   throwIfTurnCancelled,
   toTurnCancelledError,
 } from "./cancellation.js";
+import {
+  countLines,
+  createDisplayHash,
+  hashContents,
+  normalizeTargetRelativePath,
+} from "../tools/file-state.js";
 
 export const RAW_LOOP_MAX_ITERATIONS = 25;
 const LOG_PREVIEW_LIMIT = 160;
@@ -56,24 +63,17 @@ export interface RawLoopToolResultHookContext extends RawLoopToolHookContext {
   toolExecution: RawToolExecution;
 }
 
-export interface RawToolExecution {
-  toolName: string;
-  input: unknown;
-  success: boolean;
-  output: string;
-  error?: string;
-  editedPath: string | null;
-  data?: unknown;
-}
+export interface RawToolExecution extends CompletedToolExecution {}
 
 export interface RawToolLoopResult {
-  status: "completed" | "cancelled" | "limit_reached";
+  status: "completed" | "cancelled" | "continuation";
   finalText: string;
   messageHistory: MessageParam[];
   toolExecutions: RawToolExecution[];
   iterations: number;
   didEdit: boolean;
   lastEditedFile: string | null;
+  touchedFiles: string[];
 }
 
 export interface RawToolLoopOptions {
@@ -128,25 +128,6 @@ export class AnthropicOutputBudgetExceededError extends Error {
     this.generatingToolCall = options.generatingToolCall;
     this.partialText = partialText;
   }
-}
-
-export function createRawLoopIterationLimitMessage(
-  maxIterations: number,
-): string {
-  return (
-    `Acting loop reached ${String(maxIterations)} iterations before a final response. ` +
-    "Persist a handoff and continue in a fresh turn from the current workspace checkpoint."
-  );
-}
-
-export function isRawLoopIterationLimitError(
-  message: string,
-  maxIterations = RAW_LOOP_MAX_ITERATIONS,
-): boolean {
-  return new RegExp(
-    `Raw Claude loop exceeded ${String(maxIterations)} iterations`,
-    "i",
-  ).test(message);
 }
 
 function ensureNonBlankString(value: string, fieldName: string): string {
@@ -252,7 +233,7 @@ function extractEditedPath(
     typeof input.path === "string" &&
     input.path.trim()
   ) {
-    return input.path;
+    return normalizeHistoryPath(input.path);
   }
 
   return null;
@@ -260,6 +241,217 @@ function extractEditedPath(
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function uniqueStrings(values: Iterable<string>): string[] {
+  return [...new Set(values)];
+}
+
+function normalizeHistoryPath(value: string): string {
+  try {
+    return normalizeTargetRelativePath(value);
+  } catch {
+    return value.trim();
+  }
+}
+
+function extractInputPath(input: unknown): string | null {
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "path" in input &&
+    typeof input.path === "string" &&
+    input.path.trim()
+  ) {
+    return normalizeHistoryPath(input.path);
+  }
+
+  return null;
+}
+
+function getOptionalString(value: unknown, key: string): string | null {
+  if (!isPlainObject(value) || typeof value[key] !== "string") {
+    return null;
+  }
+
+  const candidate = String(value[key]).trim();
+  return candidate ? candidate : null;
+}
+
+function getOptionalNumber(value: unknown, key: string): number | null {
+  if (!isPlainObject(value) || typeof value[key] !== "number") {
+    return null;
+  }
+
+  return Number(value[key]);
+}
+
+function createDigestPreview(value: string, limit = 120): string {
+  const normalized = value
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
+
+  return truncateForLog(normalized, limit);
+}
+
+function formatDigestValue(value: string): string {
+  return JSON.stringify(createDigestPreview(value));
+}
+
+function formatPathLabel(toolName: string, pathValue: string | null): string {
+  return pathValue ? `${toolName}(${pathValue})` : toolName;
+}
+
+function formatPathList(paths: string[], limit = 3): string {
+  if (paths.length === 0) {
+    return "(none)";
+  }
+
+  const preview = paths.slice(0, limit).join(", ");
+
+  if (paths.length <= limit) {
+    return preview;
+  }
+
+  return `${preview}, +${String(paths.length - limit)} more`;
+}
+
+function extractTouchedFiles(
+  toolName: string,
+  input: unknown,
+  result: ToolResult,
+): string[] {
+  if (!result.success) {
+    return [];
+  }
+
+  if (
+    toolName === "bootstrap_target"
+    && isPlainObject(result.data)
+    && Array.isArray(result.data.createdFiles)
+  ) {
+    return uniqueStrings(
+      result.data.createdFiles
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .map((item) => normalizeHistoryPath(item)),
+    );
+  }
+
+  const inputPath = extractInputPath(input);
+
+  if (
+    inputPath
+    && (toolName === "write_file" || toolName === "edit_block")
+  ) {
+    return [inputPath];
+  }
+
+  return [];
+}
+
+function createToolHistoryDigest(
+  toolName: string,
+  input: unknown,
+  result: ToolResult,
+  touchedFiles: string[],
+): CompletedToolExecution["historyDigest"] {
+  const primaryPath = touchedFiles[0] ?? extractInputPath(input);
+  const label = formatPathLabel(toolName, primaryPath);
+  const errorPreview = createDigestPreview(result.error ?? result.output);
+
+  if (toolName === "write_file" && isPlainObject(input) && typeof input.content === "string") {
+    const lineCount = countLines(input.content);
+    const fingerprint = createDisplayHash(hashContents(input.content));
+    const preview = createDigestPreview(input.content);
+
+    return {
+      requestLine:
+        `${label} lines=${String(lineCount)} chars=${String(input.content.length)} ` +
+        `fingerprint=${fingerprint} preview=${formatDigestValue(preview)}`,
+      resultLine: result.success
+        ? `${label} success lines=${String(lineCount)} fingerprint=${fingerprint} preview=${formatDigestValue(preview)}. Re-read the file from disk if exact contents are needed.`
+        : `${label} failed error=${formatDigestValue(errorPreview)}`,
+      isWriteLike: true,
+      prefersVerbatimTail: false,
+    };
+  }
+
+  if (
+    toolName === "edit_block"
+    && isPlainObject(input)
+    && typeof input.new_string === "string"
+  ) {
+    const fingerprint = createDisplayHash(hashContents(input.new_string));
+    const totalLines = getOptionalNumber(result.data, "totalLines")
+      ?? countLines(input.new_string);
+    const preview = getOptionalString(result.data, "afterPreview")
+      ?? createDigestPreview(input.new_string);
+
+    return {
+      requestLine:
+        `${label} new_lines=${String(countLines(input.new_string))} ` +
+        `fingerprint=${fingerprint} preview=${formatDigestValue(preview)}`,
+      resultLine: result.success
+        ? `${label} success total_lines=${String(totalLines)} fingerprint=${fingerprint} preview=${formatDigestValue(preview)}. Re-read the file from disk if exact contents are needed.`
+        : `${label} failed error=${formatDigestValue(errorPreview)}`,
+      isWriteLike: true,
+      prefersVerbatimTail: false,
+    };
+  }
+
+  if (toolName === "bootstrap_target") {
+    const scaffoldType = getOptionalString(input, "scaffold_type")
+      ?? getOptionalString(result.data, "scaffoldType")
+      ?? "default";
+    const createdFiles = touchedFiles;
+    const filePreview = formatPathList(createdFiles);
+
+    return {
+      requestLine:
+        `${toolName} scaffold=${scaffoldType} files_expected=${String(createdFiles.length || 0)}`,
+      resultLine: result.success
+        ? `${toolName} success files=${String(createdFiles.length)} paths=${filePreview}. Re-read the new files from disk if exact contents are needed.`
+        : `${toolName} failed error=${formatDigestValue(errorPreview)}`,
+      isWriteLike: true,
+      prefersVerbatimTail: false,
+    };
+  }
+
+  if (toolName === "run_command") {
+    const command = getOptionalString(input, "command") ?? "(unknown command)";
+    const fingerprint = createDisplayHash(hashContents(result.output));
+    const preview = createDigestPreview(result.output || result.error || "");
+
+    return {
+      requestLine: `${toolName} command=${formatDigestValue(command)}`,
+      resultLine: result.success
+        ? `${toolName} success output_chars=${String(result.output.length)} fingerprint=${fingerprint} preview=${formatDigestValue(preview)}`
+        : `${toolName} failed error=${formatDigestValue(errorPreview)}`,
+      isWriteLike: false,
+      prefersVerbatimTail: false,
+    };
+  }
+
+  if (!result.success) {
+    return {
+      requestLine: label,
+      resultLine: `${label} failed error=${formatDigestValue(errorPreview)}`,
+      isWriteLike: false,
+      prefersVerbatimTail: false,
+    };
+  }
+
+  const outputPreview = createDigestPreview(result.output);
+
+  return {
+    requestLine: label,
+    resultLine: `${label} success preview=${formatDigestValue(outputPreview)}`,
+    isWriteLike: false,
+    prefersVerbatimTail: toolName === "read_file" && result.success,
+  };
 }
 
 function extractAssistantTextSafely(
@@ -305,6 +497,7 @@ function createCancelledLoopResult(options: {
   toolExecutions: RawToolExecution[];
   iterations: number;
   lastEditedFile: string | null;
+  touchedFiles: string[];
 }): RawToolLoopResult {
   const reason = getTurnCancellationReason(
     options.signal,
@@ -320,6 +513,7 @@ function createCancelledLoopResult(options: {
     iterations: options.iterations,
     didEdit: options.lastEditedFile !== null,
     lastEditedFile: options.lastEditedFile,
+    touchedFiles: [...options.touchedFiles],
   };
 }
 
@@ -520,6 +714,7 @@ async function executeToolUsesForTurn(
         result,
       )}`,
     );
+    const touchedFiles = extractTouchedFiles(toolUse.name, toolUse.input, result);
 
     const toolExecution: RawToolExecution = {
       toolName: toolUse.name,
@@ -528,7 +723,13 @@ async function executeToolUsesForTurn(
       output: result.output,
       error: result.error,
       editedPath: extractEditedPath(toolUse.name, toolUse.input, result),
-      data: result.data,
+      touchedFiles,
+      historyDigest: createToolHistoryDigest(
+        toolUse.name,
+        toolUse.input,
+        result,
+        touchedFiles,
+      ),
     };
 
     toolExecutions.push(toolExecution);
@@ -604,13 +805,16 @@ async function runRawToolLoopDetailedCore(
     const requestHistory = buildCompactedMessageHistory({
       initialUserMessage,
       completedTurns: completedToolTurns,
+      maxTokens: runtimeConfig.maxTokens,
     });
 
     if (requestHistory.didCompact) {
       logger.log(
         `[raw-loop] compacted ${String(requestHistory.compactedTurnCount)} completed tool cycle(s); ` +
         `preserved_tail_cycles=${String(requestHistory.preservedTailTurnCount)} ` +
-        `history_chars=${String(requestHistory.estimatedCharsBefore)}->${String(requestHistory.estimatedCharsAfter)}`,
+        `preserved_tail_mode=${requestHistory.preservedTailMode} ` +
+        `history_chars=${String(requestHistory.estimatedCharsBefore)}->${String(requestHistory.estimatedCharsAfter)} ` +
+        `budget=${String(requestHistory.historyCharBudget)}`,
       );
     }
 
@@ -648,6 +852,7 @@ async function runRawToolLoopDetailedCore(
           toolExecutions,
           iterations: Math.max(turnNumber - 1, 0),
           lastEditedFile,
+          touchedFiles: uniqueStrings(toolExecutions.flatMap((execution) => execution.touchedFiles)),
         });
       }
 
@@ -688,6 +893,7 @@ async function runRawToolLoopDetailedCore(
             toolExecutions,
             iterations: turnNumber,
             lastEditedFile,
+            touchedFiles: uniqueStrings(toolExecutions.flatMap((execution) => execution.touchedFiles)),
           });
         }
 
@@ -716,10 +922,12 @@ async function runRawToolLoopDetailedCore(
           messageHistory: buildCompactedMessageHistory({
             initialUserMessage,
             completedTurns: [...completedToolTurns, completedToolTurn],
+            maxTokens: runtimeConfig.maxTokens,
           }).messages,
           toolExecutions,
           iterations: turnNumber,
           lastEditedFile,
+          touchedFiles: uniqueStrings(toolExecutions.flatMap((execution) => execution.touchedFiles)),
         });
       }
 
@@ -734,6 +942,7 @@ async function runRawToolLoopDetailedCore(
         toolExecutions,
         iterations: turnNumber,
         lastEditedFile,
+        touchedFiles: uniqueStrings(toolExecutions.flatMap((execution) => execution.touchedFiles)),
       });
     }
 
@@ -754,7 +963,11 @@ async function runRawToolLoopDetailedCore(
       initialUserMessage,
       completedTurns: completedToolTurns,
       finalAssistantMessage,
+      maxTokens: runtimeConfig.maxTokens,
     });
+    const touchedFiles = uniqueStrings(
+      toolExecutions.flatMap((execution) => execution.touchedFiles),
+    );
 
     return {
       status: "completed",
@@ -764,20 +977,30 @@ async function runRawToolLoopDetailedCore(
       iterations: turnNumber,
       didEdit: lastEditedFile !== null,
       lastEditedFile,
+      touchedFiles,
     };
   }
 
+  const continuationHistory = buildCompactedMessageHistory({
+    initialUserMessage,
+    completedTurns: completedToolTurns,
+    maxTokens: runtimeConfig.maxTokens,
+  });
+  const touchedFiles = uniqueStrings(
+    toolExecutions.flatMap((execution) => execution.touchedFiles),
+  );
+
   return {
-    status: "limit_reached",
-    finalText: createRawLoopIterationLimitMessage(maxIterations),
-    messageHistory: buildCompactedMessageHistory({
-      initialUserMessage,
-      completedTurns: completedToolTurns,
-    }).messages,
+    status: "continuation",
+    finalText:
+      `Shipyard reached the acting iteration limit of ${String(maxIterations)} ` +
+      "and needs a checkpoint-backed continuation.",
+    messageHistory: continuationHistory.messages,
     toolExecutions,
     iterations: maxIterations,
     didEdit: lastEditedFile !== null,
     lastEditedFile,
+    touchedFiles,
   };
 }
 
