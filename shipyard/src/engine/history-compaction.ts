@@ -6,6 +6,7 @@ export const RAW_LOOP_MIN_MESSAGE_HISTORY_CHAR_BUDGET = 24_000;
 export const RAW_LOOP_MAX_MESSAGE_HISTORY_CHAR_BUDGET = 32_000;
 export const RAW_LOOP_COMPACTION_SUMMARY_CHAR_BUDGET = 2_600;
 export const RAW_LOOP_PREFERRED_VERBATIM_TAIL_CYCLES = 1;
+export const RAW_LOOP_MESSAGE_HISTORY_CHAR_BUDGET = RAW_LOOP_MIN_MESSAGE_HISTORY_CHAR_BUDGET;
 
 export interface ToolHistoryDigest {
   requestLine: string;
@@ -87,10 +88,54 @@ function summarizeInputPath(input: unknown): string | null {
   return null;
 }
 
+function formatExecutionLabel(execution: CompletedToolExecution): string {
+  const primaryPath =
+    execution.touchedFiles[0]
+    ?? execution.editedPath
+    ?? summarizeInputPath(execution.input);
+
+  return primaryPath
+    ? `${execution.toolName}(${primaryPath})`
+    : execution.toolName;
+}
+
+function extractLineCount(value: string): number | null {
+  const match = value.match(
+    /(?:created|updated)?\s*(\d+)\s+lines|lines\s*[:=]\s*(\d+)|total_lines\s*=\s*(\d+)/i,
+  );
+  const rawCount = match?.[1] ?? match?.[2] ?? match?.[3];
+
+  return rawCount ? Number.parseInt(rawCount, 10) : null;
+}
+
+function formatCompactToolResult(
+  execution: CompletedToolExecution,
+): string {
+  const baseLine = execution.historyDigest.resultLine;
+
+  if (!execution.success) {
+    return baseLine;
+  }
+
+  const lineCount = extractLineCount(execution.output)
+    ?? extractLineCount(execution.historyDigest.resultLine)
+    ?? extractLineCount(execution.historyDigest.requestLine);
+
+  if (execution.toolName === "write_file" && lineCount !== null) {
+    return `${formatExecutionLabel(execution)} created ${String(lineCount)} lines. ${baseLine}`;
+  }
+
+  if (execution.toolName === "edit_block" && lineCount !== null) {
+    return `${formatExecutionLabel(execution)} updated ${String(lineCount)} lines. ${baseLine}`;
+  }
+
+  return baseLine;
+}
+
 function summarizeToolExecution(
   execution: CompletedToolExecution,
 ): string {
-  return execution.historyDigest.resultLine;
+  return formatCompactToolResult(execution);
 }
 
 function summarizeCompactedTurn(turn: CompletedToolTurn): string {
@@ -174,7 +219,7 @@ function buildCompactTurnMessages(
     .map((execution) => `- ${execution.historyDigest.requestLine}`)
     .join("\n");
   const toolResults = turn.toolExecutions
-    .map((execution) => `- ${execution.historyDigest.resultLine}`)
+    .map((execution) => `- ${formatCompactToolResult(execution)}`)
     .join("\n");
 
   return [

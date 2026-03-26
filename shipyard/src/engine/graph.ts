@@ -809,6 +809,18 @@ function createCancellationUpdateFromError(
   };
 }
 
+function isActingIterationLimitError(message: string): boolean {
+  if (!message.trim()) {
+    return false;
+  }
+
+  return (
+    message.includes(`acting iteration limit of ${String(RAW_LOOP_MAX_ITERATIONS)}`)
+    || message.includes(`exceeded ${String(RAW_LOOP_MAX_ITERATIONS)} iterations`)
+    || /iteration(?:-threshold| threshold| limit)/i.test(message)
+  );
+}
+
 export function routeAfterPlan(
   state: Pick<AgentGraphState, "status">,
 ): "act" | "respond" {
@@ -1035,12 +1047,26 @@ export function createAgentRuntimeNodes(
         }
 
         const message = toErrorMessage(error);
-        const limitHit = message.includes(String(RAW_LOOP_MAX_ITERATIONS));
+        const limitHit = isActingIterationLimitError(message);
+
+        if (limitHit) {
+          return {
+            actingIterations: RAW_LOOP_MAX_ITERATIONS,
+            checkpointRequested: true,
+            status: "responding",
+            finalResult: message.includes("checkpoint")
+              ? message
+              : `Shipyard reached the acting iteration limit of ${String(RAW_LOOP_MAX_ITERATIONS)} and needs a checkpoint-backed continuation.`,
+            harnessRoute: {
+              ...state.harnessRoute,
+              checkpointRequested: true,
+            },
+            lastError: null,
+          };
+        }
 
         return {
-          actingIterations: limitHit
-            ? RAW_LOOP_MAX_ITERATIONS
-            : state.actingIterations,
+          actingIterations: state.actingIterations,
           checkpointRequested: false,
           status: "failed",
           finalResult: message,

@@ -82,3 +82,13 @@ Capture failures so they are not repeated.
 - **Example**: A bootstrap or "continue the same app" instruction names `apps/web/src/App.tsx`, and the acting-loop budget drops to the narrow default before discovery, recent touched files, or handoff evidence are considered.
 - **Why it failed**: Long construction turns checkpoint too early and the smoke only passes if the runtime burns extra reread loops to compensate.
 - **Prevention rule**: Resolve broad greenfield and broad continuation intent before falling back to exact-path narrow defaults, and cover the distinction with both focused graph tests and a live smoke.
+
+- **Problem**: Reusing retired UI-shell wording in durable docs
+- **Example**: Describing the current browser workbench as a `Chat` / `Local preview` / `Live view` tab set after the shipped shell moved to a split conversation/file-output layout with a drawer
+- **Why it failed**: Architecture notes stop matching the live product and make debugging or onboarding harder than reading the code directly.
+- **Prevention rule**: Re-check `ui/src/App.tsx`, `ui/src/ShipyardWorkbench.tsx`, and the current README surfaces before carrying forward older phase language.
+
+- **Problem**: Adopting software-factory features as isolated subsystems without unifying execution state and review boundaries
+- **Example**: Adding background tasks, approvals, repo indexing, or eval jobs as separate sidecar stores and flows that do not share one durable thread or one reviewed apply path
+- **Why it failed**: The runtime becomes harder to reason about, resume semantics drift, and parallel work starts mutating the main target without a clear control plane.
+- **Prevention rule**: Sequence larger runtime upgrades through the `phase-10` architecture pack, preserve the single-writer coordinator, and anchor new capability surfaces to durable threads, explicit policy, and review-before-apply boundaries.

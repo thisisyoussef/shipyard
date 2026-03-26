@@ -4,17 +4,21 @@ Phases define how Shipyard bundles tools and prompts for a class of work.
 
 ## Files
 
-- `phase.ts`: the phase contract
-- `code/`: the current default coding phase, including prompt text and the tool
-  bundle exposed to the model
-
-See [`code/README.md`](./code/README.md) for the phase-local guide.
+- `phase.ts`: the shared phase contract
+- `code/`: the default repository-change phase
+- `target-manager/`: the pre-code phase for listing, selecting, creating, and
+  enriching targets
 
 ## Current Shape
 
-The repository is currently centered on a single code phase. That phase exposes
-the read, write, edit, list, search, command, and git diff tools and returns a
-task plan artifact.
+- `code` runs after a target has been selected. It exposes file/spec/search,
+  bootstrap, edit, command, git-diff, and deploy tools, and returns a
+  `task_plan` artifact.
+- `target-manager` runs when Shipyard starts without `--target`. It exposes
+  target catalog and enrichment tools and returns a `target_selection`
+  artifact.
+- Planning turns (`plan:`) reuse the current phase context to build a persisted
+  task queue, but they do not execute a writing turn themselves.
 
 If more phases are added later, keep them explicit and composable rather than
 letting prompt text or tool choices drift across unrelated folders.
@@ -25,14 +29,14 @@ letting prompt text or tool choices drift across unrelated folders.
 flowchart LR
   Contract["phase.ts"]
   Code["code/"]
-  Prompt["system prompt"]
-  Tools["tool bundle"]
-  Output["task_plan artifact"]
-  Runtime["engine runtime"]
+  TargetManager["target-manager/"]
+  Runtime["engine/turn.ts"]
+  Plans["plans/turn.ts"]
 
   Contract --> Code
-  Code --> Prompt
-  Code --> Tools
-  Code --> Output
+  Contract --> TargetManager
   Runtime --> Code
+  Runtime --> TargetManager
+  Plans --> Code
+  Plans --> TargetManager
 ```

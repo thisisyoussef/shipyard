@@ -10,12 +10,15 @@ Capture repeatable patterns that match how this workspace actually works.
 
 ## Shipyard App Structure
 
-- CLI entrypoint: `shipyard/bin/shipyard.ts`
+- CLI entrypoint: `shipyard/src/bin/shipyard.ts`
 - Core runtime loop: `shipyard/src/engine/`
+- Routed planning/task execution: `shipyard/src/plans/`
 - Context discovery: `shipyard/src/context/`
 - Tool registry and tool implementations: `shipyard/src/tools/`
 - Agent role definitions: `shipyard/src/agents/`
 - Phase contracts: `shipyard/src/phases/`
+- Preview and hosted-workspace helpers: `shipyard/src/preview/`,
+  `shipyard/src/hosting/`
 - Local checkpoints and tracing: `shipyard/src/checkpoints/`, `shipyard/src/tracing/`
 - New read-only capability surfaces should prefer dedicated tools with
   human-readable summaries plus structured `data`, so browser activity and
@@ -29,6 +32,12 @@ Capture repeatable patterns that match how this workspace actually works.
 - Local JSONL traces and LangSmith metadata should carry the routing facts
   needed to debug coordinator decisions, including handoff load/emission state
   and reset reason when applicable.
+- Shipyard now has three operator turn paths over the same session model:
+  target-manager turns, `plan:` / `next` / `continue`, and standard code turns.
+- The current browser workbench is a split-pane shell: transcript and composer
+  on the left, file/output evidence on the right, and a drawer for
+  session/history/context. Do not assume the older preview/live-view tab shell
+  is still current.
 - Hosted Railway deploys should treat the nested `shipyard/` directory as the
   app root. App-level `railway.json` commands run from that directory, so they
   should use plain `pnpm build` / `pnpm start -- --ui` instead of recursing
@@ -42,6 +51,13 @@ Capture repeatable patterns that match how this workspace actually works.
 - New read-only helper roles should follow the explorer/verifier/planner shape:
   isolated history, explicit tool allowlist, local Zod validation, and fail-
   closed parsing before coordinator code consumes the result.
+- Plan larger runtime architecture work as ordered spec packs. The current
+  `phase-10` sequence is: durable threads -> policy/sandboxing -> layered
+  memory -> repo indexing -> routing/evals -> isolated background tasks ->
+  evented jobs and readiness.
+- Even when Shipyard borrows software-factory patterns, keep the single-writer
+  coordinator for the main target and make any parallelism read-only,
+  isolated, or review-before-apply.
 
 ## Greenfield Bootstrap Pattern
 
@@ -64,6 +80,8 @@ Capture repeatable patterns that match how this workspace actually works.
 - Repo rules and harness truth live at the root.
 - Product-specific implementation docs stay under `shipyard/`.
 - Durable workflow notes go in `.ai/memory/project/`; current-task notes go in `.ai/memory/session/`.
+- Runtime-facing README and architecture docs must be verified against the
+  current code before reusing historic phase-pack wording.
 
 ## UI Workflow Pattern
 

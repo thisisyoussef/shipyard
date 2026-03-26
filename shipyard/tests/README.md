@@ -6,47 +6,56 @@ The automated suite lives here alongside a small set of manual smoke scripts.
 
 The Vitest suite exercises the main runtime boundaries:
 
-- CLI loop persistence and session behavior
-- discovery and context envelope shaping
-- tool registration and tool execution contracts
-- graph runtime and shared turn execution
-- plan-mode routing, queued task execution, and persisted task-queue artifacts
-- session-history summaries plus UI event mapping, browser runtime transport,
-  and frontend view models
-- tracing and checkpointing behavior
-- harness bridge dry-runs for design and later scripted UI phases
+- runtime core: `cli-loop`, `loop-runtime`, `turn-runtime`, `raw-loop`,
+  `graph-runtime`, `anthropic-contract`, and `live-verification`
+- tool and edit safety: `tooling`, `checkpoint-manager`, `spec-loader`, and
+  `scaffold-bootstrap`
+- repo understanding and context shaping: `discovery` and `context-envelope`
+- helper agents and routed planning: `explorer-subagent`, `planner-subagent`,
+  `verifier-subagent`, `plan-mode`, `task-runner`, `handoff-artifacts`, and
+  `evaluator-calibration`
+- preview and browser evaluation: `preview-supervisor` and `browser-evaluator`
+- browser backend and workbench state: `ui-runtime`, `ui-events`,
+  `ui-view-models`, `ui-socket-manager`, `ui-workbench`, `ui-chat-workspace`,
+  `ui-activity-diff`, `ui-context-ui`, and `session-history`
+- target-manager, enrichment, and hosted/deploy surfaces: `target-manager`,
+  `target-auto-enrichment`, `ui-access`, and `railway-config`
+- tracing: `langsmith-tracing`
 
 `vitest.config.ts` keeps file-level parallelism off so the integration-style
 tests remain deterministic.
 
-## SV-S01 Smoke Matrix
+## Focused Suites By Surface
 
-`pnpm --dir shipyard test:smoke` reruns the requirement-driven MVP matrix added
-for `SV-S01`.
-
-| Requirement | Smoke coverage | Stress or failure coverage |
-|---|---|---|
-| Persistent loop and session resume | `tests/cli-loop.test.ts` proves repeated turns, interleaved `status`, and explicit exit in one process. | `tests/cli-loop.test.ts` also covers restart plus `--session` resume with persisted turn count after a failed turn. |
-| Surgical file editing guardrails | `tests/tooling.test.ts` covers successful unique-anchor edits. | `tests/tooling.test.ts` now also covers repeated edits to one file, stale reads, ambiguous anchors, missing anchors, and large rewrite rejection. |
-| Context injection and rolling history | `tests/context-envelope.test.ts` validates serialized prompt sections and injected context placement. | `tests/turn-runtime.test.ts` exercises multi-turn carry-forward, current-turn context injection, and the eight-line rolling summary bound. |
-| Browser UI operator flow | `tests/ui-runtime.test.ts` covers instruction submission, streamed tool activity, preview auto-start, refresh-state streaming, edit previews, reconnect snapshots, saved-run browsing, and session resume. | `tests/ui-runtime.test.ts` also covers error recovery and repeated error-stream runs for stability. |
-| Chat transcript and live step playback | `tests/ui-chat-workspace.test.ts` covers the conversation-first workbench view with trace links and context receipts. | `tests/ui-live-view.test.ts` covers sequential step playback, terminal-like tool detail, and before/after edit evidence while runs are still in flight. |
-| Preview supervision | `tests/discovery.test.ts` and `tests/preview-supervisor.test.ts` cover preview capability inference plus start, refresh, exit, and startup-failure states. | `tests/ui-runtime.test.ts` verifies preview lifecycle messages remain aligned with the browser session contract. |
-| Trace evidence | `tests/ui-runtime.test.ts` checks local JSONL trace entries for success and failure instructions. | `tests/graph-runtime.test.ts` verifies graph-success and fallback-failure paths both attach LangSmith trace metadata when tracing is enabled. |
-
-`tests/session-history.test.ts` is the focused unit suite for persisted saved-run
-ordering and per-run preview metadata.
-
-`tests/plan-mode.test.ts` is the focused unit suite for `plan:` routing,
-persisted queue validation, spec-ref capture, and plan artifact storage.
-
-`tests/task-runner.test.ts` is the focused unit suite for `next` / `continue`
-selection, spec reload, active-task persistence, and task outcome updates.
+- `tests/graph-runtime.test.ts`: graph-node routing, fallback parity, recovery,
+  and verification behavior
+- `tests/planner-subagent.test.ts`,
+  `tests/explorer-subagent.test.ts`, and
+  `tests/verifier-subagent.test.ts`: helper-agent contracts and validation
+- `tests/plan-mode.test.ts` and `tests/task-runner.test.ts`: `plan:`, `next`,
+  `continue`, active-task state, and persisted queue behavior
+- `tests/browser-evaluator.test.ts`: loopback preview inspection, console
+  checks, selector waits, and artifact capture
+- `tests/target-manager.test.ts` and
+  `tests/target-auto-enrichment.test.ts`: target selection, creation, profile
+  shaping, and enrichment
+- `tests/ui-runtime.test.ts`: end-to-end browser-runtime transport, saved-run
+  resume, uploads, deploy status, and reconnect behavior
+- `tests/ui-workbench.test.ts`, `tests/ui-chat-workspace.test.ts`,
+  `tests/ui-activity-diff.test.ts`, and `tests/ui-context-ui.test.ts`: current
+  shell and panel rendering
 
 ## Manual Smoke Scripts
 
 `tests/manual/` holds opt-in scripts for higher-friction verification such as
 live model loops or tracing checks that depend on local credentials.
+
+Current scripts:
+
+- `phase2-tools-smoke.ts`
+- `phase3-live-loop-smoke.ts`
+- `phase4-langsmith-mvp.ts`
+- `phase5-local-preview-smoke.ts`
 
 See [`manual/README.md`](./manual/README.md) for the current script map.
 
@@ -54,21 +63,30 @@ See [`manual/README.md`](./manual/README.md) for the current script map.
 
 - Prefer tests that exercise the nearest stable boundary rather than asserting
   against internal implementation details.
-- Add or update automated coverage when a change affects session state, tool
-  contracts, CLI behavior, or browser runtime messaging.
+- Add or update automated coverage when a change affects session state, plan
+  queues, tool contracts, CLI behavior, browser runtime messaging, or deploy
+  flows.
+- When documenting a UI behavior, check the current workbench shell before
+  reusing older panel terminology from historic phases.
 
 ## Diagram
 
 ```mermaid
 flowchart LR
-  Cli["CLI tests"]
   Runtime["runtime tests"]
-  Ui["UI transport tests"]
-  Tracing["tracing and checkpoint tests"]
+  Tools["tooling and checkpoints"]
+  Plans["plan/task-runner tests"]
+  Preview["preview + browser evaluation"]
+  Ui["UI transport + workbench"]
+  Hosted["target-manager + hosted/deploy"]
+  Trace["tracing"]
   Manual["manual smoke scripts"]
 
-  Cli --> Runtime
+  Runtime --> Tools
+  Runtime --> Plans
+  Runtime --> Preview
   Runtime --> Ui
-  Runtime --> Tracing
+  Runtime --> Hosted
+  Runtime --> Trace
   Runtime --> Manual
 ```

@@ -3,7 +3,7 @@
 - Pack: Runtime Hardening (Supplemental)
 - Estimate: 8-12 hours
 - Date: 2026-03-26
-- Status: Implemented; live LangSmith finish-check passed on 2026-03-26
+- Status: Partially implemented; fresh LangSmith finish-check passed on 2026-03-26
 
 ## Pack Objectives
 
@@ -55,59 +55,82 @@
   Code References:
   - `shipyard/src/engine/history-compaction.ts`
   - `shipyard/src/engine/raw-loop.ts`
-  - `shipyard/src/context/envelope.ts`
-  - `shipyard/src/engine/turn-summary.ts`
+  - `shipyard/tests/history-compaction.test.ts`
   - `shipyard/tests/raw-loop.test.ts`
   Representative Snippet:
   ```ts
-  const forcedVerbatimTailTurns = shouldForcePreserveVerbatimTailTurn(
-    options.completedTurns.at(-1),
-  )
-    ? 1
-    : 0;
+  const RAW_LOOP_MESSAGE_HISTORY_CHAR_BUDGET = 24_000;
+  const RAW_LOOP_COMPACTION_SUMMARY_CHAR_BUDGET = 4_200;
+  ```
+  ```ts
+  if (toolName === "write_file") {
+    return {
+      path: normalizePath(input.path),
+      lineCount,
+      preview,
+    };
+  }
   ```
 - `RTH-S02` Anthropic budget defaults and `max_tokens` recovery
   Code References:
   - `shipyard/src/engine/anthropic.ts`
-  - `shipyard/src/engine/raw-loop.ts`
-  - `shipyard/tests/anthropic-contract.test.ts`
-  - `shipyard/tests/raw-loop.test.ts`
   Representative Snippet:
   ```ts
-  if (assistantMessage.stop_reason === "max_tokens") {
-    // retry with a higher max_tokens budget before failing closed
-  }
+  // No new code landed in this patch.
   ```
+  Notes:
+  - The live finish check exercised the existing `maxTokens=8192` and
+    `timeoutMs=120000` defaults already present on `main`.
 - `RTH-S03` Continuation-aware routing and subagent visibility
   Code References:
-  - `shipyard/src/engine/state.ts`
-  - `shipyard/src/engine/turn.ts`
-  - `shipyard/src/agents/coordinator.ts`
   - `shipyard/src/engine/graph.ts`
-  - `shipyard/tests/turn-runtime.test.ts`
-  - `shipyard/tests/ui-runtime.test.ts`
+  - `shipyard/src/engine/turn.ts`
+  - `shipyard/src/artifacts/handoff.ts`
+  - `shipyard/src/phases/code/prompts.ts`
+  - `shipyard/tests/graph-runtime.test.ts`
+  - `shipyard/tests/handoff-artifacts.test.ts`
   Representative Snippet:
   ```ts
-  if (context.toolExecution.editedPath) {
-    rememberRecentFilePath(sessionState.recentTouchedFiles, context.toolExecution.editedPath);
+  if (loopResult.status === "limit_reached") {
+    return {
+      status: "responding",
+      response: loopResult.finalText,
+      touchedFiles: loopResult.touchedFiles,
+    };
   }
   ```
+  ```ts
+  touchedFiles: finalState.touchedFiles ?? [],
+  ```
+  Notes:
+  - This patch landed continuation-aware touched-file carry-forward plus the
+    resumable iteration-threshold path.
+  - Subagent visibility plumbing remains follow-up work.
 - `RTH-S04` Bootstrap seed-doc allowlist alignment
   Code References:
+  - `shipyard/src/context/discovery.ts`
   - `shipyard/src/tools/target-manager/bootstrap-target.ts`
-  - `shipyard/tests/scaffold-bootstrap.test.ts`
+  - `shipyard/tests/discovery.test.ts`
   Representative Snippet:
   ```ts
-  allowedExistingEntries: [".shipyard", ".git", "AGENTS.md", "README.md"],
+  const BOOTSTRAP_SAFE_TOP_LEVEL_FILES = new Set(["AGENTS.md"]);
   ```
+  Notes:
+  - `bootstrap_target` already accepted `AGENTS.md` and `README.md`; this patch
+    aligned discovery so those same near-empty targets still route as
+    greenfield/bootstrap-ready.
 - `RTH-S05` Graph-aware long-run live smoke
   Code References:
   - `shipyard/tests/manual/phase3-live-loop-smoke.ts`
-  - `shipyard/tests/manual/README.md`
-  - `shipyard/src/agents/coordinator.ts`
-  - `shipyard/src/phases/code/prompts.ts`
-  - `shipyard/tests/graph-runtime.test.ts`
+  - `shipyard/tests/manual/phase4-langsmith-mvp.ts`
   Representative Snippet:
   ```ts
-  "Leave command-based verification to the verifier after the edit unless shell output is required now."
+  // No new smoke code landed in this patch.
   ```
+  Notes:
+  - The existing live smoke passed on 2026-03-26 with fresh graph-mode,
+    large-write, same-session follow-up traces:
+    `019d2844-0be8-7000-8000-05343b525e1d`,
+    `019d2845-b0c3-7000-8000-0409f9d6db2f`,
+    `019d2847-1989-7000-8000-0661c83e9d63`,
+    and `019d2847-589f-7000-8000-0442fef4e057`.

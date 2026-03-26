@@ -269,8 +269,10 @@ function createCompletedWork(options: {
 }): string[] {
   const completed = [`Turn summary: ${options.summary}`];
 
+  completed.push(`Goal checkpointed: ${options.summary}`);
+
   if (options.touchedFiles.length > 0) {
-    completed.push(`Touched files: ${options.touchedFiles.join(", ")}`);
+    completed.push(`Recent touched files: ${options.touchedFiles.join(", ")}`);
   }
 
   if (options.verificationReport) {

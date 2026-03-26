@@ -75,3 +75,34 @@ Record durable workspace decisions here.
 - **Decision**: Persist typed `ExecutionHandoff` artifacts under `shipyard/.shipyard/artifacts/<sessionId>/` and keep only the active artifact path in session state, with the first landing anchored to the current `TaskPlan` plus latest verification outcome.
 - **Alternatives Considered**: Stretch `rollingSummary`; write ad hoc notes blobs; block the story on the unmerged planner branch.
 - **Consequences**: Resume state stays structured and target-local today, traces/logs must expose handoff metadata, and later planner work can enrich the existing handoff contract instead of inventing a second reset path.
+
+- **ADR-ID**: ADR-0009
+- **Date**: 2026-03-26
+- **Context**: Shipyard now supports no-target target-manager turns,
+  review-first planning turns, queued task execution, and standard code turns,
+  but all of those flows still need to stay legible and share one session
+  model.
+- **Decision**: Keep one shared session model and route work through three
+  explicit paths: target-manager turns, `plan:` / `next` / `continue` plan
+  turns, and standard code turns through the graph runtime.
+- **Alternatives Considered**: Split target-manager into a separate app; build a
+  second execution engine for plan/task work; hide plan/task routing inside the
+  standard code turn path.
+- **Consequences**: Docs must distinguish routing layers clearly, session state
+  must carry phase/task/handoff pointers explicitly, and browser/terminal
+  surfaces can keep sharing the same runtime contracts.
+
+- **ADR-ID**: ADR-0010
+- **Date**: 2026-03-26
+- **Context**: The next architecture step needs to absorb patterns from
+  software-factory systems without losing Shipyard's current single-writer,
+  local-first strengths.
+- **Decision**: Sequence the next major runtime work through a dedicated
+  `phase-10` story pack: durable execution threads first, then policy and
+  sandboxing, then layered memory and repo indexing, then explicit routing and
+  verification, then isolated background tasks and readiness surfaces.
+- **Alternatives Considered**: Keep adding isolated improvements to the current
+  runtime one-off; pivot to a multi-writer swarm architecture immediately.
+- **Consequences**: Future architecture stories should map back to the `phase-10`
+  sequence, preserve the single-writer coordinator, and avoid introducing new
+  parallel persistence systems or unreviewed background mutation paths.
