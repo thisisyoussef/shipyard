@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_ANTHROPIC_MODEL } from "../src/engine/anthropic.js";
 import {
   CODE_PHASE_MODEL_ROUTE,
+  HUMAN_SIMULATOR_MODEL_ROUTE,
   PLANNER_MODEL_ROUTE,
   TARGET_ENRICHMENT_MODEL_ROUTE,
   TARGET_MANAGER_PHASE_MODEL_ROUTE,
@@ -183,5 +184,29 @@ describe("model routing", () => {
 
     expect(selection.modelAdapter.provider).toBe("openai");
     expect(selection.model).toBe("gpt-route");
+  });
+
+  it("supports a dedicated human simulator route override", () => {
+    const routing = createModelRoutingConfig({
+      defaultRoute: {
+        provider: "openai",
+        model: "gpt-default",
+      },
+      routes: {
+        [HUMAN_SIMULATOR_MODEL_ROUTE]: {
+          model: "gpt-human-simulator",
+        },
+      },
+    });
+
+    expect(
+      resolveModelRoute({
+        routing,
+        routeId: HUMAN_SIMULATOR_MODEL_ROUTE,
+      }),
+    ).toMatchObject({
+      provider: "openai",
+      model: "gpt-human-simulator",
+    });
   });
 });
