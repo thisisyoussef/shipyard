@@ -98,6 +98,10 @@ Capture repeatable patterns that match how this workspace actually works.
 - Fresh story branches and worktrees should copy the required local `.env*` files from the working `main` setup, run `pnpm --dir shipyard install` before project commands, and keep copied env files untracked.
 - Runtime-facing README and architecture docs must be verified against the
   current code before reusing historic phase-pack wording.
+- `shipyard/CODEAGENT.md` should read as the live implementation handbook for
+  Shipyard's shared runtime. Prefer stable subsystem boundaries, turn routing,
+  artifact layout, and extension rules over historical submission-template
+  framing.
 
 ## UI Workflow Pattern
 

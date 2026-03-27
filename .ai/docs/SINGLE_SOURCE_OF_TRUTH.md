@@ -46,6 +46,11 @@
 - **UI bridge flag**: `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES=1` makes `scripts/run-ui-phase-bridge.mjs` use Claude first for UI implementation, QA, critic, and final polish while preserving a Codex-first fallback when the flag is off.
 - **Greenfield bootstrap baseline**: shared scaffold presets now back both target creation and empty-target bootstrap in code phase; do not add a second scaffolding path when extending greenfield setup.
 - **Docs baseline**: runtime-facing README and architecture pages under `shipyard/` now describe target-manager routing, plan/task queues, planner-backed graph execution, browser evaluation, and the current split-pane browser workbench. Keep those docs aligned when those surfaces change.
+- **CODEAGENT baseline**: `shipyard/CODEAGENT.md` is now a durable
+  implementation-handbook for the live runtime. Keep it aligned with the
+  shared turn engine, target-manager flow, continuation/handoff model,
+  provider routing, and the current browser workbench instead of treating it as
+  a one-off submission appendix.
 - **Execution fingerprint baseline**: standard instruction turns now emit a
   shared per-turn execution fingerprint in CLI output, browser completion
   state, local JSONL traces, and LangSmith metadata so local vs hosted/runtime

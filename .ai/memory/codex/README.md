@@ -14,3 +14,7 @@ Notes:
   `shipyard/ui/src/ShipyardWorkbench.tsx` before reusing older phase-pack
   wording. The active workbench is split-pane, not the older preview/live-view
   tab layout.
+- 2026-03-27: Treat `shipyard/CODEAGENT.md` as the code-centric architecture
+  handbook for the live runtime. If it starts reading like a historical
+  appendix or submission template, refresh it from `shipyard/src/**`,
+  `shipyard/ui/**`, and `shipyard/docs/architecture/**`.

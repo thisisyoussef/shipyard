@@ -1,410 +1,686 @@
-# Appendix: CODEAGENT.md
+# Shipyard CODEAGENT
 
-Submission template - fill in each section as you build. Do not write this at the end.
+Shipyard is no longer a "submission appendix." It is a persistent coding-agent
+runtime with one shared execution core, two operator surfaces, multiple routed
+turn lanes, and a deliberately strict safety model around edits, verification,
+preview, deployment, and continuation.
 
-| Section | Due |
-| --- | --- |
-| Agent Architecture | MVP |
-| File Editing Strategy | MVP |
-| Multi-Agent Design | MVP |
-| Trace Links | MVP |
-| Architecture Decisions | Final Submission |
-| Ship Rebuild Log | Final Submission |
-| Comparative Analysis | Final Submission |
-| Cost Analysis | Final Submission |
+This file is the implementation contract for people extending Shipyard. Read it
+when you need the architectural model behind `src/`, the browser workbench in
+`ui/`, or the target-local runtime state written under `.shipyard/`.
 
-## Agent Architecture (MVP)
+## Architectural Thesis
 
-Shipyard is a local-first coding agent with two entry surfaces, one shared
-session model, one standard-turn executor, one infinite-handshake supervisor
-for `ultimate` mode, and two additional routed turn paths for planning and
-queued task execution. `src/bin/shipyard.ts` resolves
-either a concrete target or a targets directory, creates or resumes a session,
-refreshes discovery, loads target `AGENTS.md` rules when a target exists, and
-then routes the operator into terminal REPL mode or browser `--ui` mode. From
-there, the loop/UI router sends `plan:` into `src/plans/turn.ts`, sends `next`
-and `continue` into `src/plans/task-runner.ts`, sends `ultimate ...` into
-`src/engine/ultimate-mode.ts`, and sends standard instructions into
-`src/engine/turn.ts`, which rebuilds the `ContextEnvelope`, selects the
-current phase (`code` or `target-manager`), and runs the graph runtime with
-raw fallback parity.
+The system's main trick is not hidden magic. It is stubborn coherence:
 
-```mermaid
-flowchart TD
-  Operator["Operator"]
-  Entry["Terminal loop or UI server"]
-  Bootstrap["Target/targets-dir resolution, session load/create, discovery, rules load"]
-  Router["Instruction router"]
-  PlanTurn["executePlanningTurn"]
-  TaskRunner["executeTaskRunnerTurn"]
-  Ultimate["executeUltimateMode"]
-  HumanSimulator["human-simulator helper"]
-  Turn["executeInstructionTurn"]
-  Envelope["Context envelope + runtime context"]
-  Graph["Graph runtime / fallback"]
-  Tools["Typed tools + target-manager tools"]
-  Target["Target repository"]
-  Checkpoints["Checkpoint manager"]
-  Plans["Persisted task queues"]
-  Artifacts["Artifacts / uploads / handoffs"]
-  Trace["Local JSONL / LangSmith trace"]
-  Respond["Final response + route metadata"]
-  Session["Session persistence / selected phase"]
+- one shared turn engine for terminal and browser operation
+- one target-local runtime state tree instead of scattered temp files
+- one write authority, with helper roles kept read-only and report-based
+- one typed tool surface instead of ad hoc shell access leaking into prompts
+- one explicit runtime graph that makes planning, verification, recovery, and
+  continuation visible instead of implicit
 
-  Operator --> Entry
-  Entry --> Bootstrap
-  Bootstrap --> Router
-  Router --> PlanTurn
-  Router --> TaskRunner
-  Router --> Ultimate
-  Router --> Turn
-  PlanTurn --> Plans
-  TaskRunner --> Turn
-  Ultimate --> HumanSimulator
-  Ultimate --> Turn
-  Turn --> Envelope
-  Turn --> Graph
-  Graph --> Tools
-  Tools --> Target
-  Graph --> Checkpoints
-  Turn --> Artifacts
-  Respond --> Session
-  Turn --> Trace
-```
+That coherence is what lets Shipyard keep adding surfaces and capabilities
+without becoming a bag of one-off agent loops.
 
-### Loop design
+## At A Glance
 
-- `runShipyardLoop` in `src/engine/loop.ts` keeps the process alive, exposes
-  utility commands like `read`, `list`, `search`, `run`, `diff`, `target`,
-  `plan:`, `next`, `continue`, and `ultimate`, and routes the rest into the
-  standard turn path.
-- `executePlanningTurn` in `src/plans/turn.ts` runs the planner helper in a
-  read-only path, captures any loaded `spec:` refs, and persists a typed task
-  queue under `target/.shipyard/plans/`.
-- `executeTaskRunnerTurn` in `src/plans/task-runner.ts` reloads the active plan,
-  selects the right queued task, and then reuses `executeInstructionTurn` for
-  the actual code-writing turn.
-- `executeUltimateMode` in `src/engine/ultimate-mode.ts` keeps a foreground
-  infinite loop alive by alternating between the read-only
-  `src/agents/human-simulator.ts` helper and the normal
-  `executeInstructionTurn` entrypoint until the operator interrupts it.
-- `executeInstructionTurn` assembles stable runtime context, captures recent
-  tool output and error summaries, wires reporter callbacks, emits or loads
-  handoff artifacts, and persists updated session state after the turn
-  completes.
-- `runAgentRuntime` in `src/engine/graph.ts` executes the explicit
-  `triage -> plan -> act -> verify -> recover -> respond` state machine. The
-  front-door `triage` step is deterministic and classifies work as direct,
-  targeted, or broad before planner or browser-evaluator delegation is even
-  considered. On the narrowest UI/copy lane, `act` can collapse into one
-  structured direct-edit pass and `verify` can stay deterministic instead of
-  invoking the heavier verifier helper. When the runtime is started in fallback
-  mode, the system preserves the same planning, tool, verification, and
-  response contract, but executes it through the lower-level loop in
-  `src/engine/raw-loop.ts`.
+- Two operator surfaces:
+  - terminal REPL via [`src/engine/loop.ts`](./src/engine/loop.ts)
+  - browser workbench via [`src/ui/server.ts`](./src/ui/server.ts) and
+    [`ui/src/*`](./ui/src)
+- Three primary turn lanes:
+  - target-manager turns before a concrete target is selected
+  - planning turns for `plan:` plus queued-task execution via `next` and
+    `continue`
+  - standard code turns through the graph runtime with raw fallback parity
+- One supervisory overlay:
+  - `ultimate ...` loops that alternate between the human-simulator and the
+    shared standard turn executor
+- Current shipped model default:
+  - Anthropic via `claude-opus-4-6`
+- Current public deploy path:
+  - Vercel through `deploy_target`
 
-### Tool calls
-
-The code phase currently exposes ten typed tools through the registry:
-`read_file`, `load_spec`, `write_file`, `bootstrap_target`, `edit_block`,
-`list_files`, `search_files`, `run_command`, `git_diff`, and `deploy_target`.
-Target-manager mode exposes `list_targets`, `select_target`, `create_target`,
-and `enrich_target`. Tool execution is structured, target-relative where
-appropriate, and schema-described before it reaches the model.
-
-### State management
-
-- `SessionState` in `src/engine/state.ts` persists durable session data under
-  `target/.shipyard/sessions/<sessionId>.json`.
-- `InstructionRuntimeState` in `src/engine/turn.ts` keeps per-session rolling
-  context such as `recentToolOutputs`, `recentErrors`, `retryCountsByFile`,
-  `blockedFiles`, pending target selection, and the selected runtime mode.
-- `AgentGraphState` in `src/engine/graph.ts` carries the active instruction,
-  `messageHistory`, `taskPlan`, `executionSpec`, `planningMode`,
-  `verificationReport`, `browserEvaluationReport`, `harnessRoute` (including
-  task complexity plus `actingMode` / verification mode), `lastEditedFile`,
-  recovery counters, and `langSmithTrace`.
-- `PersistedTaskQueue` plus `ActiveTaskContext` in `src/plans/` carry reviewable
-  multi-task work without stretching `rollingSummary`.
-- Checkpoints are stored under
-  `target/.shipyard/checkpoints/<sessionId>/...checkpoint`, and local trace logs
-  are stored under `target/.shipyard/traces/<sessionId>.jsonl`.
-- Plan queues are stored under `target/.shipyard/plans/<planId>.json`, and UI
-  uploads are stored under `target/.shipyard/uploads/<sessionId>/...`.
-- Long-running or unstable turns can emit typed `ExecutionHandoff` artifacts
-  under `target/.shipyard/artifacts/<sessionId>/...handoff.json`. Session state
-  keeps only `activeHandoffPath`, and resumed turns inject the loaded handoff
-  into `ContextEnvelope.session.latestHandoff` instead of stuffing that state
-  into `rollingSummary`.
-
-### Entry conditions
-
-- Target directory or targets directory is resolved and `.shipyard/` runtime
-  directories exist.
-- Discovery has been refreshed for the selected repository or targets root.
-- Project rules from target `AGENTS.md` have been loaded into the stable
-  context layer when available.
-- A saved session has been resumed or a new session has been created.
-- Runtime mode has been chosen: graph by default, fallback when explicitly
-  requested or injected.
-
-### Normal exit conditions
-
-- The graph reaches `respond` and marks the turn `done`.
-- A fallback run returns final text without unhandled runtime errors.
-- A planning turn saves a typed plan queue and loaded spec refs.
-- Session state, plan/task metadata, rolling summaries, and trace references
-  are saved.
-- Terminal mode can later exit the process cleanly with `quit` or `exit`, which
-  emits a `session.end` trace record and writes the final session snapshot.
-
-### Error branches
-
-- Tool failures are surfaced as structured tool results instead of crashing the
-  loop.
-- Verification failure sends the graph into `recover`, where the latest
-  checkpoint is restored and the edited file is re-read before replanning.
-- If a file keeps failing verification beyond the retry cap, the file is added
-  to `blockedFiles` and the coordinator escalates instead of writing again.
-- Hosted access, deploy, upload, and plan/task-runner errors stay structured at
-  the turn boundary rather than leaking untyped exceptions into the operator
-  shell.
-- Runtime-level failures produce a final `failed` status and preserve the last
-  error in state.
-
-## File Editing Strategy (MVP)
-
-Shipyard makes surgical edits by combining a prior `read_file` requirement, an
-exact-string anchor, hash tracking, and checkpoint-backed recovery.
-
-1. The runtime first calls `read_file` for the target path. This normalizes the
-   path, returns file contents, and stores a tracked SHA-256 hash in
-   `src/tools/file-state.ts`.
-2. When the model is ready to edit, it calls `edit_block` with the same
-   relative path plus `old_string` and `new_string`.
-3. `edit_block` resolves the path inside the target, re-reads the live file,
-   and rejects the edit immediately if the file was never read first.
-4. The tool compares the current hash against the tracked read hash. If the file
-   changed since the read, the edit is rejected as stale and the model must
-   re-read before trying again.
-5. The tool counts occurrences of `old_string`. The edit only proceeds when the
-   anchor matches exactly once.
-6. For larger files, `edit_block` rejects changes that would rewrite more than
-   60% of a file larger than 500 characters. The exception is Shipyard-tagged
-   starter scaffold files, which can be fully restyled without tripping the
-   generic rewrite limit.
-7. Under the graph runtime, a checkpoint is created before each `edit_block`
-   call so failed verification can revert the file.
-8. After a successful write, the tool returns the updated contents, the new
-   hash, line-count deltas, and before/after previews so the coordinator can
-   summarize exactly what changed.
-
-### How the correct block is located
-
-- The locator is the literal `old_string`, not a line number.
-- Path matching is target-relative and normalized before access.
-- Uniqueness is mandatory. Exact-one-match is the guardrail that makes the edit
-  deterministic.
-
-### What happens when the location is wrong
-
-| Failure mode | Response |
-| --- | --- |
-| File was not read first | Reject with "Read the file with read_file before editing." |
-| File changed after read | Reject as stale and require a fresh read. |
-| Anchor not found | Reject and include the first 30 lines of the live file to help the coordinator re-anchor. |
-| Anchor matched multiple times | Reject and ask for more surrounding context so the match becomes unique. |
-| Edit is too large | Reject and require smaller `edit_block` calls unless the file is a tagged Shipyard starter scaffold that is meant to be replaced wholesale. |
-| Post-edit verification fails | Restore the checkpoint, re-read the file, increment retry state, and either replan or block the file. |
-
-This mechanism deliberately prefers false negatives over ambiguous writes. When
-Shipyard cannot prove the anchor is correct, it stops and asks the model to get
-more context.
-
-## Multi-Agent Design (MVP)
-
-The shipped runtime still uses a single writing coordinator. The graph runtime
-routes broad discovery requests through the explorer helper, broad non-trivial
-planning requests through the planner helper, post-edit command checks through
-the verifier helper, and preview-backed UI checks through the browser
-evaluator. `src/agents/coordinator.ts` owns the task plan, every write, the
-delegation heuristics, and the final merge of evidence. `src/agents/explorer.ts`
-defines the read-only discovery role, `src/agents/planner.ts` emits the typed
-`ExecutionSpec` artifact, `src/agents/verifier.ts` executes ordered command
-checks, and `src/agents/browser-evaluator.ts` inspects loopback previews
-without crossing the coordinator-only write boundary.
+## System Topology
 
 ```mermaid
 flowchart LR
-  Operator["Operator instruction"]
-  Coordinator["Coordinator"]
-  Explorer["Explorer subagent"]
-  Planner["Planner subagent"]
-  Verifier["Verifier subagent"]
-  BrowserEval["Browser evaluator"]
-  ContextReport["ContextReport"]
-  ExecutionSpec["ExecutionSpec"]
-  VerificationReport["VerificationReport"]
-  BrowserReport["BrowserEvaluationReport"]
-  Tools["Typed tools"]
+  Operator["Operator"]
+  CLI["Terminal REPL<br/>src/engine/loop.ts"]
+  UiServer["UI backend<br/>src/ui/server.ts"]
+  Spa["React workbench<br/>ui/src/*"]
+  Bootstrap["Bootstrap + discovery<br/>src/bin/shipyard.ts"]
+  Router["Lane routing"]
+  TargetManager["Target-manager phase"]
+  PlanTurn["Planning turn<br/>src/plans/turn.ts"]
+  TaskRunner["Task runner<br/>src/plans/task-runner.ts"]
+  StandardTurn["Shared turn wrapper<br/>src/engine/turn.ts"]
+  Ultimate["Ultimate supervisor<br/>src/engine/ultimate-mode.ts"]
+  Context["Context envelope<br/>src/context/*"]
+  Graph["Graph runtime<br/>src/engine/graph.ts"]
+  Raw["Raw loop<br/>src/engine/raw-loop.ts"]
+  Helpers["Helper agents<br/>src/agents/*"]
+  Phases["Phase bundles<br/>src/phases/*"]
+  Tools["Typed tools<br/>src/tools/*"]
+  Preview["Preview supervisor<br/>src/preview/*"]
+  Hosting["Hosted workspace contract<br/>src/hosting/workspace.ts"]
+  RuntimeState["Target-local artifacts<br/>target/.shipyard/*"]
+  Trace["Local JSONL + optional LangSmith<br/>src/tracing/*"]
   Target["Target repository"]
 
-  Operator --> Coordinator
-  Coordinator -->|broad discovery request| Explorer
-  Explorer -->|read-only findings| ContextReport
-  ContextReport --> Coordinator
-  Coordinator -->|broad planning request| Planner
-  Planner -->|typed planning artifact| ExecutionSpec
-  ExecutionSpec --> Coordinator
-  Coordinator -->|writes and planning| Tools
+  Operator --> CLI
+  Operator --> Spa
+  Spa <--> UiServer
+  CLI --> Bootstrap
+  UiServer --> Bootstrap
+  Bootstrap --> Router
+  Bootstrap --> Hosting
+  Router --> TargetManager
+  Router --> PlanTurn
+  Router --> TaskRunner
+  Router --> StandardTurn
+  Router --> Ultimate
+  TaskRunner --> StandardTurn
+  Ultimate --> StandardTurn
+  Ultimate --> Helpers
+  StandardTurn --> Context
+  StandardTurn --> Graph
+  Graph --> Raw
+  Graph --> Helpers
+  Graph --> Phases
+  Phases --> Tools
   Tools --> Target
-  Coordinator -->|post-edit checks| Verifier
-  Verifier -->|structured result| VerificationReport
-  Coordinator -->|preview-backed UI checks| BrowserEval
-  BrowserEval -->|structured preview evidence| BrowserReport
-  VerificationReport --> Coordinator
-  BrowserReport --> Coordinator
+  Graph --> Preview
+  StandardTurn --> RuntimeState
+  PlanTurn --> RuntimeState
+  TaskRunner --> RuntimeState
+  StandardTurn --> Trace
+  UiServer --> Preview
+  UiServer --> RuntimeState
 ```
 
-### Orchestration model
+## Architectural Bets That Paid Off
 
-- The coordinator remains the only writer. This is the core safety rule.
-- Broad instructions without known target paths can trigger the explorer, while
-  exact-path or greenfield instructions can skip that extra hop.
-- Broad non-trivial code-phase instructions can also trigger the planner, while
-  exact-path, target-manager, and clearly lightweight requests stay on the
-  existing lightweight path.
-- The explorer starts from fresh history, uses only `read_file`, `list_files`,
-  and `search_files`, and returns a `ContextReport`.
-- The planner starts from fresh history, uses only `read_file`, `load_spec`,
-  `list_files`, and `search_files`, and returns an `ExecutionSpec`.
-- The verifier starts from fresh history, uses only `run_command`, and returns
-  a `VerificationReport`.
-- The browser evaluator uses Playwright against loopback preview URLs only and
-  returns a `BrowserEvaluationReport`.
-- The coordinator decides when to spawn those helpers, how much of their output
-  to keep, and whether to proceed, retry, recover, or escalate.
+| Bet | Why it matters now |
+| --- | --- |
+| One shared turn wrapper | Terminal mode, browser mode, queued-task execution, and `ultimate` all reuse the same execution contract instead of drifting into separate agent semantics. |
+| Single-writer coordinator | Exploration, planning, verification, browser evaluation, and simulation can grow independently without creating multi-writer merge chaos. |
+| Typed tools as the model boundary | File IO, spec loading, commands, deploys, target creation, and enrichment remain inspectable, testable, and phase-gated. |
+| Target-local `.shipyard/` state | Sessions, plans, uploads, checkpoints, traces, handoffs, and deploy context travel with the target instead of hiding in process memory. |
+| Graph runtime plus raw fallback parity | The happy path gets explicit routing and recovery, while the raw loop remains the escape hatch and the reusable primitive for helper agents. |
+| Loopback preview, explicit deploy | Preview supervision stays local and disposable; public URLs come from `deploy_target`, which avoids confusing preview infrastructure with production hosting. |
+| Provider-neutral model adapters | Anthropic is the shipped default, but route-specific provider/model overrides do not leak SDK wire types into the rest of the runtime. |
 
-### How agents communicate
+## Bootstrap And Lane Selection
 
-- Communication is report-based, not chat-history-based.
-- Explorer output is shaped as `ContextFinding[]` inside a `ContextReport`.
-- Planner output is shaped as a typed `ExecutionSpec`.
-- Verifier output is shaped as a typed `VerificationReport`.
-- Browser-evaluator output is shaped as a `BrowserEvaluationReport`.
-- The coordinator summarizes those reports into its own planning state instead
-  of copying raw logs or raw search hits wholesale.
+[`src/bin/shipyard.ts`](./src/bin/shipyard.ts) is the startup contract.
 
-### How parallel outputs are merged
+It is responsible for:
 
-The merge authority stays centralized:
+- resolving `--target` versus `--targets-dir`
+- preparing the hosted workspace contract when Shipyard is running in a hosted
+  environment
+- discovering the selected target or synthesizing a target-manager discovery
+  report when no target has been chosen yet
+- loading the saved session or creating a new one
+- loading target `AGENTS.md` rules when a concrete target exists
+- selecting terminal REPL mode or browser `--ui` mode
+- handling UI startup details like session labels, workspace paths, and port
+  collision reporting
 
-- discovery evidence narrows file selection and plan steps
-- planning evidence makes goals, deliverables, acceptance criteria, and risks
-  explicit before edits
-- verification evidence decides whether edits are accepted, recovered, or
-  blocked
-- browser-evaluator evidence can tighten a command-passing verification result
-  when the request is UI-facing and the preview surface is available
-- if exploration and verification disagree, verification wins because it is
-  direct runtime evidence rather than a guess from code search
+### Turn lanes
 
-This design keeps subagents useful without letting them race each other for
-write authority.
-
-## Trace Links (MVP)
-
-The LangSmith MVP landed in commit `e978152`, and the repository still carries
-the two canonical public trace examples below:
-
-- Successful graph-mode file creation trace:
-  [LangSmith trace](https://smith.langchain.com/o/4610debb-3062-47a4-a18d-faee6ddaa4c3/projects/p/debcf987-99bc-4986-b3e1-5af61ee1ff78/r/019d21b3-0b13-7000-8000-04db046b4bd7?trace_id=019d21b3-0b13-7000-8000-04db046b4bd7&start_time=2026-03-24T21:14:35.155001)
-- Fallback-mode missing-file error trace:
-  [LangSmith trace](https://smith.langchain.com/o/4610debb-3062-47a4-a18d-faee6ddaa4c3/projects/p/debcf987-99bc-4986-b3e1-5af61ee1ff78/r/019d21b3-2e81-7000-8000-07611bad5091?trace_id=019d21b3-2e81-7000-8000-07611bad5091&start_time=2026-03-24T21:14:44.225001)
-
-Every local run also writes JSONL traces to
-`target/.shipyard/traces/<sessionId>.jsonl`, so the runtime always has a local
-audit trail even when LangSmith credentials are absent. Long-run reset routing
-adds handoff payloads to local `instruction.plan` events and records
-`handoffLoaded`, `handoffPath`, and `handoffReason` in trace metadata.
-
-## Architecture Decisions (Final Submission)
-
-The current `HEAD` architecture is the result of a few decisions that survived
-the entire rebuild:
-
-| Decision | Why it stuck | History evidence |
-| --- | --- | --- |
-| Persistent local sessions instead of one-shot CLI runs | Sessions let Shipyard preserve discovery, rolling summaries, and recovery state across turns. | `93d239a`, `f28c451`, `15bbdef` |
-| Typed tool registry instead of ad hoc filesystem/shell access inside the loop | Tool schemas, registration, and structured results keep the model-facing surface inspectable and testable. | `de94cc6`, `4a9de9c` |
-| Anchor-based `edit_block` instead of line-number or full-file rewriting | A literal anchor plus hash checks works across TypeScript, JSON, Markdown, and config files without a language-specific AST stack. | `e3f3158`, `2e044c1` |
-| Checkpoint-backed recovery instead of "best effort" retries | If verification fails, the system can restore the file before trying again rather than compounding damage. | `4f02495`, `98fc167` |
-| Graph runtime with raw fallback instead of betting on one loop implementation | The graph model makes planning and recovery explicit, while fallback preserves a simpler operational escape hatch. | `98fc167`, `e978152` |
-| One shared turn executor for terminal and browser mode | This avoids maintaining two agent semantics and forced later UI fixes to improve the shared core instead of forking logic. | `46887a3`, `2dca737`, `c5b7d11`, `15bbdef` |
-| Single-writer coordinator with isolated read-only or verification helpers | Centralized merge authority kept the system understandable while phase-6 plans matured. | `5c672f5`, `2ef53ab`, `src/agents/*.ts` |
-| Local tracing first, LangSmith second | The repo can run offline or without vendor credentials, but still exposes trace links when configured. | `5c672f5`, `e978152`, `da74e4c` |
-
-## Ship Rebuild Log (Final Submission)
-
-The grouped log below covers every `HEAD` commit that touched `shipyard/`:
-40 direct commits plus 10 merge checkpoints. `git log --follow shipyard/CODEAGENT.md`
-also shows one pre-mainline ancestor, `6b99fba`, where the first version of
-this file appeared before the nested workspace layout settled.
-
-| Wave | Commits | Outcome |
-| --- | --- | --- |
-| Prehistory | `6b99fba` | First `CODEAGENT.md` scaffold before the repo settled into the checked-in `shipyard/` layout. |
-| Workspace bootstrap | `5c672f5` | Created the nested Shipyard app, initial docs, agents, tools, tracing, checkpoints, tests, and this appendix file. |
-| Spec pack foundation | `89d17c5`, `31ab087`, `879504e`, `6e81346`, `cf2faf4`, `f0cb877`, `21ba632`, `2ef53ab`, `3031f55`, `e22c0c0` | Established the repo's story-pack rhythm: tools, model wiring, graph runtime, UI, stress validation, local preview, cancellation, and subagent planning were all documented before or alongside implementation. |
-| Persistent operator loop | `93d239a` | Turned Shipyard from static scaffold into a session-aware REPL with saved state and operator utility commands. |
-| Tooling and edit safety | `de94cc6`, `e3f3158`, `2e044c1`, `4a9de9c` | Added self-registering tools, safe relative IO, stricter `edit_block` guardrails, and fuller tool/test coverage. |
-| Browser runtime wave | `46887a3`, `2dca737`, `46b0d3c`, `c5b7d11` | Added `--ui`, live activity streaming, diff-first workbench UX, and session rehydration without creating a second agent engine. |
-| Model execution wave | `e9623e0`, `749443e`, `e6bab52` | Added Anthropic contract wiring, the raw tool loop, and live verification smoke coverage. |
-| Graph, recovery, and tracing | `98fc167`, `4f02495`, `f28c451`, `e978152` | Added the graph runtime, checkpoint recovery, richer context injection, and LangSmith-backed MVP trace verification. |
-| UI refresh and architecture docs | `296ee25`, `136d159`, `8c4301c` | Refreshed the visual system, added durable architecture docs, and expanded repo navigation and diagrams. |
-| Hardening and polish | `dba7eb5`, `b6d78f3`, `ad260c2`, `15bbdef`, `a5f5cfe`, `867e3bf`, `fb4774e` | Forced live runtime behavior, improved activity/diff surfaces, stabilized reconnects, polished context/session flows, clarified workspace identity and port collisions, aligned UI error tests, and hardened CLI loop milestones. |
-| Merge checkpoints | `bb64d47`, `c0d62af`, `11e214a`, `72a0799`, `ba6beb7`, `0353679`, `a413190`, `1fd948e`, `e728821`, `d43c9f7` | Merged the major waves back into `main`, showing a repeated pattern of short-lived `codex/` branches landing as reviewable increments. |
-
-## Comparative Analysis (Final Submission)
-
-| Concern | Chosen approach | Alternative | Why Shipyard's choice was better for this repo |
+| Lane | Entrypoint | Purpose | Writes? |
 | --- | --- | --- | --- |
-| Turn orchestration | Explicit graph runtime with raw fallback | Raw loop only or graph only | Graph nodes made recovery and status routing legible, but fallback preserved an easier operational escape hatch. |
-| File mutation | Hash-gated anchor replacement with checkpoints | Line-number patches, regex patches, or full-file rewrites | The chosen design works across code and docs, fails closed on ambiguity, and gives recovery a clean revert point. |
-| Tool surface | Typed registry with schema-described tools | Shell-first free-form commands embedded in prompts | Registry-based tools are easier to test, trace, and reason about than hidden side effects in the agent loop. |
-| UI architecture | Local browser workbench over the same session engine | Separate backend service or separate browser-only agent runtime | Reusing the same `executeInstructionTurn` path prevented feature drift and kept fixes concentrated in one runtime. |
-| Multi-agent model | Single writer plus isolated helper roles | Symmetric multi-writer agents | Centralized writes are slower to scale, but much safer while the repo is still stabilizing recovery, tracing, and verification. |
-| Observability | Local JSONL default with optional LangSmith | LangSmith-only tracing | The local-first default keeps the app usable in any environment while still allowing linked traces for MVP validation. |
+| Target manager | [`src/phases/target-manager`](./src/phases/target-manager) via [`src/engine/turn.ts`](./src/engine/turn.ts) | list, select, create, bootstrap, and enrich targets before coding begins | yes, but only through target-manager tools |
+| Planning | [`src/plans/turn.ts`](./src/plans/turn.ts) | build a persisted, reviewable task queue from `plan:` instructions | no |
+| Task runner | [`src/plans/task-runner.ts`](./src/plans/task-runner.ts) | reload the active plan and execute one queued task via `next` or `continue` | yes |
+| Standard turn | [`src/engine/turn.ts`](./src/engine/turn.ts) | the main code or target-manager instruction path | yes |
+| Ultimate supervisor | [`src/engine/ultimate-mode.ts`](./src/engine/ultimate-mode.ts) | repeatedly run a shared turn, then ask the human-simulator whether to continue | yes, through the shared standard turn |
 
-The commit history reinforces that each time Shipyard added capability, it
-biased toward explicit contracts and reversible behavior over cleverness. That
-pattern is visible in the tool registry, checkpoint recovery, trace layering,
-and the still-conservative subagent plan.
+`ultimate` is not a second runtime. It is a long-lived controller layered on
+top of the normal turn executor.
 
-## Cost Analysis (Final Submission)
+## Phase Model And Context Envelope
 
-This repo does not track dollar cost inside Git, so the best comparable measure
-is engineering cost expressed through commit count, churn, and where the churn
-landed.
+Phases are explicit capability bundles, not prompt folklore.
 
-| Metric | Value | Interpretation |
-| --- | --- | --- |
-| Mainline commits touching `shipyard/` | 50 total: 40 direct commits and 10 merge commits | The rebuild happened as many small landings instead of one rewrite dump. |
-| Code churn | 29,111 insertions and 3,375 deletions | The app mostly expanded rather than refactored in place; the insertion/deletion ratio is about `8.63:1`. |
-| Commit mix | 19 `feat`, 13 `docs`, 5 `fix`, 2 `chore`, 1 `test` | Nearly a third of the work went into specs and docs, which matches the repo's spec-driven operating model. |
-| Biggest single churn spikes | `5c672f5`, `46b0d3c`, `46887a3`, `296ee25`, `c5b7d11` | The largest costs were bootstrap plus UI/workbench waves, not the later hardening passes. |
-| Highest recurring cost center | Browser workbench and operator UX | UI mode introduced the most repeated follow-up work: initial runtime, activity stream, diff-first workbench, rehydration, visual refresh, reconnect hardening, and session/context polish. |
-| Lowest-cost high-leverage additions | `e978152`, `da74e4c`, `136d159` | Trace linking, finish-gate workflow, and architecture docs improved debuggability and handoff quality without the churn of the UI waves. |
+- [`src/phases/code`](./src/phases/code) is the normal repository-change phase
+- [`src/phases/target-manager`](./src/phases/target-manager) is the pre-code
+  phase for project selection, creation, enrichment, and bootstrap
+- planning reuses the current phase context, but remains read-only
 
-### Cost takeaways
+The context layer in [`src/context/envelope.ts`](./src/context/envelope.ts)
+builds four slices:
 
-- The expensive part of Shipyard was not tool registration or tracing. It was
-  building and then refining the second operator surface without splitting the
-  runtime in two.
-- Documentation is a first-class cost in this repo by design. The story packs
-  and architecture docs are not overhead around the system; they are part of how
-  the system is built and reviewed.
-- Phase 6 subagents currently cost more in design than in code. The commit
-  history shows the team intentionally paying documentation and planning cost
-  first so the eventual implementation can preserve the single-writer safety
-  model.
+- `stable`
+  - discovery report
+  - target `AGENTS.md` rules
+  - available scripts
+- `task`
+  - current instruction
+  - injected context
+  - target file hints
+- `runtime`
+  - recent tool outputs
+  - recent errors
+  - current git diff
+  - feature flags
+- `session`
+  - rolling summary
+  - retry counts by file
+  - blocked files
+  - recent touched files
+  - latest loaded handoff
+  - active task context
+
+This is one of the core architectural moves in Shipyard: repository discovery,
+project rules, runtime evidence, and active work state are all serialized into
+an explicit envelope instead of being implied by recent chat.
+
+## Graph Runtime
+
+The graph runtime in [`src/engine/graph.ts`](./src/engine/graph.ts) is the
+source of truth for standard code turns.
+
+```mermaid
+flowchart TD
+  Triage["triage<br/>direct vs targeted vs broad"]
+  Plan["plan<br/>lightweight or planner-backed"]
+  Explorer{"Need explorer?"}
+  ExplorerAgent["Explorer<br/>ContextReport"]
+  Planner{"Need planner?"}
+  PlannerAgent["Planner<br/>ExecutionSpec"]
+  Act["act<br/>direct-edit fast path or raw loop"]
+  Verify["verify<br/>deterministic checks or verifier plan"]
+  Browser{"Need browser evaluator?"}
+  BrowserEval["Browser evaluator<br/>loopback only"]
+  Passed{"Passed?"}
+  Recover["recover<br/>restore checkpoint and re-read"]
+  Retry{"Retry cap hit?"}
+  Respond["respond"]
+  Turn["turn.ts<br/>persist session, traces, handoff"]
+
+  Triage --> Plan
+  Plan --> Explorer
+  Explorer -- yes --> ExplorerAgent
+  Explorer -- no --> Planner
+  ExplorerAgent --> Planner
+  Planner -- yes --> PlannerAgent
+  Planner -- no --> Act
+  PlannerAgent --> Act
+  Act --> Verify
+  Verify --> Browser
+  Browser -- yes --> BrowserEval
+  Browser -- no --> Passed
+  BrowserEval --> Passed
+  Passed -- yes --> Respond
+  Passed -- no --> Recover
+  Recover --> Retry
+  Retry -- no --> Plan
+  Retry -- yes --> Respond
+  Respond --> Turn
+```
+
+### What the nodes do
+
+- `triage`
+  - classifies the work as `direct`, `targeted`, or `broad`
+  - lets exact-path or tiny requests stay lightweight
+  - decides early whether the planner/browser-heavy lane is even worth opening
+- `plan`
+  - always produces a coordinator `TaskPlan`
+  - optionally pulls in explorer findings
+  - optionally upgrades to a planner-backed `ExecutionSpec`
+  - seeds the `HarnessRouteSummary`
+- `act`
+  - uses the direct-edit fast path for tiny UI/copy changes when safe
+  - otherwise runs the provider-neutral raw tool loop
+  - checkpoints `edit_block` mutations before they hit disk
+- `verify`
+  - stays deterministic for the narrowest direct-edit lane when the system can
+    prove enough from the edit itself
+  - otherwise runs verifier-generated command checks
+  - optionally adds browser evaluation when the request is UI-facing and a
+    loopback preview is usable
+- `recover`
+  - restores the latest checkpoint
+  - re-reads the edited file
+  - increments retry state
+  - blocks files after repeated failures instead of repeatedly digging the hole
+- `respond`
+  - returns final text plus task-plan, execution-spec, verification, and route
+    metadata
+  - leaves [`src/engine/turn.ts`](./src/engine/turn.ts) to decide whether a
+    durable continuation handoff should be persisted
+
+## Raw Loop, Continuations, And Handoffs
+
+[`src/engine/raw-loop.ts`](./src/engine/raw-loop.ts) is the low-level
+model/tool executor used by:
+
+- the graph `act` node
+- helper agents with restricted tool allowlists
+- fallback mode
+
+It is more than a simple "call model, run tools" loop. It also owns:
+
+- iterative tool-call execution
+- token budget recovery retries
+- touched-file tracking
+- edited-file tracking
+- completion versus continuation outcomes
+- message-history compaction hooks
+
+### History compaction
+
+[`src/engine/history-compaction.ts`](./src/engine/history-compaction.ts)
+keeps long-running sessions bounded without pretending old tool results are
+still live source of truth.
+
+Its design is intentionally write-aware:
+
+- older completed turns can be compacted into summaries
+- recent write-like turns can be preserved verbatim or in a denser compact mode
+- compacted messages remind the model to re-read files from disk before editing
+  again
+- budgets scale with the model token budget instead of staying hard-coded
+
+### Durable continuation
+
+Shipyard now has a continuation-aware operator model.
+
+When acting iterations or recovery attempts cross thresholds, or when blocked
+files pile up, [`src/engine/turn.ts`](./src/engine/turn.ts) can emit an
+`ExecutionHandoff` under `.shipyard/artifacts/<sessionId>/...handoff.json`.
+
+That handoff includes:
+
+- what completed successfully
+- what remains
+- touched and blocked files
+- the latest evaluation
+- next recommended action
+- reset reason and threshold metrics
+- the current `TaskPlan`
+
+The session keeps only `activeHandoffPath`, then the next turn reloads the
+handoff into the context envelope. The runtime can automatically resume from
+that checkpoint-backed continuation path within configured limits, and the
+selected route records `continuationCount`.
+
+## Tooling, Target Management, And Safe Mutation
+
+### Code-phase tools
+
+- `read_file`
+- `load_spec`
+- `write_file`
+- `bootstrap_target`
+- `edit_block`
+- `list_files`
+- `search_files`
+- `run_command`
+- `git_diff`
+- `deploy_target`
+
+### Target-manager tools
+
+- `list_targets`
+- `select_target`
+- `create_target`
+- `enrich_target`
+
+### Why the tool layer matters
+
+[`src/tools/registry.ts`](./src/tools/registry.ts) is the capability membrane
+between the model and the target. Every tool is schema-described, typed, and
+returns structured results. That means:
+
+- phases can expose only the tools they mean to expose
+- helper agents can get smaller allowlists than the coordinator
+- UI activity streams can present tool calls without parsing free-form logs
+- tests can validate capability behavior without invoking the full runtime
+
+### Editing strategy
+
+Shipyard still prefers anchor-based surgery over line-number patching or
+free-form rewrites.
+
+The core guardrails are:
+
+1. `read_file` normalizes the path and records the file hash.
+2. `edit_block` re-reads the live file before writing.
+3. the old string must match exactly once.
+4. stale reads are rejected.
+5. large rewrites are rejected for normal files.
+6. Shipyard-tagged starter scaffold files are allowed to restyle wholesale when
+   greenfield bootstrap needs it.
+7. a checkpoint is created before each `edit_block`.
+8. failed verification can restore the latest checkpoint.
+
+This is a deliberately conservative system. False negatives are acceptable.
+Ambiguous writes are not.
+
+### Shared scaffolds and greenfield bootstrap
+
+The target-manager path has matured beyond simple directory selection.
+
+- `create_target` can create a new target with a shared scaffold, README,
+  `AGENTS.md`, and git initialization.
+- `bootstrap_target` can materialize the same scaffold presets into an already
+  selected empty target.
+- both flows share the same scaffold source in
+  [`src/tools/target-manager/scaffolds.ts`](./src/tools/target-manager/scaffolds.ts)
+  and
+  [`src/tools/target-manager/scaffold-materializer.ts`](./src/tools/target-manager/scaffold-materializer.ts)
+  so greenfield setup has one source of truth.
+
+### Enrichment and deploy
+
+- `enrich_target` uses the target-enrichment route to produce a persisted target
+  profile and discovery snapshot.
+- `deploy_target` currently targets Vercel and intentionally does not trust raw
+  `vercel deploy` stdout as the shareable app URL. It resolves a production URL
+  from labeled output or deployment metadata so the browser workbench can show
+  a real public link instead of a login-gated candidate.
+
+## Helper Roles And Model Routing
+
+Helper roles are isolated runtimes, not long-lived side conversations.
+
+| Role | Main file | Responsibility | Write access |
+| --- | --- | --- | --- |
+| Coordinator | [`src/agents/coordinator.ts`](./src/agents/coordinator.ts) | task-plan synthesis, lane selection, write ownership, evidence merge | yes |
+| Explorer | [`src/agents/explorer.ts`](./src/agents/explorer.ts) | read-only codebase discovery and `ContextReport` output | no |
+| Planner | [`src/agents/planner.ts`](./src/agents/planner.ts) | read-only planning and `ExecutionSpec` output | no |
+| Verifier | [`src/agents/verifier.ts`](./src/agents/verifier.ts) | ordered command checks and `VerificationReport` output | no |
+| Browser evaluator | [`src/agents/browser-evaluator.ts`](./src/agents/browser-evaluator.ts) | Playwright inspection of loopback previews | no |
+| Human simulator | [`src/agents/human-simulator.ts`](./src/agents/human-simulator.ts) | continuation feedback for `ultimate` mode | no |
+
+Rules that keep this sane:
+
+- helper agents start with fresh history
+- each helper has a narrow tool allowlist
+- communication is artifact-based, not "copy the whole conversation over there"
+- the coordinator is the only role allowed to mutate the target repository
+
+### Model routing
+
+[`src/engine/model-routing.ts`](./src/engine/model-routing.ts) is the
+provider-and-model router for the whole system.
+
+Named routes exist for:
+
+- default runtime
+- code phase
+- target-manager phase
+- explorer
+- planner
+- verifier
+- human-simulator
+- browser-evaluator
+- target enrichment
+
+The provider-neutral boundary lives in
+[`src/engine/model-adapter.ts`](./src/engine/model-adapter.ts).
+
+Current providers:
+
+- Anthropic via [`src/engine/anthropic.ts`](./src/engine/anthropic.ts)
+- OpenAI via [`src/engine/openai.ts`](./src/engine/openai.ts)
+
+Current shipped default:
+
+- provider: `anthropic`
+- model: `claude-opus-4-6`
+
+This is another important structural win: provider SDK details stay inside the
+adapter modules, while the rest of Shipyard talks only in generic turn,
+message, tool, and model-route contracts.
+
+## State, Artifacts, And Observability
+
+### Session and runtime state
+
+[`src/engine/state.ts`](./src/engine/state.ts) persists `SessionState` under
+`.shipyard/sessions/<sessionId>.json`.
+
+Important session fields now include:
+
+- `activePhase`
+- `activePlanId`
+- `activeTask`
+- `activeHandoffPath`
+- `recentTouchedFiles`
+- `targetProfile`
+- `workbenchState.previewState`
+- `workbenchState.pendingUploads`
+- `workbenchState.latestDeploy`
+
+`InstructionRuntimeState` in
+[`src/engine/turn.ts`](./src/engine/turn.ts) carries the rolling per-process
+execution data that does not belong in the persisted envelope alone:
+
+- recent tool outputs
+- recent errors
+- retry counts by file
+- blocked files
+- model routing config and env
+- continuation limits
+- runtime feature flags
+
+### Artifact layout
+
+```mermaid
+flowchart TD
+  Target["Target directory"]
+  Shipyard[".shipyard/"]
+  Sessions["sessions/<sessionId>.json"]
+  Plans["plans/<planId>.json"]
+  Uploads["uploads/<sessionId>/..."]
+  Checkpoints["checkpoints/<sessionId>/...checkpoint"]
+  Artifacts["artifacts/<sessionId>/"]
+  Handoff["...handoff.json"]
+  Traces["traces/<sessionId>.jsonl"]
+
+  Target --> Shipyard
+  Shipyard --> Sessions
+  Shipyard --> Plans
+  Shipyard --> Uploads
+  Shipyard --> Checkpoints
+  Shipyard --> Artifacts
+  Artifacts --> Handoff
+  Shipyard --> Traces
+```
+
+### Planning artifacts
+
+[`src/plans/store.ts`](./src/plans/store.ts) persists a `PersistedTaskQueue`
+that includes:
+
+- the originating instruction
+- the selected planning mode
+- the planner-backed `ExecutionSpec`
+- loaded spec refs and their source paths
+- a typed task list with per-task status
+
+The task-runner keeps active-task carry-forward in structured session state so
+retries and resumed turns remain focused without bloating the rolling summary.
+
+### Route summaries and fingerprints
+
+Every standard turn now emits structured route facts rather than burying them
+in prose.
+
+`HarnessRouteSummary` captures:
+
+- selected path: lightweight or planner-backed
+- acting mode: raw-loop or direct-edit
+- task complexity
+- explorer/planner/verifier/browser-evaluator usage
+- verification mode and hard-failure details
+- command-readiness evidence
+- checkpoint usage
+- handoff load/emission facts
+- continuation count
+- acting-loop budget and budget reason
+
+`TurnExecutionFingerprint` captures:
+
+- surface: CLI or UI
+- phase
+- planning mode
+- whether a target profile is present
+- whether preview was running
+- whether browser evaluation ran
+- model provider and model name
+
+That fingerprint is surfaced in:
+
+- CLI turn output
+- browser completion state
+- local JSONL trace metadata
+- LangSmith metadata when configured
+
+### Tracing
+
+[`src/tracing/local-log.ts`](./src/tracing/local-log.ts) is always-on local
+observability. [`src/tracing/langsmith.ts`](./src/tracing/langsmith.ts) adds
+optional remote traces and URL resolution when credentials exist.
+
+The runtime records more than raw text:
+
+- handoff load/emission facts
+- selected route and verification mode
+- browser-evaluator usage
+- command-readiness evidence
+- execution fingerprints
+
+This makes local versus hosted behavior, planner-backed routing, and
+continuation-driven turns visible without digging through raw prompts.
+
+## Browser Workbench And Hosted Contract
+
+The browser runtime is not a toy shell around the CLI. It is a first-class
+operator surface that still rides the same execution core.
+
+### Backend responsibilities
+
+[`src/ui/server.ts`](./src/ui/server.ts) owns:
+
+- the local HTTP and WebSocket server for `--ui`
+- browser session bootstrap and rehydration
+- turn routing into the shared runtime
+- target-manager actions and target switching
+- upload intake and upload removal
+- preview-state publishing
+- deploy summaries
+- cancellation of active turns and active deploys
+- hosted access-token checks when enabled
+- multi-project browser workspace state
+
+The transport contract is typed in
+[`src/ui/contracts.ts`](./src/ui/contracts.ts), and browser state reduction
+lives in [`src/ui/workbench-state.ts`](./src/ui/workbench-state.ts).
+
+### Frontend responsibilities
+
+[`ui/src/App.tsx`](./ui/src/App.tsx) and
+[`ui/src/ShipyardWorkbench.tsx`](./ui/src/ShipyardWorkbench.tsx) currently
+compose a workbench with:
+
+- a header strip for workspace identity, trace-copy, and refresh
+- a project board for open browser workspaces
+- a target header for target-manager state, enrichment status, and deploy state
+- a conversation pane with transcript plus composer
+- a workspace pane focused on file diff evidence and command output
+- a drawer for session details, saved runs, and injected context history
+- upload badges and removal controls wired into the same turn state model
+
+### Preview and deploy boundaries
+
+Preview and deployment are intentionally different subsystems.
+
+- preview supervision is session-scoped and loopback-only
+- preview readiness extracts local URLs from process output
+- browser evaluation only inspects those loopback URLs
+- deploy publishes public URLs through `deploy_target`
+- the target header surfaces the latest production URL separately from preview
+
+### Hosted baseline
+
+Hosted mode keeps the same browser workbench and target-manager flow while
+adding:
+
+- hosted workspace validation
+- optional access-token gating
+- persistent workspace expectations for Railway-style deployment
+
+The operator experience stays focused on target selection, file/output evidence,
+and deploy status rather than inventing a second hosted-only execution model.
+
+## Ultimate Mode
+
+`ultimate start <brief>` turns Shipyard into a supervised foreground loop.
+
+The control flow is:
+
+1. run a normal shared instruction turn
+2. pass the result to the human-simulator
+3. decide whether to continue, stop, or fold in human feedback
+4. repeat until the operator stops it or the simulator decides the objective is
+   met
+
+Important details:
+
+- human feedback is queued and folded into the next cycle
+- recent simulator history is bounded
+- the same route summaries and execution fingerprints still apply because the
+  inner work is still a normal shared turn
+
+This means `ultimate` amplifies the existing architecture instead of bypassing
+it.
+
+## Extension Rules
+
+When changing Shipyard, keep these invariants intact:
+
+- If the behavior must work in both terminal and UI mode, implement it through
+  [`src/engine/turn.ts`](./src/engine/turn.ts),
+  [`src/plans/turn.ts`](./src/plans/turn.ts), or
+  [`src/plans/task-runner.ts`](./src/plans/task-runner.ts), not by branching
+  the transport layer.
+- If a new capability touches the target, add it as a typed tool first and then
+  expose it through the appropriate phase.
+- Keep provider SDK specifics inside adapter modules. The rest of the runtime
+  should stay provider-neutral.
+- Keep the coordinator as the only writer.
+- Treat `.shipyard/` as generated runtime state, not hand-authored source.
+- Keep preview loopback-only. Public deployment belongs to `deploy_target`.
+- Prefer durable artifacts over stuffing more state into `rollingSummary`.
+- When the architecture changes, update this file plus the nearest local README
+  under `src/` or `docs/architecture/`.
+
+## Reading Map
+
+| If you need to understand... | Start here |
+| --- | --- |
+| CLI/bootstrap flow | [`src/bin/shipyard.ts`](./src/bin/shipyard.ts) |
+| Shared turn execution | [`src/engine/turn.ts`](./src/engine/turn.ts) |
+| Graph runtime | [`src/engine/graph.ts`](./src/engine/graph.ts) |
+| Raw tool loop | [`src/engine/raw-loop.ts`](./src/engine/raw-loop.ts) |
+| Provider/model routing | [`src/engine/model-routing.ts`](./src/engine/model-routing.ts) |
+| Session persistence | [`src/engine/state.ts`](./src/engine/state.ts) |
+| Context assembly | [`src/context/envelope.ts`](./src/context/envelope.ts) |
+| Planning/task queues | [`src/plans/README.md`](./src/plans/README.md) |
+| Helper agents | [`src/agents/README.md`](./src/agents/README.md) |
+| Tool registry and edit safety | [`src/tools/README.md`](./src/tools/README.md) |
+| Browser backend | [`src/ui/README.md`](./src/ui/README.md) |
+| Browser frontend | [`ui/README.md`](./ui/README.md) |
+| Runtime artifacts and diagrams | [`docs/architecture/README.md`](./docs/architecture/README.md) |
+
+If Shipyard ever starts to feel more complicated than this document suggests,
+the fix is usually not "add another hidden loop." It is to strengthen the
+existing contracts so the runtime remains legible, typed, and recoverable.
