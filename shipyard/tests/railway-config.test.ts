@@ -34,13 +34,13 @@ describe("railway config", () => {
     expect(config.deploy?.healthcheckPath).toBe("/api/health");
   });
 
-  it("syncs the production OpenAI defaults before deploying to Railway", async () => {
+  it("syncs the production Anthropic defaults before deploying to Railway", async () => {
     const workflow = await readFile(railwayWorkflowPath, "utf8");
 
-    expect(workflow).toContain("OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}");
-    expect(workflow).toContain("Missing OPENAI_API_KEY GitHub secret");
-    expect(workflow).toContain("railway variable set OPENAI_API_KEY --stdin");
-    expect(workflow).toContain("SHIPYARD_MODEL_PROVIDER=openai");
-    expect(workflow).toContain("SHIPYARD_OPENAI_MODEL=gpt-5.4");
+    expect(workflow).toContain("ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}");
+    expect(workflow).toContain("Missing ANTHROPIC_API_KEY GitHub secret");
+    expect(workflow).toContain("railway variable set ANTHROPIC_API_KEY --stdin");
+    expect(workflow).toContain("SHIPYARD_MODEL_PROVIDER=anthropic");
+    expect(workflow).toContain("SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6");
   });
 });

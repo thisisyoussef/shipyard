@@ -1,6 +1,6 @@
 # Shipyard Workspace - Single Source of Truth
 
-**Last Updated**: 2026-03-26
+**Last Updated**: 2026-03-27
 **Current Phase**: Day 1 foundation
 **Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, richer runtime artifacts, and the now-hardened continuation-aware operator workflow
 **Project Status**: Active
@@ -50,6 +50,9 @@
   shared per-turn execution fingerprint in CLI output, browser completion
   state, local JSONL traces, and LangSmith metadata so local vs hosted/runtime
   routing differences are visible without code spelunking.
+- **Model-route baseline**: the shipped default provider is now Anthropic with
+  `claude-opus-4-6`; operator docs, local examples, and the Railway production
+  workflow must keep that default and its secret sync in lockstep.
 
 ---
 

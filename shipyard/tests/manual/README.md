@@ -28,27 +28,26 @@ To resume a long-running mounted-pack session after Shipyard emits a handoff:
 pnpm --dir shipyard manual:spec-pack -- --spec-root /abs/path/to/spec-pack --target-dir /tmp/existing-target --session-id <session-id>
 ```
 
-Shipyard now defaults to OpenAI. For default live smoke runs, set
-`OPENAI_API_KEY`.
+Shipyard now defaults to Anthropic. For default live smoke runs, set
+`ANTHROPIC_API_KEY`.
 
-Useful env vars for OpenAI-backed runs:
-
-- `SHIPYARD_MODEL_PROVIDER`
-- `SHIPYARD_OPENAI_MODEL`
-- `SHIPYARD_OPENAI_TIMEOUT_MS`
-- `SHIPYARD_OPENAI_MAX_RETRIES`
-- `SHIPYARD_OPENAI_MAX_TOKENS`
-
-Current OpenAI defaults for routed code turns are `model=gpt-5.4`,
-`timeoutMs=120000`, and `maxTokens=8192`.
-
-If you want to force Anthropic for a comparison smoke, set
-`SHIPYARD_MODEL_PROVIDER=anthropic` plus `ANTHROPIC_API_KEY` and, if needed:
+Useful env vars for Anthropic-backed runs:
 
 - `SHIPYARD_ANTHROPIC_MODEL`
 - `SHIPYARD_ANTHROPIC_TIMEOUT_MS`
 - `SHIPYARD_ANTHROPIC_MAX_RETRIES`
 - `SHIPYARD_ANTHROPIC_MAX_TOKENS`
+
+Current Anthropic defaults for routed code turns are
+`model=claude-opus-4-6`, `timeoutMs=600000`, and `maxTokens=12288`.
+
+If you want to force OpenAI for a comparison smoke, set
+`SHIPYARD_MODEL_PROVIDER=openai` plus `OPENAI_API_KEY` and, if needed:
+
+- `SHIPYARD_OPENAI_MODEL`
+- `SHIPYARD_OPENAI_TIMEOUT_MS`
+- `SHIPYARD_OPENAI_MAX_RETRIES`
+- `SHIPYARD_OPENAI_MAX_TOKENS`
 
 The runner prints the scratch target path, session id, mounted spec path, and a
 JSON result artifact path so you can inspect the generated files after the run.

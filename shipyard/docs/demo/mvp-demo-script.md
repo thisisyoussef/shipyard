@@ -43,9 +43,9 @@ Why this demo target:
 - Vite preview comes up immediately after creation
 - the first visible gameplay changes are easy to verify on camera
 
-Live turns require `OPENAI_API_KEY` by default. If you want to demo the
-Anthropic route instead, set `SHIPYARD_MODEL_PROVIDER=anthropic` and provide
-`ANTHROPIC_API_KEY`. Use a fresh `--session` name for each recording if you do
+Live turns require `ANTHROPIC_API_KEY` by default. If you want to demo the
+OpenAI route instead, set `SHIPYARD_MODEL_PROVIDER=openai` and provide
+`OPENAI_API_KEY`. Use a fresh `--session` name for each recording if you do
 not want to resume an earlier run. Use a fresh target name if you are
 recording more than once and do not want to delete the old demo directory.
 

@@ -104,3 +104,15 @@ Capture failures so they are not repeated.
 - **Prevention rule**: Keep Shipyard-owned turn/tool contracts in
   `src/engine/model-adapter.ts`, keep the registry generic, and push provider
   projection into adapter modules.
+
+- **Problem**: Flipping the shipped model default without updating hosted
+  production pinning and docs in the same change
+- **Example**: Changing `DEFAULT_MODEL_PROVIDER` locally but leaving Railway on
+  the old provider secret/model pair, or leaving README/manual guidance on the
+  previous default provider
+- **Why it failed**: Operators see one default locally and another in hosted
+  production, deploy workflows fail on missing secrets, and regression tests
+  stop reflecting the real shipped contract.
+- **Prevention rule**: Treat provider-default changes as a cross-surface
+  contract update: runtime constants, operator docs/examples, Railway secret
+  sync, and regression tests must move together.

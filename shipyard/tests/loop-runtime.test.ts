@@ -93,9 +93,9 @@ function createTurnResult(
       previewStatus: "idle",
       browserEval: "no",
       browserEvaluationStatus: "not_run",
-      model: "openai/gpt-5.4",
-      modelProvider: "openai",
-      modelName: "gpt-5.4",
+      model: "anthropic/claude-opus-4-6",
+      modelProvider: "anthropic",
+      modelName: "claude-opus-4-6",
     },
     harnessRoute: {
       selectedPath: "lightweight",
@@ -386,7 +386,7 @@ describe("terminal loop interrupts", () => {
       "Interrupt requested. Waiting for Shipyard to stop the current turn...",
     );
     expect(logSpy.mock.calls.flat()).toContain(
-      "Execution fingerprint: surface=cli phase=code planningMode=lightweight targetProfile=no preview=no browserEval=no model=openai/gpt-5.4",
+      "Execution fingerprint: surface=cli phase=code planningMode=lightweight targetProfile=no preview=no browserEval=no model=anthropic/claude-opus-4-6",
     );
     expect(logSpy.mock.calls.flat()).toContain("Turn 2 completed.");
     expect(errorSpy).not.toHaveBeenCalled();

@@ -32,3 +32,7 @@
   `src/engine/model-adapter.ts`, removed Anthropic tool projection from
   `src/tools/registry.ts`, and moved provider-side tool projection into the
   Anthropic integration layer.
+- 2026-03-27: Flipped the shipped default provider back to Anthropic, pinned
+  the default Claude model to `claude-opus-4-6`, updated README/manual/hosted
+  docs and Railway regression coverage, and synced the repo secret baseline so
+  the production Railway workflow can deploy the same default route.

@@ -105,19 +105,11 @@ your preferred global package-manager workflow.
 
 ## Model Provider Defaults
 
-Shipyard now defaults to OpenAI through the Responses API. Set
-`OPENAI_API_KEY` before running live turns. The shipped OpenAI model default is
-`gpt-5.4`.
+Shipyard now defaults to Anthropic. Set `ANTHROPIC_API_KEY` before running
+live turns. The shipped Anthropic model default is `claude-opus-4-6`.
 
-If you want to route turns through Anthropic instead, set
-`SHIPYARD_MODEL_PROVIDER=anthropic` and provide `ANTHROPIC_API_KEY`.
-
-Optional OpenAI tuning env vars:
-
-- `SHIPYARD_OPENAI_TIMEOUT_MS`
-- `SHIPYARD_OPENAI_MAX_RETRIES`
-- `SHIPYARD_OPENAI_MODEL`
-- `SHIPYARD_OPENAI_MAX_TOKENS`
+If you want to route turns through OpenAI instead, set
+`SHIPYARD_MODEL_PROVIDER=openai` and provide `OPENAI_API_KEY`.
 
 Optional Anthropic tuning env vars:
 
@@ -125,6 +117,13 @@ Optional Anthropic tuning env vars:
 - `SHIPYARD_ANTHROPIC_MAX_RETRIES`
 - `SHIPYARD_ANTHROPIC_MODEL`
 - `SHIPYARD_ANTHROPIC_MAX_TOKENS`
+
+Optional OpenAI tuning env vars:
+
+- `SHIPYARD_OPENAI_TIMEOUT_MS`
+- `SHIPYARD_OPENAI_MAX_RETRIES`
+- `SHIPYARD_OPENAI_MODEL`
+- `SHIPYARD_OPENAI_MAX_TOKENS`
 
 For one-shot external spec-pack runs, use:
 
@@ -234,6 +233,9 @@ target-manager flow:
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1` once the mount exists
 - set `SHIPYARD_ACCESS_TOKEN` if the public workbench should require a shared
   unlock token
+- set `ANTHROPIC_API_KEY`, `SHIPYARD_MODEL_PROVIDER=anthropic`, and
+  `SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6` to keep production on the
+  default Claude route
 - keep the current hosted token in the ignored `shipyard/.env` file for local
   operator convenience; `node scripts/print-hosted-access-url.mjs` prints a
   bootstrap link from that file

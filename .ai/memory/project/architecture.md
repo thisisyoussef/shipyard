@@ -134,3 +134,19 @@ Record durable workspace decisions here.
 - **Consequences**: Operator surfaces now share one diagnostic vocabulary, and
   future routing/model changes should extend the shared fingerprint contract
   instead of inventing new debug-only formats.
+
+- **ADR-ID**: ADR-0013
+- **Date**: 2026-03-27
+- **Context**: Shipyard's shipped runtime default and the hosted Railway
+  production workflow had drifted toward OpenAI, but the current operator goal
+  is to ship Anthropic's strongest coding model as the default route.
+- **Decision**: Make Anthropic the shipped default provider again, pin the
+  default Anthropic model to `claude-opus-4-6`, and update the Railway
+  production workflow, docs, and regression coverage in the same story.
+- **Alternatives Considered**: Leave Anthropic as an override only; change the
+  local default without updating the hosted production pin; pin a versioned
+  Anthropic model ID instead of the stable alias.
+- **Consequences**: Missing-credential behavior now points at
+  `ANTHROPIC_API_KEY` by default, hosted deploys require the Anthropic repo
+  secret to stay configured, and future provider flips must treat runtime,
+  docs, and Railway sync as one contract.

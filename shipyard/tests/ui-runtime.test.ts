@@ -2921,6 +2921,7 @@ describe("ui runtime contract", () => {
   it("emits agent:error for a failed instruction and keeps the socket alive", async () => {
     delete process.env.SHIPYARD_MODEL_PROVIDER;
     delete process.env.SHIPYARD_CODE_MODEL_PROVIDER;
+    process.env.ANTHROPIC_API_KEY = "";
     process.env.OPENAI_API_KEY = "";
     const targetDirectory = await createTempDirectory("shipyard-ui-runtime-error-");
     const discovery = await discoverTarget(targetDirectory);
@@ -2996,16 +2997,16 @@ describe("ui runtime contract", () => {
 
         expect(agentText).toMatchObject({
           type: "agent:text",
-          text: expect.stringContaining("Turn 1 stopped: Missing OPENAI_API_KEY"),
+          text: expect.stringContaining("Turn 1 stopped: Missing ANTHROPIC_API_KEY"),
         });
         expect(agentError).toMatchObject({
           type: "agent:error",
-          message: expect.stringContaining("Missing OPENAI_API_KEY"),
+          message: expect.stringContaining("Missing ANTHROPIC_API_KEY"),
         });
         expect(agentDone).toMatchObject({
           type: "agent:done",
           status: "error",
-          summary: expect.stringContaining("Missing OPENAI_API_KEY"),
+          summary: expect.stringContaining("Missing ANTHROPIC_API_KEY"),
           executionFingerprint: expect.objectContaining({
             surface: "ui",
             phase: "code",

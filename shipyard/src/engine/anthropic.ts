@@ -34,7 +34,7 @@ import type {
   ToolResult,
 } from "../tools/registry.js";
 
-export const DEFAULT_ANTHROPIC_MODEL: Model = "claude-sonnet-4-5";
+export const DEFAULT_ANTHROPIC_MODEL: Model = "claude-opus-4-6";
 export const DEFAULT_ANTHROPIC_MAX_TOKENS = 12_288;
 export const DEFAULT_ANTHROPIC_TIMEOUT_MS = 600_000;
 export const DEFAULT_ANTHROPIC_MAX_RETRIES = 1;

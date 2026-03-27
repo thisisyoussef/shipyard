@@ -22,9 +22,9 @@ path from the workbench.
 | `SHIPYARD_UI_HOST` | `0.0.0.0` | Lets the existing Node + WebSocket runtime bind to Railway's public networking instead of loopback only. |
 | `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE` | `1` | Fails startup loudly when the hosted service is expected to use a durable mounted workspace but Railway has not attached the volume yet. |
 | `SHIPYARD_ACCESS_TOKEN` | shared secret | Protects `/api/access`, the SPA shell, and `/ws` with a lightweight hosted gate. |
-| `OPENAI_API_KEY` | OpenAI API key | Enables the shipped default OpenAI Responses runtime in hosted production. |
-| `SHIPYARD_MODEL_PROVIDER` | `openai` | Pins hosted production to the OpenAI provider even if local defaults change later. |
-| `SHIPYARD_OPENAI_MODEL` | `gpt-5.4` | Pins hosted production to GPT-5.4 for the default route. |
+| `ANTHROPIC_API_KEY` | Anthropic API key | Enables the shipped default Anthropic runtime in hosted production. |
+| `SHIPYARD_MODEL_PROVIDER` | `anthropic` | Pins hosted production to the Anthropic provider even if local defaults change later. |
+| `SHIPYARD_ANTHROPIC_MODEL` | `claude-opus-4-6` | Pins hosted production to Claude Opus 4.6 for the default route. |
 | `VERCEL_TOKEN` | Vercel token | Enables the `deploy_target` tool and automatic public publishing after successful edited turns. |
 
 ## Provider Environment
@@ -78,9 +78,9 @@ path from the workbench.
   session details and websocket upgrades are rejected with `401`.
 - If `VERCEL_TOKEN` is missing, automatic publishing stays unavailable and the
   target header explains how to restore deploy capability.
-- If `OPENAI_API_KEY` is missing while the hosted default route is `openai`,
-  turns fail clearly with missing-credential diagnostics instead of silently
-  falling back to another provider.
+- If `ANTHROPIC_API_KEY` is missing while the hosted default route is
+  `anthropic`, turns fail clearly with missing-credential diagnostics instead
+  of silently falling back to another provider.
 - If browser verification is requested but the Railway image does not include
   the required Playwright or Chromium system libraries, Shipyard records an
   explicit degraded verification result instead of treating that infrastructure
@@ -114,9 +114,10 @@ path from the workbench.
   enabled later from the service settings if you want Railway to watch a branch
   directly.
 - The checked-in GitHub Actions deploy workflow now syncs
-  `SHIPYARD_ACCESS_TOKEN`, `OPENAI_API_KEY`, `SHIPYARD_MODEL_PROVIDER=openai`,
-  and `SHIPYARD_OPENAI_MODEL=gpt-5.4` into the production Railway service
-  before uploading new builds.
+  `SHIPYARD_ACCESS_TOKEN`, `ANTHROPIC_API_KEY`,
+  `SHIPYARD_MODEL_PROVIDER=anthropic`, and
+  `SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6` into the production Railway
+  service before uploading new builds.
 - For local operator convenience, keep the same hosted token in the ignored
   `shipyard/.env` file and optionally add `SHIPYARD_HOSTED_URL`; the repo-root
   helper `node scripts/print-hosted-access-url.mjs` prints a bootstrap URL

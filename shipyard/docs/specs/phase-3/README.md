@@ -18,7 +18,7 @@
 - Phase Pre-2's browser UI, inserted after `P2-S02`, is assumed to be the primary human-facing progress surface for demos and operator feedback.
 - Phase 3 assumes the Phase 2 tool contract exists first: tools self-register, expose Anthropic-ready schemas, and return `ToolResult` with `success`, `output`, and optional `error`.
 - The raw loop stays framework-free. LangGraph remains explicitly out of scope for this phase.
-- Anthropic's current official model overview lists the Sonnet 4.5 alias as `claude-sonnet-4-5` and the versioned API ID as `claude-sonnet-4-5-20250929`; prefer the alias in code unless the repo later chooses to pin a specific version.
+- When this pack was drafted, Anthropic's official model overview listed the Sonnet 4.5 alias as `claude-sonnet-4-5` and the versioned API ID as `claude-sonnet-4-5-20250929`; keep that historical reference tied to this pack's original scope even if the shipped runtime later adopts a newer Claude default.
 - Live Claude verification must keep the surgical-editing bar intact: existing files should be changed through `edit_block`, not overwritten with `write_file`.
 - Raw-loop observability should not stop at console logs; its events should be easy to surface through the UI backend bridge.
 

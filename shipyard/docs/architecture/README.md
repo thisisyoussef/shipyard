@@ -205,7 +205,7 @@ flowchart TD
   loop, cancellation, history compaction, runtime-context injection, handoff
   emission/loading, and session persistence.
 - `src/engine/model-routing.ts`: owns provider/model selection. The current
-  shipped default route is OpenAI (`gpt-5.4`), while Anthropic remains
+  shipped default route is Anthropic (`claude-opus-4-6`), while OpenAI remains
   available through routing overrides.
 - `src/engine/model-adapter.ts`: owns the internal provider-neutral turn and
   tool contract. Provider modules such as `src/engine/anthropic.ts` should
