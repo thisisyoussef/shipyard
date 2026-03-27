@@ -17,6 +17,7 @@ import {
 } from "../engine/state.js";
 import {
   createCancelledTurnText,
+  createToolResultDetailExcerpt,
   createExecutionTurnSummary,
   createPlanningTurnSummary,
   truncateText,
@@ -115,7 +116,11 @@ function getToolResultDetail(result: ToolResult): string | undefined {
     : result.error ?? result.output;
   const trimmed = detail?.trim();
 
-  return trimmed ? trimmed : undefined;
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return createToolResultDetailExcerpt(trimmed);
 }
 
 function extractCommandFromToolInput(input: unknown): string | undefined {

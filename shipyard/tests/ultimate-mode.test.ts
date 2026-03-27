@@ -298,4 +298,72 @@ describe("ultimate mode", () => {
       "Ultimate mode activated. Shipyard and the human simulator will keep handing work back and forth until you interrupt them.",
     );
   });
+
+  it("rotates the live turn callback every configured number of cycles", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ultimate-rotation-");
+    const sessionState = createSessionState({
+      sessionId: "ultimate-mode-rotation-session",
+      targetDirectory,
+      discovery: createDiscoveryReport(),
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "Keep the live transcript lean.",
+    });
+    const onCycleRotation = vi.fn();
+    let completedTurns = 0;
+
+    const result = await executeUltimateMode({
+      sessionState,
+      runtimeState,
+      brief: "Keep improving the dashboard.",
+      cycleRotationInterval: 2,
+      onCycleRotation,
+      dependencies: {
+        async runHumanSimulator(input) {
+          return {
+            summary: `Cycle ${String(input.iteration)} reviewed.`,
+            instruction: `Cycle ${String(input.iteration)} instruction.`,
+            focusAreas: [],
+          };
+        },
+        async executeTurn(options) {
+          completedTurns += 1;
+
+          return createTurnResult({
+            status: completedTurns >= 3 ? "cancelled" : "success",
+            summary:
+              completedTurns >= 3
+                ? "Human stopped ultimate mode."
+                : `Cycle ${String(completedTurns)} completed.`,
+            finalText:
+              completedTurns >= 3
+                ? "Turn cancelled."
+                : `Turn ${String(completedTurns)} completed.`,
+            taskPlan: {
+              instruction: options.instruction,
+              goal: options.instruction,
+              targetFilePaths: [],
+              plannedSteps: [],
+            },
+          });
+        },
+      },
+    });
+
+    expect(result.status).toBe("cancelled");
+    expect(result.iterations).toBe(3);
+    expect(onCycleRotation).toHaveBeenCalledTimes(1);
+    expect(onCycleRotation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        iteration: 2,
+        simulatorDecision: expect.objectContaining({
+          instruction: "Cycle 2 instruction.",
+        }),
+        turnResult: expect.objectContaining({
+          status: "success",
+          summary: "Cycle 2 completed.",
+        }),
+      }),
+    );
+  });
 });

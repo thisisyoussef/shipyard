@@ -143,6 +143,14 @@ export interface WorkbenchViewState {
   projectBoard: ProjectBoardViewModel | null;
 }
 
+export interface RotateInstructionTurnOptions {
+  nextInstruction: string;
+  nextSummary?: string;
+  previousSummary?: string;
+  previousStatus?: TurnViewModel["status"];
+  contextPreview?: string[];
+}
+
 export interface PreparedInstructionSubmission {
   instruction: string;
   injectedContext?: string[];
@@ -689,6 +697,40 @@ export function queueInstructionTurn(
       ...withTurnId.contextHistory,
     ].slice(0, 8),
   };
+}
+
+export function rotateInstructionTurn(
+  state: WorkbenchViewState,
+  options: RotateInstructionTurnOptions,
+): WorkbenchViewState {
+  const ensuredState = ensureActiveTurn(state);
+  const previousTurnId = ensuredState.activeTurnId;
+  const nextState = {
+    ...ensuredState,
+    turns: ensuredState.turns.map((turn) =>
+      turn.id === previousTurnId
+        ? {
+            ...turn,
+            status: options.previousStatus ?? "idle",
+            summary: options.previousSummary ?? turn.summary,
+          }
+        : turn,
+    ),
+  };
+  const queuedState = queueInstructionTurn(
+    nextState,
+    options.nextInstruction,
+    options.contextPreview ?? [],
+  );
+
+  if (!options.nextSummary) {
+    return queuedState;
+  }
+
+  return updateActiveTurn(queuedState, (turn) => ({
+    ...turn,
+    summary: options.nextSummary ?? turn.summary,
+  }));
 }
 
 export function applyBackendMessage(
