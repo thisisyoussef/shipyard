@@ -26,8 +26,17 @@ import {
   type ExecuteInstructionTurnOptions,
   type InstructionRuntimeMode,
   type InstructionTurnResult,
+  type InstructionTurnReporter,
 } from "./turn.js";
 import { formatTurnExecutionFingerprint } from "./turn-fingerprint.js";
+import {
+  createUltimateModeController,
+  executeUltimateMode,
+  formatUltimateModeStatus,
+  parseUltimateModeCommand,
+  type ExecuteUltimateModeOptions,
+  type UltimateModeController,
+} from "./ultimate-mode.js";
 import {
   executePlanningTurn,
   isPlanModeInstruction,
@@ -68,6 +77,9 @@ export interface RunShipyardLoopOptions {
   executeTaskTurn?: (
     options: ExecuteTaskRunnerTurnOptions,
   ) => Promise<TaskRunnerTurnResult>;
+  executeUltimateMode?: (
+    options: ExecuteUltimateModeOptions,
+  ) => Promise<Awaited<ReturnType<typeof executeUltimateMode>>>;
   createReadlineInterface?: () => ReturnType<typeof readline.createInterface>;
 }
 
@@ -101,6 +113,10 @@ function printHelp(): void {
   console.log("  search <pattern>      Search the target with ripgrep");
   console.log("  run <command>         Run a shell command in the target");
   console.log("  diff [staged] [path]  Run git diff inside the target");
+  console.log("  ultimate <brief>      Start ultimate mode with the given brief");
+  console.log("  ultimate status       Show whether ultimate mode is active");
+  console.log("  ultimate feedback ... Queue human feedback for the next ultimate mode cycle");
+  console.log("  ultimate stop         Stop the active ultimate mode run");
   console.log("  plan: <request>       Save a reviewable task queue without editing code");
   console.log("  next                  Run the next pending task from the active plan");
   console.log("  continue              Resume the in-progress task or fall back to the next pending task");
@@ -113,6 +129,22 @@ function printHelp(): void {
 
 function printStatus(state: SessionState): void {
   console.log(JSON.stringify(createSessionSnapshot(state), null, 2));
+}
+
+function createCliUltimateModeReporter(): InstructionTurnReporter {
+  return {
+    onThinking(message) {
+      printDivider();
+      console.log(message);
+    },
+    onText(text) {
+      printDivider();
+      console.log(text);
+    },
+    onError(message) {
+      console.error(`shipyard error: ${message}`);
+    },
+  };
 }
 
 function getPhaseToolDefinitions(state: SessionState) {
@@ -222,6 +254,7 @@ export async function runShipyardLoop(
   const executeTurn = options.executeTurn ?? executeInstructionTurn;
   const executePlanTurn = options.executePlanTurn ?? executePlanningTurn;
   const executeTaskTurn = options.executeTaskTurn ?? executeTaskRunnerTurn;
+  const executeUltimateModeTurn = options.executeUltimateMode ?? executeUltimateMode;
   const runtimeState = createInstructionRuntimeState({
     projectRules: await loadProjectRules(state.targetDirectory),
     baseInjectedContext: options.injectedContext ?? [],
@@ -239,6 +272,7 @@ export async function runShipyardLoop(
     terminal: process.stdin.isTTY && process.stdout.isTTY,
   });
   let activeTurnController: AbortController | null = null;
+  let activeUltimateController: UltimateModeController | null = null;
   rl.setPrompt("shipyard > ");
 
   console.log("Shipyard booted.");
@@ -278,20 +312,24 @@ export async function runShipyardLoop(
 
   const handleSigint = (): void => {
     if (activeTurnController === null) {
-      console.log("No active Shipyard turn is running.");
+      console.log("No active Shipyard turn or ultimate mode run is running.");
       rl.prompt();
       return;
     }
 
     if (activeTurnController.signal.aborted) {
       console.log(
-        "Cancellation already requested. Waiting for Shipyard to stop the current turn...",
+        activeUltimateController
+          ? "Cancellation already requested. Waiting for Shipyard to stop ultimate mode..."
+          : "Cancellation already requested. Waiting for Shipyard to stop the current turn...",
       );
       return;
     }
 
     console.log(
-      "Interrupt requested. Waiting for Shipyard to stop the current turn...",
+      activeUltimateController
+        ? "Interrupt requested. Waiting for Shipyard to stop ultimate mode..."
+        : "Interrupt requested. Waiting for Shipyard to stop the current turn...",
     );
     abortTurn(activeTurnController);
   };
@@ -422,6 +460,79 @@ export async function runShipyardLoop(
             );
           }
         } else {
+          const ultimateCommand = parseUltimateModeCommand(line);
+
+          if (ultimateCommand) {
+            if (ultimateCommand.type === "status") {
+              console.log(formatUltimateModeStatus(activeUltimateController));
+              continue;
+            }
+
+            if (ultimateCommand.type === "feedback") {
+              console.log(
+                "Ultimate mode feedback is accepted from the browser UI while the loop is running.",
+              );
+              continue;
+            }
+
+            if (ultimateCommand.type === "stop") {
+              console.log(
+                "Use Ctrl+C to interrupt the active ultimate mode run from the CLI.",
+              );
+              continue;
+            }
+
+            const turnController = new AbortController();
+            const cliReporter = createCliUltimateModeReporter();
+            const controller = createUltimateModeController(ultimateCommand.brief);
+            activeTurnController = turnController;
+            activeUltimateController = controller;
+
+            const ultimateResult = await executeUltimateModeTurn({
+              sessionState: state,
+              runtimeState,
+              brief: ultimateCommand.brief,
+              controller,
+              reporter: cliReporter,
+              signal: turnController.signal,
+              runtimeSurface: "cli",
+            });
+
+            activeTurnController = null;
+            activeUltimateController = null;
+
+            printExecutionFingerprint(
+              ultimateResult.lastTurn?.executionFingerprint ?? null,
+            );
+            if (ultimateResult.lastTurn?.langSmithTrace?.traceUrl) {
+              printDivider();
+              console.log(
+                `LangSmith trace: ${ultimateResult.lastTurn.langSmithTrace.traceUrl}`,
+              );
+            }
+            await traceLogger.log("instruction.ultimate", {
+              instruction: line,
+              brief: ultimateCommand.brief,
+              status: ultimateResult.status,
+              summary: ultimateResult.summary,
+              iterations: ultimateResult.iterations,
+              lastTurn: ultimateResult.lastTurn
+                ? {
+                    status: ultimateResult.lastTurn.status,
+                    summary: ultimateResult.lastTurn.summary,
+                    taskPlan: ultimateResult.lastTurn.taskPlan,
+                    executionSpec: ultimateResult.lastTurn.executionSpec,
+                    harnessRoute: ultimateResult.lastTurn.harnessRoute,
+                    executionFingerprint: ultimateResult.lastTurn.executionFingerprint ?? null,
+                    langSmithTrace: ultimateResult.lastTurn.langSmithTrace,
+                    selectedTargetPath: ultimateResult.lastTurn.selectedTargetPath,
+                  }
+                : null,
+              recentHistory: ultimateResult.history,
+            });
+            continue;
+          }
+
           const turnController = new AbortController();
           activeTurnController = turnController;
           if (isTaskRunnerInstruction(line)) {
@@ -588,6 +699,7 @@ export async function runShipyardLoop(
         });
       } finally {
         activeTurnController = null;
+        activeUltimateController = null;
         await saveSessionState(state);
 
         if (shouldPromptAgain) {

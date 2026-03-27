@@ -1610,7 +1610,20 @@ describe("ui runtime contract", () => {
 
         const activateAlphaSequence = await activateAlphaSequencePromise;
         const projectsState = activateAlphaSequence.find(
-          (message) => message.type === "projects:state",
+          (
+            message,
+          ): message is BackendToFrontendMessage & {
+            type: "projects:state";
+            state: {
+              activeProjectId: string | null;
+              openProjects: Array<{
+                projectId: string;
+                targetPath: string;
+              }>;
+            };
+          } =>
+            message.type === "projects:state" &&
+            message.state.activeProjectId === alphaTargetDirectory,
         ) as
           | (BackendToFrontendMessage & {
               type: "projects:state";
@@ -3175,6 +3188,150 @@ describe("ui runtime contract", () => {
         expect(traceContents).toContain('"instruction":"inspect the repo until I interrupt you"');
         expect(traceContents).toContain('"instruction":"summarize the repo now"');
         expect(traceContents).toContain('"executionFingerprint"');
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("treats follow-up human input as queued feedback while ultimate mode is active", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-runtime-ultimate-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-ultimate-session",
+      targetDirectory,
+      discovery,
+    });
+    let observedFeedback: string | null = null;
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      executeUltimateMode: async (options) => {
+        if (!options.controller) {
+          throw new Error("Expected an ultimate mode controller.");
+        }
+
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "agent-busy",
+        });
+        await options.reporter?.onThinking?.(
+          "Ultimate mode activated for the UI feedback handoff test.",
+        );
+
+        const timeoutAt = Date.now() + 5_000;
+
+        while (options.controller.getPendingHumanFeedback().length === 0) {
+          if (Date.now() >= timeoutAt) {
+            throw new Error("Timed out waiting for queued human feedback.");
+          }
+
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
+        }
+
+        observedFeedback =
+          options.controller.drainHumanFeedback()[0]?.text ?? null;
+
+        await options.reporter?.onThinking?.(
+          `Observed queued feedback: ${observedFeedback ?? "missing"}`,
+        );
+        await options.reporter?.onText?.("Ultimate mode test complete.");
+        await options.reporter?.onDone?.({
+          status: "success",
+          summary: "Ultimate mode test complete.",
+          langSmithTrace: null,
+          executionFingerprint: null,
+        });
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "ready",
+        });
+
+        return {
+          status: "success",
+          summary: "Ultimate mode test complete.",
+          finalText: "Ultimate mode test complete.",
+          iterations: 1,
+          history: [],
+          lastTurn: null,
+        };
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialStatePromise;
+
+        const doneSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "agent:done" &&
+                message.status === "success",
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "session:state" &&
+                message.connectionState === "ready",
+            ),
+        );
+
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "ultimate start keep improving the dashboard forever",
+          }),
+        );
+        await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "session:state" &&
+            message.connectionState === "agent-busy",
+        );
+
+        const queuedFeedbackMessagePromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "agent:thinking" &&
+            message.message.includes(
+              "Queued human feedback for ultimate mode.",
+            ),
+        );
+
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "make the hero tighter and raise the CTA contrast",
+          }),
+        );
+
+        await queuedFeedbackMessagePromise;
+        const finalSequence = await doneSequencePromise;
+        const busyError = finalSequence.find(
+          (message) =>
+            message.type === "agent:error" &&
+            message.message.includes("already in progress"),
+        );
+
+        expect(observedFeedback).toContain(
+          "make the hero tighter and raise the CTA contrast",
+        );
+        expect(busyError).toBeUndefined();
       } finally {
         socket.close();
       }

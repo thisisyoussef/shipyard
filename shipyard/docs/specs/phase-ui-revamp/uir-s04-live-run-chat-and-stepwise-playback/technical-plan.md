@@ -88,14 +88,23 @@
   - `src/ui/contracts.ts`, `src/ui/events.ts`, and
     `src/ui/workbench-state.ts`: extend the websocket schema and reducer state
     with optional edit preview and trace fields.
+  - `src/engine/ultimate-mode.ts`, `src/agents/human-simulator.ts`, and
+    `src/ui/server.ts`: add the foreground "ultimate mode" supervisor that
+    keeps one live browser run open while alternating between Shipyard's normal
+    turn entrypoint and a read-only human-simulator review pass, and queue
+    follow-up human messages into the active run as feedback.
+  - `src/engine/loop.ts`: exposes `ultimate <brief>`, `ultimate status`, and
+    CLI interrupt guidance alongside the existing routed command surfaces.
   - `ui/src/ShipyardWorkbench.tsx`, `ui/src/panels/ChatWorkspace.tsx`, and
     `ui/src/panels/LiveViewPanel.tsx`: compose the new tabbed center workspace.
   - `ui/src/panels/FilePanel.tsx`: preserves repeated file events as distinct
     evidence rows.
-  - `tests/ui-runtime.test.ts`, `tests/ui-events.test.ts`,
+  - `tests/human-simulator.test.ts`, `tests/ultimate-mode.test.ts`,
+    `tests/ui-runtime.test.ts`, `tests/ui-events.test.ts`,
     `tests/ui-view-models.test.ts`, `tests/ui-chat-workspace.test.ts`, and
-    `tests/ui-live-view.test.ts`: cover runtime streaming, typed contracts,
-    reducer behavior, and frontend rendering.
+    `tests/ui-live-view.test.ts`: cover the simulator contract, the infinite
+    supervisor loop, runtime streaming, typed contracts, reducer behavior, and
+    frontend rendering.
 - Representative snippets:
 
 ```ts
@@ -111,6 +120,18 @@ if (immediateEditEvent) {
 ) : (
   <LiveViewPanel turns={props.turns} tracePath={props.sessionState?.tracePath ?? null} />
 )}
+```
+
+```ts
+const decision = await runHumanSimulatorTurn(simulatorInput, sessionState.targetDirectory);
+const turnResult = await executeTurn({
+  sessionState,
+  runtimeState,
+  instruction: decision.instruction,
+  reporter: innerReporter,
+  signal,
+  runtimeSurface: options.runtimeSurface,
+});
 ```
 
 ## Validation Commands

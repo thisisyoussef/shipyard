@@ -16,16 +16,18 @@ Submission template - fill in each section as you build. Do not write this at th
 ## Agent Architecture (MVP)
 
 Shipyard is a local-first coding agent with two entry surfaces, one shared
-session model, one standard-turn executor, and two additional routed turn
-paths for planning and queued task execution. `src/bin/shipyard.ts` resolves
+session model, one standard-turn executor, one infinite-handshake supervisor
+for `ultimate` mode, and two additional routed turn paths for planning and
+queued task execution. `src/bin/shipyard.ts` resolves
 either a concrete target or a targets directory, creates or resumes a session,
 refreshes discovery, loads target `AGENTS.md` rules when a target exists, and
 then routes the operator into terminal REPL mode or browser `--ui` mode. From
 there, the loop/UI router sends `plan:` into `src/plans/turn.ts`, sends `next`
-and `continue` into `src/plans/task-runner.ts`, and sends standard
-instructions into `src/engine/turn.ts`, which rebuilds the `ContextEnvelope`,
-selects the current phase (`code` or `target-manager`), and runs the graph
-runtime with raw fallback parity.
+and `continue` into `src/plans/task-runner.ts`, sends `ultimate ...` into
+`src/engine/ultimate-mode.ts`, and sends standard instructions into
+`src/engine/turn.ts`, which rebuilds the `ContextEnvelope`, selects the
+current phase (`code` or `target-manager`), and runs the graph runtime with
+raw fallback parity.
 
 ```mermaid
 flowchart TD
@@ -35,6 +37,8 @@ flowchart TD
   Router["Instruction router"]
   PlanTurn["executePlanningTurn"]
   TaskRunner["executeTaskRunnerTurn"]
+  Ultimate["executeUltimateMode"]
+  HumanSimulator["human-simulator helper"]
   Turn["executeInstructionTurn"]
   Envelope["Context envelope + runtime context"]
   Graph["Graph runtime / fallback"]
@@ -52,9 +56,12 @@ flowchart TD
   Bootstrap --> Router
   Router --> PlanTurn
   Router --> TaskRunner
+  Router --> Ultimate
   Router --> Turn
   PlanTurn --> Plans
   TaskRunner --> Turn
+  Ultimate --> HumanSimulator
+  Ultimate --> Turn
   Turn --> Envelope
   Turn --> Graph
   Graph --> Tools
@@ -69,14 +76,18 @@ flowchart TD
 
 - `runShipyardLoop` in `src/engine/loop.ts` keeps the process alive, exposes
   utility commands like `read`, `list`, `search`, `run`, `diff`, `target`,
-  `plan:`, `next`, and `continue`, and routes the rest into the standard turn
-  path.
+  `plan:`, `next`, `continue`, and `ultimate`, and routes the rest into the
+  standard turn path.
 - `executePlanningTurn` in `src/plans/turn.ts` runs the planner helper in a
   read-only path, captures any loaded `spec:` refs, and persists a typed task
   queue under `target/.shipyard/plans/`.
 - `executeTaskRunnerTurn` in `src/plans/task-runner.ts` reloads the active plan,
   selects the right queued task, and then reuses `executeInstructionTurn` for
   the actual code-writing turn.
+- `executeUltimateMode` in `src/engine/ultimate-mode.ts` keeps a foreground
+  infinite loop alive by alternating between the read-only
+  `src/agents/human-simulator.ts` helper and the normal
+  `executeInstructionTurn` entrypoint until the operator interrupts it.
 - `executeInstructionTurn` assembles stable runtime context, captures recent
   tool output and error summaries, wires reporter callbacks, emits or loads
   handoff artifacts, and persists updated session state after the turn

@@ -143,3 +143,21 @@ flip to a simpler chat-first view for conversational iteration.
   const markup = renderWorkbench({ primaryView: "preview" });
   expect(markup).toContain("Preview is running on loopback.");
   ```
+
+- `shipyard/src/engine/ultimate-mode.ts`,
+  `shipyard/src/agents/human-simulator.ts`, and
+  `shipyard/src/ui/server.ts`: live chat can now stay attached to one active
+  browser run while an `ultimate` supervisor loops between Shipyard and a
+  read-only human-simulator helper, and follow-up human messages are queued
+  into that live run instead of bouncing as "already in progress."
+
+  ```ts
+  if (activeProject.activeUltimateController !== null) {
+    activeProject.activeUltimateController.enqueueHumanFeedback(feedbackText);
+    await emitProjectMessage(activeProject, {
+      type: "agent:thinking",
+      message:
+        "Queued human feedback for ultimate mode. It will be folded into the next simulator review cycle.",
+    });
+  }
+  ```

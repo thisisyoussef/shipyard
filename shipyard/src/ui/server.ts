@@ -21,6 +21,14 @@ import {
   type InstructionTurnReporter,
   type TurnStateEvent,
 } from "../engine/turn.js";
+import {
+  createUltimateModeController,
+  executeUltimateMode,
+  formatUltimateModeStatus,
+  parseUltimateModeCommand,
+  type ExecuteUltimateModeOptions,
+  type UltimateModeController,
+} from "../engine/ultimate-mode.js";
 import { formatTurnExecutionFingerprint } from "../engine/turn-fingerprint.js";
 import {
   executePlanningTurn,
@@ -136,6 +144,9 @@ export interface StartUiRuntimeServerOptions {
   executeTaskTurn?: (
     options: ExecuteTaskRunnerTurnOptions,
   ) => Promise<Awaited<ReturnType<typeof executeTaskRunnerTurn>>>;
+  executeUltimateMode?: (
+    options: ExecuteUltimateModeOptions,
+  ) => Promise<Awaited<ReturnType<typeof executeUltimateMode>>>;
 }
 
 export interface UiRuntimeServer {
@@ -181,6 +192,7 @@ interface BrowserProjectRuntime {
   previewStarted: boolean;
   activeInstruction: Promise<void> | null;
   activeInstructionController: AbortController | null;
+  activeUltimateController: UltimateModeController | null;
   activeDeploy: Promise<void> | null;
   activeDeployController: AbortController | null;
   deployInFlight: boolean;
@@ -628,6 +640,20 @@ function createErrorMessage(message: string): BackendToFrontendMessage {
   };
 }
 
+function composeUltimateModeHumanFeedback(
+  text: string,
+  injectedContext?: string[],
+): string {
+  const parts = [
+    text.trim(),
+    ...(injectedContext ?? []).map((entry, index) =>
+      `Attached human context ${String(index + 1)}:\n${entry}`
+    ),
+  ].filter((value) => value.trim().length > 0);
+
+  return parts.join("\n\n");
+}
+
 function hasVercelToken(env: NodeJS.ProcessEnv = process.env): boolean {
   return Boolean(env.VERCEL_TOKEN?.trim());
 }
@@ -908,6 +934,7 @@ export async function startUiRuntimeServer(
   const executePlanTurn = options.executePlanTurn ?? executePlanningTurn;
   const executeDeploy = options.executeDeploy ?? deployTargetTool;
   const executeTaskTurn = options.executeTaskTurn ?? executeTaskRunnerTurn;
+  const executeUltimateModeTurn = options.executeUltimateMode ?? executeUltimateMode;
   const projectRuntimes = new Map<string, BrowserProjectRuntime>();
   let activeProjectId = "";
 
@@ -962,6 +989,7 @@ export async function startUiRuntimeServer(
       previewStarted: false,
       activeInstruction: null,
       activeInstructionController: null,
+      activeUltimateController: null,
       activeDeploy: null,
       activeDeployController: null,
       deployInFlight: false,
@@ -2086,6 +2114,56 @@ export async function startUiRuntimeServer(
         pendingTurnState = event;
       },
     };
+    const ultimateCommand = parseUltimateModeCommand(instruction);
+
+    if (ultimateCommand?.type === "start") {
+      const controller =
+        project.activeUltimateController
+        ?? createUltimateModeController(ultimateCommand.brief);
+
+      project.activeUltimateController = controller;
+
+      const ultimateResult = await executeUltimateModeTurn({
+        sessionState: project.sessionState,
+        runtimeState: project.runtimeState,
+        brief: ultimateCommand.brief,
+        injectedContext,
+        controller,
+        reporter,
+        signal,
+        runtimeSurface: "ui",
+      });
+
+      await project.traceLogger.log("instruction.ultimate", {
+        instruction,
+        brief: ultimateCommand.brief,
+        status: ultimateResult.status,
+        summary: ultimateResult.summary,
+        iterations: ultimateResult.iterations,
+        lastTurn: ultimateResult.lastTurn
+          ? {
+              status: ultimateResult.lastTurn.status,
+              summary: ultimateResult.lastTurn.summary,
+              taskPlan: ultimateResult.lastTurn.taskPlan,
+              executionSpec: ultimateResult.lastTurn.executionSpec,
+              harnessRoute: ultimateResult.lastTurn.harnessRoute,
+              executionFingerprint: ultimateResult.lastTurn.executionFingerprint ?? null,
+              langSmithTrace: ultimateResult.lastTurn.langSmithTrace,
+              selectedTargetPath: ultimateResult.lastTurn.selectedTargetPath,
+            }
+          : null,
+        recentHistory: ultimateResult.history,
+        runtimeSurface: "ui",
+      });
+      await saveSessionState(project.sessionState);
+
+      if (pendingTurnState) {
+        await baseReporter.onTurnState?.(pendingTurnState);
+        pendingTurnState = null;
+      }
+
+      return;
+    }
 
     if (isTaskRunnerInstruction(instruction)) {
       const taskTurnResult = await executeTaskTurn({
@@ -2406,7 +2484,7 @@ export async function startUiRuntimeServer(
                 activeProject.sessionState.workbenchState = {
                   ...activeProject.sessionState.workbenchState,
                   latestError: null,
-                  agentStatus: "No active browser-driven turn or deploy is running.",
+                  agentStatus: "No active browser-driven turn, ultimate mode run, or deploy is running.",
                 };
                 await broadcastSessionState(activeProject);
                 break;
@@ -2417,7 +2495,9 @@ export async function startUiRuntimeServer(
                   ...activeProject.sessionState.workbenchState,
                   latestError: null,
                   agentStatus:
-                    activeProject.activeInstructionController
+                    activeProject.activeUltimateController
+                      ? "Cancellation already requested. Waiting for ultimate mode to stop."
+                      : activeProject.activeInstructionController
                       ? "Cancellation already requested. Waiting for the active turn to stop."
                       : "Cancellation already requested. Waiting for the active deploy to stop.",
                 };
@@ -2429,14 +2509,18 @@ export async function startUiRuntimeServer(
                 ...activeProject.sessionState.workbenchState,
                 latestError: null,
                 agentStatus:
-                  activeProject.activeInstructionController
+                  activeProject.activeUltimateController
+                    ? "Cancellation requested. Waiting for ultimate mode to stop."
+                    : activeProject.activeInstructionController
                     ? "Cancellation requested. Waiting for the active turn to stop."
                     : "Cancellation requested. Waiting for the active deploy to stop.",
               };
               await broadcastSessionState(activeProject);
               abortTurn(
                 activeController,
-                activeProject.activeInstructionController
+                activeProject.activeUltimateController
+                  ? "Human stopped ultimate mode."
+                  : activeProject.activeInstructionController
                   ? undefined
                   : "Operator interrupted the active deploy.",
               );
@@ -2706,16 +2790,85 @@ export async function startUiRuntimeServer(
             }
             case "instruction": {
               const activeProject = getActiveProject();
+              const ultimateCommand = parseUltimateModeCommand(message.text);
 
               if (activeProject.activeInstruction !== null || activeProject.deployInFlight) {
+                if (activeProject.deployInFlight) {
+                  await sendToSocket(
+                    socket,
+                    createErrorMessage("A deploy is already in progress for this session."),
+                  );
+                  break;
+                }
+
+                if (activeProject.activeUltimateController !== null) {
+                  if (ultimateCommand?.type === "status") {
+                    await emitProjectMessage(activeProject, {
+                      type: "agent:thinking",
+                      message: formatUltimateModeStatus(
+                        activeProject.activeUltimateController,
+                      ),
+                    });
+                    await saveSessionState(activeProject.sessionState);
+                    break;
+                  }
+
+                  if (ultimateCommand?.type === "stop") {
+                    if (activeProject.activeInstructionController !== null) {
+                      abortTurn(
+                        activeProject.activeInstructionController,
+                        "Human stopped ultimate mode.",
+                      );
+                    }
+                    await emitProjectMessage(activeProject, {
+                      type: "agent:thinking",
+                      message:
+                        "Human interrupt received. Stopping ultimate mode after the current cycle shuts down cleanly.",
+                    });
+                    await saveSessionState(activeProject.sessionState);
+                    break;
+                  }
+
+                  const feedbackText = composeUltimateModeHumanFeedback(
+                    ultimateCommand?.type === "feedback"
+                      ? ultimateCommand.feedback
+                      : ultimateCommand?.type === "start"
+                        ? ultimateCommand.brief
+                        : message.text,
+                    message.injectedContext,
+                  );
+
+                  activeProject.activeUltimateController.enqueueHumanFeedback(
+                    feedbackText,
+                  );
+                  await emitProjectMessage(activeProject, {
+                    type: "agent:thinking",
+                    message:
+                      "Queued human feedback for ultimate mode. It will be folded into the next simulator review cycle.",
+                  });
+                  await saveSessionState(activeProject.sessionState);
+                  break;
+                }
+
                 await sendToSocket(
                   socket,
                   createErrorMessage(
-                    activeProject.deployInFlight
-                      ? "A deploy is already in progress for this session."
-                      : "A browser instruction is already in progress for this session.",
+                    "A browser instruction is already in progress for this session.",
                   ),
                 );
+                break;
+              }
+
+              if (ultimateCommand && ultimateCommand.type !== "start") {
+                activeProject.sessionState.workbenchState = {
+                  ...activeProject.sessionState.workbenchState,
+                  latestError: null,
+                  agentStatus:
+                    ultimateCommand.type === "status"
+                      ? formatUltimateModeStatus(null)
+                      : "Ultimate mode is not active.",
+                };
+                await broadcastSessionState(activeProject);
                 break;
               }
 
@@ -2749,6 +2902,11 @@ export async function startUiRuntimeServer(
 
               await saveSessionState(activeProject.sessionState);
               const turnController = new AbortController();
+              if (ultimateCommand?.type === "start") {
+                activeProject.activeUltimateController = createUltimateModeController(
+                  ultimateCommand.brief,
+                );
+              }
               activeProject.activeInstructionController = turnController;
               activeProject.activeInstruction = runBrowserInstruction(
                 activeProject,
@@ -2762,6 +2920,7 @@ export async function startUiRuntimeServer(
               } finally {
                 activeProject.activeInstruction = null;
                 activeProject.activeInstructionController = null;
+                activeProject.activeUltimateController = null;
                 await broadcastProjectsState();
               }
               break;

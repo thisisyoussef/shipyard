@@ -138,12 +138,16 @@ bootstrap empty-target guard.
 ## Operator Controls
 
 - In terminal mode, `help` shows built-in commands including `target`,
-  `plan:`, `next`, and `continue`.
+  `plan:`, `next`, `continue`, and `ultimate ...`.
 - In terminal mode, press `Ctrl+C` while a turn is running to cancel the active
-  turn without closing Shipyard.
+  turn or an active `ultimate` loop without closing Shipyard.
 - In browser mode, use the composer's `Cancel turn` control to interrupt the
   active run. The composer keeps your draft so you can send the next
   instruction as soon as the session returns to ready.
+- In browser mode, `ultimate start <brief>` launches the always-on handoff loop
+  and any follow-up human message while that run is active is queued as
+  feedback for the next simulator cycle. Use `ultimate stop` or the normal
+  cancel control to interrupt it.
 
 ## Repo Map
 
@@ -164,7 +168,8 @@ shipyard/
    mode.
 2. `src/engine/loop.ts` and `src/ui/server.ts` route `plan:` to
    `src/plans/turn.ts`, route `next` / `continue` to
-   `src/plans/task-runner.ts`, and send standard instructions to
+   `src/plans/task-runner.ts`, route `ultimate ...` to
+   `src/engine/ultimate-mode.ts`, and send standard instructions to
    `src/engine/turn.ts`.
 3. `src/context/discovery.ts`, `src/context/envelope.ts`, and
    `src/engine/runtime-context.ts` build the stable, task, runtime, and session
