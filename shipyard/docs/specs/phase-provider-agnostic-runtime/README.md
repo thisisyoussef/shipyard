@@ -256,9 +256,10 @@ export function resolveAutomaticTargetEnrichmentCapability(
   [`../../tests/cli-loop.test.ts`](../../tests/cli-loop.test.ts),
   [`../../tests/ui-runtime.test.ts`](../../tests/ui-runtime.test.ts), and
   [`../../tests/railway-config.test.ts`](../../tests/railway-config.test.ts)
-  flip the shipped default provider to OpenAI, update the operator-facing
+  flip the shipped default provider to Anthropic, update the operator-facing
   runtime contract, and make the GitHub Actions Railway deploy sync the
-  production OpenAI credentials plus `gpt-5.4` routing before each release.
+  production Anthropic credentials plus `claude-opus-4-6` routing before each
+  release.
 
 - `P10-S04`: [`../../src/engine/openai.ts`](../../src/engine/openai.ts),
   [`../../src/engine/model-routing.ts`](../../src/engine/model-routing.ts),

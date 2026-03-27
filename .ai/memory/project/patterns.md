@@ -46,6 +46,9 @@ Capture repeatable patterns that match how this workspace actually works.
 - Shared runtime code should depend on Shipyard-owned turn/tool contracts, while
   provider adapters project `ToolDefinition[]` into provider-specific wire
   formats inside adapter modules.
+- The shipped default route is currently Anthropic on `claude-opus-4-6`. When
+  that default changes, update the runtime default, operator docs/examples, and
+  the Railway production secret/model pin together in the same story.
 
 ## Runtime Artifact Pattern
 

@@ -609,7 +609,7 @@ describe("instruction runtime handoff", () => {
     expect(modelAdapter.calls[0]?.systemPrompt).toContain("select_target");
   });
 
-  it("fails clearly instead of using the offline preview path when OPENAI_API_KEY is missing", async () => {
+  it("fails clearly instead of using the offline preview path when ANTHROPIC_API_KEY is missing", async () => {
     const targetDirectory = await createTempDirectory("shipyard-turn-missing-key-");
     const sessionState = createSessionState({
       sessionId: "turn-missing-key-session",
@@ -640,8 +640,8 @@ describe("instruction runtime handoff", () => {
 
     expect(result.runtimeMode).toBe("graph");
     expect(result.status).toBe("error");
-    expect(result.summary).toMatch(/Missing OPENAI_API_KEY/i);
-    expect(result.finalText).toContain("Turn 1 stopped: Missing OPENAI_API_KEY");
+    expect(result.summary).toMatch(/Missing ANTHROPIC_API_KEY/i);
+    expect(result.finalText).toContain("Turn 1 stopped: Missing ANTHROPIC_API_KEY");
     expect(sessionState.rollingSummary).toContain("create a README");
     expect(sessionState.rollingSummary).toContain("failed via graph");
   });
@@ -845,8 +845,8 @@ describe("instruction runtime handoff", () => {
         lastEditedFile: "src/app.tsx",
         finalResult: "Polished the main screen.",
         status: "done",
-        modelProvider: "openai",
-        modelName: "gpt-5.4",
+        modelProvider: "anthropic",
+        modelName: "claude-opus-4-6",
         verificationReport: {
           command: "pnpm test",
           exitCode: 0,
@@ -896,9 +896,9 @@ describe("instruction runtime handoff", () => {
       previewStatus: "unavailable",
       browserEval: "yes",
       browserEvaluationStatus: "passed",
-      model: "openai/gpt-5.4",
-      modelProvider: "openai",
-      modelName: "gpt-5.4",
+      model: "anthropic/claude-opus-4-6",
+      modelProvider: "anthropic",
+      modelName: "claude-opus-4-6",
     });
     expect(result.langSmithTrace).toEqual(outerTrace);
     expect(capturedTraceMetadata).toEqual(
@@ -910,7 +910,7 @@ describe("instruction runtime handoff", () => {
         handoffReason: "iteration-threshold",
         runtimeSurface: "cli",
         executionFingerprintLabel:
-          "surface=cli phase=code planningMode=planner targetProfile=no preview=no browserEval=yes model=openai/gpt-5.4",
+          "surface=cli phase=code planningMode=planner targetProfile=no preview=no browserEval=yes model=anthropic/claude-opus-4-6",
       }),
     );
   });
@@ -1042,8 +1042,8 @@ describe("instruction runtime handoff", () => {
         lastEditedFile: "styles.css",
         finalResult: "Changed body background color from white to #36454F.",
         status: "done",
-        modelProvider: "openai",
-        modelName: "gpt-5.4",
+        modelProvider: "anthropic",
+        modelName: "claude-opus-4-6",
       }),
     );
 

@@ -23,6 +23,7 @@ interface RunningCli {
 
 const LIVE_RUNTIME_ENV = {
   OPENAI_API_KEY: "",
+  ANTHROPIC_API_KEY: "",
   SHIPYARD_MODEL_PROVIDER: "",
   SHIPYARD_CODE_MODEL_PROVIDER: "",
   SHIPYARD_RUNTIME_MODE: "fallback",
@@ -368,7 +369,7 @@ describe("shipyard CLI loop", () => {
             label: "turn 1 completion summary",
           },
         );
-        cursor = await waitForText(runner, "Turn 1 stopped: Missing OPENAI_API_KEY", {
+        cursor = await waitForText(runner, "Turn 1 stopped: Missing ANTHROPIC_API_KEY", {
           cursor,
           label: "turn 1 final text",
         });
@@ -401,7 +402,7 @@ describe("shipyard CLI loop", () => {
             label: "turn 2 completion summary",
           },
         );
-        cursor = await waitForText(runner, "Turn 2 stopped: Missing OPENAI_API_KEY", {
+        cursor = await waitForText(runner, "Turn 2 stopped: Missing ANTHROPIC_API_KEY", {
           cursor,
           label: "turn 2 final text",
         });
@@ -467,7 +468,7 @@ describe("shipyard CLI loop", () => {
         );
         firstCursor = await waitForText(
           firstRun,
-          "Turn 1 stopped: Missing OPENAI_API_KEY",
+          "Turn 1 stopped: Missing ANTHROPIC_API_KEY",
           {
             cursor: firstCursor,
             label: "resume setup final text",
