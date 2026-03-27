@@ -721,6 +721,112 @@ describe("search and command tools", () => {
     expect(result.output).toContain("Production URL: https://shipyard-demo.vercel.app");
   });
 
+  it("deploy_target prefers a shareable production alias from Vercel CLI output", async () => {
+    const directory = await createTempProject();
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess() {
+          return {
+            command: "vercel deploy --prod --yes --token [redacted]",
+            cwd: directory,
+            stdout: "https://shipyard-demo-4k2m1n9.vercel.app\n",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false,
+            signal: null,
+            timeoutMs: 600_000,
+            combinedOutput: [
+              "Inspect: https://vercel.com/acme/shipyard-demo/abcd1234",
+              "Production: https://shipyard-demo.vercel.app",
+              "https://shipyard-demo-4k2m1n9.vercel.app",
+              "",
+            ].join("\n"),
+            truncated: false,
+          };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        platform: "vercel",
+        productionUrl: "https://shipyard-demo.vercel.app",
+      },
+    });
+  });
+
+  it("deploy_target resolves a stable production alias from deployment metadata", async () => {
+    const directory = await createTempProject();
+    const metadataLookups: Array<{
+      deploymentUrl: string;
+      token: string;
+    }> = [];
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess() {
+          return {
+            command: "vercel deploy --prod --yes --token [redacted]",
+            cwd: directory,
+            stdout: "https://shipyard-demo-4k2m1n9.vercel.app\n",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false,
+            signal: null,
+            timeoutMs: 600_000,
+            combinedOutput: "https://shipyard-demo-4k2m1n9.vercel.app\n",
+            truncated: false,
+          };
+        },
+        async fetchDeploymentMetadata(deploymentUrl, token) {
+          metadataLookups.push({
+            deploymentUrl,
+            token,
+          });
+
+          return {
+            aliasFinal: "shipyard-demo.vercel.app",
+            alias: ["shipyard-demo.vercel.app"],
+          };
+        },
+      },
+    );
+
+    expect(metadataLookups).toEqual([
+      {
+        deploymentUrl: "https://shipyard-demo-4k2m1n9.vercel.app",
+        token: "phase-nine-secret",
+      },
+    ]);
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        platform: "vercel",
+        productionUrl: "https://shipyard-demo.vercel.app",
+      },
+    });
+  });
+
   it("deploy_target returns an actionable error when VERCEL_TOKEN is missing", async () => {
     const directory = await createTempProject();
     const result = await deployTargetTool(

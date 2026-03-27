@@ -36,3 +36,7 @@
   the default Claude model to `claude-opus-4-6`, updated README/manual/hosted
   docs and Railway regression coverage, and synced the repo secret baseline so
   the production Railway workflow can deploy the same default route.
+- 2026-03-27: Updated `deploy_target` to resolve a shareable Vercel
+  alias/domain from labeled CLI output or deployment metadata instead of
+  surfacing the raw generated deployment URL, which can require a Vercel login
+  under deployment protection.

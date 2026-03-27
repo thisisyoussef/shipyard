@@ -40,7 +40,22 @@ interface DeployDependencies {
   executeProcess?: (
     input: ExecuteProcessInput,
   ) => Promise<RunCommandResult>;
+  fetchDeploymentMetadata?: (
+    deploymentUrl: string,
+    token: string,
+    signal?: AbortSignal,
+  ) => Promise<VercelDeploymentMetadata | null>;
   vercelBinaryPath?: string;
+}
+
+interface VercelDeploymentMetadata {
+  alias?: string[];
+  aliasFinal?: string | null;
+  automaticAliases?: string[];
+  userAliases?: string[];
+  customEnvironment?: {
+    currentDeploymentAliases?: string[];
+  } | null;
 }
 
 const deployInputSchema = {
@@ -71,11 +86,20 @@ function redactDeploySecrets(value: string, token: string | null): string {
   return value.split(token).join("[redacted]");
 }
 
-function sanitizeCandidateUrl(rawUrl: string): string | null {
-  const trimmedUrl = rawUrl.replace(/[),.;]+$/u, "");
+function sanitizeCandidateUrl(
+  rawUrl: string,
+  options: {
+    allowHostnames?: boolean;
+  } = {},
+): string | null {
+  const trimmedUrl = rawUrl.trim().replace(/[),.;]+$/u, "");
+  const normalizedUrl = options.allowHostnames &&
+      !/^[a-z]+:\/\//iu.test(trimmedUrl)
+    ? `https://${trimmedUrl}`
+    : trimmedUrl;
 
   try {
-    const parsed = new URL(trimmedUrl);
+    const parsed = new URL(normalizedUrl);
 
     if (parsed.protocol !== "https:") {
       return null;
@@ -97,6 +121,14 @@ function extractUrls(output: string): string[] {
     .filter((candidateUrl): candidateUrl is string => candidateUrl !== null);
 }
 
+function isVercelAppUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname.endsWith(".vercel.app");
+  } catch {
+    return false;
+  }
+}
+
 export function parseVercelDeploymentUrl(output: string): string | null {
   const candidates = extractUrls(output);
 
@@ -104,15 +136,209 @@ export function parseVercelDeploymentUrl(output: string): string | null {
     return null;
   }
 
-  const vercelCandidates = candidates.filter((candidate) => {
-    try {
-      return new URL(candidate).hostname.endsWith(".vercel.app");
-    } catch {
-      return false;
-    }
-  });
+  const vercelCandidates = candidates.filter((candidate) =>
+    isVercelAppUrl(candidate),
+  );
 
   return vercelCandidates.at(-1) ?? candidates.at(-1) ?? null;
+}
+
+function parseLabeledVercelProductionUrl(output: string): string | null {
+  const match = output.match(
+    /\bProduction(?:\s+URL)?\s*:\s*(https:\/\/[^\s"'`]+)/iu,
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const rawUrl = match[1];
+
+  if (!rawUrl) {
+    return null;
+  }
+
+  return sanitizeCandidateUrl(rawUrl);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function parseVercelDeploymentMetadata(
+  value: unknown,
+): VercelDeploymentMetadata | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const customEnvironment =
+    typeof record.customEnvironment === "object" &&
+      record.customEnvironment !== null
+    ? (record.customEnvironment as Record<string, unknown>)
+    : null;
+
+  return {
+    alias: isStringArray(record.alias) ? record.alias : undefined,
+    aliasFinal:
+      typeof record.aliasFinal === "string" ? record.aliasFinal : undefined,
+    automaticAliases: isStringArray(record.automaticAliases)
+      ? record.automaticAliases
+      : undefined,
+    userAliases: isStringArray(record.userAliases)
+      ? record.userAliases
+      : undefined,
+    customEnvironment: customEnvironment
+      ? {
+          currentDeploymentAliases: isStringArray(
+            customEnvironment.currentDeploymentAliases,
+          )
+            ? customEnvironment.currentDeploymentAliases
+            : undefined,
+        }
+      : undefined,
+  };
+}
+
+function dedupeUrls(candidates: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) {
+      continue;
+    }
+
+    seen.add(candidate);
+    ordered.push(candidate);
+  }
+
+  return ordered;
+}
+
+function prioritizeAliasCandidates(candidates: string[]): string[] {
+  const customDomains: string[] = [];
+  const vercelDomains: string[] = [];
+
+  for (const candidate of candidates) {
+    if (isVercelAppUrl(candidate)) {
+      vercelDomains.push(candidate);
+      continue;
+    }
+
+    customDomains.push(candidate);
+  }
+
+  return [...customDomains, ...vercelDomains];
+}
+
+function normalizeAliasCandidates(candidates: string[] | undefined): string[] {
+  if (!candidates) {
+    return [];
+  }
+
+  return candidates
+    .map((candidate) =>
+      sanitizeCandidateUrl(candidate, {
+        allowHostnames: true,
+      }),
+    )
+    .filter((candidate): candidate is string => candidate !== null);
+}
+
+function collectShareableAliasUrls(
+  metadata: VercelDeploymentMetadata,
+): string[] {
+  const aliasFinal = metadata.aliasFinal
+    ? sanitizeCandidateUrl(metadata.aliasFinal, {
+        allowHostnames: true,
+      })
+    : null;
+  const customEnvironmentAliases = prioritizeAliasCandidates(
+    normalizeAliasCandidates(metadata.customEnvironment?.currentDeploymentAliases),
+  );
+  const automaticAliases = prioritizeAliasCandidates(
+    normalizeAliasCandidates(metadata.automaticAliases),
+  );
+  const assignedAliases = prioritizeAliasCandidates(
+    normalizeAliasCandidates(metadata.alias),
+  );
+  const userAliases = prioritizeAliasCandidates(
+    normalizeAliasCandidates(metadata.userAliases),
+  );
+
+  return dedupeUrls([
+    aliasFinal,
+    ...customEnvironmentAliases,
+    ...automaticAliases,
+    ...assignedAliases,
+    ...userAliases,
+  ]);
+}
+
+async function fetchVercelDeploymentMetadata(
+  deploymentUrl: string,
+  token: string,
+  signal?: AbortSignal,
+): Promise<VercelDeploymentMetadata | null> {
+  let hostname: string;
+
+  try {
+    hostname = new URL(deploymentUrl).hostname;
+  } catch {
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.vercel.com/v13/deployments/${encodeURIComponent(hostname)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        signal: signal ?? AbortSignal.timeout(5_000),
+      },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return parseVercelDeploymentMetadata(await response.json());
+  } catch {
+    return null;
+  }
+}
+
+async function resolveShareableVercelUrl(
+  deploymentUrl: string,
+  token: string,
+  signal: AbortSignal | undefined,
+  dependencies: DeployDependencies,
+  loggedProductionUrl: string | null,
+): Promise<string> {
+  const fetchMetadata =
+    dependencies.fetchDeploymentMetadata ?? fetchVercelDeploymentMetadata;
+
+  let metadataCandidates: string[] = [];
+
+  try {
+    const metadata = await fetchMetadata(deploymentUrl, token, signal);
+    if (metadata) {
+      metadataCandidates = collectShareableAliasUrls(metadata);
+    }
+  } catch {
+    metadataCandidates = [];
+  }
+
+  return (
+    dedupeUrls([
+      ...metadataCandidates,
+      loggedProductionUrl,
+      deploymentUrl,
+    ])[0] ?? deploymentUrl
+  );
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -224,9 +450,21 @@ export async function deployTargetTool(
       displayCommand,
     });
     const redactedLogExcerpt = redactDeploySecrets(result.combinedOutput, token);
-    const productionUrl = parseVercelDeploymentUrl(
+    const deploymentUrl = parseVercelDeploymentUrl(
       result.stdout.trim() || redactedLogExcerpt,
     );
+    const loggedProductionUrl = parseLabeledVercelProductionUrl(
+      redactedLogExcerpt,
+    );
+    const productionUrl = deploymentUrl
+      ? await resolveShareableVercelUrl(
+          deploymentUrl,
+          token,
+          context?.signal,
+          dependencies,
+          loggedProductionUrl,
+        )
+      : null;
 
     if (result.timedOut || result.exitCode !== 0 || productionUrl === null) {
       const failureReason = productionUrl === null && result.exitCode === 0 && !result.timedOut

@@ -53,6 +53,10 @@
 - **Model-route baseline**: the shipped default provider is now Anthropic with
   `claude-opus-4-6`; operator docs, local examples, and the Railway production
   workflow must keep that default and its secret sync in lockstep.
+- **Deploy-link baseline**: `deploy_target` should not trust raw Vercel CLI
+  `stdout` as the public app link. Resolve a shareable alias/domain from
+  labeled CLI output or Vercel deployment metadata first, because generated
+  deployment URLs can be login-gated by Vercel Authentication.
 
 ---
 

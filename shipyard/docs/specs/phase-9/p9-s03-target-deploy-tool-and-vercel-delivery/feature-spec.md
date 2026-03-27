@@ -83,3 +83,32 @@ current target and return a reliable shareable production URL.
 - Shipyard has a typed deploy primitive for the active target.
 - Vercel production deploys can run non-interactively from Shipyard.
 - Failures stay actionable and secret-safe.
+
+## Implementation Evidence
+
+### Code References
+
+- Shareable Vercel production-link resolution:
+  - `shipyard/src/tools/deploy.ts`
+- Regression coverage for generated deployment URLs vs shareable aliases:
+  - `shipyard/tests/tooling.test.ts`
+
+### Representative Snippets
+
+```ts
+const productionUrl = deploymentUrl
+  ? await resolveShareableVercelUrl(
+      deploymentUrl,
+      token,
+      context?.signal,
+      dependencies,
+      loggedProductionUrl,
+    )
+  : null;
+```
+
+```ts
+it("deploy_target resolves a stable production alias from deployment metadata", async () => {
+  // ...
+});
+```
