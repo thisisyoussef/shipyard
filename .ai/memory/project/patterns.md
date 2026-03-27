@@ -49,6 +49,11 @@ Capture repeatable patterns that match how this workspace actually works.
 - The shipped default route is currently Anthropic on `claude-opus-4-6`. When
   that default changes, update the runtime default, operator docs/examples, and
   the Railway production secret/model pin together in the same story.
+- `deploy_target` should treat raw Vercel CLI `stdout` as the deployment
+  identifier, not automatically as the user-facing link. Resolve
+  `productionUrl` from a labeled production alias in CLI output or from Vercel
+  deployment metadata so generated deployment URLs do not leak into the UI when
+  Vercel Authentication protects them.
 
 ## Runtime Artifact Pattern
 

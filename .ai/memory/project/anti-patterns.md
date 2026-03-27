@@ -116,3 +116,13 @@ Capture failures so they are not repeated.
 - **Prevention rule**: Treat provider-default changes as a cross-surface
   contract update: runtime constants, operator docs/examples, Railway secret
   sync, and regression tests must move together.
+
+- **Problem**: Surfacing raw Vercel CLI deployment URLs as the public app link
+- **Example**: Returning the generated `.vercel.app` URL from `vercel deploy`
+  directly as `productionUrl` in Shipyard's deploy tool
+- **Why it failed**: Vercel Authentication can protect generated deployment
+  URLs, so the workbench showed links that required a Vercel login even when a
+  shareable alias or production domain existed.
+- **Prevention rule**: Resolve a shareable alias/domain from labeled CLI output
+  or deployment metadata before persisting `productionUrl`, and cover the case
+  with focused deploy-tool regressions.
