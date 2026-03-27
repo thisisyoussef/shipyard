@@ -88,6 +88,19 @@ Capture failures so they are not repeated.
 - **Why it failed**: Architecture notes stop matching the live product and make debugging or onboarding harder than reading the code directly.
 - **Prevention rule**: Re-check `ui/src/App.tsx`, `ui/src/ShipyardWorkbench.tsx`, and the current README surfaces before carrying forward older phase language.
 
+- **Problem**: Letting `shipyard/CODEAGENT.md` stay in submission-template mode
+  after the runtime architecture moves on
+- **Example**: Keeping due-date tables, rebuild-wave archaeology, or stale
+  appendix language in `CODEAGENT.md` even after the shipped runtime gained
+  target-manager routing, continuation handoffs, provider-neutral adapters, and
+  the split-pane browser workbench
+- **Why it failed**: The file stops being a reliable implementation map, so
+  agents either trust bad docs or skip the doc entirely and rediscover the
+  architecture from scratch.
+- **Prevention rule**: Treat `shipyard/CODEAGENT.md` as a live architecture
+  handbook and refresh it from the current source, local README files, and
+  architecture docs whenever the runtime shape changes materially.
+
 - **Problem**: Adopting software-factory features as isolated subsystems without unifying execution state and review boundaries
 - **Example**: Adding background tasks, approvals, repo indexing, or eval jobs as separate sidecar stores and flows that do not share one durable thread or one reviewed apply path
 - **Why it failed**: The runtime becomes harder to reason about, resume semantics drift, and parallel work starts mutating the main target without a clear control plane.

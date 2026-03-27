@@ -40,3 +40,8 @@
   alias/domain from labeled CLI output or deployment metadata instead of
   surfacing the raw generated deployment URL, which can require a Vercel login
   under deployment protection.
+- 2026-03-27: Rewrote `shipyard/CODEAGENT.md` from a stale submission appendix
+  into a durable architecture handbook that now tracks the live shared-runtime
+  design: target-manager turns, plan/task routing, continuation handoffs,
+  provider-neutral model routing, browser workbench state, and extension
+  rules.

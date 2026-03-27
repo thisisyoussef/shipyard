@@ -150,3 +150,21 @@ Record durable workspace decisions here.
   `ANTHROPIC_API_KEY` by default, hosted deploys require the Anthropic repo
   secret to stay configured, and future provider flips must treat runtime,
   docs, and Railway sync as one contract.
+
+- **ADR-ID**: ADR-0014
+- **Date**: 2026-03-27
+- **Context**: `shipyard/CODEAGENT.md` had fallen behind the shipped runtime
+  and still read like a historical submission appendix even though Shipyard now
+  has target-manager turns, plan/task routing, continuation handoffs,
+  provider-neutral model routing, and a split-pane browser workbench.
+- **Decision**: Treat `shipyard/CODEAGENT.md` as a durable architecture
+  handbook for the live runtime, and keep it organized around stable subsystem
+  boundaries, execution contracts, and extension rules instead of phase-era
+  rebuild logs or submission checklist sections.
+- **Alternatives Considered**: Keep patching the appendix incrementally; move
+  the architecture narrative entirely into other docs and leave `CODEAGENT.md`
+  as legacy baggage.
+- **Consequences**: Future runtime changes should update `CODEAGENT.md`
+  alongside the local README and architecture pages, and agents can use the
+  file as a trustworthy code-centric onboarding map instead of falling back to
+  stale phase language.
