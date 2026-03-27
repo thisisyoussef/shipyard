@@ -28,6 +28,7 @@ import {
 } from "../agents/human-simulator.js";
 
 const MAX_ULTIMATE_MODE_HISTORY_ITEMS = 24;
+export const DEFAULT_ULTIMATE_MODE_TURN_ROTATION_INTERVAL = 5;
 
 export interface UltimateModeStartCommand {
   type: "start";
@@ -74,6 +75,12 @@ export interface UltimateModeResult {
   lastTurn: InstructionTurnResult | null;
 }
 
+export interface UltimateModeTurnRotationEvent {
+  iteration: number;
+  simulatorDecision: HumanSimulatorDecision;
+  turnResult: InstructionTurnResult;
+}
+
 export interface ExecuteUltimateModeDependencies {
   runHumanSimulator?: (
     input: HumanSimulatorInput,
@@ -93,6 +100,10 @@ export interface ExecuteUltimateModeOptions {
   reporter?: InstructionTurnReporter;
   signal?: AbortSignal;
   runtimeSurface?: RuntimeSurface;
+  cycleRotationInterval?: number;
+  onCycleRotation?: (
+    event: UltimateModeTurnRotationEvent,
+  ) => Promise<void> | void;
   dependencies?: ExecuteUltimateModeDependencies;
 }
 
@@ -125,6 +136,20 @@ function rememberRecentHistoryEntry(
   while (history.length > MAX_ULTIMATE_MODE_HISTORY_ITEMS) {
     history.shift();
   }
+}
+
+function normalizeCycleRotationInterval(value: number | undefined): number | null {
+  if (value === undefined) {
+    return null;
+  }
+
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  const normalized = Math.floor(value);
+
+  return normalized > 0 ? normalized : null;
 }
 
 function createHumanSimulatorTurnReview(
@@ -165,6 +190,45 @@ function createUltimateModeInnerReporter(
       return undefined;
     },
   };
+}
+
+async function maybeRotateUltimateModeTurn(options: {
+  iteration: number;
+  interval: number | null;
+  reporter?: InstructionTurnReporter;
+  onCycleRotation?: (
+    event: UltimateModeTurnRotationEvent,
+  ) => Promise<void> | void;
+  simulatorDecision: HumanSimulatorDecision;
+  turnResult: InstructionTurnResult;
+}): Promise<void> {
+  if (
+    options.interval === null ||
+    options.onCycleRotation === undefined ||
+    options.iteration % options.interval !== 0
+  ) {
+    return;
+  }
+
+  await options.reporter?.onThinking?.(
+    `Ultimate mode is rotating to a fresh live turn after cycle ${String(options.iteration)} to keep the transcript responsive.`,
+  );
+
+  try {
+    await options.onCycleRotation({
+      iteration: options.iteration,
+      simulatorDecision: options.simulatorDecision,
+      turnResult: options.turnResult,
+    });
+  } catch (error) {
+    const message = error instanceof Error
+      ? error.message
+      : "Unknown rotation error.";
+
+    await options.reporter?.onThinking?.(
+      `Ultimate mode could not rotate the live turn after cycle ${String(options.iteration)}. Continuing without rotation. ${message}`,
+    );
+  }
 }
 
 function createDefaultHumanSimulatorRunner(
@@ -372,6 +436,9 @@ export async function executeUltimateMode(
   const signal = options.signal;
   const history: HumanSimulatorHistoryEntry[] = [];
   const innerReporter = createUltimateModeInnerReporter(reporter);
+  const cycleRotationInterval = normalizeCycleRotationInterval(
+    options.cycleRotationInterval,
+  );
   const runHumanSimulatorTurn =
     options.dependencies?.runHumanSimulator
     ?? createDefaultHumanSimulatorRunner(runtimeState, signal);
@@ -475,6 +542,17 @@ export async function executeUltimateMode(
       await reporter?.onThinking?.(
         `Ultimate mode cycle ${String(iteration)} finished with ${turnResult.status}. ${turnResult.summary}`,
       );
+
+      if (turnResult.status !== "cancelled") {
+        await maybeRotateUltimateModeTurn({
+          iteration,
+          interval: cycleRotationInterval,
+          reporter,
+          onCycleRotation: options.onCycleRotation,
+          simulatorDecision: decision,
+          turnResult,
+        });
+      }
 
       if (turnResult.status === "cancelled") {
         const result = createCancelledResult(

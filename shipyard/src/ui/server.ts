@@ -22,6 +22,7 @@ import {
   type TurnStateEvent,
 } from "../engine/turn.js";
 import {
+  DEFAULT_ULTIMATE_MODE_TURN_ROTATION_INTERVAL,
   createUltimateModeController,
   executeUltimateMode,
   formatUltimateModeStatus,
@@ -91,6 +92,7 @@ import {
   createInitialDeploySummary,
   queueInstructionTurn,
   removePendingUploadReceipt,
+  rotateInstructionTurn,
 } from "./workbench-state.js";
 import {
   createLocalTraceLogger,
@@ -117,6 +119,8 @@ import type {
 } from "../tools/registry.js";
 
 const CLOSE_ENRICHMENT_DRAIN_TIMEOUT_MS = 100;
+const ULTIMATE_MODE_TURN_ROTATION_INTERVAL =
+  DEFAULT_ULTIMATE_MODE_TURN_ROTATION_INTERVAL;
 
 export interface StartUiRuntimeServerOptions {
   sessionState: SessionState;
@@ -2132,6 +2136,28 @@ export async function startUiRuntimeServer(
         reporter,
         signal,
         runtimeSurface: "ui",
+        cycleRotationInterval: ULTIMATE_MODE_TURN_ROTATION_INTERVAL,
+        onCycleRotation: async ({ iteration, turnResult }) => {
+          const previousStatus = turnResult.status === "error"
+            ? "error"
+            : "idle";
+          const cycleLabel = `cycle ${String(iteration)}`;
+
+          project.sessionState.workbenchState = rotateInstructionTurn(
+            project.sessionState.workbenchState,
+            {
+              nextInstruction:
+                `ultimate continue ${ultimateCommand.brief}`,
+              nextSummary:
+                `Continuing ultimate mode after ${cycleLabel}.`,
+              previousStatus,
+              previousSummary:
+                `Rotated to a fresh live turn after ${cycleLabel} to keep ultimate mode responsive. Latest cycle: ${turnResult.summary}`,
+            },
+          );
+
+          await broadcastSessionState(project);
+        },
       });
 
       await project.traceLogger.log("instruction.ultimate", {

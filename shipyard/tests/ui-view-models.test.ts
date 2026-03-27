@@ -11,6 +11,7 @@ import {
   prepareInstructionSubmission,
   queueInstructionTurn,
   removePendingUpload,
+  rotateInstructionTurn,
   type UploadReceiptViewModel,
 } from "../ui/src/view-models.js";
 
@@ -221,6 +222,37 @@ describe("ui view models", () => {
         runId: "run-123",
         traceUrl: "https://smith.langchain.com/runs/run-123",
       },
+    });
+  });
+
+  it("rotates a long-running instruction into a fresh turn segment", () => {
+    let state = createInitialWorkbenchState();
+
+    state = queueInstructionTurn(state, "ultimate start polish the dashboard", []);
+    state = applyBackendMessage(state, {
+      type: "agent:thinking",
+      message: "Cycle 5 finished cleanly.",
+    });
+    state = rotateInstructionTurn(state, {
+      nextInstruction: "ultimate continue polish the dashboard",
+      nextSummary: "Continuing ultimate mode after cycle 5.",
+      previousSummary:
+        "Rotated to a fresh live turn after cycle 5 to keep ultimate mode responsive.",
+      previousStatus: "idle",
+    });
+
+    expect(state.activeTurnId).toBe("turn-2");
+    expect(state.turns[0]).toMatchObject({
+      id: "turn-2",
+      instruction: "ultimate continue polish the dashboard",
+      status: "working",
+      summary: "Continuing ultimate mode after cycle 5.",
+    });
+    expect(state.turns[1]).toMatchObject({
+      id: "turn-1",
+      status: "idle",
+      summary:
+        "Rotated to a fresh live turn after cycle 5 to keep ultimate mode responsive.",
     });
   });
 
