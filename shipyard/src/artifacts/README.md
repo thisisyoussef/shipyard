@@ -6,6 +6,9 @@ This folder holds small shared types that move between runtime layers.
 
 - `TaskPlan`: the coordinator-facing lightweight plan Shipyard produces before
   or during execution
+- `ArtifactMetadata`, `ArtifactRecord`, `ArtifactQuery`, and the registry
+  helpers under `registry/`: the generic, versioned artifact substrate for
+  specs, plans, reports, and projected legacy outputs
 - `ExecutionSpec`: the richer planner artifact for broad or non-trivial code
   work
 - `PersistedTaskQueue`, `PlanTask`, and `ActiveTaskContext`: the operator-facing
@@ -28,6 +31,10 @@ This folder holds small shared types that move between runtime layers.
   inputs
 - `ExecutionHandoff` and `LoadedExecutionHandoff`: the durable long-run resume
   contract persisted under `.shipyard/artifacts/<sessionId>/...handoff.json`
+
+The registry does not replace legacy plan queues or execution handoffs yet. It
+indexes and projects them so later phases can query one artifact surface while
+current runtime flows keep their existing file formats.
 
 Keep this directory narrow. It should describe runtime contracts, not absorb
 business logic.

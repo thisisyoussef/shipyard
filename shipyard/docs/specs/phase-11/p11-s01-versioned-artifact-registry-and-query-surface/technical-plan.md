@@ -60,6 +60,9 @@
 - Storage/index changes:
   - extend `.shipyard/artifacts/` with versioned content plus sibling metadata
   - add a small registry index file or directory for faster lookup
+  - keep legacy `.shipyard/plans/*.json` and `.shipyard/artifacts/**/*.handoff.json`
+    as source files for now, then lazily project them into the registry on
+    query/load instead of forcing an eager migration rewrite in this story
 
 ## Dependency Plan
 - Existing dependencies used: current plan-store patterns, handoff persistence,
@@ -93,6 +96,22 @@
 - Feature flags/toggles: allow registry-backed writes before forcing all reads
   through the new query surface.
 - Observability checks: log save, version, migration, and query-failure events.
+
+## Implementation Evidence
+
+- `shipyard/src/artifacts/registry/index.ts`: the shipped design uses one
+  target-local `index.json` plus per-version metadata/content siblings under
+  `.shipyard/artifacts/registry/<type>/<id>/`, written atomically with temp-file
+  renames.
+- `shipyard/src/artifacts/registry/index.ts`: legacy plans and handoffs are
+  projected lazily through `syncLegacyArtifacts()` so current writers and
+  readers keep working while later Phase 11 stories can consume one registry
+  query surface.
+- `shipyard/src/engine/state.ts`: directory bootstrapping now includes the new
+  registry root, which keeps runtime initialization centralized.
+- `shipyard/tests/artifact-registry.test.ts`: the executed coverage maps
+  directly to the plan's unit/integration goals, including malformed metadata
+  isolation and legacy projection behavior.
 
 ## Validation Commands
 ```bash
