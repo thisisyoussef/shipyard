@@ -74,6 +74,8 @@ export interface HumanSimulatorRunOptions
 
 const MAX_HISTORY_ITEMS = 6;
 const MAX_FOCUS_AREAS = 5;
+const DEFAULT_HUMAN_SIMULATOR_MAX_ITERATIONS = 8;
+const MAX_FALLBACK_FEEDBACK_ITEMS = 3;
 const humanSimulatorToolNameSet = new Set<string>(HUMAN_SIMULATOR_TOOL_NAMES);
 
 const humanSimulatorDecisionSchema = z.object({
@@ -128,6 +130,77 @@ function ensureNonBlankBrief(value: string): string {
   }
 
   return trimmed;
+}
+
+function summarizeFallbackFeedback(
+  feedback: HumanSimulatorFeedback[],
+): string | null {
+  const recentFeedback = feedback
+    .map((entry) => entry.text.trim())
+    .filter(Boolean)
+    .slice(-MAX_FALLBACK_FEEDBACK_ITEMS);
+
+  if (recentFeedback.length === 0) {
+    return null;
+  }
+
+  if (recentFeedback.length === 1) {
+    return recentFeedback[0] ?? null;
+  }
+
+  return recentFeedback
+    .map((entry, index) => `${String(index + 1)}. ${entry}`)
+    .join(" ");
+}
+
+function getFallbackBaseInstruction(input: HumanSimulatorInput): string {
+  const latestInstruction = input.latestTurn?.instruction.trim();
+
+  if (latestInstruction) {
+    return latestInstruction;
+  }
+
+  const priorInstruction = input.history?.at(-1)?.simulatorInstruction.trim();
+
+  if (priorInstruction) {
+    return priorInstruction;
+  }
+
+  return ensureNonBlankBrief(input.originalBrief);
+}
+
+function createContinuationFallbackDecision(
+  input: HumanSimulatorInput,
+  iterations: number,
+): HumanSimulatorDecision {
+  const baseInstruction = getFallbackBaseInstruction(input);
+  const feedbackSummary = summarizeFallbackFeedback(
+    input.pendingHumanFeedback ?? [],
+  );
+  const continuationHint =
+    "Continue from the persisted handoff or latest on-disk state, " +
+    "and push the next concrete implementation step forward without reopening another read-only review loop.";
+
+  return {
+    summary:
+      `Human simulator hit its bounded read-only review budget after ${String(iterations)} iteration(s), ` +
+      "so Shipyard is continuing from the latest scoped instruction instead of stopping ultimate mode.",
+    instruction: feedbackSummary
+      ? [
+        baseInstruction,
+        "",
+        `Apply this queued human feedback while continuing the same work: ${feedbackSummary}`,
+        continuationHint,
+      ].join("\n")
+      : [
+        baseInstruction,
+        "",
+        continuationHint,
+      ].join("\n"),
+    focusAreas: feedbackSummary
+      ? ["queued-human-feedback", "continuation-recovery"]
+      : ["continuation-recovery"],
+  };
 }
 
 function isHumanSimulatorToolName(toolName: string): boolean {
@@ -304,6 +377,7 @@ export async function runHumanSimulator(
   options: HumanSimulatorRunOptions = {},
 ): Promise<HumanSimulatorDecision> {
   const normalizedBrief = ensureNonBlankBrief(input.originalBrief);
+  const maxIterations = options.maxIterations ?? DEFAULT_HUMAN_SIMULATOR_MAX_ITERATIONS;
   const result = await runRawToolLoopDetailed(
     HUMAN_SIMULATOR_SYSTEM_PROMPT,
     buildHumanSimulatorPrompt({
@@ -313,7 +387,7 @@ export async function runHumanSimulator(
     [...HUMAN_SIMULATOR_TOOL_NAMES],
     targetDirectory,
     {
-      maxIterations: options.maxIterations ?? 8,
+      maxIterations,
       ...options,
     },
   );
@@ -323,7 +397,15 @@ export async function runHumanSimulator(
   }
 
   if (result.status === "continuation") {
-    throw new Error("Human simulator exceeded its bounded review loop budget.");
+    throwIfUnauthorizedToolWasRequested(result.toolExecutions);
+
+    return createContinuationFallbackDecision(
+      {
+        ...input,
+        originalBrief: normalizedBrief,
+      },
+      result.iterations,
+    );
   }
 
   throwIfUnauthorizedToolWasRequested(result.toolExecutions);

@@ -172,8 +172,36 @@ flip to a simpler chat-first view for conversational iteration.
   ```ts
   export function resolveUiPage(pathname: string): UiPage {
     const normalizedPath = pathname.trim().replace(/\/+$/, "") || "/";
-    return normalizedPath === "/human-feedback"
-      ? "human-feedback"
-      : "workbench";
+  return normalizedPath === "/human-feedback"
+    ? "human-feedback"
+    : "workbench";
   }
   ```
+
+## Code References
+
+- [`../../../../src/agents/human-simulator.ts`](../../../../src/agents/human-simulator.ts):
+  `runHumanSimulator()` now converts raw-loop `continuation` results into a
+  deterministic fallback decision that reuses the latest scoped instruction and
+  queued human feedback, instead of surfacing an internal ultimate-mode error
+  when the read-only review loop exhausts its bounded budget.
+- [`../../../../tests/human-simulator.test.ts`](../../../../tests/human-simulator.test.ts):
+  regression coverage now proves the bounded review-budget path stays in the
+  same ultimate-mode conversation by returning a continuation fallback with the
+  latest `/team/:id`-style instruction and queued human feedback intact.
+
+## Representative Snippets
+
+```ts
+if (result.status === "continuation") {
+  throwIfUnauthorizedToolWasRequested(result.toolExecutions);
+
+  return createContinuationFallbackDecision(
+    {
+      ...input,
+      originalBrief: normalizedBrief,
+    },
+    result.iterations,
+  );
+}
+```

@@ -47,6 +47,47 @@ function createDiscoveryReport() {
   };
 }
 
+function createLatestTurnReview(instruction: string) {
+  return {
+    instruction,
+    status: "success" as const,
+    summary: "The last Shipyard turn paused at a continuation handoff.",
+    finalText: "Automatic continuation paused after 1 resume attempt(s); continue from the persisted handoff.",
+    taskPlan: {
+      instruction,
+      goal: instruction,
+      targetFilePaths: ["src/ui/server.ts"],
+      plannedSteps: ["Read the affected runtime files."],
+    },
+    executionSpec: null,
+    harnessRoute: {
+      selectedPath: "lightweight" as const,
+      actingMode: "raw-loop" as const,
+      taskComplexity: "direct" as const,
+      usedExplorer: false,
+      usedPlanner: false,
+      usedVerifier: false,
+      verificationMode: "none" as const,
+      verificationCheckCount: 0,
+      usedBrowserEvaluator: false,
+      browserEvaluationStatus: "not_run" as const,
+      browserEvaluationFailureKind: null,
+      commandReadinessStatus: "none" as const,
+      commandReadyUrl: null,
+      handoffLoaded: true,
+      handoffEmitted: true,
+      handoffReason: "iteration-threshold" as const,
+      checkpointRequested: true,
+      continuationCount: 1,
+      actingLoopBudget: 45,
+      actingLoopBudgetReason: "broad-continuation" as const,
+      firstHardFailure: null,
+    },
+    verificationReport: null,
+    selectedTargetPath: null,
+  };
+}
+
 describe("human simulator", () => {
   afterEach(async () => {
     const directories = createdDirectories.splice(0, createdDirectories.length);
@@ -153,5 +194,78 @@ describe("human simulator", () => {
     expect(getToolNamesFromCall(modelAdapter.calls[0]!)).toEqual([
       ...HUMAN_SIMULATOR_TOOL_NAMES,
     ]);
+  });
+
+  it("falls back to the latest scoped instruction when the review loop hits its iteration budget", async () => {
+    const directory = await createTempProject();
+    const modelAdapter = createFakeModelAdapter((_input, { turnNumber }) =>
+      createFakeToolCallTurnResult([
+        {
+          id: `toolu_list_${String(turnNumber)}`,
+          name: "list_files",
+          input: {
+            path: ".",
+          },
+        },
+      ]),
+    );
+
+    const decision = await runHumanSimulator(
+      {
+        originalBrief: "Keep improving the Ship workbench.",
+        iteration: 3,
+        discovery: createDiscoveryReport(),
+        previewState: {
+          status: "running",
+          summary: "Preview ready.",
+          url: "http://127.0.0.1:3000",
+          logTail: [],
+          lastRestartReason: null,
+        },
+        pendingHumanFeedback: [
+          {
+            text: "Treat the current team-profile direction as approved and keep going.",
+            submittedAt: "2026-03-28T22:15:00.000Z",
+          },
+        ],
+        history: [
+          {
+            iteration: 2,
+            simulatorSummary: "The person profile route is still the biggest gap.",
+            simulatorInstruction:
+              "Replace the placeholder /team/:id page with a real person detail experience.",
+            appliedHumanFeedback: [],
+            turn: createLatestTurnReview(
+              "Replace the placeholder /team/:id page with a real person detail experience.",
+            ),
+          },
+        ],
+        latestTurn: createLatestTurnReview(
+          "Replace the placeholder /team/:id page with a real person detail experience.",
+        ),
+      },
+      directory,
+      {
+        modelAdapter,
+        logger: {
+          log() {},
+        },
+        maxIterations: 2,
+      },
+    );
+
+    expect(decision.summary).toMatch(/bounded read-only review budget/i);
+    expect(decision.instruction).toContain(
+      "Replace the placeholder /team/:id page with a real person detail experience.",
+    );
+    expect(decision.instruction).toContain(
+      "Treat the current team-profile direction as approved and keep going.",
+    );
+    expect(decision.instruction).toMatch(/without reopening another read-only review loop/i);
+    expect(decision.focusAreas).toEqual([
+      "queued-human-feedback",
+      "continuation-recovery",
+    ]);
+    expect(modelAdapter.calls).toHaveLength(2);
   });
 });
