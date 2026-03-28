@@ -138,7 +138,7 @@ export function PreviewHarness() {
   }
 
   return (
-    <div className="preview-harness">
+    <div className="preview-harness" style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       <NavBar
         currentView={route.view}
         onNavigate={handleNavigate}
@@ -158,7 +158,7 @@ export function PreviewHarness() {
           console.log("[PreviewHarness] ultimate stop");
         }}
       />
-      <main style={{ flex: 1, overflow: "auto" }}>{view}</main>
+      <main style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>{view}</main>
     </div>
   );
 }
