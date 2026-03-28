@@ -24,6 +24,17 @@ body {
   background: var(--surface-canvas);
 }
 
+.app-route-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-route-content {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 /* ── Monospace elements ──────────────────────── */
 
 code,

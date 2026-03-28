@@ -30,6 +30,7 @@ for durable onboarding and architecture reference.
 - [`phase-runtime-hardening/README.md`](./phase-runtime-hardening/README.md): long-loop context compaction, Anthropic budget recovery, continuation-aware routing, bootstrap guardrails, and long-run graph smoke coverage
 - [`phase-runtime-hardening-follow-up/README.md`](./phase-runtime-hardening-follow-up/README.md): history-safe tool-turn storage, write-aware compaction, continuation-first handoffs, bootstrap-ready discovery, and task-aware replay budgets
 - [`phase-stress-validation/README.md`](./phase-stress-validation/README.md): stress matrix, UI error-stream alignment, and loop flakiness hardening
+- [`phase-ui-integration/README.md`](./phase-ui-integration/README.md): shared app spine, dashboard/editor/board runtime wiring, ultimate control plane, safe code browsing, and release-quality UX resilience
 - [`phase-ui-revamp/README.md`](./phase-ui-revamp/README.md): visual system, activity/diff polish, and session UX refinements
 
 ## Reading Order

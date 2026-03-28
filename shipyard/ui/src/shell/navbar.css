@@ -134,6 +134,12 @@
   border-color: var(--border-strong);
 }
 
+.navbar-ultimate-badge:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .navbar-ultimate-badge:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);

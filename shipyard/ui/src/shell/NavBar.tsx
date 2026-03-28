@@ -7,8 +7,11 @@ import type { Route } from "../router.js";
 
 export interface NavBarProps {
   currentView: Route["view"];
+  editorRoute: Extract<Route, { view: "editor" }> | null;
+  boardDisabled?: boolean;
   onNavigate: (route: Route) => void;
   ultimateActive: boolean;
+  ultimateDisabled?: boolean;
   onUltimateClick: () => void;
 }
 
@@ -33,13 +36,17 @@ function BrandMark() {
 
 export function NavBar({
   currentView,
+  editorRoute,
+  boardDisabled = false,
   onNavigate,
   ultimateActive,
+  ultimateDisabled = false,
   onUltimateClick,
 }: NavBarProps) {
   const navItems: Array<{ label: string; view: Route["view"]; disabled?: boolean }> = [
     { label: "Dashboard", view: "dashboard" },
-    { label: "Editor", view: "editor", disabled: currentView !== "editor" },
+    { label: "Editor", view: "editor", disabled: editorRoute === null },
+    { label: "Board", view: "board", disabled: boardDisabled },
   ];
 
   return (
@@ -63,7 +70,13 @@ export function NavBar({
             className={`navbar-link${currentView === item.view ? " navbar-link--active" : ""}`}
             disabled={item.disabled}
             onClick={() => {
-              if (item.view === "editor") return; // editor requires productId, handled externally
+              if (item.view === "editor") {
+                if (editorRoute) {
+                  onNavigate(editorRoute);
+                }
+                return;
+              }
+
               onNavigate({ view: item.view } as Route);
             }}
             aria-current={currentView === item.view ? "page" : undefined}
@@ -80,6 +93,7 @@ export function NavBar({
       <button
         type="button"
         className={`navbar-ultimate-badge${ultimateActive ? " navbar-ultimate-badge--active" : ""}`}
+        disabled={ultimateDisabled}
         onClick={onUltimateClick}
         aria-label={ultimateActive ? "Ultimate mode active" : "Activate ultimate mode"}
       >

@@ -8,7 +8,7 @@
 import { useCallback } from "react";
 import { NavBar } from "./shell/index.js";
 import { UltimateBadge } from "./shell/index.js";
-import { DashboardView, EditorView } from "./views/index.js";
+import { DashboardView, EditorView, KanbanView } from "./views/index.js";
 import { useRouter } from "./use-router.js";
 import type { Route } from "./router.js";
 import type { TargetManagerViewModel } from "./view-models.js";
@@ -73,6 +73,13 @@ const MOCK_TARGET_MANAGER: TargetManagerViewModel = {
 
 export function PreviewHarness() {
   const { route, navigate } = useRouter();
+  const editorRoute =
+    route.view === "editor"
+      ? route
+      : {
+          view: "editor" as const,
+          productId: "/projects/craft-vision",
+        };
 
   const handleNavigate = useCallback(
     (next: Route) => {
@@ -119,15 +126,7 @@ export function PreviewHarness() {
       );
       break;
     case "board":
-      // Board is now inside EditorView as a tab — redirect to editor
-      view = (
-        <EditorView
-          productId="craft-vision"
-          productName="Craft Your Vision"
-          scaffoldType="react-ts"
-          onNavigate={handleNavigate}
-        />
-      );
+      view = <KanbanView />;
       break;
     case "human-feedback":
       view = <div style={{ padding: "2rem", color: "var(--c-text-secondary, #888)" }}>Human Feedback view (not included in preview harness)</div>;
@@ -149,8 +148,11 @@ export function PreviewHarness() {
     <div className="preview-harness" style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       <NavBar
         currentView={route.view}
+        editorRoute={editorRoute}
         onNavigate={handleNavigate}
+        boardDisabled={false}
         ultimateActive={true}
+        ultimateDisabled={false}
         onUltimateClick={handleUltimateClick}
       />
       <UltimateBadge

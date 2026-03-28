@@ -17,6 +17,13 @@ describe("parseHash", () => {
     });
   });
 
+  it("decodes editor routes that carry full target paths", () => {
+    expect(parseHash("#/editor/%2Ftmp%2Falpha-app")).toEqual({
+      view: "editor",
+      productId: "/tmp/alpha-app",
+    });
+  });
+
   it("parses #/board as board", () => {
     expect(parseHash("#/board")).toEqual({ view: "board" });
   });
@@ -37,6 +44,12 @@ describe("buildHash", () => {
 
   it("builds editor hash with productId", () => {
     expect(buildHash({ view: "editor", productId: "my-app" })).toBe("#/editor/my-app");
+  });
+
+  it("encodes editor hashes for filesystem-like target paths", () => {
+    expect(buildHash({ view: "editor", productId: "/tmp/alpha-app" })).toBe(
+      "#/editor/%2Ftmp%2Falpha-app",
+    );
   });
 
   it("builds board hash", () => {
