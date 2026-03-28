@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { SCAFFOLD_TYPES } from "../tools/target-manager/scaffolds.js";
+import { pipelineWorkbenchStateSchema } from "../pipeline/contracts.js";
 
 export const runtimeModeSchema = z.enum(["repl", "ui"]);
 export const uiConnectionStateSchema = z.enum([
@@ -277,6 +278,7 @@ export const workbenchStateSchema = z.object({
   previewState: previewStateSchema,
   targetManager: targetManagerStateSchema.nullable(),
   projectBoard: projectBoardStateSchema.nullable().default(null),
+  pipelineState: pipelineWorkbenchStateSchema.nullable().default(null),
 });
 
 export const uploadReceiptsResponseSchema = z.object({

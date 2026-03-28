@@ -3,7 +3,7 @@
 - Pack: Runtime Factory Foundations
 - Estimate: 36-48 hours
 - Date: 2026-03-28
-- Status: In progress; P11-S01 implemented, remaining runtime-only stories planned
+- Status: In progress; P11-S01 and P11-S02 implemented, remaining runtime-only stories planned
 
 ## Pack Objectives
 
@@ -83,10 +83,24 @@ That later pack can concentrate on board interaction design, transitions, visual
 - `shipyard/docs/specs/phase-11/p11-s01-versioned-artifact-registry-and-query-surface/feature-spec.md`:
   records the first shipped Phase 11 foundation story, including checked
   acceptance criteria and code-level evidence.
+- `shipyard/docs/specs/phase-11/p11-s02-phase-pipeline-runner-and-artifact-approval-gates/feature-spec.md`:
+  records the shipped pipeline runner, approval-gate semantics, and code-level
+  evidence for explicit `pipeline ...` execution.
 - `shipyard/src/artifacts/types.ts`, `shipyard/src/artifacts/registry/index.ts`,
   and `shipyard/src/engine/state.ts`: implement the shared artifact registry
   contract, target-local registry layout, versioned save/load/query helpers,
   and lazy projection of legacy plans and handoffs.
+- `shipyard/src/pipeline/contracts.ts`, `shipyard/src/pipeline/store.ts`,
+  `shipyard/src/pipeline/defaults.ts`, and `shipyard/src/pipeline/turn.ts`:
+  implement durable pipeline runs, approval decisions, default phase presets,
+  and the explicit pipeline command executor.
+- `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/ui/server.ts`, and `shipyard/src/engine/loop.ts`: route
+  `pipeline ...` commands through the CLI/browser runtimes and publish compact
+  approval-wait state through the persisted workbench snapshot.
 - `shipyard/tests/artifact-registry.test.ts`: validates versioning, compact
   summary behavior, malformed metadata isolation, and legacy artifact
   projection without breaking the current runtime.
+- `shipyard/tests/pipeline-runtime.test.ts` and `shipyard/tests/ui-runtime.test.ts`:
+  validate required/advisory gates, edited approvals, reject/rerun behavior,
+  restart-safe resume, and browser-visible approval-wait session snapshots.

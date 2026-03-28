@@ -28,8 +28,11 @@ export const codePhase: Phase = {
   tools: CODE_PHASE_TOOL_NAMES,
   modelRoute: CODE_PHASE_MODEL_ROUTE,
   approvalRequired: false,
+  approvalGate: "disabled",
   inputArtifact: "instruction",
   outputArtifact: "task_plan",
+  consumesArtifacts: ["instruction"],
+  producesArtifacts: ["task_plan"],
 };
 
 export function createCodePhase(): Phase {

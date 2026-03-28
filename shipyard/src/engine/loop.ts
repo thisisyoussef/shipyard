@@ -44,6 +44,12 @@ import {
   type PlanningTurnResult,
 } from "../plans/turn.js";
 import {
+  executePipelineTurn,
+  isPipelineInstruction,
+  type ExecutePipelineTurnOptions,
+  type PipelineTurnResult,
+} from "../pipeline/turn.js";
+import {
   executeTaskRunnerTurn,
   isTaskRunnerInstruction,
   type ExecuteTaskRunnerTurnOptions,
@@ -74,6 +80,9 @@ export interface RunShipyardLoopOptions {
   executePlanTurn?: (
     options: ExecutePlanningTurnOptions,
   ) => Promise<PlanningTurnResult>;
+  executePipelineTurn?: (
+    options: ExecutePipelineTurnOptions,
+  ) => Promise<PipelineTurnResult>;
   executeTaskTurn?: (
     options: ExecuteTaskRunnerTurnOptions,
   ) => Promise<TaskRunnerTurnResult>;
@@ -118,6 +127,15 @@ function printHelp(): void {
   console.log("  ultimate feedback ... Queue human feedback for the next ultimate mode cycle");
   console.log("  ultimate stop         Stop the active ultimate mode run");
   console.log("  plan: <request>       Save a reviewable task queue without editing code");
+  console.log("  pipeline start <brief>  Start the explicit multi-phase pipeline");
+  console.log("  pipeline status         Show the active pipeline summary");
+  console.log("  pipeline continue       Resume a non-blocked active pipeline");
+  console.log("  pipeline approve        Approve the waiting pipeline artifact");
+  console.log("  pipeline reject ...     Reject the waiting pipeline artifact and rerun the phase");
+  console.log("  pipeline edit ...       Approve the waiting artifact with edited content");
+  console.log("  pipeline skip [phase]   Skip the current or named phase");
+  console.log("  pipeline rerun [phase]  Re-run the current or named phase");
+  console.log("  pipeline back [phase]   Move back to an earlier phase and continue");
   console.log("  next                  Run the next pending task from the active plan");
   console.log("  continue              Resume the in-progress task or fall back to the next pending task");
   console.log("  exit | quit           Save the session and quit");
@@ -253,6 +271,8 @@ export async function runShipyardLoop(
   const state = options.sessionState;
   const executeTurn = options.executeTurn ?? executeInstructionTurn;
   const executePlanTurn = options.executePlanTurn ?? executePlanningTurn;
+  const executePipelineTurnImpl =
+    options.executePipelineTurn ?? executePipelineTurn;
   const executeTaskTurn = options.executeTaskTurn ?? executeTaskRunnerTurn;
   const executeUltimateModeTurn = options.executeUltimateMode ?? executeUltimateMode;
   const runtimeState = createInstructionRuntimeState({
@@ -460,6 +480,43 @@ export async function runShipyardLoop(
             );
           }
         } else {
+          if (isPipelineInstruction(line)) {
+            const turnController = new AbortController();
+            activeTurnController = turnController;
+            const pipelineResult = await executePipelineTurnImpl({
+              sessionState: state,
+              runtimeState,
+              instruction: line,
+              reporter: createCliUltimateModeReporter(),
+              signal: turnController.signal,
+            });
+            activeTurnController = null;
+
+            printDivider();
+            console.log(pipelineResult.finalText);
+            if (pipelineResult.langSmithTrace?.traceUrl) {
+              printDivider();
+              console.log(`LangSmith trace: ${pipelineResult.langSmithTrace.traceUrl}`);
+            }
+            await traceLogger.log("instruction.pipeline", {
+              instruction: line,
+              command: pipelineResult.command,
+              status: pipelineResult.status,
+              summary: pipelineResult.summary,
+              run: pipelineResult.run
+                ? {
+                    runId: pipelineResult.run.runId,
+                    pipelineId: pipelineResult.run.pipeline.id,
+                    pipelineStatus: pipelineResult.run.status,
+                    currentPhaseIndex: pipelineResult.run.currentPhaseIndex,
+                    pendingApproval: pipelineResult.run.pendingApproval,
+                  }
+                : null,
+              langSmithTrace: pipelineResult.langSmithTrace,
+            });
+            continue;
+          }
+
           const ultimateCommand = parseUltimateModeCommand(line);
 
           if (ultimateCommand) {

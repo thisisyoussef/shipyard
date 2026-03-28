@@ -1,5 +1,6 @@
 import type { PreviewState } from "../artifacts/types.js";
 import { formatTurnExecutionFingerprint } from "../engine/turn-fingerprint.js";
+import type { PipelineWorkbenchState } from "../pipeline/contracts.js";
 import {
   createInitialPreviewState,
   createIdlePreviewState,
@@ -122,6 +123,8 @@ export type ProjectBoardViewModel = ProjectBoardState;
 
 export interface SessionRunSummaryViewModel extends SessionRunSummary {}
 
+export interface PipelineWorkbenchStateViewModel extends PipelineWorkbenchState {}
+
 export interface WorkbenchViewState {
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
@@ -141,6 +144,7 @@ export interface WorkbenchViewState {
   previewState: PreviewStateViewModel;
   targetManager: TargetManagerViewModel | null;
   projectBoard: ProjectBoardViewModel | null;
+  pipelineState: PipelineWorkbenchStateViewModel | null;
 }
 
 export interface RotateInstructionTurnOptions {
@@ -288,6 +292,20 @@ function createTargetManagerAgentStatus(
   return `Active target: ${currentTarget.name}`;
 }
 
+function createPipelineAgentStatus(
+  pipelineState: PipelineWorkbenchStateViewModel | null,
+): string | null {
+  if (!pipelineState || pipelineState.status === "idle") {
+    return null;
+  }
+
+  if (pipelineState.waitingForApproval) {
+    return pipelineState.summary || "Pipeline is waiting for approval.";
+  }
+
+  return pipelineState.summary || null;
+}
+
 function ensureActiveTurn(
   state: WorkbenchViewState,
 ): WorkbenchViewState {
@@ -393,7 +411,11 @@ function hasRecoveredHistory(state: WorkbenchViewState): boolean {
     state.turns.length > 0 ||
     state.fileEvents.length > 0 ||
     state.contextHistory.length > 0 ||
-    state.pendingUploads.length > 0
+    state.pendingUploads.length > 0 ||
+    (
+      state.pipelineState !== null &&
+      state.pipelineState.status !== "idle"
+    )
   );
 }
 
@@ -475,6 +497,7 @@ export function ensureWorkbenchStateDefaults(
     previewState: state.previewState ?? initialState.previewState,
     targetManager: state.targetManager ?? initialState.targetManager,
     projectBoard: state.projectBoard ?? initialState.projectBoard,
+    pipelineState: state.pipelineState ?? initialState.pipelineState,
   };
 }
 
@@ -500,6 +523,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     ),
     targetManager: null,
     projectBoard: null,
+    pipelineState: null,
   };
 }
 
@@ -657,13 +681,17 @@ export function applySessionSnapshot(
     sessionHistory: message.sessionHistory,
     connectionState: nextConnectionState,
     agentStatus:
-      createTargetManagerAgentStatus(
+      createPipelineAgentStatus(
+        recoveredState.pipelineState ?? state.pipelineState ?? null,
+      )
+      ?? createTargetManagerAgentStatus(
         recoveredState.targetManager ?? state.targetManager,
       ) ?? nextAgentStatus,
     latestDeploy: recoveredState.latestDeploy,
     previewState,
     targetManager: recoveredState.targetManager ?? state.targetManager ?? null,
     projectBoard: recoveredState.projectBoard ?? state.projectBoard ?? null,
+    pipelineState: recoveredState.pipelineState ?? state.pipelineState ?? null,
   };
 }
 

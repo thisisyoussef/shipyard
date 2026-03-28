@@ -37,6 +37,11 @@ import {
   type ExecutePlanningTurnOptions,
 } from "../plans/turn.js";
 import {
+  executePipelineTurn,
+  isPipelineInstruction,
+  type ExecutePipelineTurnOptions,
+} from "../pipeline/turn.js";
+import {
   executeTaskRunnerTurn,
   isTaskRunnerInstruction,
   type ExecuteTaskRunnerTurnOptions,
@@ -140,6 +145,9 @@ export interface StartUiRuntimeServerOptions {
   executePlanTurn?: (
     options: ExecutePlanningTurnOptions,
   ) => Promise<Awaited<ReturnType<typeof executePlanningTurn>>>;
+  executePipelineTurn?: (
+    options: ExecutePipelineTurnOptions,
+  ) => Promise<Awaited<ReturnType<typeof executePipelineTurn>>>;
   executeDeploy?: (
     input: DeployInput,
     targetDirectory: string,
@@ -936,6 +944,8 @@ export async function startUiRuntimeServer(
   const initialSessionState = options.sessionState;
   const fallbackHtml = createFallbackUiHtml(initialSessionState);
   const executePlanTurn = options.executePlanTurn ?? executePlanningTurn;
+  const executePipelineTurnImpl =
+    options.executePipelineTurn ?? executePipelineTurn;
   const executeDeploy = options.executeDeploy ?? deployTargetTool;
   const executeTaskTurn = options.executeTaskTurn ?? executeTaskRunnerTurn;
   const executeUltimateModeTurn = options.executeUltimateMode ?? executeUltimateMode;
@@ -2191,7 +2201,33 @@ export async function startUiRuntimeServer(
       return;
     }
 
-    if (isTaskRunnerInstruction(instruction)) {
+    if (isPipelineInstruction(instruction)) {
+      const pipelineResult = await executePipelineTurnImpl({
+        sessionState: project.sessionState,
+        runtimeState: project.runtimeState,
+        instruction,
+        reporter,
+        signal,
+      });
+      await project.traceLogger.log("instruction.pipeline", {
+        instruction,
+        command: pipelineResult.command,
+        status: pipelineResult.status,
+        summary: pipelineResult.summary,
+        run: pipelineResult.run
+          ? {
+              runId: pipelineResult.run.runId,
+              pipelineId: pipelineResult.run.pipeline.id,
+              pipelineStatus: pipelineResult.run.status,
+              currentPhaseIndex: pipelineResult.run.currentPhaseIndex,
+              pendingApproval: pipelineResult.run.pendingApproval,
+            }
+          : null,
+        langSmithTrace: pipelineResult.langSmithTrace,
+        runtimeSurface: "ui",
+      });
+      await saveSessionState(project.sessionState);
+    } else if (isTaskRunnerInstruction(instruction)) {
       const taskTurnResult = await executeTaskTurn({
         sessionState: project.sessionState,
         runtimeState: project.runtimeState,

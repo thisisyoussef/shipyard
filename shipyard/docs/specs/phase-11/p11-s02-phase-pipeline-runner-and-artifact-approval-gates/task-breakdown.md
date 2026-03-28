@@ -42,19 +42,28 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `pauses on required approval after phase artifact creation`
-  - [ ] `auto-continues advisory gates unless the operator intervenes`
-  - [ ] `returns rejected artifacts to the producing phase`
+  - [x] `pauses on required approval after phase artifact creation`
+  - [x] `auto-continues advisory gates unless the operator intervenes`
+  - [x] `returns rejected artifacts to the producing phase`
 - T002 tests:
-  - [ ] `stores edited approvals as new artifact versions`
+  - [x] `stores edited approvals as new artifact versions`
 - T003 tests:
-  - [ ] `keeps normal single-turn instructions off the pipeline path`
-  - [ ] `resumes a pipeline after restart from the correct phase`
+  - [x] `keeps normal single-turn instructions off the pipeline path`
+  - [x] `resumes a pipeline after restart from the correct phase`
 - T004 tests:
-  - [ ] `publishes approval-wait status through ui contracts`
+  - [x] `publishes approval-wait status through ui contracts`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Implementation Evidence
+
+| Task ID | Evidence |
+|---|---|
+| T001 | `shipyard/tests/pipeline-runtime.test.ts` adds failing-then-passing coverage for required approval waits, advisory auto-continue, and reject/rerun regeneration. |
+| T002 | `shipyard/src/pipeline/contracts.ts`, `shipyard/src/pipeline/store.ts`, and `shipyard/src/engine/state.ts` add the durable pipeline schemas, atomic persistence helpers, and target-local `.shipyard/pipelines/` layout. |
+| T003 | `shipyard/src/pipeline/turn.ts`, `shipyard/src/engine/loop.ts`, and `shipyard/src/ui/server.ts` route explicit pipeline commands while leaving normal single-turn and plan/task flows untouched. |
+| T004 | `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`, and `shipyard/tests/ui-runtime.test.ts` publish and verify the approval-wait pipeline snapshot for later UI work. |
