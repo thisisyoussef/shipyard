@@ -42,19 +42,34 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `creates a discovery brief from a raw project idea`
-  - [ ] `turns approved discovery into epic story and spec artifacts`
-  - [ ] `orders backlog entries deterministically`
+  - [x] `creates a discovery brief from a raw project idea`
+  - [x] `turns approved discovery into epic story and spec artifacts`
+  - [x] `orders backlog entries deterministically`
 - T002 tests:
-  - [ ] `preserves artifact lineage from discovery to backlog`
+  - [x] `preserves artifact lineage from discovery to backlog`
 - T003 tests:
-  - [ ] `prefers official documentation sources for research-backed planning`
-  - [ ] `falls back clearly when external research is unavailable`
+  - [x] `prefers official documentation sources for research-backed planning`
+  - [x] `falls back clearly when external research is unavailable`
 - T004 tests:
-  - [ ] `resumes PM after approval without rebuilding context from chat`
+  - [x] `resumes PM after approval without rebuilding context from chat`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Implementation Evidence
+
+| Task ID | Evidence |
+|---|---|
+| T001 | `shipyard/tests/discovery-pm-pipeline.test.ts` adds failing-then-passing coverage for discovery brief creation, PM artifact generation, deterministic backlog ordering, artifact lineage, skip-discovery behavior, and resume after approval. |
+| T002 | `shipyard/src/artifacts/types.ts`, `shipyard/src/phases/discovery/index.ts`, `shipyard/src/phases/pm/index.ts`, and `shipyard/src/pipeline/planning-artifacts.ts` add the discovery/research/PM artifact contracts, phase factories, normalized IDs, and deterministic backlog builder. |
+| T003 | `shipyard/src/research/lookup.ts`, `shipyard/src/tools/lookup-official-docs.ts`, `shipyard/src/tools/index.ts`, and `shipyard/tests/research-lane.test.ts` implement official-doc-first research lookup with explicit repo-local fallback and source-attributed takeaways. |
+| T004 | `shipyard/src/pipeline/defaults.ts`, `shipyard/src/pipeline/turn.ts`, and `shipyard/src/engine/graph.ts` route the default discovery/PM pipeline through explicit phase dependencies, alternate/optional artifact resolution, approval-gated resume, and runtime-injected research lookup. |
+
+## Deferred Tasks
+
+- Brand, visual design, and kanban-board UI remain intentionally deferred to
+  later stories so P11-S04 stays runtime-only and keeps the PM/research lane
+  narrow.

@@ -8,12 +8,16 @@
 
 ## Proposed Design
 - Components/modules affected:
-  - `shipyard/src/phases/phase.ts`
-  - new discovery/PM phase modules under `shipyard/src/phases/`
-  - new research helpers under `shipyard/src/research/` or `shipyard/src/tools/`
-  - `shipyard/src/plans/turn.ts`
-  - `shipyard/src/engine/turn.ts`
-  - `shipyard/src/ui/contracts.ts`
+  - `shipyard/src/artifacts/types.ts`
+  - `shipyard/src/phases/discovery/index.ts`
+  - `shipyard/src/phases/pm/index.ts`
+  - `shipyard/src/research/lookup.ts`
+  - `shipyard/src/tools/lookup-official-docs.ts`
+  - `shipyard/src/pipeline/planning-artifacts.ts`
+  - `shipyard/src/pipeline/defaults.ts`
+  - `shipyard/src/pipeline/turn.ts`
+  - `shipyard/src/engine/graph.ts`
+  - `shipyard/src/tools/index.ts`
 - Public interfaces/contracts:
   - `DiscoveryBrief`
   - `EpicArtifact`
@@ -25,6 +29,16 @@
   research lookups, produces approved discovery artifacts, then PM turns those
   into epics, stories, specs, and ordered backlog entries that later phases can
   query.
+
+## Implemented Shape
+- Discovery and research are separate pipeline phases so discovery keeps the
+  required approval gate while research stays deterministic and read-only.
+- PM JSON artifacts are normalized before persistence so downstream phases see
+  stable IDs, summaries, priorities, and story/spec relationships.
+- Backlog generation is deterministic and derived from approved PM artifacts
+  rather than a freeform model response.
+- Research lookup is injectable through runtime dependencies, which keeps the
+  production adapter swappable and the finish-check deterministic.
 
 ## Pack Cohesion and Sequencing
 - Higher-level pack objectives:
@@ -58,13 +72,14 @@
   - ordered backlog entries with dependencies and status
 - Storage/index changes:
   - artifact types for discovery, epic, story, spec, backlog, and research
-  - optional research source cache under `.shipyard/research/`
+  - bounded research brief content stored through the artifact registry
 
 ## Dependency Plan
 - Existing dependencies used: artifact registry, pipeline runner, phase
   profiles, model routing, current planning state.
 - New dependencies proposed (if any): a bounded read-only research adapter for
-  official-doc lookup.
+  official-doc lookup via runtime dependency injection and the
+  `lookup_official_docs` tool.
 - Risk and mitigation:
   - Risk: research output becomes noisy or over-long.
   - Mitigation: persist a compact research brief with source links and
