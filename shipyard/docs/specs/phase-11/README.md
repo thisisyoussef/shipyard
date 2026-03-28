@@ -1,7 +1,7 @@
 # Phase 11: Runtime Factory Foundations Story Pack
 
 - Pack: Runtime Factory Foundations
-- Estimate: 28-36 hours
+- Estimate: 36-48 hours
 - Date: 2026-03-28
 - Status: Planned; runtime-only pack drafted, implementation not started
 
@@ -11,16 +11,21 @@
 2. Make specs, plans, task breakdowns, approvals, skills, and handoff artifacts first-class, persisted, and queryable under the target-local Shipyard state tree.
 3. Add specialized agent roles for discovery, PM, test authoring, implementation, review, and coordination without abandoning Shipyard's explicit safety boundaries.
 4. Add research-aware planning so Shipyard can consult official documentation and current best practices when a story depends on external systems or unstable APIs.
-5. Lay the non-visual foundation for future kanban-style multi-agent execution: task graph metadata, coordination messages, leases, and board projections.
-6. Keep the visual task-board and broader UI treatment in a separate pack so runtime architecture can move cleanly without colliding with active UI work.
+5. Make GitHub the preferred canonical source for factory-managed projects across local and deployed runtimes, with explicit fallback behavior when GitHub auth or binding is unavailable.
+6. Make the factory usable on Railway-hosted persistent workspaces instead of treating local-only execution as the default forever.
+7. Lay the non-visual foundation for future kanban-style multi-agent execution: task graph metadata, coordination messages, leases, source-control state, hosted-runtime state, and board projections.
+8. Keep the visual task-board and broader UI treatment in a separate pack so runtime architecture can move cleanly without colliding with active UI work.
 
 ## Shared Constraints
 
 - `.ai/` remains helper scaffolding for this repository. Productized behavior and durable contracts belong under `shipyard/`.
-- This pack builds on the already-drafted Phase 10 runtime direction instead of replacing it. Durable threads, policy profiles, and isolated task runtimes remain upstream assumptions.
+- This pack builds on the already-drafted Phase 10 runtime direction and the existing Phase 9 Railway-hosted baseline instead of replacing them. Durable threads, policy profiles, hosted workspace constraints, and isolated task runtimes remain upstream assumptions.
+- GitHub-backed repo binding is the preferred canonical source for factory-managed projects. Local and hosted working copies are materializations of that source when binding is available.
+- Hosted and local auth paths must both work. Local `gh` CLI can be one adapter, but deployed runtimes must also support hosted-safe auth paths such as OAuth, GitHub App, or token-backed service credentials without assuming interactive shell access.
+- When GitHub auth or repo binding is unavailable, Shipyard falls back to an explicit managed-local mode that keeps the project usable while marking PR or merge automation blocked until rebind succeeds.
 - The coordinator remains the primary write authority for the main target until isolation, leases, and explicit apply flows are in place.
 - New research capability must stay read-only, source-aware, and bounded. Prefer official docs and primary references before less authoritative material.
-- All durable state remains target-local under `.shipyard/` and must integrate with current trace, session, and resume behavior.
+- All durable state remains target-local under `.shipyard/` and must integrate with current trace, session, and resume behavior in both local and Railway-hosted workspaces.
 - This pack explicitly excludes the rendered kanban board, animation system, and broader board UX polish. It only defines the runtime and projection contracts that a later UI pack can consume.
 
 ## Planned Stories
@@ -32,8 +37,10 @@
 | P11-S03 | Runtime Skill Registry, Agent Profiles, and Role Loading | Make skills and role profiles runtime-native so phases can load conventions, tools, and bounded specialist behavior intentionally. | P11-S01, P11-S02, provider-neutral routing |
 | P11-S04 | Discovery, PM Pipeline, and Research-Aware Planning | Add discovery briefs, epics, stories, specs, backlog artifacts, and read-only official-doc lookup before implementation starts. | P11-S01, P11-S02, P11-S03 |
 | P11-S05 | Three-Role TDD Runtime and Reviewable Handoff Contracts | Turn the current docs-only TDD pipeline into a durable runtime lane with RED/GREEN guards and explicit handoffs. | P11-S01, P11-S03, P11-S04 |
-| P11-S06 | Task Graph, Dependency Metadata, and Coordination Bus Contracts | Define the non-visual graph, assignment, board-projection, and lease contracts needed for safe multi-agent execution later. | P11-S01, P11-S02, P11-S04, P11-S05 |
-| P11-S07 | Master Coordinator and Parallel Story Orchestration | Evolve `ultimate mode` into a true master coordinator that can supervise multiple stories, dependencies, and specialist agents. | P11-S02, P11-S03, P11-S04, P11-S05, P11-S06 |
+| P11-S06 | GitHub Source of Truth, Branch Hygiene, and PR Merge Operations | Make GitHub-aware source control, repo binding, branch-per-story hygiene, PR lifecycle, and merge-conflict recovery first-class runtime contracts. | P11-S01, P11-S02, P11-S03, P11-S04 |
+| P11-S07 | Railway Hosted Runtime and Remote Workspace Integration | Make the same factory runtime usable from Railway-hosted persistent workspaces with hosted-safe auth, durable workspaces, and explicit degraded modes. | Phase 9 hosted Railway baseline, P11-S01, P11-S02, P11-S06 |
+| P11-S08 | Task Graph, Dependency Metadata, and Coordination Bus Contracts | Define the non-visual graph, assignment, board-projection, source-control, and lease contracts needed for safe multi-agent execution later. | P11-S01, P11-S02, P11-S04, P11-S05, P11-S06, P11-S07 |
+| P11-S09 | Master Coordinator and Parallel Story Orchestration | Evolve `ultimate mode` into a true master coordinator that can supervise multiple stories, dependencies, hosted workers, and specialist agents. | P11-S02, P11-S03, P11-S04, P11-S05, P11-S06, P11-S07, P11-S08 |
 
 ## Sequencing Rationale
 
@@ -42,8 +49,10 @@
 - `P11-S03` makes skills and role identity runtime-native before downstream phases start depending on them.
 - `P11-S04` introduces the product-management and research side once the runtime can actually persist and gate its output.
 - `P11-S05` adds the implementation lane after PM artifacts and role loading exist.
-- `P11-S06` defines the task graph and coordination substrate only after artifacts, approvals, PM output, and TDD stages are explicit enough to project.
-- `P11-S07` lands last because the master coordinator should orchestrate proven lower-level contracts, not invent them mid-flight.
+- `P11-S06` makes that lane source-controlled and mergeable across local and deployed runtimes without assuming local shell auth forever.
+- `P11-S07` turns the same contracts into a credible Railway-hosted runtime instead of leaving factory execution local-only.
+- `P11-S08` defines the task graph and coordination substrate only after artifacts, approvals, TDD, source-control, and hosted-runtime state are explicit enough to project.
+- `P11-S09` lands last because the master coordinator should orchestrate proven lower-level contracts, not invent them mid-flight.
 
 ## Future UI Boundary
 
@@ -53,18 +62,21 @@ This pack intentionally stops at runtime and projection contracts. A later UI-fo
 - role/profile metadata from `P11-S03`
 - backlog and story/task metadata from `P11-S04`
 - TDD-stage progress and review evidence from `P11-S05`
-- board columns, dependency edges, assignment state, and lease status from `P11-S06`
-- coordinator scheduling and active-agent status from `P11-S07`
+- GitHub binding, auth mode, branch, and PR metadata from `P11-S06`
+- hosted workspace, preview, and deployment availability state from `P11-S07`
+- board columns, dependency edges, assignment state, source-control state, and lease status from `P11-S08`
+- coordinator scheduling, active-agent status, and conflict-recovery state from `P11-S09`
 
 That later pack can concentrate on board interaction design, transitions, visual hierarchy, and operator ergonomics without redefining runtime state.
 
 ## Whole-Pack Success Signal
 
-- Shipyard can move from idea -> approved spec -> queued task -> TDD implementation -> reviewable result using runtime-native artifacts instead of manual workflow memory.
+- Shipyard can move from idea -> approved spec -> queued task -> branch-backed or explicitly degraded implementation lane -> reviewable result using runtime-native artifacts instead of manual workflow memory.
 - Discovery, PM, planning, and TDD all produce durable artifacts that later turns and later agents can query explicitly.
 - Skills, agent profiles, and model routing are phase-aware and inspectable rather than hidden in helper docs.
-- Task dependencies, assignments, and coordination messages are durable enough to power a future kanban board and safe parallel execution.
-- `ultimate mode` can eventually supervise a real multi-story runtime with human interrupts and approvals instead of just alternating with a simulator on one long loop.
+- GitHub-backed source control and Railway-hosted runtime execution share one coherent contract, with explicit degraded fallback when auth or binding is unavailable.
+- Task dependencies, assignments, source-control refs, hosted-runtime state, and coordination messages are durable enough to power a future kanban board and safe parallel execution.
+- `ultimate mode` can eventually supervise a real multi-story runtime with human interrupts, source-control conflicts, and approvals instead of just alternating with a simulator on one long loop.
 
 ## Implementation Evidence
 
