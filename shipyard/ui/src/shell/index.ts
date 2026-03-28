@@ -20,3 +20,4 @@ export {
   ShipyardShell,
   type ShipyardShellProps,
 } from "./ShipyardShell.js";
+export { NavBar, type NavBarProps } from "./NavBar.js";

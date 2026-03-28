@@ -6,7 +6,9 @@
 @import "./tokens/index.css";
 @import "./components.css";
 @import "./shell/shell.css";
+@import "./shell/navbar.css";
 @import "./panels/panels.css";
+@import "./views/dashboard.css";
 
 /* ── Body ──────────────────────────────────── */
 
