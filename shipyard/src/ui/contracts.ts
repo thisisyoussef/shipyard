@@ -259,6 +259,12 @@ export const projectBoardStateSchema = z.object({
   activeProjectId: z.string().nullable(),
   openProjects: z.array(projectBoardProjectSchema),
 });
+export const runtimeAssistStateSchema = z.object({
+  activeProfileId: z.string().nullable(),
+  activeProfileName: z.string().nullable(),
+  activeProfileRoute: z.string().nullable(),
+  loadedSkills: z.array(z.string()),
+});
 export const workbenchStateSchema = z.object({
   connectionState: uiConnectionStateSchema,
   agentStatus: z.string(),
@@ -279,6 +285,7 @@ export const workbenchStateSchema = z.object({
   targetManager: targetManagerStateSchema.nullable(),
   projectBoard: projectBoardStateSchema.nullable().default(null),
   pipelineState: pipelineWorkbenchStateSchema.nullable().default(null),
+  runtimeAssist: runtimeAssistStateSchema,
 });
 
 export const uploadReceiptsResponseSchema = z.object({

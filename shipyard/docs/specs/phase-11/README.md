@@ -3,7 +3,7 @@
 - Pack: Runtime Factory Foundations
 - Estimate: 36-48 hours
 - Date: 2026-03-28
-- Status: In progress; P11-S01 and P11-S02 implemented, remaining runtime-only stories planned
+- Status: In progress; P11-S01, P11-S02, and P11-S03 implemented, remaining runtime-only stories planned
 
 ## Pack Objectives
 
@@ -86,6 +86,9 @@ That later pack can concentrate on board interaction design, transitions, visual
 - `shipyard/docs/specs/phase-11/p11-s02-phase-pipeline-runner-and-artifact-approval-gates/feature-spec.md`:
   records the shipped pipeline runner, approval-gate semantics, and code-level
   evidence for explicit `pipeline ...` execution.
+- `shipyard/docs/specs/phase-11/p11-s03-runtime-skill-registry-agent-profiles-and-role-loading/feature-spec.md`:
+  records the shipped runtime skill manifests, agent profiles, phase-default
+  skill loading, and browser/trace-visible runtime-assist state.
 - `shipyard/src/artifacts/types.ts`, `shipyard/src/artifacts/registry/index.ts`,
   and `shipyard/src/engine/state.ts`: implement the shared artifact registry
   contract, target-local registry layout, versioned save/load/query helpers,
@@ -98,9 +101,21 @@ That later pack can concentrate on board interaction design, transitions, visual
   `shipyard/src/ui/server.ts`, and `shipyard/src/engine/loop.ts`: route
   `pipeline ...` commands through the CLI/browser runtimes and publish compact
   approval-wait state through the persisted workbench snapshot.
+- `shipyard/src/skills/contracts.ts`, `shipyard/src/skills/registry.ts`,
+  `shipyard/src/agents/profiles.ts`, `shipyard/src/context/envelope.ts`,
+  `shipyard/src/engine/turn.ts`, and `shipyard/src/pipeline/turn.ts`:
+  implement runtime-native skill discovery/loadouts, typed profile routing, and
+  prompt/session/trace propagation of the active runtime assist state.
+- `shipyard/skills/**`: provides the first built-in runtime skill manifests and
+  prompt fragments used by code, target-manager, discovery, feature-spec, and
+  technical-plan phases.
 - `shipyard/tests/artifact-registry.test.ts`: validates versioning, compact
   summary behavior, malformed metadata isolation, and legacy artifact
   projection without breaking the current runtime.
 - `shipyard/tests/pipeline-runtime.test.ts` and `shipyard/tests/ui-runtime.test.ts`:
   validate required/advisory gates, edited approvals, reject/rerun behavior,
   restart-safe resume, and browser-visible approval-wait session snapshots.
+- `shipyard/tests/runtime-skills.test.ts` and `shipyard/tests/turn-runtime.test.ts`:
+  validate runtime skill discovery, duplicate/invalid manifest handling,
+  reversible tool loading, ordered prompt assembly, and profile-aware turn
+  prompts with persisted runtime-assist metadata.

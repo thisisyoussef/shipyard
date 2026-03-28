@@ -42,19 +42,28 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `discovers runtime skills from configured directories`
-  - [ ] `rejects invalid manifests and duplicate skill names`
-  - [ ] `loads and unloads skills without corrupting phase state`
+  - [x] `discovers runtime skills from configured directories`
+  - [x] `rejects invalid manifests and duplicate skill names`
+  - [x] `loads and unloads skills without corrupting phase state`
 - T002 tests:
-  - [ ] `builds one ordered prompt block from loaded skills`
+  - [x] `builds one ordered prompt block from loaded skills`
 - T003 tests:
-  - [ ] `resolves phase default skills and active role profile`
-  - [ ] `keeps provider routing declarative and profile-aware`
+  - [x] `resolves phase default skills and active role profile`
+  - [x] `keeps provider routing declarative and profile-aware`
 - T004 tests:
-  - [ ] `publishes loaded skills and profile id to browser state`
+  - [x] `publishes loaded skills and profile id to browser state`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
 - [ ] Deferred tasks documented with rationale
+
+## Implementation Evidence
+
+| Task ID | Evidence |
+|---|---|
+| T001 | `shipyard/tests/runtime-skills.test.ts` adds failing-then-passing coverage for discovery, invalid-manifest handling, duplicate names, reversible tool loading, and loadout resolution. |
+| T002 | `shipyard/src/skills/contracts.ts`, `shipyard/src/skills/registry.ts`, `shipyard/src/tools/registry.ts`, and `shipyard/skills/**` implement the runtime manifest vocabulary, load/unload lifecycle, prompt assembly, tool ownership, and initial built-in skills. |
+| T003 | `shipyard/src/agents/profiles.ts`, `shipyard/src/phases/phase.ts`, `shipyard/src/phases/code/index.ts`, `shipyard/src/phases/target-manager/index.ts`, and `shipyard/src/pipeline/defaults.ts` add typed profiles plus default-skill/profile wiring for runtime and pipeline phases. |
+| T004 | `shipyard/src/context/envelope.ts`, `shipyard/src/engine/turn.ts`, `shipyard/src/pipeline/turn.ts`, `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`, `shipyard/tests/turn-runtime.test.ts`, and `shipyard/tests/ui-runtime.test.ts` surface the active profile and loaded skills through prompts, session state, traces, and browser snapshots. |

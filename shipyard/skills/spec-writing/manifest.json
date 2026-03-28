@@ -1,0 +1,11 @@
+{
+  "name": "spec-writing",
+  "version": "1.0.0",
+  "description": "Structure feature specifications with testable acceptance criteria.",
+  "tags": ["spec", "planning"],
+  "compatiblePhases": ["feature-spec"],
+  "promptFile": "SKILL.md",
+  "tools": [],
+  "references": [],
+  "validators": []
+}

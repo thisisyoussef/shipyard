@@ -1,4 +1,5 @@
 import type { ModelRouteId } from "../engine/model-routing.js";
+import type { AgentRoleId } from "../agents/profiles.js";
 
 export type ApprovalGateMode = "required" | "advisory" | "disabled";
 
@@ -8,6 +9,8 @@ export interface Phase {
   systemPrompt: string;
   tools: string[];
   modelRoute?: ModelRouteId;
+  agentProfileId?: AgentRoleId;
+  defaultSkills?: string[];
   approvalRequired: boolean;
   inputArtifact: string;
   outputArtifact: string;
@@ -34,4 +37,8 @@ export function getPhaseArtifactContract(
     consumes: phase.consumesArtifacts ?? [phase.inputArtifact],
     produces: phase.producesArtifacts ?? [phase.outputArtifact],
   };
+}
+
+export function getPhaseDefaultSkills(phase: Phase): string[] {
+  return [...(phase.defaultSkills ?? [])];
 }

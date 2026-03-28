@@ -27,6 +27,8 @@ export const codePhase: Phase = {
   systemPrompt: CODE_PHASE_SYSTEM_PROMPT,
   tools: CODE_PHASE_TOOL_NAMES,
   modelRoute: CODE_PHASE_MODEL_ROUTE,
+  agentProfileId: "implementer",
+  defaultSkills: ["runtime-safety"],
   approvalRequired: false,
   approvalGate: "disabled",
   inputArtifact: "instruction",

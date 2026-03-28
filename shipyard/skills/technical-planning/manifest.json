@@ -1,0 +1,11 @@
+{
+  "name": "technical-planning",
+  "version": "1.0.0",
+  "description": "Structure technical plans around modules, data flow, verification, and rollout.",
+  "tags": ["planning", "implementation"],
+  "compatiblePhases": ["technical-plan"],
+  "promptFile": "SKILL.md",
+  "tools": [],
+  "references": [],
+  "validators": []
+}

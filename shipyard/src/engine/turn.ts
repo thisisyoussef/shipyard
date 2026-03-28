@@ -82,6 +82,13 @@ import {
   type RuntimeSurface,
   type TurnExecutionFingerprint,
 } from "./turn-fingerprint.js";
+import {
+  createRuntimeSkillRegistry,
+  resolveRuntimeLoadout,
+  type RuntimeLoadout,
+  type RuntimeSkillRegistry,
+} from "../skills/registry.js";
+import type { RuntimeAssistSummary } from "../skills/contracts.js";
 
 export type InstructionRuntimeMode = "graph" | "fallback";
 
@@ -109,6 +116,7 @@ export interface InstructionRuntimeState {
   pendingTargetSelectionPath: string | null;
   modelRouting: ModelRoutingConfig;
   modelRoutingEnv: NodeJS.ProcessEnv;
+  skillRegistry: RuntimeSkillRegistry;
   targetEnrichmentInvoker?: (
     prompt: string,
   ) => Promise<{
@@ -193,6 +201,7 @@ export interface InstructionTurnResult {
   finalText: string;
   selectedTargetPath: string | null;
   langSmithTrace: LangSmithTraceReference | null;
+  runtimeAssist: RuntimeAssistSummary;
   handoff: InstructionTurnHandoffState;
 }
 
@@ -260,6 +269,21 @@ function normalizeRecentFilePath(value: string): string | null {
   } catch {
     return trimmed;
   }
+}
+
+function syncRuntimeAssistState(
+  sessionState: SessionState,
+  runtimeAssist: RuntimeAssistSummary,
+): void {
+  sessionState.workbenchState = {
+    ...sessionState.workbenchState,
+    runtimeAssist: {
+      activeProfileId: runtimeAssist.activeProfileId,
+      activeProfileName: runtimeAssist.activeProfileName,
+      activeProfileRoute: runtimeAssist.activeProfileRoute,
+      loadedSkills: [...runtimeAssist.loadedSkills],
+    },
+  };
 }
 
 function rememberRecentFilePath(
@@ -721,6 +745,7 @@ function createInstructionTurnFingerprint(options: {
 function createRuntimeDependencies(
   sessionState: SessionState,
   runtimeState: InstructionRuntimeState,
+  runtimeLoadout: RuntimeLoadout,
   reporter: InstructionTurnReporter | undefined,
   editPreviewState: { emitted: boolean },
   signal?: AbortSignal,
@@ -749,6 +774,8 @@ function createRuntimeDependencies(
         ...baseOptions,
         modelAdapter: baseOptions.modelAdapter ?? selection?.modelAdapter,
         model: baseOptions.model ?? selection?.model ?? undefined,
+        maxTokens: baseOptions.maxTokens ?? runtimeLoadout.maxTokens,
+        temperature: baseOptions.temperature ?? runtimeLoadout.temperature,
         logger: baseOptions.logger ?? createSilentLogger(),
         beforeToolExecution: async (context: RawLoopToolHookContext) => {
           await existingBeforeToolExecution?.(context);
@@ -883,6 +910,7 @@ export function createInstructionRuntimeState(
     pendingTargetSelectionPath: null,
     modelRouting,
     modelRoutingEnv,
+    skillRegistry: createRuntimeSkillRegistry(),
     targetEnrichmentInvoker: options.targetEnrichmentInvoker,
     runtimeMode: options.runtimeMode ?? "graph",
     runtimeDependencies: options.runtimeDependencies,
@@ -911,6 +939,7 @@ function createInstructionTurnTraceMetadata(options: {
   turnStatus?: InstructionTurnResult["status"];
   finalText?: string;
   summary?: string;
+  runtimeAssist?: RuntimeAssistSummary | null;
 }): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
     sessionId: options.sessionId,
@@ -938,6 +967,14 @@ function createInstructionTurnTraceMetadata(options: {
       options.executionFingerprint,
     );
     metadata.runtimeSurface = options.executionFingerprint.surface;
+  }
+
+  if (options.runtimeAssist) {
+    metadata.activeProfileId = options.runtimeAssist.activeProfileId;
+    metadata.activeProfileName = options.runtimeAssist.activeProfileName;
+    metadata.activeProfileRoute = options.runtimeAssist.activeProfileRoute;
+    metadata.loadedSkills = options.runtimeAssist.loadedSkills;
+    metadata.loadedSkillCount = options.runtimeAssist.loadedSkills.length;
   }
 
   if (options.turnStatus) {
@@ -1068,6 +1105,17 @@ export async function executeInstructionTurn(
   );
 
   const executeCore = async (): Promise<InstructionTurnResult> => {
+    const runtimeLoadout = await resolveRuntimeLoadout({
+      registry: runtimeState.skillRegistry,
+      targetDirectory: state.targetDirectory,
+      phaseId: phase.name,
+      phaseLabel: phase.description,
+      tools: phase.tools,
+      modelRoute: phase.modelRoute,
+      agentProfileId: phase.agentProfileId ?? null,
+      defaultSkills: phase.defaultSkills ?? [],
+    });
+    syncRuntimeAssistState(state, runtimeLoadout.runtimeAssist);
     const contextEnvelope = await buildContextEnvelope({
       targetDirectory: state.targetDirectory,
       discovery: state.discovery,
@@ -1097,7 +1145,12 @@ export async function executeInstructionTurn(
       targetDirectory: state.targetDirectory,
       phaseConfig: {
         ...phase,
-        systemPrompt: composeSystemPrompt(phase.systemPrompt, contextEnvelope),
+        tools: runtimeLoadout.toolNames,
+        modelRoute: runtimeLoadout.modelRoute ?? phase.modelRoute,
+        systemPrompt: composeSystemPrompt(phase.systemPrompt, contextEnvelope, {
+          activeProfile: runtimeLoadout.activeProfile,
+          skillPromptBlock: runtimeLoadout.skillPromptBlock,
+        }),
       },
       retryCountsByFile: runtimeState.retryCountsByFile,
       blockedFiles: runtimeState.blockedFiles,
@@ -1106,6 +1159,7 @@ export async function executeInstructionTurn(
     const runtimeDependencies = createRuntimeDependencies(
       state,
       runtimeState,
+      runtimeLoadout,
       options.reporter,
       editPreviewState,
       options.signal,
@@ -1282,6 +1336,7 @@ export async function executeInstructionTurn(
           finalText: cancelledTurnText,
           selectedTargetPath: null,
           langSmithTrace: finalState.langSmithTrace,
+          runtimeAssist: runtimeLoadout.runtimeAssist,
           handoff: handoffState,
         };
       }
@@ -1311,6 +1366,7 @@ export async function executeInstructionTurn(
           finalText: failedTurnText,
           selectedTargetPath: null,
           langSmithTrace: finalState.langSmithTrace,
+          runtimeAssist: runtimeLoadout.runtimeAssist,
           handoff: handoffState,
         };
       }
@@ -1336,6 +1392,7 @@ export async function executeInstructionTurn(
         finalText,
         selectedTargetPath: runtimeState.pendingTargetSelectionPath,
         langSmithTrace: finalState.langSmithTrace,
+        runtimeAssist: runtimeLoadout.runtimeAssist,
         handoff: handoffState,
       };
     } catch (error) {
@@ -1390,6 +1447,7 @@ export async function executeInstructionTurn(
           finalText,
           selectedTargetPath: null,
           langSmithTrace: null,
+          runtimeAssist: runtimeLoadout.runtimeAssist,
           handoff: {
             loaded: loadedHandoff,
             loadError: handoffLoadError,
@@ -1444,6 +1502,7 @@ export async function executeInstructionTurn(
         finalText,
         selectedTargetPath: null,
         langSmithTrace: null,
+        runtimeAssist: runtimeLoadout.runtimeAssist,
         handoff: {
           loaded: loadedHandoff,
           loadError: handoffLoadError,
@@ -1533,6 +1592,7 @@ export async function executeInstructionTurn(
       instruction: options.instruction,
       targetDirectory: state.targetDirectory,
       runtimeSurface: options.runtimeSurface,
+      runtimeAssist: state.workbenchState.runtimeAssist,
     }),
     traceLookup,
     getResultMetadata: (result) =>
@@ -1548,6 +1608,7 @@ export async function executeInstructionTurn(
         turnStatus: result.status,
         finalText: result.finalText,
         summary: result.summary,
+        runtimeAssist: result.runtimeAssist,
       }),
     fn: executeWithContinuations,
     args: [],
