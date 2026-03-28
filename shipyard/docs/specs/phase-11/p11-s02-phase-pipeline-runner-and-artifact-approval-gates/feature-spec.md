@@ -36,17 +36,17 @@ phase without losing context.
   phase with clear feedback and preserved history.
 
 ## Acceptance Criteria
-- [ ] AC-1: Shipyard can define ordered phase pipelines where each phase
+- [x] AC-1: Shipyard can define ordered phase pipelines where each phase
   declares the artifact types it consumes and produces.
-- [ ] AC-2: A phase can require approval in `required`, `advisory`, or
+- [x] AC-2: A phase can require approval in `required`, `advisory`, or
   `disabled` mode before downstream execution continues.
-- [ ] AC-3: The operator can approve, reject, or edit a produced artifact and
+- [x] AC-3: The operator can approve, reject, or edit a produced artifact and
   the pipeline resumes deterministically from the correct point.
-- [ ] AC-4: Pipeline state is durable enough to survive process restart,
+- [x] AC-4: Pipeline state is durable enough to survive process restart,
   interruption, or later `continue`/resume actions.
-- [ ] AC-5: Operators can skip phases, rerun phases, or move backward to a
+- [x] AC-5: Operators can skip phases, rerun phases, or move backward to a
   previous phase with explicit audit trail entries.
-- [ ] AC-6: Existing non-pipeline instructions remain available and do not
+- [x] AC-6: Existing non-pipeline instructions remain available and do not
   require the heavier pipeline path unless requested.
 
 ## Edge Cases
@@ -78,3 +78,62 @@ phase without losing context.
 ## Done Definition
 - Shipyard can run a persisted multi-phase pipeline with explicit artifact
   approvals instead of relying on human memory and manual discipline alone.
+
+## Implementation Evidence
+
+- `shipyard/src/pipeline/contracts.ts`: defines the durable pipeline contract:
+  ordered phase definitions, approval gate modes, phase run state, pending
+  approval metadata, audit entries, and the compact workbench projection used
+  by the browser runtime.
+
+  ```ts
+  export const persistedPipelineRunSchema = z.object({
+    version: z.literal(PIPELINE_RUN_VERSION),
+    runId: z.string().trim().min(1),
+    pipeline: phasePipelineDefinitionSchema,
+    status: pipelineRunStatusSchema,
+    // ...
+  });
+  ```
+
+- `shipyard/src/pipeline/store.ts` and `shipyard/src/engine/state.ts`:
+  persist pipeline runs under `.shipyard/pipelines/` and bootstrap that
+  directory alongside the rest of Shipyard's target-local runtime state.
+
+  ```ts
+  export function getPipelineDirectory(targetDirectory: string): string {
+    return path.join(getShipyardDirectory(targetDirectory), "pipelines");
+  }
+  ```
+
+- `shipyard/src/pipeline/turn.ts`: implements the explicit command surface,
+  default pipeline creation, phase execution, artifact versioning for
+  approve/edit/reject decisions, restart-safe resume, and skip/rerun/back
+  control flow without changing normal turns.
+
+  ```ts
+  export function parsePipelineCommand(
+    instruction: string,
+  ): PipelineCommand | null {
+    // pipeline start/status/continue/approve/reject/edit/skip/rerun/back
+  }
+  ```
+
+- `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/ui/server.ts`, and `shipyard/src/engine/loop.ts`: route
+  `pipeline ...` instructions through browser and CLI execution, then publish
+  compact approval-wait state via `workbenchState.pipelineState`.
+
+  ```ts
+  export const workbenchStateSchema = z.object({
+    // ...
+    pipelineState: pipelineWorkbenchStateSchema.nullable().default(null),
+  });
+  ```
+
+- `shipyard/tests/pipeline-runtime.test.ts`: covers required/advisory gates,
+  edited approvals as new artifact versions, reject/rerun behavior, malformed
+  edits, and restart-safe resume.
+
+- `shipyard/tests/ui-runtime.test.ts`: proves the browser websocket snapshot
+  includes the approval-wait pipeline projection once a required gate is hit.

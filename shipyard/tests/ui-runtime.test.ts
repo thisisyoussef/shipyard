@@ -3340,6 +3340,84 @@ describe("ui runtime contract", () => {
     }
   }, 20_000);
 
+  it("publishes approval-wait pipeline state through the ui session snapshot", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-runtime-pipeline-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-pipeline-session",
+      targetDirectory,
+      discovery,
+    });
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult(
+        "# Discovery Brief\n\nPause on the first artifact for operator approval.",
+      ),
+    ]);
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "Keep the pipeline deterministic.",
+      projectRulesLoaded: true,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            modelAdapter,
+            logger: {
+              log() {},
+            },
+          };
+        },
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialStatePromise;
+
+        const pipelineStatePromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "session:state" &&
+            message.connectionState === "ready" &&
+            message.workbenchState.pipelineState?.status === "awaiting_approval",
+        );
+
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "pipeline start Build a runtime-native discovery and spec flow.",
+          }),
+        );
+
+        const pipelineStateMessage = await pipelineStatePromise;
+
+        if (pipelineStateMessage.type !== "session:state") {
+          throw new Error("Expected a session:state snapshot.");
+        }
+
+        expect(pipelineStateMessage.workbenchState.pipelineState).toMatchObject({
+          status: "awaiting_approval",
+          waitingForApproval: true,
+          approvalMode: "required",
+          currentPhaseId: "discovery",
+          currentPhaseTitle: "Discovery Brief",
+        });
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
   // Repeated-run stability guard (AC-4): run the error-stream contract
   // assertion 3 times sequentially in a single test to surface ordering flakes.
   it("error-stream contract is stable across 3 repeated runs", async () => {

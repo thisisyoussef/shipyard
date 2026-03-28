@@ -21,8 +21,11 @@ export const targetManagerPhase: Phase = {
   tools: TARGET_MANAGER_TOOL_NAMES,
   modelRoute: TARGET_MANAGER_PHASE_MODEL_ROUTE,
   approvalRequired: false,
+  approvalGate: "disabled",
   inputArtifact: "user_intent",
   outputArtifact: "target_selection",
+  consumesArtifacts: ["user_intent"],
+  producesArtifacts: ["target_selection"],
 };
 
 export function createTargetManagerPhase(): Phase {
