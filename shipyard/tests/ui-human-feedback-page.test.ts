@@ -2,7 +2,10 @@ import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { resolveUiPage } from "../ui/src/App.js";
+import {
+  resolveUiPage,
+  shouldCancelBusyInstructionOnSubmit,
+} from "../ui/src/App.js";
 import { HumanFeedbackPage } from "../ui/src/HumanFeedbackPage.js";
 import type {
   PreviewStateViewModel,
@@ -87,6 +90,12 @@ describe("resolveUiPage", () => {
     expect(resolveUiPage("/human-feedback")).toBe("human-feedback");
     expect(resolveUiPage("/human-feedback/")).toBe("human-feedback");
     expect(resolveUiPage("/sessions/demo")).toBe("workbench");
+  });
+
+  it("never treats the human feedback page like a busy-turn cancel surface", () => {
+    expect(shouldCancelBusyInstructionOnSubmit("workbench", "agent-busy")).toBe(true);
+    expect(shouldCancelBusyInstructionOnSubmit("human-feedback", "agent-busy")).toBe(false);
+    expect(shouldCancelBusyInstructionOnSubmit("human-feedback", "ready")).toBe(false);
   });
 });
 
