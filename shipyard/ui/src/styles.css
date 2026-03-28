@@ -6,7 +6,13 @@
 @import "./tokens/index.css";
 @import "./components.css";
 @import "./shell/shell.css";
+@import "./shell/navbar.css";
+@import "./shell/ultimate-toggle.css";
 @import "./panels/panels.css";
+@import "./views/dashboard.css";
+@import "./views/kanban.css";
+@import "./views/editor.css";
+@import "./views/delight.css";
 
 /* ── Body ──────────────────────────────────── */
 
@@ -16,6 +22,17 @@ body {
   font-size: 15px;
   line-height: var(--leading-normal);
   background: var(--surface-canvas);
+}
+
+.app-route-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-route-content {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ── Monospace elements ──────────────────────── */

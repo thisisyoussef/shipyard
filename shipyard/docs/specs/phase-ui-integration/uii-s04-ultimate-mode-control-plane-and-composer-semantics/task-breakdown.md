@@ -1,0 +1,41 @@
+# Task Breakdown
+
+## Story
+- Story ID: UII-S04
+- Story Title: Ultimate Mode Control Plane and Composer Semantics
+
+## Execution Notes
+- Keep typed ultimate controls additive and command-compatible.
+- Make send semantics obvious in the UI; do not rely on invisible mode shifts.
+- Persist/broadcast the same state the badge needs to render truthfully.
+
+## Tasks
+
+| Task ID | Description | Dependency | Parallelizable | Validation |
+|---|---|---|---|---|
+| T001 | Add failing coverage for typed ultimate contracts, reducer updates, composer send-mode behavior, and reconnect/reload state recovery. | must-have | no | `pnpm --dir shipyard test -- tests/ultimate-mode.test.ts tests/ui-runtime.test.ts tests/ui-view-models.test.ts` |
+| T002 | Add additive `ultimate:toggle`, `ultimate:feedback`, and `ultimate:state` contracts plus persisted `ultimateState` in the workbench snapshot. | blocked-by:T001 | no | `pnpm --dir shipyard typecheck` |
+| T003 | Implement server-side control-plane bridging from typed actions to the existing ultimate runtime and broadcast truthful state updates during start/feedback/stop/reconnect. | blocked-by:T001,T002 | no | focused runtime/ultimate tests |
+| T004 | Wire composer toggle, badge dropdown, and human-feedback page to the typed control plane with explicit notices and fallback command parity. | blocked-by:T002,T003 | yes | `pnpm --dir shipyard build` |
+| T005 | Update docs and audit notes for ultimate-mode UI semantics and deferred coordinator work. | blocked-by:T004 | yes | `git diff --check` |
+
+## TDD Mapping
+
+- T001 tests:
+  - [ ] typed ultimate messages validate and reject malformed payloads
+  - [ ] reducer applies `ultimate:state` snapshots correctly
+  - [ ] composer send action changes meaning clearly between idle and active modes
+- T002 tests:
+  - [ ] session snapshots carry ultimate state on reload
+- T003 tests:
+  - [ ] feedback queues on the active loop
+  - [ ] stop requests surface a truthful stopping state
+- T004 tests:
+  - [ ] human-feedback page still reaches the active loop
+
+## Completion Criteria
+- [ ] All must-have tasks complete
+- [ ] Acceptance criteria mapped to completed tasks
+- [ ] Ultimate mode is startable, observable, and stoppable from the UI
+- [ ] Text-command fallback remains intact
+- [ ] Reload/reconnect restores truthful ultimate state

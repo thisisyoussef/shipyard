@@ -1,0 +1,52 @@
+/* ───────────────────────────────────────────────
+   UltimateToggle — Composer pill toggle
+   UIR-T03 · Ultimate Mode Toggle Styles
+   ─────────────────────────────────────────────── */
+
+.ultimate-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  cursor: pointer;
+  transition:
+    color 120ms ease-out,
+    border-color 120ms ease-out,
+    background 120ms ease-out;
+}
+
+.ultimate-toggle:hover {
+  color: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.ultimate-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ultimate-toggle--active {
+  color: var(--accent-strong);
+  border-color: var(--accent-strong);
+  background: var(--amber-1);
+}
+
+.ultimate-toggle--active:hover {
+  color: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.ultimate-toggle-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}

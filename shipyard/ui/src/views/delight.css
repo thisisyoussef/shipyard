@@ -1,0 +1,610 @@
+/* ═══════════════════════════════════════════════════════
+   DELIGHT LAYER — Art Deco Command Polish
+   ═══════════════════════════════════════════════════════
+   Layered over base styles. Adds:
+   · Ornamental borders and gold hairline dividers
+   · Staggered entrance animations
+   · Micro-interactions on hover/focus
+   · Ambient depth and atmospheric effects
+   · Typography refinements
+   · Premium tactile feel
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Ambient background texture ──────────────────────── */
+
+.dashboard,
+.kanban-view {
+  background:
+    radial-gradient(
+      ellipse 80% 60% at 50% 0%,
+      rgba(212, 168, 67, 0.03) 0%,
+      transparent 70%
+    ),
+    var(--surface-canvas);
+}
+
+/* ── NavBar refinements ──────────────────────────────── */
+
+.navbar {
+  background:
+    linear-gradient(
+      180deg,
+      var(--surface-card) 0%,
+      color-mix(in srgb, var(--surface-card) 95%, var(--surface-canvas)) 100%
+    );
+  border-bottom: 1px solid rgba(212, 168, 67, 0.15);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.navbar::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: var(--space-4);
+  right: var(--space-4);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(212, 168, 67, 0.3) 20%,
+    rgba(212, 168, 67, 0.5) 50%,
+    rgba(212, 168, 67, 0.3) 80%,
+    transparent 100%
+  );
+}
+
+.navbar-brand-wordmark {
+  background: linear-gradient(
+    135deg,
+    #D4A843 0%,
+    #E8C66A 40%,
+    #D4A843 60%,
+    #C2956B 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.navbar-link {
+  position: relative;
+  transition:
+    color 200ms ease,
+    background 200ms ease,
+    transform 120ms ease;
+}
+
+.navbar-link:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.navbar-link--active::after {
+  content: "";
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 2px;
+  background: var(--accent-strong);
+  border-radius: var(--radius-pill);
+}
+
+/* ── Ultimate badge glow refinement ──────────────────── */
+
+.navbar-ultimate-badge--active {
+  background:
+    radial-gradient(
+      ellipse at center,
+      rgba(212, 168, 67, 0.08) 0%,
+      transparent 70%
+    ),
+    transparent;
+  box-shadow:
+    0 0 12px rgba(212, 168, 67, 0.15),
+    0 0 4px rgba(212, 168, 67, 0.1),
+    inset 0 0 8px rgba(212, 168, 67, 0.05);
+}
+
+/* ── Dashboard Hero ──────────────────────────────────── */
+
+.dashboard-hero {
+  position: relative;
+  padding-top: var(--space-12);
+  padding-bottom: var(--space-10);
+}
+
+.dashboard-hero::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(212, 168, 67, 0.4),
+    transparent
+  );
+}
+
+.dashboard-hero-heading {
+  font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+  background: linear-gradient(
+    180deg,
+    var(--text-strong) 0%,
+    color-mix(in srgb, var(--text-strong) 80%, var(--text-muted)) 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.dashboard-hero-input {
+  border-radius: var(--radius-xl);
+  transition:
+    border-color 250ms ease,
+    box-shadow 250ms ease,
+    transform 200ms ease;
+}
+
+.dashboard-hero-input:focus {
+  box-shadow:
+    0 0 0 2px var(--accent-soft),
+    0 4px 24px rgba(212, 168, 67, 0.08);
+  transform: translateY(-1px);
+}
+
+.dashboard-hero-submit {
+  transition:
+    background 150ms ease,
+    transform 120ms ease,
+    box-shadow 200ms ease;
+}
+
+.dashboard-hero-submit:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 2px 12px rgba(212, 168, 67, 0.3);
+}
+
+.dashboard-hero-submit:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+/* ── Dashboard Tabs ──────────────────────────────────── */
+
+.dashboard-tab {
+  transition:
+    color 200ms ease,
+    border-color 200ms ease,
+    background 200ms ease;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.dashboard-tab:hover {
+  background: rgba(212, 168, 67, 0.04);
+}
+
+/* ── Product Card Delight ────────────────────────────── */
+
+.product-card {
+  transition:
+    border-color 250ms ease,
+    box-shadow 250ms ease,
+    transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: card-entrance 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.product-card:nth-child(1) { animation-delay: 0ms; }
+.product-card:nth-child(2) { animation-delay: 60ms; }
+.product-card:nth-child(3) { animation-delay: 120ms; }
+.product-card:nth-child(4) { animation-delay: 180ms; }
+.product-card:nth-child(5) { animation-delay: 240ms; }
+.product-card:nth-child(6) { animation-delay: 300ms; }
+
+@keyframes card-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.product-card:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    var(--elevation-2),
+    0 0 20px rgba(212, 168, 67, 0.08),
+    0 0 0 1px rgba(212, 168, 67, 0.2);
+}
+
+.product-card:active {
+  transform: translateY(-1px) scale(0.99);
+  transition-duration: 80ms;
+}
+
+.product-card-preview {
+  position: relative;
+  overflow: hidden;
+}
+
+.product-card-preview::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 50%,
+    rgba(15, 23, 42, 0.4) 100%
+  );
+  pointer-events: none;
+}
+
+.product-card:hover .product-card-preview::after {
+  background: linear-gradient(
+    180deg,
+    transparent 60%,
+    rgba(212, 168, 67, 0.08) 100%
+  );
+}
+
+.product-card-initial {
+  font-family: var(--font-display);
+  font-style: italic;
+  color: rgba(212, 168, 67, 0.2);
+  font-size: var(--text-3xl);
+  transition: color 250ms ease;
+}
+
+.product-card:hover .product-card-initial {
+  color: rgba(212, 168, 67, 0.35);
+}
+
+.product-card--new {
+  border-color: rgba(212, 168, 67, 0.15);
+  transition:
+    border-color 250ms ease,
+    box-shadow 250ms ease,
+    transform 250ms ease;
+}
+
+.product-card--new:hover {
+  border-color: rgba(212, 168, 67, 0.4);
+  background:
+    radial-gradient(
+      ellipse at center,
+      rgba(212, 168, 67, 0.03) 0%,
+      transparent 70%
+    ),
+    var(--surface-card);
+}
+
+/* ── Editor Refinements ──────────────────────────────── */
+
+.editor-subheader {
+  background:
+    linear-gradient(
+      90deg,
+      var(--surface-card) 0%,
+      color-mix(in srgb, var(--surface-card) 97%, rgba(212, 168, 67, 0.1)) 100%
+    );
+}
+
+.editor-divider {
+  width: 3px;
+  background: rgba(212, 168, 67, 0.12);
+  transition: background 200ms ease, box-shadow 200ms ease;
+}
+
+.editor-divider:hover,
+.editor-divider[data-dragging="true"] {
+  background: rgba(212, 168, 67, 0.5);
+  box-shadow:
+    -2px 0 8px rgba(212, 168, 67, 0.1),
+    2px 0 8px rgba(212, 168, 67, 0.1);
+}
+
+/* Chat bubble entrance */
+.chat-bubble {
+  animation: bubble-entrance 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.chat-bubble:nth-child(1) { animation-delay: 0ms; }
+.chat-bubble:nth-child(2) { animation-delay: 80ms; }
+.chat-bubble:nth-child(3) { animation-delay: 160ms; }
+.chat-bubble:nth-child(4) { animation-delay: 240ms; }
+
+@keyframes bubble-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-bubble--user {
+  border-color: rgba(212, 168, 67, 0.25);
+  background:
+    linear-gradient(
+      135deg,
+      var(--surface-card-strong) 0%,
+      color-mix(in srgb, var(--surface-card-strong) 97%, rgba(212, 168, 67, 0.1)) 100%
+    );
+}
+
+.chat-bubble--agent {
+  position: relative;
+  border-left: 2px solid rgba(212, 168, 67, 0.2);
+}
+
+/* Composer glow on focus */
+.editor-composer-textarea:focus {
+  box-shadow: 0 0 0 2px rgba(212, 168, 67, 0.1);
+}
+
+.editor-composer-send {
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    transform 120ms ease,
+    box-shadow 200ms ease;
+}
+
+.editor-composer-send:hover {
+  transform: scale(1.06);
+  box-shadow: 0 2px 8px rgba(212, 168, 67, 0.2);
+}
+
+.editor-composer-send:active {
+  transform: scale(0.94);
+}
+
+/* Workspace tab refinement */
+.editor-workspace-tab {
+  position: relative;
+  transition:
+    color 200ms ease,
+    border-color 200ms ease;
+}
+
+.editor-workspace-tab:active {
+  transform: scale(0.97);
+}
+
+/* Code tree hover refinement */
+.code-tree-item {
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    padding-left 200ms ease;
+}
+
+.code-tree-item:hover {
+  padding-left: calc(var(--space-3) + 2px);
+}
+
+/* Diff line refinements */
+.diff-line--add {
+  border-left: 2px solid var(--success-strong);
+}
+
+.diff-line--remove {
+  border-left: 2px solid var(--danger-strong);
+}
+
+.diff-file {
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.diff-file:hover {
+  border-color: rgba(212, 168, 67, 0.2);
+}
+
+/* ── Kanban Board Refinements ────────────────────────── */
+
+.kanban-board {
+  background:
+    radial-gradient(
+      ellipse 100% 80% at 50% 100%,
+      rgba(212, 168, 67, 0.02) 0%,
+      transparent 60%
+    ),
+    transparent;
+}
+
+.kanban-column {
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+  animation: column-entrance 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.kanban-column:nth-child(1) { animation-delay: 0ms; }
+.kanban-column:nth-child(2) { animation-delay: 50ms; }
+.kanban-column:nth-child(3) { animation-delay: 100ms; }
+.kanban-column:nth-child(4) { animation-delay: 150ms; }
+.kanban-column:nth-child(5) { animation-delay: 200ms; }
+.kanban-column:nth-child(6) { animation-delay: 250ms; }
+.kanban-column:nth-child(7) { animation-delay: 300ms; }
+
+@keyframes column-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kanban-column:hover {
+  border-color: rgba(212, 168, 67, 0.15);
+}
+
+.kanban-column-header {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card) 100%, transparent) 0%,
+      color-mix(in srgb, var(--surface-card) 95%, var(--surface-canvas)) 100%
+    );
+}
+
+/* Task card hover micro-interaction */
+.task-card {
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.task-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(212, 168, 67, 0.15);
+}
+
+.task-card--active {
+  animation: active-glow 3s ease-in-out infinite;
+}
+
+@keyframes active-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 12px rgba(212, 168, 67, 0.1),
+      var(--elevation-1);
+  }
+  50% {
+    box-shadow:
+      0 0 20px rgba(212, 168, 67, 0.2),
+      0 0 4px rgba(212, 168, 67, 0.1),
+      var(--elevation-1);
+  }
+}
+
+.task-card--blocked {
+  filter: grayscale(0.3);
+}
+
+/* ── Ultimate Dropdown Refinements ───────────────────── */
+
+.ultimate-dropdown {
+  border-color: rgba(212, 168, 67, 0.2);
+  background:
+    linear-gradient(
+      180deg,
+      var(--surface-card) 0%,
+      color-mix(in srgb, var(--surface-card) 97%, rgba(212, 168, 67, 0.05)) 100%
+    );
+  animation: dropdown-entrance 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dropdown-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ultimate-dropdown-stop {
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    transform 120ms ease;
+}
+
+.ultimate-dropdown-stop:active {
+  transform: scale(0.97);
+}
+
+/* ── Ornamental dividers ─────────────────────────────── */
+
+.dashboard-tabs::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(212, 168, 67, 0.15) 20%,
+    rgba(212, 168, 67, 0.25) 50%,
+    rgba(212, 168, 67, 0.15) 80%,
+    transparent 100%
+  );
+}
+
+.dashboard-tabs {
+  position: relative;
+  border-bottom-color: transparent;
+}
+
+/* ── Scrollbar refinements ───────────────────────────── */
+
+.kanban-column-cards::-webkit-scrollbar {
+  width: 4px;
+}
+
+.kanban-column-cards::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kanban-column-cards::-webkit-scrollbar-thumb {
+  background: rgba(212, 168, 67, 0.15);
+  border-radius: var(--radius-pill);
+}
+
+.kanban-column-cards::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 168, 67, 0.3);
+}
+
+.kanban-column-cards {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 168, 67, 0.15) transparent;
+}
+
+/* ── Reduced motion ──────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .product-card,
+  .kanban-column,
+  .chat-bubble,
+  .task-card,
+  .ultimate-dropdown {
+    animation: none !important;
+  }
+
+  .product-card:hover,
+  .task-card:hover,
+  .editor-composer-send:hover,
+  .dashboard-hero-submit:hover:not(:disabled),
+  .dashboard-hero-input:focus {
+    transform: none !important;
+  }
+
+  .task-card--active {
+    animation: none !important;
+    box-shadow:
+      0 0 12px rgba(212, 168, 67, 0.15),
+      var(--elevation-1) !important;
+  }
+}
