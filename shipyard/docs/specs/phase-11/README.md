@@ -3,7 +3,7 @@
 - Pack: Runtime Factory Foundations
 - Estimate: 36-48 hours
 - Date: 2026-03-28
-- Status: Planned; runtime-only pack drafted, implementation not started
+- Status: In progress; P11-S01 implemented, remaining runtime-only stories planned
 
 ## Pack Objectives
 
@@ -80,4 +80,13 @@ That later pack can concentrate on board interaction design, transitions, visual
 
 ## Implementation Evidence
 
-- N/A - planning pack only. No implementation has landed yet.
+- `shipyard/docs/specs/phase-11/p11-s01-versioned-artifact-registry-and-query-surface/feature-spec.md`:
+  records the first shipped Phase 11 foundation story, including checked
+  acceptance criteria and code-level evidence.
+- `shipyard/src/artifacts/types.ts`, `shipyard/src/artifacts/registry/index.ts`,
+  and `shipyard/src/engine/state.ts`: implement the shared artifact registry
+  contract, target-local registry layout, versioned save/load/query helpers,
+  and lazy projection of legacy plans and handoffs.
+- `shipyard/tests/artifact-registry.test.ts`: validates versioning, compact
+  summary behavior, malformed metadata isolation, and legacy artifact
+  projection without breaking the current runtime.

@@ -38,18 +38,18 @@ versioned, queried, and handed between phases.
   one metadata model for dependency and status tracking.
 
 ## Acceptance Criteria
-- [ ] AC-1: Shipyard has a typed artifact contract with metadata for ID, type,
+- [x] AC-1: Shipyard has a typed artifact contract with metadata for ID, type,
   parent, version, status, produced-by, timestamps, tags, and dependencies.
-- [ ] AC-2: Shipyard can save a new artifact version and preserve older
+- [x] AC-2: Shipyard can save a new artifact version and preserve older
   versions without data loss.
-- [ ] AC-3: Shipyard can query artifacts by type, status, tags, and parent or
+- [x] AC-3: Shipyard can query artifacts by type, status, tags, and parent or
   dependency metadata.
-- [ ] AC-4: Existing persisted outputs such as plan queues and handoffs can be
+- [x] AC-4: Existing persisted outputs such as plan queues and handoffs can be
   projected into or referenced from the new artifact registry without breaking
   current runtime flows.
-- [ ] AC-5: Artifact content can be stored as human-readable Markdown or typed
+- [x] AC-5: Artifact content can be stored as human-readable Markdown or typed
   JSON while sharing one metadata/query layer.
-- [ ] AC-6: Artifact summaries are compact enough to feed later turns without
+- [x] AC-6: Artifact summaries are compact enough to feed later turns without
   replaying full artifact bodies unless a phase explicitly asks for them.
 
 ## Edge Cases
@@ -80,3 +80,70 @@ versioned, queried, and handed between phases.
 ## Done Definition
 - Shipyard can treat specs, plans, reports, and future coordination outputs as
   first-class persisted artifacts instead of one-off file formats.
+
+## Implementation Evidence
+
+- `shipyard/src/artifacts/types.ts`: defines the shared registry vocabulary:
+  `ArtifactMetadata`, `ArtifactRecord`, `ArtifactQuery`, `ArtifactQueryResult`,
+  `LoadArtifactResult`, and the compact content/status/source enums that later
+  factory stories can reuse.
+
+  ```ts
+  export interface ArtifactRecord<TContent = ArtifactContent> {
+    metadata: ArtifactMetadata;
+    title: string | null;
+    summary: string;
+    contentKind: ArtifactContentKind;
+    contentPath: string;
+    metadataPath: string;
+    source: ArtifactSource;
+    sourceFingerprint: string | null;
+    content?: TContent;
+  }
+  ```
+
+- `shipyard/src/artifacts/registry/index.ts`: implements the target-local
+  registry index, atomic content + metadata writes, version bumps, compact
+  query/load behavior, and lazy projection of legacy plan queues and execution
+  handoffs into `.shipyard/artifacts/registry/`.
+
+  ```ts
+  export async function queryArtifacts(
+    targetDirectory: string,
+    query: ArtifactQuery = {},
+  ): Promise<ArtifactQueryResult> {
+    const index = await ensureRegistryIndex(targetDirectory);
+    const synced = await syncLegacyArtifacts(targetDirectory, index);
+    // ...
+  }
+  ```
+
+- `shipyard/src/engine/state.ts`: creates the registry directory alongside the
+  rest of the Shipyard target-local state tree so registry-backed stories do
+  not need a separate bootstrap path.
+
+  ```ts
+  export function getArtifactRegistryDirectory(targetDirectory: string): string {
+    return path.join(getArtifactDirectory(targetDirectory), "registry");
+  }
+  ```
+
+- `shipyard/src/artifacts/README.md`: documents the new registry as the shared
+  artifact substrate and clarifies that Phase 11 keeps current plan and handoff
+  files intact while projecting them through the registry boundary.
+
+- `shipyard/tests/artifact-registry.test.ts`: covers versioning, filtered latest
+  queries, compact default responses, malformed metadata isolation, mixed
+  Markdown/JSON content, and legacy plan/handoff projection.
+
+  ```ts
+  expect(result.records).toEqual([
+    expect.objectContaining({
+      source: "legacy-handoff",
+      metadata: expect.objectContaining({
+        id: "session-123",
+        version: 3,
+      }),
+    }),
+  ]);
+  ```

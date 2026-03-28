@@ -5,6 +5,99 @@ export interface TaskPlan {
   plannedSteps: string[];
 }
 
+export type ArtifactStatus =
+  | "draft"
+  | "approved"
+  | "rejected"
+  | "generated"
+  | "superseded";
+
+export type ArtifactContentKind = "markdown" | "json";
+
+export type ArtifactSource = "registry" | "legacy-plan" | "legacy-handoff";
+
+export interface ArtifactMetadata {
+  id: string;
+  type: string;
+  parentId: string | null;
+  version: number;
+  status: ArtifactStatus;
+  producedBy: string;
+  producedAt: string;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  tags: string[];
+  dependsOn: string[];
+}
+
+export interface ArtifactLocator {
+  type: string;
+  id: string;
+  version: number;
+}
+
+export type ArtifactJsonPrimitive = string | number | boolean | null;
+export type ArtifactJsonValue =
+  | ArtifactJsonPrimitive
+  | ArtifactJsonValue[]
+  | { [key: string]: ArtifactJsonValue };
+export type ArtifactContent = string | ArtifactJsonValue;
+
+export interface ArtifactRecord<TContent = ArtifactContent> {
+  metadata: ArtifactMetadata;
+  title: string | null;
+  summary: string;
+  contentKind: ArtifactContentKind;
+  contentPath: string;
+  metadataPath: string;
+  source: ArtifactSource;
+  sourceFingerprint: string | null;
+  content?: TContent;
+}
+
+export interface ArtifactQuery {
+  type?: string | string[];
+  ids?: string | string[];
+  status?: ArtifactStatus | ArtifactStatus[];
+  tags?: string[];
+  parentId?: string;
+  dependsOn?: string[];
+  producedBy?: string | string[];
+  latestOnly?: boolean;
+  includeContent?: boolean;
+  limit?: number;
+}
+
+export interface ArtifactQueryResult {
+  records: ArtifactRecord[];
+  total: number;
+  errors: string[];
+  projectedLegacyCount: number;
+}
+
+export interface LoadArtifactResult {
+  record: ArtifactRecord | null;
+  error: string | null;
+}
+
+export interface SaveArtifactOptions {
+  type: string;
+  id: string;
+  parentId?: string | null;
+  status: ArtifactStatus;
+  producedBy: string;
+  producedAt?: string;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  tags?: string[];
+  dependsOn?: string[];
+  title?: string | null;
+  summary?: string | null;
+  contentKind: ArtifactContentKind;
+  content: ArtifactContent;
+  version?: number;
+}
+
 export interface ExecutionSpec {
   instruction: string;
   goal: string;

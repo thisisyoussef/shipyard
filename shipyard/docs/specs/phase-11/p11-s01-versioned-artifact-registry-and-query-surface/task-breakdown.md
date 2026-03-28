@@ -42,19 +42,28 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `saves and versions multiple artifacts with one logical id`
-  - [ ] `queries latest approved artifact by type and tag`
-  - [ ] `fails closed on malformed artifact metadata`
+  - [x] `saves and versions multiple artifacts with one logical id`
+  - [x] `queries latest approved artifact by type and tag`
+  - [x] `fails closed on malformed artifact metadata`
 - T002 tests:
-  - [ ] `persists markdown and json content behind one registry contract`
+  - [x] `persists markdown and json content behind one registry contract`
 - T003 tests:
-  - [ ] `projects legacy plan artifacts without breaking next or continue`
-  - [ ] `projects execution handoffs into registry summaries`
+  - [x] `projects legacy plan artifacts without breaking next or continue`
+  - [x] `projects execution handoffs into registry summaries`
 - T004 tests:
-  - [ ] `returns compact summaries unless full content is requested`
+  - [x] `returns compact summaries unless full content is requested`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Implementation Evidence
+
+| Task ID | Evidence |
+|---|---|
+| T001 | `shipyard/tests/artifact-registry.test.ts` adds the red/green coverage for versioning, filtered latest queries, malformed metadata isolation, and compact default query shape. |
+| T002 | `shipyard/src/artifacts/types.ts`, `shipyard/src/artifacts/registry/index.ts`, and `shipyard/src/engine/state.ts` add the typed contracts, save/load helpers, and target-local registry layout. |
+| T003 | `shipyard/src/artifacts/registry/index.ts` lazily projects `.shipyard/plans/*.json` and `.shipyard/artifacts/**/*.handoff.json` into registry records without changing existing plan/handoff writers or readers. |
+| T004 | `shipyard/src/artifacts/README.md` and the registry query/load helpers document and enforce the compact-summary-by-default behavior for later phase consumers. |
