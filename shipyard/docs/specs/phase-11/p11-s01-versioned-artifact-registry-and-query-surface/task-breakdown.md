@@ -22,8 +22,10 @@
   - P11-S03 Runtime Skill Registry, Agent Profiles, and Role Loading
   - P11-S04 Discovery, PM Pipeline, and Research-Aware Planning
   - P11-S05 Three-Role TDD Runtime and Reviewable Handoff Contracts
-  - P11-S06 Task Graph, Dependency Metadata, and Coordination Bus Contracts
-  - P11-S07 Master Coordinator and Parallel Story Orchestration
+  - P11-S06 GitHub Source of Truth, Branch Hygiene, and PR Merge Operations
+  - P11-S07 Railway Hosted Runtime and Remote Workspace Integration
+  - P11-S08 Task Graph, Dependency Metadata, and Coordination Bus Contracts
+  - P11-S09 Master Coordinator and Parallel Story Orchestration
 - Why this story set is cohesive: artifact discipline is the shared substrate
   that lets every later runtime lane exchange work safely.
 - Coverage check: P11-S01 advances the pack's persistence and query objective.
