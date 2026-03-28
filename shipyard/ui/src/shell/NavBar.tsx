@@ -40,7 +40,6 @@ export function NavBar({
   const navItems: Array<{ label: string; view: Route["view"]; disabled?: boolean }> = [
     { label: "Dashboard", view: "dashboard" },
     { label: "Editor", view: "editor", disabled: currentView !== "editor" },
-    { label: "Board", view: "board" },
   ];
 
   return (

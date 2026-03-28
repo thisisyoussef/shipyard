@@ -8,7 +8,7 @@
 import { useCallback } from "react";
 import { NavBar } from "./shell/index.js";
 import { UltimateBadge } from "./shell/index.js";
-import { DashboardView, EditorView, KanbanView } from "./views/index.js";
+import { DashboardView, EditorView } from "./views/index.js";
 import { useRouter } from "./use-router.js";
 import type { Route } from "./router.js";
 import type { TargetManagerViewModel } from "./view-models.js";
@@ -119,7 +119,15 @@ export function PreviewHarness() {
       );
       break;
     case "board":
-      view = <KanbanView />;
+      // Board is now inside EditorView as a tab — redirect to editor
+      view = (
+        <EditorView
+          productId="craft-vision"
+          productName="Craft Your Vision"
+          scaffoldType="react-ts"
+          onNavigate={handleNavigate}
+        />
+      );
       break;
     case "human-feedback":
       view = <div style={{ padding: "2rem", color: "var(--c-text-secondary, #888)" }}>Human Feedback view (not included in preview harness)</div>;

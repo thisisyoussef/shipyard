@@ -16,6 +16,7 @@ import {
 } from "react";
 import type { Route } from "../router.js";
 import { Badge } from "../primitives.js";
+import { KanbanView } from "./KanbanView.js";
 
 // ── Types ──────────────────────────────────────
 
@@ -26,7 +27,7 @@ interface EditorViewProps {
   onNavigate: (route: Route) => void;
 }
 
-type WorkspaceTab = "preview" | "code" | "files";
+type WorkspaceTab = "preview" | "code" | "files" | "board";
 
 interface FileTreeNode {
   name: string;
@@ -516,6 +517,7 @@ export function EditorView({
     { id: "preview", label: "Preview" },
     { id: "code", label: "Code" },
     { id: "files", label: "Files" },
+    { id: "board", label: "Board" },
   ];
 
   let tabContent: React.ReactNode;
@@ -528,6 +530,9 @@ export function EditorView({
       break;
     case "files":
       tabContent = <FilesTab />;
+      break;
+    case "board":
+      tabContent = <KanbanView />;
       break;
   }
 
