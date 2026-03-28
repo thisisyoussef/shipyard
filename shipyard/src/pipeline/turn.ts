@@ -38,6 +38,12 @@ import {
   runWithLangSmithTrace,
   type LangSmithTraceReference,
 } from "../tracing/langsmith.js";
+import type { RuntimeAssistSummary } from "../skills/contracts.js";
+import {
+  composeRuntimeLoadoutPrompt,
+  resolveRuntimeLoadout,
+  type RuntimeLoadout,
+} from "../skills/registry.js";
 import {
   createDefaultPipelineDefinition,
 } from "./defaults.js";
@@ -52,6 +58,7 @@ import {
   type PipelinePhaseRunState,
   type PipelineWorkbenchAuditEntry,
   type PipelineWorkbenchState,
+  phasePipelineDefinitionSchema,
 } from "./contracts.js";
 import { loadPipelineRun, savePipelineRun } from "./store.js";
 
@@ -95,11 +102,14 @@ export interface PipelineTurnResult {
   finalText: string;
   run: PersistedPipelineRun | null;
   langSmithTrace: LangSmithTraceReference | null;
+  runtimeAssist: RuntimeAssistSummary;
 }
 
 interface ResolvedModelSelection {
   modelAdapter: ModelAdapter;
   model: string | undefined;
+  temperature?: number;
+  maxTokens?: number;
 }
 
 function rememberRecent(
@@ -150,6 +160,44 @@ function createIdlePipelineWorkbenchState(): PipelineWorkbenchState {
     summary: "No active pipeline.",
     updatedAt: null,
     recentAudit: [],
+  };
+}
+
+function createEmptyRuntimeAssistState(): RuntimeAssistSummary {
+  return {
+    activeProfileId: null,
+    activeProfileName: null,
+    activeProfileRoute: null,
+    loadedSkills: [],
+  };
+}
+
+function syncRuntimeAssistState(
+  sessionState: SessionState,
+  runtimeAssist: RuntimeAssistSummary,
+): void {
+  sessionState.workbenchState = {
+    ...sessionState.workbenchState,
+    runtimeAssist: {
+      activeProfileId: runtimeAssist.activeProfileId,
+      activeProfileName: runtimeAssist.activeProfileName,
+      activeProfileRoute: runtimeAssist.activeProfileRoute,
+      loadedSkills: [...runtimeAssist.loadedSkills],
+    },
+  };
+}
+
+function snapshotRuntimeAssistState(
+  sessionState: SessionState,
+): RuntimeAssistSummary {
+  const runtimeAssist = sessionState.workbenchState.runtimeAssist
+    ?? createEmptyRuntimeAssistState();
+
+  return {
+    activeProfileId: runtimeAssist.activeProfileId,
+    activeProfileName: runtimeAssist.activeProfileName,
+    activeProfileRoute: runtimeAssist.activeProfileRoute,
+    loadedSkills: [...runtimeAssist.loadedSkills],
   };
 }
 
@@ -549,13 +597,13 @@ async function resolveConsumedArtifacts(
 
 async function resolveModelSelection(
   runtimeState: InstructionRuntimeState,
-  phase: PipelinePhaseDefinition,
+  runtimeLoadout: RuntimeLoadout,
 ): Promise<ResolvedModelSelection> {
   const rawLoopOptions =
     await runtimeState.runtimeDependencies?.createRawLoopOptions?.(
       {} as never,
       {
-        routeId: phase.modelRoute,
+        routeId: runtimeLoadout.modelRoute ?? undefined,
       },
     )
     ?? {};
@@ -564,18 +612,22 @@ async function resolveModelSelection(
     return {
       modelAdapter: rawLoopOptions.modelAdapter,
       model: rawLoopOptions.model,
+      temperature: rawLoopOptions.temperature ?? runtimeLoadout.temperature,
+      maxTokens: rawLoopOptions.maxTokens ?? runtimeLoadout.maxTokens,
     };
   }
 
   const selection = createModelAdapterForRoute({
     routing: runtimeState.modelRouting,
-    routeId: phase.modelRoute,
+    routeId: runtimeLoadout.modelRoute ?? undefined,
     env: runtimeState.modelRoutingEnv,
   });
 
   return {
     modelAdapter: selection.modelAdapter,
     model: rawLoopOptions.model ?? selection.model ?? undefined,
+    temperature: rawLoopOptions.temperature ?? runtimeLoadout.temperature,
+    maxTokens: rawLoopOptions.maxTokens ?? runtimeLoadout.maxTokens,
   };
 }
 
@@ -584,6 +636,7 @@ function buildPhasePrompt(options: {
   phase: PipelinePhaseDefinition;
   phaseState: PipelinePhaseRunState;
   consumedArtifacts: ArtifactRecord<ArtifactContent>[];
+  runtimeLoadout: RuntimeLoadout;
 }): string {
   const artifactSections = options.consumedArtifacts.map((record) => [
     `Artifact: ${formatArtifactLocator(record.metadata) ?? record.metadata.type}`,
@@ -606,6 +659,11 @@ function buildPhasePrompt(options: {
     `Output artifact type: ${options.phase.output.type}`,
     `Output format: ${options.phase.output.contentKind}`,
     "",
+    composeRuntimeLoadoutPrompt({
+      activeProfile: options.runtimeLoadout.activeProfile,
+      skillPromptBlock: options.runtimeLoadout.skillPromptBlock,
+    }),
+    "",
     "Phase instructions:",
     options.phase.instructions,
     "",
@@ -624,6 +682,7 @@ function buildPhasePrompt(options: {
 
 async function generatePhaseArtifact(options: {
   runtimeState: InstructionRuntimeState;
+  sessionState: SessionState;
   run: PersistedPipelineRun;
   phase: PipelinePhaseDefinition;
   phaseState: PipelinePhaseRunState;
@@ -633,20 +692,37 @@ async function generatePhaseArtifact(options: {
   content: ArtifactContent;
   modelProvider: string;
   modelName: string | null;
+  runtimeAssist: RuntimeAssistSummary;
 }> {
+  const runtimeLoadout = await resolveRuntimeLoadout({
+    registry: options.runtimeState.skillRegistry,
+    targetDirectory: options.sessionState.targetDirectory,
+    phaseId: options.phase.id,
+    phaseLabel: options.phase.title,
+    tools: [],
+    modelRoute: options.phase.modelRoute,
+    agentProfileId: options.phase.agentProfileId ?? null,
+    defaultSkills: options.phase.defaultSkills ?? [],
+  });
+  syncRuntimeAssistState(options.sessionState, runtimeLoadout.runtimeAssist);
   const prompt = buildPhasePrompt({
     run: options.run,
     phase: options.phase,
     phaseState: options.phaseState,
     consumedArtifacts: options.consumedArtifacts,
+    runtimeLoadout,
   });
-  const selection = await resolveModelSelection(options.runtimeState, options.phase);
+  const selection = await resolveModelSelection(
+    options.runtimeState,
+    runtimeLoadout,
+  );
   const turn = await selection.modelAdapter.createTurn(
     {
       systemPrompt: options.phase.systemPrompt,
       messages: [createUserTurnMessage(prompt)],
       model: selection.model,
-      temperature: 0.2,
+      temperature: selection.temperature,
+      maxTokens: selection.maxTokens,
     },
     {
       signal: options.signal,
@@ -666,6 +742,7 @@ async function generatePhaseArtifact(options: {
     ),
     modelProvider: selection.modelAdapter.provider,
     modelName: turn.model ?? selection.model ?? null,
+    runtimeAssist: runtimeLoadout.runtimeAssist,
   };
 }
 
@@ -738,6 +815,7 @@ async function advancePipelineRun(options: {
 
     const generated = await generatePhaseArtifact({
       runtimeState: options.runtimeState,
+      sessionState: options.sessionState,
       run,
       phase,
       phaseState,
@@ -877,8 +955,11 @@ async function createPipelineRun(options: {
   brief: string;
   operatorId: string;
 }): Promise<PersistedPipelineRun> {
+  const pipelineDefinition = phasePipelineDefinitionSchema.parse(
+    options.pipelineDefinition,
+  ) as PersistedPipelineRun["pipeline"];
   const now = new Date().toISOString();
-  const runId = createPipelineRunId(options.pipelineDefinition.id);
+  const runId = createPipelineRunId(pipelineDefinition.id);
   const briefRecord = await saveArtifact(options.sessionState.targetDirectory, {
     type: "pipeline-brief",
     id: runId,
@@ -887,7 +968,7 @@ async function createPipelineRun(options: {
     producedAt: now,
     approvedAt: now,
     approvedBy: options.operatorId,
-    tags: ["pipeline", options.pipelineDefinition.id, "brief", "approved"],
+    tags: ["pipeline", pipelineDefinition.id, "brief", "approved"],
     dependsOn: [],
     title: "Pipeline Brief",
     summary: options.brief,
@@ -897,7 +978,7 @@ async function createPipelineRun(options: {
   const run: PersistedPipelineRun = {
     version: 1,
     runId,
-    pipeline: options.pipelineDefinition,
+    pipeline: pipelineDefinition,
     status: "running",
     createdAt: now,
     updatedAt: now,
@@ -905,21 +986,21 @@ async function createPipelineRun(options: {
     initialBrief: options.brief.trim(),
     briefArtifact: toArtifactLocator(briefRecord),
     currentPhaseIndex: 0,
-    phases: options.pipelineDefinition.phases.map((phase) =>
+    phases: pipelineDefinition.phases.map((phase) =>
       createInitialPhaseState(phase, now)
     ),
     pendingApproval: null,
     auditTrail: [
       createPipelineAuditEntry(
         "run-started",
-        `Started pipeline "${options.pipelineDefinition.title}".`,
+        `Started pipeline "${pipelineDefinition.title}".`,
         {
           at: now,
           artifact: toArtifactLocator(briefRecord),
         },
       ),
     ],
-    lastSummary: `Started pipeline "${options.pipelineDefinition.title}".`,
+    lastSummary: `Started pipeline "${pipelineDefinition.title}".`,
   };
   syncPipelineWorkbenchState(options.sessionState, run);
   await savePipelineRun(options.sessionState.targetDirectory, run);
@@ -999,6 +1080,7 @@ async function performPipelineCommand(options: {
   run: PersistedPipelineRun | null;
   finalText: string;
   status: "success" | "error" | "cancelled";
+  runtimeAssist: RuntimeAssistSummary;
 }> {
   switch (options.command.type) {
     case "status": {
@@ -1011,6 +1093,7 @@ async function performPipelineCommand(options: {
         run,
         finalText: formatPipelineStatus(run),
         status: "success",
+        runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
       };
     }
     case "start": {
@@ -1047,6 +1130,7 @@ async function performPipelineCommand(options: {
         run: advancedRun,
         finalText: formatPipelineStatus(advancedRun),
         status: "success",
+        runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
       };
     }
     case "continue": {
@@ -1059,6 +1143,7 @@ async function performPipelineCommand(options: {
           finalText:
             `Pipeline ${run.runId} is waiting for approval. Use pipeline approve, reject, or edit before continuing.`,
           status: "success",
+          runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
         };
       }
 
@@ -1068,6 +1153,7 @@ async function performPipelineCommand(options: {
           run,
           finalText: formatPipelineStatus(run),
           status: "success",
+          runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
         };
       }
 
@@ -1083,6 +1169,7 @@ async function performPipelineCommand(options: {
         run: advancedRun,
         finalText: formatPipelineStatus(advancedRun),
         status: "success",
+        runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
       };
     }
     case "approve": {
@@ -1148,6 +1235,7 @@ async function performPipelineCommand(options: {
         run: advancedRun,
         finalText: formatPipelineStatus(advancedRun),
         status: "success",
+        runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
       };
     }
     case "edit": {
@@ -1218,6 +1306,7 @@ async function performPipelineCommand(options: {
         run: advancedRun,
         finalText: formatPipelineStatus(advancedRun),
         status: "success",
+        runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
       };
     }
     case "reject": {
@@ -1280,6 +1369,7 @@ async function performPipelineCommand(options: {
         run: advancedRun,
         finalText: formatPipelineStatus(advancedRun),
         status: "success",
+        runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
       };
     }
     case "skip": {
@@ -1343,6 +1433,7 @@ async function performPipelineCommand(options: {
         run: advancedRun,
         finalText: formatPipelineStatus(advancedRun),
         status: "success",
+        runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
       };
     }
     case "rerun": {
@@ -1382,6 +1473,7 @@ async function performPipelineCommand(options: {
         run: advancedRun,
         finalText: formatPipelineStatus(advancedRun),
         status: "success",
+        runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
       };
     }
     case "back": {
@@ -1421,6 +1513,7 @@ async function performPipelineCommand(options: {
         run: advancedRun,
         finalText: formatPipelineStatus(advancedRun),
         status: "success",
+        runtimeAssist: snapshotRuntimeAssistState(options.sessionState),
       };
     }
   }
@@ -1448,6 +1541,7 @@ export async function executePipelineTurn(
   );
 
   try {
+    const initialRuntimeAssist = snapshotRuntimeAssistState(state);
     const traced = await runWithLangSmithTrace({
       name: "pipeline.turn",
       runType: "chain",
@@ -1456,12 +1550,22 @@ export async function executePipelineTurn(
         sessionId: state.sessionId,
         targetDirectory: state.targetDirectory,
         command: command.type,
+        activeProfileId: initialRuntimeAssist.activeProfileId,
+        activeProfileName: initialRuntimeAssist.activeProfileName,
+        activeProfileRoute: initialRuntimeAssist.activeProfileRoute,
+        loadedSkills: initialRuntimeAssist.loadedSkills,
+        loadedSkillCount: initialRuntimeAssist.loadedSkills.length,
       },
       getResultMetadata(result) {
         return {
           status: result.status,
           runId: result.run?.runId ?? null,
           pipelineStatus: result.run?.status ?? null,
+          activeProfileId: result.runtimeAssist.activeProfileId,
+          activeProfileName: result.runtimeAssist.activeProfileName,
+          activeProfileRoute: result.runtimeAssist.activeProfileRoute,
+          loadedSkills: result.runtimeAssist.loadedSkills,
+          loadedSkillCount: result.runtimeAssist.loadedSkills.length,
         };
       },
       fn: () =>
@@ -1508,6 +1612,7 @@ export async function executePipelineTurn(
       finalText: traced.result.finalText,
       run: activeRun,
       langSmithTrace: traced.trace,
+      runtimeAssist: traced.result.runtimeAssist,
     };
   } catch (error) {
     const cancelledError = toTurnCancelledError(error, options.signal);
@@ -1544,6 +1649,7 @@ export async function executePipelineTurn(
         finalText,
         run: activeRun,
         langSmithTrace: null,
+        runtimeAssist: snapshotRuntimeAssistState(state),
       };
     }
 
@@ -1588,6 +1694,7 @@ export async function executePipelineTurn(
       finalText,
       run: activeRun,
       langSmithTrace: null,
+      runtimeAssist: snapshotRuntimeAssistState(state),
     };
   } finally {
     await saveSessionState(state);

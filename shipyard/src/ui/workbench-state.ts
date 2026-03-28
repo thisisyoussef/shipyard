@@ -5,6 +5,7 @@ import {
   createInitialPreviewState,
   createIdlePreviewState,
 } from "../preview/contracts.js";
+import type { RuntimeAssistSummary } from "../skills/contracts.js";
 import type {
   BackendToFrontendMessage,
   DeploySummary,
@@ -125,6 +126,8 @@ export interface SessionRunSummaryViewModel extends SessionRunSummary {}
 
 export interface PipelineWorkbenchStateViewModel extends PipelineWorkbenchState {}
 
+export interface RuntimeAssistViewModel extends RuntimeAssistSummary {}
+
 export interface WorkbenchViewState {
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
@@ -145,6 +148,7 @@ export interface WorkbenchViewState {
   targetManager: TargetManagerViewModel | null;
   projectBoard: ProjectBoardViewModel | null;
   pipelineState: PipelineWorkbenchStateViewModel | null;
+  runtimeAssist: RuntimeAssistViewModel;
 }
 
 export interface RotateInstructionTurnOptions {
@@ -176,6 +180,18 @@ export function createInitialDeploySummary(
     command: null,
     requestedAt: null,
     completedAt: null,
+    ...overrides,
+  };
+}
+
+export function createInitialRuntimeAssistState(
+  overrides: Partial<RuntimeAssistViewModel> = {},
+): RuntimeAssistViewModel {
+  return {
+    activeProfileId: null,
+    activeProfileName: null,
+    activeProfileRoute: null,
+    loadedSkills: [],
     ...overrides,
   };
 }
@@ -498,6 +514,7 @@ export function ensureWorkbenchStateDefaults(
     targetManager: state.targetManager ?? initialState.targetManager,
     projectBoard: state.projectBoard ?? initialState.projectBoard,
     pipelineState: state.pipelineState ?? initialState.pipelineState,
+    runtimeAssist: state.runtimeAssist ?? initialState.runtimeAssist,
   };
 }
 
@@ -524,6 +541,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     targetManager: null,
     projectBoard: null,
     pipelineState: null,
+    runtimeAssist: createInitialRuntimeAssistState(),
   };
 }
 

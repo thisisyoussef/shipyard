@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { AGENT_ROLE_IDS, type AgentRoleId } from "../agents/profiles.js";
 import { MODEL_ROUTE_IDS, type ModelRouteId } from "../engine/model-routing.js";
 import type {
   ArtifactContentKind,
@@ -67,6 +68,8 @@ export const pipelinePhaseDefinitionSchema = z.object({
   systemPrompt: z.string().trim().min(1),
   instructions: z.string().trim().min(1),
   modelRoute: z.enum(MODEL_ROUTE_IDS).optional(),
+  agentProfileId: z.enum(AGENT_ROLE_IDS).optional(),
+  defaultSkills: z.array(z.string().trim().min(1)).default([]),
   approvalGate: approvalGateModeSchema,
   consumesArtifacts: z.array(z.string().trim().min(1)),
   producesArtifacts: z.array(z.string().trim().min(1)).min(1),
@@ -185,14 +188,22 @@ export type PipelinePhaseStatus = z.infer<typeof pipelinePhaseStatusSchema>;
 export type PipelineRunStatus = z.infer<typeof pipelineRunStatusSchema>;
 export type PipelineAuditKind = z.infer<typeof pipelineAuditKindSchema>;
 export type PipelineArtifactOutput = z.infer<typeof pipelineArtifactOutputSchema>;
-export type PipelinePhaseDefinition = z.infer<typeof pipelinePhaseDefinitionSchema> & {
+export type PipelinePhaseDefinition = Omit<
+  z.input<typeof pipelinePhaseDefinitionSchema>,
+  "output"
+> & {
   modelRoute?: ModelRouteId;
+  agentProfileId?: AgentRoleId;
+  defaultSkills?: string[];
   output: {
     type: string;
     contentKind: ArtifactContentKind;
   };
 };
-export type PhasePipelineDefinition = z.infer<typeof phasePipelineDefinitionSchema> & {
+export type PhasePipelineDefinition = Omit<
+  z.input<typeof phasePipelineDefinitionSchema>,
+  "phases"
+> & {
   phases: PipelinePhaseDefinition[];
 };
 export type PipelinePhaseRunState = z.infer<typeof pipelinePhaseRunStateSchema> & {

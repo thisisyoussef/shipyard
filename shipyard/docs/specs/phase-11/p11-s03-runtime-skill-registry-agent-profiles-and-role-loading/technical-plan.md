@@ -101,3 +101,23 @@ pnpm --dir shipyard typecheck
 pnpm --dir shipyard build
 git diff --check
 ```
+
+## Implementation Evidence
+
+- `shipyard/src/skills/registry.ts`: the shipped runtime registry discovers
+  built-in and target-local skills, validates manifests/tools/validators,
+  registers skill-owned tools with owner IDs, and resolves phase loadouts into
+  `{ profile, route, temperature, maxTokens, loadedSkills }`.
+- `shipyard/src/tools/registry.ts`: tool registration now tracks owner IDs and
+  supports `unregisterToolsByOwner`, which gives runtime skills a reversible
+  tool-loading boundary instead of leaking capabilities between phases.
+- `shipyard/src/agents/profiles.ts`: profile selection is centralized and
+  provider-neutral, so phase logic only deals in role IDs and model routes
+  rather than raw provider-specific settings.
+- `shipyard/src/engine/turn.ts` and `shipyard/src/pipeline/turn.ts`: both turn
+  executors now resolve runtime loadouts before execution, inject the formatted
+  profile/skill block into prompts, and publish `runtimeAssist` into session and
+  LangSmith metadata.
+- `shipyard/src/ui/contracts.ts` and `shipyard/src/ui/workbench-state.ts`: the
+  workbench contract now carries a compact `runtimeAssist` slice that survives
+  reconnects and later UI work.

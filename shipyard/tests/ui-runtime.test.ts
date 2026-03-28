@@ -3410,6 +3410,10 @@ describe("ui runtime contract", () => {
           currentPhaseId: "discovery",
           currentPhaseTitle: "Discovery Brief",
         });
+        expect(pipelineStateMessage.workbenchState.runtimeAssist).toMatchObject({
+          activeProfileId: "discovery",
+          loadedSkills: ["artifact-writing"],
+        });
       } finally {
         socket.close();
       }

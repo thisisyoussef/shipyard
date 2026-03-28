@@ -1,0 +1,11 @@
+{
+  "name": "artifact-writing",
+  "version": "1.0.0",
+  "description": "Reusable conventions for durable Shipyard artifacts.",
+  "tags": ["artifacts", "planning"],
+  "compatiblePhases": ["discovery", "feature-spec", "technical-plan"],
+  "promptFile": "SKILL.md",
+  "tools": [],
+  "references": [],
+  "validators": []
+}

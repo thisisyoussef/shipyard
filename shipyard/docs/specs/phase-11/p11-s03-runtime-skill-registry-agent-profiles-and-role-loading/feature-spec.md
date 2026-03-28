@@ -39,19 +39,19 @@ deterministically.
   typed role/profile system instead of informal prompt naming.
 
 ## Acceptance Criteria
-- [ ] AC-1: Shipyard has a runtime skill manifest format with prompt fragments,
+- [x] AC-1: Shipyard has a runtime skill manifest format with prompt fragments,
   optional tools, optional references, optional validators, and compatible
   phase metadata.
-- [ ] AC-2: Shipyard can discover local runtime skills, list them, load them,
+- [x] AC-2: Shipyard can discover local runtime skills, list them, load them,
   unload them, and expose loaded-skill state to phases and traces.
-- [ ] AC-3: Phases can declare default skills that load automatically when the
+- [x] AC-3: Phases can declare default skills that load automatically when the
   phase begins.
-- [ ] AC-4: Shipyard has typed agent profiles for core runtime roles such as
+- [x] AC-4: Shipyard has typed agent profiles for core runtime roles such as
   discovery, PM, implementer, reviewer, QA, deploy, and coordinator.
-- [ ] AC-5: Profile metadata includes model-route, personality, and token or
+- [x] AC-5: Profile metadata includes model-route, personality, and token or
   temperature guidance without leaking provider-specific wire types into phase
   logic.
-- [ ] AC-6: Runtime-native skills can coexist with the existing `.ai/` helper
+- [x] AC-6: Runtime-native skills can coexist with the existing `.ai/` helper
   docs while Shipyard gradually promotes the most important ones into the
   product runtime.
 
@@ -83,3 +83,81 @@ deterministically.
 ## Done Definition
 - Shipyard can load phase-aware skills and agent profiles as runtime state
   rather than relying on helper docs alone.
+
+## Implementation Evidence
+
+- `shipyard/src/skills/contracts.ts`, `shipyard/src/skills/registry.ts`, and
+  `shipyard/skills/**`: add the runtime manifest format, discovery/load/unload
+  logic, prompt assembly, tool ownership/unload boundaries, and the initial
+  built-in skill set (`artifact-writing`, `runtime-safety`,
+  `target-manager-ops`, `spec-writing`, `technical-planning`).
+
+  ```ts
+  export async function resolveRuntimeLoadout(
+    options: ResolveRuntimeLoadoutOptions,
+  ): Promise<RuntimeLoadout> {
+    const activeProfile = options.agentProfileId
+      ? requireAgentProfile(options.agentProfileId)
+      : null;
+    // ...
+  }
+  ```
+
+- `shipyard/src/agents/profiles.ts`: defines the typed runtime profile catalog
+  for coordinator, discovery, PM, implementer, reviewer, QA, deploy, explorer,
+  planner, verifier, browser-evaluator, human-simulator, and target-enrichment.
+
+  ```ts
+  export interface AgentProfile {
+    id: AgentRoleId;
+    name: string;
+    role: string;
+    personality: string;
+    modelRoute: ModelRouteId;
+  }
+  ```
+
+- `shipyard/src/phases/phase.ts`, `shipyard/src/phases/code/index.ts`,
+  `shipyard/src/phases/target-manager/index.ts`, and
+  `shipyard/src/pipeline/defaults.ts`: let phases declare `agentProfileId` and
+  `defaultSkills`, then seed the first runtime-native defaults for code,
+  target-manager, discovery, feature-spec, and technical-plan phases.
+
+- `shipyard/src/context/envelope.ts`, `shipyard/src/engine/turn.ts`, and
+  `shipyard/src/pipeline/turn.ts`: compose the active profile block plus loaded
+  skill prompt block into system prompts, apply profile-derived routing/token
+  guidance, and persist `runtimeAssist` into session state and trace metadata.
+
+  ```ts
+  composeRuntimeLoadoutPrompt({
+    activeProfile: options.runtimeLoadout.activeProfile,
+    skillPromptBlock: options.runtimeLoadout.skillPromptBlock,
+  })
+  ```
+
+- `shipyard/src/ui/contracts.ts` and `shipyard/src/ui/workbench-state.ts`:
+  expose `workbenchState.runtimeAssist` so the browser/runtime snapshot can show
+  the active profile and loaded runtime skills deterministically.
+
+- `shipyard/tests/runtime-skills.test.ts`, `shipyard/tests/turn-runtime.test.ts`,
+  `shipyard/tests/pipeline-runtime.test.ts`, and
+  `shipyard/tests/ui-runtime.test.ts`: verify manifest discovery, duplicate and
+  invalid validator failures, tool registration/unload behavior, ordered prompt
+  assembly, profile-aware turn prompts, pipeline runtime-assist propagation, and
+  browser-visible runtime-assist snapshots.
+
+## LangSmith / Monitoring
+
+- Fresh live verification traces on project `shipyard`:
+  - instruction-turn trace: `019d36c4-f3e7-7000-8000-006d41f4e3b4`
+  - pipeline-turn trace: `019d36c5-180f-7000-8000-0677e7d9bd52`
+- The instruction trace recorded `activeProfileId=implementer` and
+  `loadedSkills=["runtime-safety"]` in both the root trace metadata and the
+  returned runtime result.
+- The pipeline trace recorded `activeProfileId=discovery` and
+  `loadedSkills=["artifact-writing"]` in both the root trace metadata and the
+  returned runtime result.
+- `langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
+  returned `[]`.
+- `langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3` returned
+  `null`.

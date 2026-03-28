@@ -20,6 +20,8 @@ export const targetManagerPhase: Phase = {
   systemPrompt: TARGET_MANAGER_SYSTEM_PROMPT,
   tools: TARGET_MANAGER_TOOL_NAMES,
   modelRoute: TARGET_MANAGER_PHASE_MODEL_ROUTE,
+  agentProfileId: "target-manager",
+  defaultSkills: ["target-manager-ops"],
   approvalRequired: false,
   approvalGate: "disabled",
   inputArtifact: "user_intent",
