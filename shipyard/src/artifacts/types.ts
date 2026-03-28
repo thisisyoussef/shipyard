@@ -490,6 +490,134 @@ export interface DiscoveryReport {
   previewCapability: PreviewCapabilityReport;
 }
 
+export type ResearchSourceTier =
+  | "official-docs"
+  | "primary-source"
+  | "repo-local"
+  | "secondary-source";
+
+export type ResearchLookupStatus =
+  | "external"
+  | "repo-local-fallback"
+  | "no-results";
+
+export interface ResearchSourcePreference {
+  sourceId: string;
+  label: string;
+  tier: ResearchSourceTier;
+  domains: string[];
+  rationale: string;
+}
+
+export interface ResearchSourceRecord {
+  sourceId: string;
+  title: string;
+  url: string;
+  domain: string;
+  label: string;
+  tier: ResearchSourceTier;
+  rank: number;
+  snippet: string;
+}
+
+export interface ResearchTakeaway {
+  title: string;
+  summary: string;
+  sourceIds: string[];
+}
+
+export interface ResearchLookupRequest {
+  query: string;
+  targetDirectory: string;
+  discovery: DiscoveryReport;
+  preferredSources: ResearchSourcePreference[];
+  maxSources: number;
+}
+
+export interface ResearchLookupResult {
+  title?: string;
+  query: string;
+  lookupStatus: ResearchLookupStatus;
+  summary: string;
+  sources: ResearchSourceRecord[];
+  takeaways: ResearchTakeaway[];
+}
+
+export interface EpicRecord {
+  id: string;
+  title: string;
+  valueStatement: string;
+  scope: string;
+  acceptanceCriteria: string[];
+  dependencies: string[];
+  estimatedComplexity: string;
+}
+
+export interface EpicArtifact {
+  title: string;
+  summary: string;
+  epics: EpicRecord[];
+}
+
+export interface UserStoryRecord {
+  id: string;
+  epicId: string | null;
+  title: string;
+  userStory: string;
+  acceptanceCriteria: string[];
+  edgeCases: string[];
+  dependencies: string[];
+  estimatedComplexity: string;
+  priority: number;
+}
+
+export interface UserStoryArtifact {
+  title: string;
+  summary: string;
+  stories: UserStoryRecord[];
+}
+
+export interface TechnicalSpecRecord {
+  id: string;
+  storyId: string;
+  title: string;
+  overview: string;
+  dataModel: string[];
+  apiContract: string[];
+  componentStructure: string[];
+  stateManagement: string;
+  errorHandling: string[];
+  testExpectations: string[];
+  implementationOrder: string[];
+  designReferences: string[];
+}
+
+export interface TechnicalSpecArtifact {
+  title: string;
+  summary: string;
+  specs: TechnicalSpecRecord[];
+}
+
+export type BacklogEntryStatus = "ready" | "blocked" | "done";
+
+export interface BacklogEntry {
+  storyId: string;
+  title: string;
+  epicId: string | null;
+  priority: number;
+  rank: number;
+  status: BacklogEntryStatus;
+  dependencies: string[];
+  specId: string | null;
+}
+
+export interface BacklogArtifact {
+  title: string;
+  summary: string;
+  orderedStoryIds: string[];
+  entries: BacklogEntry[];
+}
+
 export interface TargetProfile {
   name: string;
   description: string;

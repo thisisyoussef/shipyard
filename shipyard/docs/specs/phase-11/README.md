@@ -3,7 +3,7 @@
 - Pack: Runtime Factory Foundations
 - Estimate: 36-48 hours
 - Date: 2026-03-28
-- Status: In progress; P11-S01, P11-S02, and P11-S03 implemented, remaining runtime-only stories planned
+- Status: In progress; P11-S01, P11-S02, P11-S03, and P11-S04 implemented, remaining runtime-only stories planned
 
 ## Pack Objectives
 
@@ -89,6 +89,9 @@ That later pack can concentrate on board interaction design, transitions, visual
 - `shipyard/docs/specs/phase-11/p11-s03-runtime-skill-registry-agent-profiles-and-role-loading/feature-spec.md`:
   records the shipped runtime skill manifests, agent profiles, phase-default
   skill loading, and browser/trace-visible runtime-assist state.
+- `shipyard/docs/specs/phase-11/p11-s04-discovery-pm-pipeline-and-research-aware-planning/feature-spec.md`:
+  records the shipped discovery -> research -> PM runtime lane, official-doc
+  preference, deterministic backlog output, and trace-backed verification.
 - `shipyard/src/artifacts/types.ts`, `shipyard/src/artifacts/registry/index.ts`,
   and `shipyard/src/engine/state.ts`: implement the shared artifact registry
   contract, target-local registry layout, versioned save/load/query helpers,
@@ -106,6 +109,15 @@ That later pack can concentrate on board interaction design, transitions, visual
   `shipyard/src/engine/turn.ts`, and `shipyard/src/pipeline/turn.ts`:
   implement runtime-native skill discovery/loadouts, typed profile routing, and
   prompt/session/trace propagation of the active runtime assist state.
+- `shipyard/src/research/lookup.ts`,
+  `shipyard/src/tools/lookup-official-docs.ts`,
+  `shipyard/src/phases/discovery/index.ts`,
+  `shipyard/src/phases/pm/index.ts`,
+  `shipyard/src/pipeline/planning-artifacts.ts`,
+  `shipyard/src/pipeline/defaults.ts`, and `shipyard/src/pipeline/turn.ts`:
+  implement the discovery/research/PM phase factories, official-doc-first
+  research with repo-local fallback, artifact normalization, deterministic
+  backlog generation, and optional or alternate consumed-artifact resolution.
 - `shipyard/skills/**`: provides the first built-in runtime skill manifests and
   prompt fragments used by code, target-manager, discovery, feature-spec, and
   technical-plan phases.
@@ -119,3 +131,8 @@ That later pack can concentrate on board interaction design, transitions, visual
   validate runtime skill discovery, duplicate/invalid manifest handling,
   reversible tool loading, ordered prompt assembly, and profile-aware turn
   prompts with persisted runtime-assist metadata.
+- `shipyard/tests/discovery-pm-pipeline.test.ts` and
+  `shipyard/tests/research-lane.test.ts`: validate the default
+  discovery/research/PM pipeline, approval-gated resume behavior, deterministic
+  backlog ordering, official-doc ranking, and explicit repo-local fallback when
+  external research is unavailable.

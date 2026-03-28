@@ -17,6 +17,7 @@ import type {
   ActingLoopBudgetReason,
   BrowserEvaluationReport,
   ContextReport,
+  DiscoveryReport,
   EvaluationPlan,
   ExecutionSpec,
   HarnessActingMode,
@@ -24,6 +25,8 @@ import type {
   LoadedExecutionHandoff,
   PlanningMode,
   PreviewState,
+  ResearchLookupRequest,
+  ResearchLookupResult,
   TaskPlan,
   TargetProfile,
   VerificationReport,
@@ -257,6 +260,14 @@ export interface AgentRuntimeDependencies {
       routeId?: ModelRouteId;
     },
   ) => RawToolLoopOptions | Promise<RawToolLoopOptions>;
+  runResearchLookup?: (
+    request: ResearchLookupRequest,
+    targetDirectory: string,
+    options?: {
+      discovery?: DiscoveryReport;
+      signal?: AbortSignal;
+    },
+  ) => ResearchLookupResult | Promise<ResearchLookupResult>;
 }
 
 export interface AgentRuntimeOptions {

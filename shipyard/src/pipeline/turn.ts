@@ -44,6 +44,7 @@ import {
   resolveRuntimeLoadout,
   type RuntimeLoadout,
 } from "../skills/registry.js";
+import { createResearchBrief } from "../research/lookup.js";
 import {
   createDefaultPipelineDefinition,
 } from "./defaults.js";
@@ -60,6 +61,10 @@ import {
   type PipelineWorkbenchState,
   phasePipelineDefinitionSchema,
 } from "./contracts.js";
+import {
+  buildBacklogArtifact,
+  normalizePipelineArtifactContent,
+} from "./planning-artifacts.js";
 import { loadPipelineRun, savePipelineRun } from "./store.js";
 
 const PIPELINE_PREFIX = /^pipeline\b/i;
@@ -424,6 +429,35 @@ function parseEditedArtifactContent(
   }
 }
 
+interface ArtifactRequirement {
+  raw: string;
+  options: string[];
+  optional: boolean;
+}
+
+function parseArtifactRequirement(rawRequirement: string): ArtifactRequirement {
+  const normalizedOptions = rawRequirement
+    .split("|")
+    .map((option) => option.trim())
+    .filter((option) => option.length > 0);
+  let optional = false;
+
+  const options = normalizedOptions.map((option) => {
+    if (option.endsWith("?")) {
+      optional = true;
+      return option.slice(0, -1).trim();
+    }
+
+    return option;
+  });
+
+  return {
+    raw: rawRequirement,
+    options,
+    optional,
+  };
+}
+
 function assertPhaseRunState(
   run: PersistedPipelineRun,
   phaseIndex: number,
@@ -558,32 +592,41 @@ async function resolveConsumedArtifacts(
 
   const consumedRecords: ArtifactRecord<ArtifactContent>[] = [];
 
-  for (const artifactType of phase.consumesArtifacts) {
-    if (artifactType === "pipeline-brief") {
-      consumedRecords.push(
-        await loadArtifactContentRecord(targetDirectory, run.briefArtifact),
-      );
-      continue;
-    }
-
+  for (const rawRequirement of phase.consumesArtifacts) {
+    const requirement = parseArtifactRequirement(rawRequirement);
     let matchingLocator: ArtifactLocator | null = null;
 
-    for (let index = phaseIndex - 1; index >= 0; index -= 1) {
-      const upstreamPhase = run.pipeline.phases[index];
-      const upstreamState = run.phases[index];
+    for (const artifactType of requirement.options) {
+      if (artifactType === "pipeline-brief") {
+        matchingLocator = run.briefArtifact;
+        break;
+      }
 
-      if (
-        upstreamPhase?.producesArtifacts.includes(artifactType) &&
-        upstreamState?.approvedArtifact
-      ) {
-        matchingLocator = upstreamState.approvedArtifact;
+      for (let index = phaseIndex - 1; index >= 0; index -= 1) {
+        const upstreamPhase = run.pipeline.phases[index];
+        const upstreamState = run.phases[index];
+
+        if (
+          upstreamPhase?.producesArtifacts.includes(artifactType) &&
+          upstreamState?.approvedArtifact
+        ) {
+          matchingLocator = upstreamState.approvedArtifact;
+          break;
+        }
+      }
+
+      if (matchingLocator) {
         break;
       }
     }
 
     if (!matchingLocator) {
+      if (requirement.optional) {
+        continue;
+      }
+
       throw new Error(
-        `Phase "${phase.id}" requires approved artifact type "${artifactType}", but none is available yet.`,
+        `Phase "${phase.id}" requires approved artifact type "${requirement.options.join('" or "')}", but none is available yet.`,
       );
     }
 
@@ -705,6 +748,43 @@ async function generatePhaseArtifact(options: {
     defaultSkills: options.phase.defaultSkills ?? [],
   });
   syncRuntimeAssistState(options.sessionState, runtimeLoadout.runtimeAssist);
+
+  if (options.phase.output.type === "research-brief") {
+    const research = await createResearchBrief({
+      query: options.run.initialBrief,
+      targetDirectory: options.sessionState.targetDirectory,
+      discovery: options.sessionState.discovery,
+      externalLookup: options.runtimeState.runtimeDependencies?.runResearchLookup
+        ? async (request) => options.runtimeState.runtimeDependencies!.runResearchLookup!(
+          request,
+          options.sessionState.targetDirectory,
+          {
+            discovery: options.sessionState.discovery,
+            signal: options.signal,
+          },
+        )
+        : undefined,
+    });
+
+    return {
+      content: research as unknown as ArtifactContent,
+      modelProvider: "shipyard:research",
+      modelName: null,
+      runtimeAssist: runtimeLoadout.runtimeAssist,
+    };
+  }
+
+  if (options.phase.output.type === "backlog-artifact") {
+    return {
+      content: buildBacklogArtifact(
+        options.consumedArtifacts,
+      ) as unknown as ArtifactContent,
+      modelProvider: "shipyard:backlog",
+      modelName: null,
+      runtimeAssist: runtimeLoadout.runtimeAssist,
+    };
+  }
+
   const prompt = buildPhasePrompt({
     run: options.run,
     phase: options.phase,
@@ -736,10 +816,14 @@ async function generatePhaseArtifact(options: {
   }
 
   return {
-    content: parseEditedArtifactContent(
-      options.phase.output.contentKind,
-      turn.finalText,
-    ),
+    content: normalizePipelineArtifactContent({
+      outputType: options.phase.output.type,
+      content: parseEditedArtifactContent(
+        options.phase.output.contentKind,
+        turn.finalText,
+      ),
+      consumedArtifacts: options.consumedArtifacts,
+    }),
     modelProvider: selection.modelAdapter.provider,
     modelName: turn.model ?? selection.model ?? null,
     runtimeAssist: runtimeLoadout.runtimeAssist,
