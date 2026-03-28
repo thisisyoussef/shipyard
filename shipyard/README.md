@@ -148,6 +148,9 @@ bootstrap empty-target guard.
   and any follow-up human message while that run is active is queued as
   feedback for the next simulator cycle. Use `ultimate stop` or the normal
   cancel control to interrupt it.
+- In browser mode, `/human-feedback` serves a stripped-down operator page that
+  sends notes through the same websocket instruction path so you can feed the
+  running ultimate loop without opening the full workbench shell.
 
 ## Repo Map
 

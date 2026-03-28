@@ -22,6 +22,7 @@ import {
 } from "../../src/ui/contracts.js";
 import { validateContextDraft } from "./context-ui.js";
 import { HostedAccessGate } from "./HostedAccessGate.js";
+import { HumanFeedbackPage } from "./HumanFeedbackPage.js";
 import type { BadgeTone } from "./primitives.js";
 import { ShipyardWorkbench } from "./ShipyardWorkbench.js";
 import type { ComposerAttachment } from "./panels/ComposerPanel.js";
@@ -162,6 +163,18 @@ function writeSidebarState(key: string, open: boolean): void {
   }
 }
 
+export type UiPage = "workbench" | "human-feedback";
+
+export function resolveUiPage(pathname: string): UiPage {
+  const normalizedPath = pathname.trim().replace(/\/+$/, "") || "/";
+
+  if (normalizedPath === "/human-feedback") {
+    return "human-feedback";
+  }
+
+  return "workbench";
+}
+
 export function App() {
   const [viewState, setViewState] = useState(createInitialWorkbenchState);
   const [accessState, setAccessState] = useState<HostedAccessState>({
@@ -193,6 +206,9 @@ export function App() {
   const deferredTurns = useDeferredValue(viewState.turns);
   const deferredFileEvents = useDeferredValue(viewState.fileEvents);
   const deferredContextHistory = useDeferredValue(viewState.contextHistory);
+  const activePage = resolveUiPage(
+    typeof window === "undefined" ? "/" : window.location.pathname,
+  );
   const hasUnlockedAccess =
     accessState.checked &&
     (!accessState.required || accessState.authenticated);
@@ -969,6 +985,25 @@ export function App() {
         message={accessState.message}
         onAccessTokenChange={handleAccessTokenChange}
         onSubmit={handleHostedAccessSubmit}
+      />
+    );
+  }
+
+  if (activePage === "human-feedback") {
+    return (
+      <HumanFeedbackPage
+        sessionState={viewState.sessionState}
+        previewState={viewState.previewState}
+        turns={deferredTurns}
+        connectionState={viewState.connectionState}
+        agentStatus={viewState.agentStatus}
+        instruction={instruction}
+        textareaRef={instructionInputRef}
+        notice={composerNotice}
+        onInstructionChange={handleInstructionChange}
+        onInstructionKeyDown={handleComposerKeyDown}
+        onSubmit={handleInstructionSubmit}
+        onRefreshStatus={() => sendMessage({ type: "status" })}
       />
     );
   }

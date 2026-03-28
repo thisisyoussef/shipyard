@@ -161,3 +161,19 @@ flip to a simpler chat-first view for conversational iteration.
     });
   }
   ```
+
+- `shipyard/ui/src/App.tsx`,
+  `shipyard/ui/src/HumanFeedbackPage.tsx`, and
+  `shipyard/tests/ui-human-feedback-page.test.ts`: Shipyard now exposes a
+  dedicated `/human-feedback` browser route that reuses the same websocket
+  instruction path, so a human can feed ultimate mode from a stripped-down page
+  instead of the full workbench.
+
+  ```ts
+  export function resolveUiPage(pathname: string): UiPage {
+    const normalizedPath = pathname.trim().replace(/\/+$/, "") || "/";
+    return normalizedPath === "/human-feedback"
+      ? "human-feedback"
+      : "workbench";
+  }
+  ```

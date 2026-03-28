@@ -31,12 +31,18 @@ Shipyard browser workbench.
 - `App.tsx` sanitizes bootstrap `access_token` query params, negotiates
   `/api/access`, and shows `HostedAccessGate` when the hosted runtime requires
   it.
+- `App.tsx` also branches between the full workbench shell and the dedicated
+  `/human-feedback` route while keeping the same hosted-access gate, socket
+  lifecycle, and instruction submission path.
 - `App.tsx` sends `session:resume_request` messages so the browser can reopen a
   saved run without restarting the Shipyard process.
 - `socket-manager.ts` retries disconnected sessions and blocks sends while the
   transport is unavailable.
 - `ShipyardWorkbench.tsx` renders target/deploy status at the top, the
   transcript plus composer on the left, and file/output evidence on the right.
+- `HumanFeedbackPage.tsx` exposes a focused textarea-only surface for feeding
+  the running ultimate loop from the human side while reusing the same
+  websocket `instruction` transport.
 - File attachments go through `/api/uploads`, then appear as bounded receipts in
   workbench state and the next-turn context preview.
 - `TargetSwitcher.tsx` and `TargetCreationDialog.tsx` drive target selection and
