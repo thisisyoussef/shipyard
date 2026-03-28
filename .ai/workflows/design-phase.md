@@ -31,6 +31,7 @@ Skip only for:
 - Design philosophy: `.ai/docs/design/DESIGN_PHILOSOPHY_AND_LANGUAGE.md`
 - Existing token system: `shipyard/ui/src/tokens/`
 - Existing components: `shipyard/ui/src/primitives.tsx` and extracted components
+- Paper workflow reference: `.ai/docs/references/paper-codex.md`
 - Refero workflow reference: `.ai/docs/references/refero-mcp.md`
 
 ## Default Execution
@@ -46,7 +47,9 @@ Notes:
 - Use `--spec <path>` when auto-discovery is ambiguous.
 - Use `--context-path <path>` to include extra files or directories in the prompt.
 - The bridge writes `.ai/state/design-brief/<story-id>/brief.md`.
+- When Paper Desktop is available and we want live design iteration in Codex, run `node scripts/setup-paper-codex.mjs` once per machine, keep the relevant Paper file open, select the target frame, and prefer `node scripts/generate-design-brief.mjs --story <story-id> --provider codex`.
 - The bridge is Claude-first by default, uses Refero for brainstorming/reference research when configured, and falls back to Codex only when Claude is unavailable or returns an error.
+- The Paper + Codex path is the preferred operator path when we intentionally leave the Claude bridges off.
 - The bridge includes `.ai/agents/claude.md` and `.claude/CLAUDE.md` in its context so Claude follows the exact same imperative design skill chain Codex uses for this phase.
 
 After the initial draft is written, continue the full review/refinement loop below rather than treating the first output as final by default.
@@ -83,6 +86,7 @@ Before making any design decisions, understand what exists.
 
 **Actions:**
 0. If the brief does not exist yet, generate the first draft with `node scripts/generate-design-brief.mjs --story <story-id>` before refining it.
+0.25. If using Paper, verify the relevant frame or breakpoint set is selected in Paper before generating or revising the brief.
 0.5. When Refero is configured, verify the draft includes a useful reference-research section before refining the rest of the brief.
 1. Read the feature spec's acceptance criteria and UI requirements.
 2. Run `extract` on the affected UI surface to catalog existing patterns.

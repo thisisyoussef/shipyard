@@ -42,6 +42,7 @@ Read relevant internal docs first:
 10. For UI stories: frontend prompting skill `.ai/skills/frontend-design.md`
 11. For UI stories: reusable prompt brief `.ai/templates/spec/UI_PROMPT_BRIEF_TEMPLATE.md`
 12. For UI stories: Refero workflow reference `.ai/docs/references/refero-mcp.md`
+13. For UI stories: Paper + Codex workflow reference `.ai/docs/references/paper-codex.md`
 
 Capture reusable patterns and constraints from local docs.
 
@@ -87,6 +88,7 @@ For UI stories, include best practices for:
   - 3-6 relevant screens
   - 1-2 relevant flows when the story changes a user journey
   - concrete notes on what to borrow and what to avoid
+- When Paper is available for the story, also define which selected frame or breakpoint set Codex should inspect directly instead of describing it only in prose.
 
 ---
 
@@ -104,7 +106,8 @@ Deliver a concise lookup brief before any code/test edits:
 8. Spec implications (what to update in constitution/spec/plan/tasks artifacts)
 9. For UI scope: design-ambiguity implications, selected principle tie-breakers, and prompt/spec constraints that prevent generic output
 10. For UI scope when Refero is available: the selected reference set and the extracted product patterns
-11. Story sizing recommendation: `lane: trivial` or `lane: standard`, plus the reason `.ai/workflows/story-sizing.md` should land there next
+11. For UI scope when Paper is available: the selected Paper frames or breakpoint set Codex should inspect directly
+12. Story sizing recommendation: `lane: trivial` or `lane: standard`, plus the reason `.ai/workflows/story-sizing.md` should land there next
 
 If lookup is incomplete, do not start implementation.
 
