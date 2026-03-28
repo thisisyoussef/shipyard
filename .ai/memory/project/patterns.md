@@ -106,9 +106,11 @@ Capture repeatable patterns that match how this workspace actually works.
 ## UI Workflow Pattern
 
 - Visible UI stories default to `node scripts/generate-design-brief.mjs --story <story-id>` before TDD.
+- When Paper Desktop is available and the operator wants live design iteration, run `node scripts/setup-paper-codex.mjs` once per machine and prefer `node scripts/generate-design-brief.mjs --story <story-id> --provider codex` with the relevant Paper frame selected.
 - The design brief bridge is Claude-first and falls back to Codex only when Claude is unavailable or errors.
 - When Refero is configured, the UI workflow uses it during brainstorming/reference research before drafting the brief.
 - The design brief bridge includes `.ai/agents/claude.md` and `.claude/CLAUDE.md` context so Claude follows the same imperative design skill chain Codex uses.
 - Later UI phases can be scripted with `node scripts/run-ui-phase-bridge.mjs --phase <ui|qa|critic|polish> --story <story-id>`.
 - `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES=1` makes those later scripted UI phase bridges Claude-first; leaving it unset keeps them Codex-first.
+- The Paper + Codex workflow should keep `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES` unset unless the story explicitly wants a Claude experiment.
 - Scripted UI phase bridges write artifacts under `.ai/state/ui-phase-bridge/<story-id>/`.

@@ -91,9 +91,10 @@ Do not assume defaults that have not been recorded.
 - If the story touches user-visible UI, run `.ai/workflows/design-phase.md` before TDD.
 - Start by running `node scripts/generate-design-brief.mjs --story <story-id>` unless the story needs a more specific `--spec` or extra `--context-path` values.
 - The design phase produces a concrete design brief at `.ai/state/design-brief/<story-id>/brief.md`.
-- Claude is the default design delegate for that bridge.
+- If Paper Desktop is available and we want live screen iteration in Codex, run `node scripts/setup-paper-codex.mjs` once, keep `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES` unset, and prefer `node scripts/generate-design-brief.mjs --story <story-id> --provider codex` with the relevant Paper frame selected.
+- Claude is the default design delegate only when the bridge stays on the auto-provider path.
 - When Refero is configured, use it during brainstorming/reference gathering before locking the brief.
-- Codex is fallback-only when Claude is unavailable or errors.
+- Codex remains the default later-phase provider while the Claude bridge flag stays off.
 - The brief contains: visual direction, component inventory, token selections, layout/type/color/motion decisions, copy direction, accessibility requirements, responsive behavior, edge cases.
 - This brief becomes allowed context for TDD Agent 2 (implementer) and Agent 3 (reviewer).
 - Do not skip this step and invent design decisions during TDD.

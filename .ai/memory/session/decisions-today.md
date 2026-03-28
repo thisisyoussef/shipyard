@@ -49,3 +49,4 @@
   exhausts its bounded read-only review budget by falling back to the latest
   scoped instruction plus queued human feedback, and added traced regression
   coverage for that continuation path.
+- 2026-03-28: Added a dedicated Paper + Codex setup helper plus workflow references so visible UI stories can use the selected Paper frame as live design context while the Claude UI bridge flag stays off by default.

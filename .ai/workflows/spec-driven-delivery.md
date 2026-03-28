@@ -137,6 +137,7 @@ The design phase:
 - Later UI implementation, QA, critic, and polish passes can be scripted with `node scripts/run-ui-phase-bridge.mjs --phase <ui|qa|critic|polish> --story <story-id>`
 
 The bridge is Claude-first by default, uses Refero-backed research when configured, and only falls back to Codex when Claude is unavailable or errors.
+When Paper Desktop is available and the story benefits from live frame iteration, treat `node scripts/setup-paper-codex.mjs` plus `node scripts/generate-design-brief.mjs --story <story-id> --provider codex` as the preferred operator path while leaving the Claude UI bridge flag off.
 
 Do not skip this for UI stories. The design brief prevents the implementer from inventing visual decisions under test pressure.
 
