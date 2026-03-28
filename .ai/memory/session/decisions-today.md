@@ -45,3 +45,7 @@
   design: target-manager turns, plan/task routing, continuation handoffs,
   provider-neutral model routing, browser workbench state, and extension
   rules.
+- 2026-03-28: Prevented `ultimate` from stopping when the human simulator
+  exhausts its bounded read-only review budget by falling back to the latest
+  scoped instruction plus queued human feedback, and added traced regression
+  coverage for that continuation path.
