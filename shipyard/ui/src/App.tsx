@@ -35,6 +35,7 @@ import {
   queueInstructionTurn,
   removePendingUploadReceipt,
   setTransportState,
+  type WorkbenchConnectionState,
   type UploadReceiptViewModel,
 } from "./view-models.js";
 
@@ -175,6 +176,13 @@ export function resolveUiPage(pathname: string): UiPage {
   return "workbench";
 }
 
+export function shouldCancelBusyInstructionOnSubmit(
+  page: UiPage,
+  connectionState: WorkbenchConnectionState,
+): boolean {
+  return page !== "human-feedback" && connectionState === "agent-busy";
+}
+
 export function App() {
   const [viewState, setViewState] = useState(createInitialWorkbenchState);
   const [accessState, setAccessState] = useState<HostedAccessState>({
@@ -186,6 +194,7 @@ export function App() {
   const [accessToken, setAccessToken] = useState("");
   const [accessSubmitting, setAccessSubmitting] = useState(false);
   const [instruction, setInstruction] = useState("");
+  const [humanFeedbackInstruction, setHumanFeedbackInstruction] = useState("");
   const [contextDraft, setContextDraft] = useState("");
   const [localUploads, setLocalUploads] = useState<ComposerAttachment[]>([]);
   const [composerNotice, setComposerNotice] = useState<ComposerNotice | null>(
@@ -202,6 +211,7 @@ export function App() {
   const hasSessionRef = useRef(false);
   const lastSessionIdRef = useRef<string | null>(null);
   const instructionInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const humanFeedbackInputRef = useRef<HTMLTextAreaElement | null>(null);
   const contextInputRef = useRef<HTMLTextAreaElement | null>(null);
   const deferredTurns = useDeferredValue(viewState.turns);
   const deferredFileEvents = useDeferredValue(viewState.fileEvents);
@@ -209,6 +219,10 @@ export function App() {
   const activePage = resolveUiPage(
     typeof window === "undefined" ? "/" : window.location.pathname,
   );
+  const activeInstructionInputRef =
+    activePage === "human-feedback"
+      ? humanFeedbackInputRef
+      : instructionInputRef;
   const hasUnlockedAccess =
     accessState.checked &&
     (!accessState.required || accessState.authenticated);
@@ -244,7 +258,7 @@ export function App() {
       // Cmd/Ctrl+K — focus composer (works even in inputs)
       if (event.key === "k" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
         event.preventDefault();
-        instructionInputRef.current?.focus();
+        activeInstructionInputRef.current?.focus();
         return;
       }
 
@@ -267,7 +281,7 @@ export function App() {
 
     document.addEventListener("keydown", handleGlobalKeyDown);
     return () => document.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [toggleLeftSidebar, toggleRightSidebar]);
+  }, [activeInstructionInputRef, toggleLeftSidebar, toggleRightSidebar]);
 
   /* ── WebSocket ────────────────────────────── */
 
@@ -436,6 +450,12 @@ export function App() {
   function focusInstructionInput(): void {
     window.requestAnimationFrame(() => {
       instructionInputRef.current?.focus();
+    });
+  }
+
+  function focusHumanFeedbackInput(): void {
+    window.requestAnimationFrame(() => {
+      humanFeedbackInputRef.current?.focus();
     });
   }
 
@@ -681,7 +701,7 @@ export function App() {
   }
 
   function submitInstruction(): void {
-    if (viewState.connectionState === "agent-busy") {
+    if (shouldCancelBusyInstructionOnSubmit(activePage, viewState.connectionState)) {
       handleCancelInstruction();
       return;
     }
@@ -760,9 +780,57 @@ export function App() {
     focusInstructionInput();
   }
 
+  function submitHumanFeedback(): void {
+    const submission = prepareInstructionSubmission(
+      humanFeedbackInstruction,
+      "",
+      [],
+    );
+
+    if (submission === null) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Feedback required",
+        detail: "Enter feedback before queuing it for ultimate mode.",
+      });
+      focusHumanFeedbackInput();
+      return;
+    }
+
+    const sent = sendMessage({
+      type: "instruction",
+      text: submission.instruction,
+      injectedContext: submission.injectedContext,
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Browser runtime disconnected",
+        detail:
+          "Wait for reconnect or refresh the session before submitting another note.",
+      });
+      return;
+    }
+
+    setHumanFeedbackInstruction("");
+    queueComposerNotice({
+      tone: "success",
+      title: "Feedback queued",
+      detail:
+        "Shipyard accepted the note and will route it into ultimate mode when the loop is active.",
+    });
+    focusHumanFeedbackInput();
+  }
+
   function handleInstructionSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     submitInstruction();
+  }
+
+  function handleHumanFeedbackSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    submitHumanFeedback();
   }
 
   function handleComposerKeyDown(
@@ -791,8 +859,22 @@ export function App() {
     }
   }
 
+  function handleHumanFeedbackKeyDown(
+    event: KeyboardEvent<HTMLTextAreaElement>,
+  ): void {
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      submitHumanFeedback();
+    }
+  }
+
   function handleInstructionChange(value: string): void {
     setInstruction(value);
+    if (composerNotice) setComposerNotice(null);
+  }
+
+  function handleHumanFeedbackInstructionChange(value: string): void {
+    setHumanFeedbackInstruction(value);
     if (composerNotice) setComposerNotice(null);
   }
 
@@ -997,12 +1079,12 @@ export function App() {
         turns={deferredTurns}
         connectionState={viewState.connectionState}
         agentStatus={viewState.agentStatus}
-        instruction={instruction}
-        textareaRef={instructionInputRef}
+        instruction={humanFeedbackInstruction}
+        textareaRef={humanFeedbackInputRef}
         notice={composerNotice}
-        onInstructionChange={handleInstructionChange}
-        onInstructionKeyDown={handleComposerKeyDown}
-        onSubmit={handleInstructionSubmit}
+        onInstructionChange={handleHumanFeedbackInstructionChange}
+        onInstructionKeyDown={handleHumanFeedbackKeyDown}
+        onSubmit={handleHumanFeedbackSubmit}
         onRefreshStatus={() => sendMessage({ type: "status" })}
       />
     );
