@@ -3,7 +3,7 @@
 - Pack: Runtime Factory Foundations
 - Estimate: 36-48 hours
 - Date: 2026-03-28
-- Status: In progress; P11-S01, P11-S02, P11-S03, P11-S04, P11-S05, and P11-S06 implemented, remaining runtime-only stories planned
+- Status: In progress; P11-S01, P11-S02, P11-S03, P11-S04, P11-S05, P11-S06, and P11-S07 implemented, remaining runtime-only stories planned
 
 ## Pack Objectives
 
@@ -171,3 +171,23 @@ That later pack can concentrate on board interaction design, transitions, visual
   resolution, durable repository binding, stale/conflict ticket creation,
   workbench projection, and the narrow test baseline fix needed to keep the
   repo green while landing P11-S06.
+- `shipyard/src/hosting/contracts.ts`,
+  `shipyard/src/hosting/store.ts`,
+  `shipyard/src/hosting/runtime.ts`,
+  `shipyard/src/engine/state.ts`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/ui/health.ts`,
+  `shipyard/src/ui/server.ts`,
+  `.github/workflows/railway-main-deploy.yml`, and
+  `shipyard/docs/architecture/hosted-railway.md`: implement the Railway-hosted
+  runtime contract, durable `.shipyard/hosting/runtime.json` persistence,
+  hosted-safe GitHub adapter resolution, persistent workspace restore,
+  degraded hosted fallback, and clear separation between Shipyard service,
+  private preview, and public deployment surfaces.
+- `shipyard/tests/hosting-runtime.test.ts`,
+  `shipyard/tests/ui-runtime.test.ts`, and
+  `shipyard/tests/railway-config.test.ts`: validate hosted profile resolution,
+  durable workspace restore, degraded hosted fallback, workbench/health
+  projection, hosted availability metadata, and the Railway workflow env +
+  secret contract needed to run the same factory runtime remotely.

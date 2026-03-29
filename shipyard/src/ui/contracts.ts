@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import {
+  createDefaultHostingWorkbenchState,
+  hostingWorkbenchStateSchema,
+} from "../hosting/contracts.js";
 import { SCAFFOLD_TYPES } from "../tools/target-manager/scaffolds.js";
 import { pipelineWorkbenchStateSchema } from "../pipeline/contracts.js";
 import {
@@ -296,6 +300,9 @@ export const workbenchStateSchema = z.object({
   tddState: tddWorkbenchStateSchema.default(createIdleTddWorkbenchState()),
   sourceControl: sourceControlWorkbenchStateSchema.default(
     createDefaultSourceControlWorkbenchState(),
+  ),
+  hosting: hostingWorkbenchStateSchema.default(
+    createDefaultHostingWorkbenchState(),
   ),
   runtimeAssist: runtimeAssistStateSchema,
 });

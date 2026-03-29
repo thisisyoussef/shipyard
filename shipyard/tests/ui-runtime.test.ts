@@ -538,6 +538,55 @@ describe("ui runtime contract", () => {
     }
   });
 
+  it("publishes hosted runtime availability alongside health diagnostics", async () => {
+    process.env.SHIPYARD_UI_HOST = "0.0.0.0";
+    process.env.PORT = "0";
+    const targetsDirectory = await createTempDirectory("shipyard-ui-hosted-profile-");
+    const targetDirectory = path.join(targetsDirectory, "hosted-app");
+    await mkdir(targetDirectory, { recursive: true });
+    process.env.SHIPYARD_TARGETS_DIR = targetsDirectory;
+    process.env.SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE = "1";
+    process.env.RAILWAY_VOLUME_MOUNT_PATH = targetsDirectory;
+    process.env.RAILWAY_PUBLIC_DOMAIN = "shipyard-production.up.railway.app";
+    process.env.GITHUB_TOKEN = "github-token";
+
+    const discovery = await discoverTarget(targetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-hosted-profile-session",
+        targetDirectory,
+        targetsDirectory,
+        discovery,
+      }),
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const healthResponse = await fetch(`${runtime.url}/api/health`);
+
+      expect(healthResponse.ok).toBe(true);
+      await expect(healthResponse.json()).resolves.toMatchObject({
+        workspaceDirectory,
+        targetDirectory,
+        runtime: {
+          hosting: {
+            active: true,
+            provider: "railway",
+            serviceUrl: "https://shipyard-production.up.railway.app",
+            degraded: true,
+            blockedActions: [
+              "open_pull_request",
+              "merge_pull_request",
+            ],
+          },
+        },
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("prepares an empty mounted hosted workspace for first boot", async () => {
     const targetsDirectory = await createTempDirectory("shipyard-hosted-workspace-");
     process.env.SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE = "1";

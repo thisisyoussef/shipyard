@@ -68,6 +68,11 @@ import {
   resolveAutomaticTargetEnrichmentCapability,
 } from "../engine/target-enrichment.js";
 import { applySessionSwitchToRuntime } from "../engine/runtime-context.js";
+import {
+  createHostedWorkbenchState,
+  type PersistedHostedRuntimeState,
+} from "../hosting/contracts.js";
+import { syncHostedRuntimeState } from "../hosting/runtime.js";
 import { createPreviewSupervisor } from "../preview/supervisor.js";
 import type { PreviewSupervisor } from "../preview/supervisor.js";
 import { shouldUseStarterCanvasForScratchTarget } from "../preview/contracts.js";
@@ -204,6 +209,7 @@ interface BrowserProjectRuntime {
   projectRulesLoaded: boolean;
   traceLogger: LocalTraceLogger;
   targetManagerState: TargetManagerState;
+  hostedRuntimeState: PersistedHostedRuntimeState | null;
   previewSupervisor: PreviewSupervisor;
   previewStarted: boolean;
   activeInstruction: Promise<void> | null;
@@ -286,6 +292,7 @@ function createRuntimeDiagnostics(
       logTail: [...previewState.logTail],
       lastRestartReason: previewState.lastRestartReason,
     },
+    hosting: project.sessionState.workbenchState.hosting,
     ultimate: {
       active: ultimateController !== null,
       brief: ultimateController?.initialBrief ?? null,
@@ -1029,6 +1036,12 @@ export async function startUiRuntimeServer(
     }
 
     await syncSessionSourceControlState(sessionState);
+    const hostedRuntimeResult = await syncHostedRuntimeState(
+      sessionState.targetDirectory,
+      {
+        targetsDirectory: sessionState.targetsDirectory,
+      },
+    );
 
     const project = {
       projectId: createProjectId(sessionState),
@@ -1040,6 +1053,7 @@ export async function startUiRuntimeServer(
         sessionState.sessionId,
       ),
       targetManagerState: await buildTargetManagerState(sessionState),
+      hostedRuntimeState: hostedRuntimeResult.state,
       previewSupervisor: null as unknown as PreviewSupervisor,
       previewStarted: false,
       activeInstruction: null,
@@ -1059,6 +1073,14 @@ export async function startUiRuntimeServer(
       project.sessionState,
       {
         deploying: false,
+      },
+    );
+    project.sessionState.workbenchState.hosting = createHostedWorkbenchState(
+      project.hostedRuntimeState,
+      {
+        privatePreviewUrl: project.sessionState.workbenchState.previewState.url,
+        publicDeploymentUrl:
+          project.sessionState.workbenchState.latestDeploy.productionUrl,
       },
     );
 
@@ -1341,6 +1363,15 @@ export async function startUiRuntimeServer(
       },
     );
     project.sessionState.workbenchState.latestDeploy = nextDeploy;
+    if (project.hostedRuntimeState) {
+      project.sessionState.workbenchState.hosting = createHostedWorkbenchState(
+        project.hostedRuntimeState,
+        {
+          privatePreviewUrl: project.sessionState.workbenchState.previewState.url,
+          publicDeploymentUrl: nextDeploy.productionUrl,
+        },
+      );
+    }
     return nextDeploy;
   };
 
@@ -1393,6 +1424,16 @@ export async function startUiRuntimeServer(
         preview: previewState,
       },
     );
+    if (project.hostedRuntimeState) {
+      project.sessionState.workbenchState.hosting = createHostedWorkbenchState(
+        project.hostedRuntimeState,
+        {
+          privatePreviewUrl: previewState.url,
+          publicDeploymentUrl:
+            project.sessionState.workbenchState.latestDeploy.productionUrl,
+        },
+      );
+    }
 
     await project.traceLogger.log("preview.state", {
       sessionId: project.sessionState.sessionId,

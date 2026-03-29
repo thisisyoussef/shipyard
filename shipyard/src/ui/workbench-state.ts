@@ -1,5 +1,7 @@
 import type { PreviewState } from "../artifacts/types.js";
 import { formatTurnExecutionFingerprint } from "../engine/turn-fingerprint.js";
+import type { HostingWorkbenchState } from "../hosting/contracts.js";
+import { createDefaultHostingWorkbenchState } from "../hosting/contracts.js";
 import type { PipelineWorkbenchState } from "../pipeline/contracts.js";
 import {
   createInitialPreviewState,
@@ -138,6 +140,8 @@ export interface RuntimeAssistViewModel extends RuntimeAssistSummary {}
 
 export interface SourceControlViewModel extends SourceControlWorkbenchState {}
 
+export interface HostingViewModel extends HostingWorkbenchState {}
+
 export interface WorkbenchViewState {
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
@@ -160,6 +164,7 @@ export interface WorkbenchViewState {
   pipelineState: PipelineWorkbenchStateViewModel | null;
   tddState: TddWorkbenchStateViewModel;
   sourceControl: SourceControlViewModel;
+  hosting: HostingViewModel;
   runtimeAssist: RuntimeAssistViewModel;
 }
 
@@ -715,6 +720,7 @@ export function ensureWorkbenchStateDefaults(
     pipelineState: state.pipelineState ?? initialState.pipelineState,
     tddState: state.tddState ?? initialState.tddState,
     sourceControl: state.sourceControl ?? initialState.sourceControl,
+    hosting: state.hosting ?? initialState.hosting,
     runtimeAssist: state.runtimeAssist ?? initialState.runtimeAssist,
   };
 }
@@ -744,6 +750,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     pipelineState: null,
     tddState: createIdleTddWorkbenchState(),
     sourceControl: createDefaultSourceControlWorkbenchState(),
+    hosting: createDefaultHostingWorkbenchState(),
     runtimeAssist: createInitialRuntimeAssistState(),
   };
 }
@@ -927,6 +934,10 @@ export function applySessionSnapshot(
       recoveredState.sourceControl
       ?? state.sourceControl
       ?? createDefaultSourceControlWorkbenchState(),
+    hosting:
+      recoveredState.hosting
+      ?? state.hosting
+      ?? createDefaultHostingWorkbenchState(),
   };
 }
 

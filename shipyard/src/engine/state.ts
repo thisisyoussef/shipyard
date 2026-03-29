@@ -206,6 +206,10 @@ export function getSourceControlDirectory(targetDirectory: string): string {
   return path.join(getShipyardDirectory(targetDirectory), "source-control");
 }
 
+export function getHostingDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "hosting");
+}
+
 export function getUploadDirectory(
   targetDirectory: string,
   sessionId: string,
@@ -261,6 +265,7 @@ export async function ensureShipyardDirectories(
   await mkdir(getPipelineDirectory(targetDirectory), { recursive: true });
   await mkdir(getTddDirectory(targetDirectory), { recursive: true });
   await mkdir(getSourceControlDirectory(targetDirectory), { recursive: true });
+  await mkdir(getHostingDirectory(targetDirectory), { recursive: true });
   await mkdir(getArtifactDirectory(targetDirectory), { recursive: true });
   await mkdir(getArtifactRegistryDirectory(targetDirectory), { recursive: true });
 }

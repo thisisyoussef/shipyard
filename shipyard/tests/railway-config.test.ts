@@ -40,6 +40,12 @@ describe("railway config", () => {
     expect(workflow).toContain("ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}");
     expect(workflow).toContain("Missing ANTHROPIC_API_KEY GitHub secret");
     expect(workflow).toContain("railway variable set ANTHROPIC_API_KEY --stdin");
+    expect(workflow).toContain("SHIPYARD_GITHUB_TOKEN: ${{ secrets.SHIPYARD_GITHUB_TOKEN }}");
+    expect(workflow).toContain("railway variable set GITHUB_TOKEN --stdin");
+    expect(workflow).toContain("railway variable set VERCEL_TOKEN --stdin");
+    expect(workflow).toContain("SHIPYARD_TARGETS_DIR=/app/workspace");
+    expect(workflow).toContain("SHIPYARD_UI_HOST=0.0.0.0");
+    expect(workflow).toContain("SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1");
     expect(workflow).toContain("SHIPYARD_MODEL_PROVIDER=anthropic");
     expect(workflow).toContain("SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6");
   });

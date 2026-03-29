@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createDefaultHostingWorkbenchState } from "../src/hosting/contracts.js";
 import {
   DEFAULT_MISSION_THRESHOLDS,
   decideMissionAction,
@@ -41,6 +42,7 @@ function createHealthResponse(
         logTail: [],
         lastRestartReason: null,
       },
+      hosting: createDefaultHostingWorkbenchState(),
       ultimate: {
         active: true,
         brief: "Keep going.",
