@@ -22,7 +22,7 @@ Shipyard service URL, private preview URLs, and public target-app deploy URLs.
 | Variable | Value | Purpose |
 | --- | --- | --- |
 | `SHIPYARD_TARGETS_DIR` | `/app/workspace` | Moves hosted targets and `.shipyard/` runtime state into one predictable server-side workspace. |
-| `SHIPYARD_UI_HOST` | `0.0.0.0` | Lets the existing Node + WebSocket runtime bind to Railway's public networking instead of loopback only. |
+| `SHIPYARD_UI_HOST` | `0.0.0.0` | Recommended explicit override. When Railway-hosted env signals are present, Shipyard now also falls back to `0.0.0.0` automatically so a missing bind var does not leave the service on loopback only. |
 | `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE` | `1` | Fails startup loudly when the hosted service is expected to use a durable mounted workspace but Railway has not attached the volume yet. |
 | `SHIPYARD_ACCESS_TOKEN` | shared secret | Protects `/api/access`, the SPA shell, and `/ws` with a lightweight hosted gate. |
 | `ANTHROPIC_API_KEY` | Anthropic API key | Enables the shipped default Anthropic runtime in hosted production. |

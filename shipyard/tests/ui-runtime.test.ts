@@ -432,6 +432,14 @@ describe("ui runtime contract", () => {
     expect(resolveUiPort(undefined)).toBe(4110);
   });
 
+  it("defaults the UI host to 0.0.0.0 in Railway-hosted environments", () => {
+    process.env.RAILWAY_PUBLIC_DOMAIN = "shipyard-production.up.railway.app";
+    process.env.PORT = "4110";
+
+    expect(resolveUiHost()).toBe("0.0.0.0");
+    expect(resolveUiPort(undefined)).toBe(4110);
+  });
+
   it("prefers SHIPYARD_UI_PORT over PORT when both are set", () => {
     process.env.SHIPYARD_UI_PORT = "4210";
     process.env.PORT = "4110";
@@ -527,7 +535,7 @@ describe("ui runtime contract", () => {
   }, 10_000);
 
   it("boots the UI runtime on provider env host and port and reports hosted health state", async () => {
-    process.env.SHIPYARD_UI_HOST = "0.0.0.0";
+    process.env.RAILWAY_PUBLIC_DOMAIN = "shipyard-production.up.railway.app";
     process.env.PORT = "0";
     const targetDirectory = await createTempDirectory("shipyard-ui-hosted-");
     const discovery = await discoverTarget(targetDirectory);

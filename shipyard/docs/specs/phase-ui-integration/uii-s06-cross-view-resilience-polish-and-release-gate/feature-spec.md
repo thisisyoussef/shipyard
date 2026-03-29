@@ -139,6 +139,13 @@ validation, and docs sync.
   `shipyard/ui/src/App.tsx` so hosted sessions stop surfacing unreachable
   `127.0.0.1` preview URLs and instead prefer the latest public deployment or
   hosted-editor fallback.
+- Post-ship hosted startup hardening extended the same resilience lane into
+  `shipyard/src/ui/server.ts`, `shipyard/src/hosting/runtime.ts`,
+  `shipyard/tests/ui-runtime.test.ts`,
+  `shipyard/docs/architecture/hosted-railway.md`, and `shipyard/README.md` so
+  Railway-hosted UI boot now falls back to `0.0.0.0` when `SHIPYARD_UI_HOST`
+  is missing, preventing loopback-only startup from taking down the hosted
+  `/api/health`, static asset, and `/ws` surfaces.
 - AC-5 is covered by the required validation matrix for this story:
   `pnpm --dir shipyard test`, `pnpm --dir shipyard typecheck`,
   `pnpm --dir shipyard build`, and `git diff --check`, plus the preview-harness

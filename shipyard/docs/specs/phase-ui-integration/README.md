@@ -228,3 +228,12 @@ The board and ultimate work should align with those future packs by:
   `shipyard/tests/ui-dashboard-system-notice.test.ts`,
   `shipyard/tests/ui-access.test.ts`, and
   `shipyard/tests/ui-human-feedback-page.test.ts`.
+- Post-pack hosted startup hardening extended the same resilience lane into
+  `shipyard/src/ui/server.ts`,
+  `shipyard/src/hosting/runtime.ts`,
+  `shipyard/tests/ui-runtime.test.ts`,
+  `shipyard/docs/architecture/hosted-railway.md`, and
+  `shipyard/README.md` so Railway-hosted UI boot now falls back to binding on
+  `0.0.0.0` when the explicit `SHIPYARD_UI_HOST` override is missing, which
+  prevents loopback-only startup from failing the hosted `/api/health` and
+  websocket surfaces.

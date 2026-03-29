@@ -262,7 +262,9 @@ target-manager flow:
 - run Shipyard in browser mode from that same app root:
   `pnpm start -- --ui`
 - set `SHIPYARD_TARGETS_DIR=/app/workspace`
-- set `SHIPYARD_UI_HOST=0.0.0.0`
+- prefer `SHIPYARD_UI_HOST=0.0.0.0`; when Railway-hosted env signals are
+  present, Shipyard now also falls back to `0.0.0.0` automatically if that
+  override is missing
 - let Railway provide `PORT`; Shipyard falls back to it when
   `SHIPYARD_UI_PORT` is unset
 - attach a persistent volume at `/app/workspace` and enable
