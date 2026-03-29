@@ -2,12 +2,14 @@ import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { createDefaultHostingWorkbenchState } from "../src/hosting/contracts.js";
 import { resolveWorkbenchComposerBehavior } from "../ui/src/ultimate-composer.js";
 import { EditorView } from "../ui/src/views/EditorView.js";
 import type { ComposerAttachment } from "../ui/src/panels/ComposerPanel.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
+  HostingViewModel,
   LatestDeployViewModel,
   PendingUploadReceiptViewModel,
   ProjectBoardViewModel,
@@ -178,13 +180,16 @@ function renderEditor(overrides?: {
   fileEvents?: FileEventViewModel[];
   initialActiveTab?: "preview" | "code" | "files";
   composerAttachments?: ComposerAttachment[];
+  hostedEditorUrl?: string;
+  hosting?: HostingViewModel;
 }) {
   return renderToStaticMarkup(
     createElement(EditorView, {
       productId: "/tmp/shipyard-demo",
       productName: "shipyard",
       scaffoldType: "React",
-      hostedEditorUrl: "http://127.0.0.1:3210",
+      hostedEditorUrl:
+        overrides?.hostedEditorUrl ?? "http://127.0.0.1:3210",
       sessionState,
       sessionHistory,
       targetManager,
@@ -195,6 +200,7 @@ function renderEditor(overrides?: {
       latestDeploy,
       contextHistory,
       pendingUploads,
+      hosting: overrides?.hosting ?? createDefaultHostingWorkbenchState(),
       connectionState: "ready",
       agentStatus: "Ready for the next instruction.",
       ultimateState: idleUltimateState,
@@ -271,5 +277,28 @@ describe("EditorView", () => {
     expect(previewMarkup).toContain("No dev script detected.");
     expect(fileMarkup).toContain("package.json");
     expect(fileMarkup).toContain("Normalized the package scripts.");
+  });
+
+  it("shows a public deployment instead of a hosted loopback preview", () => {
+    const markup = renderEditor({
+      initialActiveTab: "preview",
+      hostedEditorUrl: "https://shipyard-production.up.railway.app",
+      hosting: {
+        ...createDefaultHostingWorkbenchState(),
+        active: true,
+        provider: "railway",
+        mode: "hosted",
+        serviceUrl: "https://shipyard-production.up.railway.app",
+        privatePreviewUrl: "http://127.0.0.1:4173",
+        publicDeploymentUrl: "https://shipyard-demo.vercel.app",
+        summary: "Hosted Shipyard should surface the public app instead of the private loopback preview.",
+      },
+    });
+
+    expect(markup).toContain("Production deploy");
+    expect(markup).toContain("Open app");
+    expect(markup).toContain("https://shipyard-demo.vercel.app");
+    expect(markup).not.toContain("http://127.0.0.1:4173");
+    expect(markup).not.toContain("Local preview");
   });
 });

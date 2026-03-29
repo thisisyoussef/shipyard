@@ -37,6 +37,9 @@
 - The target header shows the active target, enrichment status, deploy
   readiness, publish errors, and the latest production URL when available.
 - The left pane keeps the latest conversation and composer together.
+- Hosted editor sessions suppress unreachable loopback preview URLs and prefer
+  the latest public deployment or hosted-editor fallback instead of blank
+  localhost iframes.
 - The right pane focuses on file-level diff evidence and command output rather
   than a dedicated preview/live-view tab set.
 - The drawer holds session details, saved runs, and injected context history.

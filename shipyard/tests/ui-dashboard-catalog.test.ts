@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createDefaultHostingWorkbenchState } from "../src/hosting/contracts.js";
 import {
   buildDashboardCatalog,
 } from "../ui/src/dashboard-catalog.js";
@@ -163,6 +164,7 @@ describe("dashboard catalog", () => {
       projectBoard,
       sessionState,
       preferences,
+      hosting: createDefaultHostingWorkbenchState(),
     });
 
     expect(catalog.cards.map((card) => card.path)).toEqual([
@@ -232,6 +234,7 @@ describe("dashboard catalog", () => {
       projectBoard,
       sessionState,
       preferences: setDashboardActiveTab(preferences, "recent"),
+      hosting: createDefaultHostingWorkbenchState(),
     });
 
     expect(recentCatalog.visibleCards.map((card) => card.path)).toEqual([
@@ -246,6 +249,7 @@ describe("dashboard catalog", () => {
       projectBoard,
       sessionState,
       preferences: setDashboardActiveTab(preferences, "starred"),
+      hosting: createDefaultHostingWorkbenchState(),
     });
 
     expect(starredCatalog.visibleCards.map((card) => card.path)).toEqual([
@@ -260,6 +264,7 @@ describe("dashboard catalog", () => {
         createInitialDashboardPreferences(),
         "starred",
       ),
+      hosting: createDefaultHostingWorkbenchState(),
     });
 
     expect(emptyStarredCatalog.visibleCards).toEqual([]);
@@ -267,6 +272,32 @@ describe("dashboard catalog", () => {
       title: "No starred products yet",
       detail:
         "Star the products you revisit often to keep a quick shortlist on hand.",
+    });
+  });
+
+  it("prefers public deployment previews in hosted sessions", () => {
+    const catalog = buildDashboardCatalog({
+      targetManager,
+      projectBoard,
+      sessionState,
+      preferences: createInitialDashboardPreferences(),
+      hosting: {
+        ...createDefaultHostingWorkbenchState(),
+        active: true,
+        provider: "railway",
+        mode: "hosted",
+        serviceUrl: "https://shipyard-production.up.railway.app",
+        privatePreviewUrl: "http://127.0.0.1:4173",
+        publicDeploymentUrl: "https://alpha-app.vercel.app",
+        summary: "Hosted Shipyard should open a public app surface instead of loopback preview.",
+      },
+    });
+
+    expect(
+      catalog.cards.find((card) => card.path === "/tmp/alpha-app"),
+    ).toMatchObject({
+      previewUrl: "https://alpha-app.vercel.app",
+      previewLabel: "Production deploy",
     });
   });
 });
