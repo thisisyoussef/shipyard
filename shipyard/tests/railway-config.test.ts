@@ -94,6 +94,8 @@ describe("railway config", () => {
     expect(workflow).toContain('echo "RAILWAY_CONTROL_TOKEN_KIND=project" >> "${GITHUB_ENV}"');
     expect(workflow).toContain("RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}");
     expect(workflow).toContain("RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}");
+    expect(workflow).toContain("unset RAILWAY_TOKEN");
+    expect(workflow).toContain("unset RAILWAY_API_TOKEN");
     expect(workflow).toContain('export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"');
     expect(workflow).toContain('export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"');
     expect(workflow).toContain("railway project link \\");

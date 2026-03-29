@@ -154,7 +154,8 @@ not confuse the Shipyard editor with the product being built.
   Actions path because the Railway link, config-edit, and deploy polling steps
   rely on account or workspace scope. Keep `RAILWAY_TOKEN` only as an explicit
   fallback when you have already validated a project-scoped token against the
-  same workflow steps.
+  same workflow steps. Before each Railway CLI call, unset the unused token env
+  var so a blank `RAILWAY_TOKEN` cannot override the selected API token.
 - Repo-controlled auto-deploy does not require the Railway service itself to be
   GitHub-linked. Native Railway GitHub autodeploy remains optional and can be
   enabled later from the service settings if you want Railway to watch a branch

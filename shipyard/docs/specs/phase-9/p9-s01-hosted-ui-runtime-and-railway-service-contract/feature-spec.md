@@ -135,6 +135,20 @@ else
 fi
 ```
 
+- Each later Railway CLI step also unsets the unused token env var before it
+  exports the selected control token, so a blank `RAILWAY_TOKEN` does not
+  override a valid API token on GitHub Actions:
+
+```bash
+if [ "${RAILWAY_CONTROL_TOKEN_KIND}" = "api" ]; then
+  unset RAILWAY_TOKEN
+  export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+else
+  unset RAILWAY_API_TOKEN
+  export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+fi
+```
+
 - The image-backed deploy wrapper now retries Railway's known transient GHCR
   pull/unpack handoff failures before surfacing the rollout as a hard failure:
 
