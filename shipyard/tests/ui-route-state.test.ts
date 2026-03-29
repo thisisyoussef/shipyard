@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  getPreferredBoardRoute,
   getPreferredEditorRoute,
   resolveAppRoute,
+  selectBoardRouteState,
   selectEditorRouteState,
 } from "../ui/src/app-route.js";
 import type {
@@ -86,6 +88,13 @@ describe("resolveAppRoute", () => {
       productId: "my-app",
     });
   });
+
+  it("resolves project-scoped board hashes", () => {
+    expect(resolveAppRoute("/", "#/board/my-app")).toEqual({
+      view: "board",
+      productId: "my-app",
+    });
+  });
 });
 
 describe("selectEditorRouteState", () => {
@@ -161,6 +170,41 @@ describe("selectEditorRouteState", () => {
   });
 });
 
+describe("selectBoardRouteState", () => {
+  it("treats the active project target as ready", () => {
+    expect(
+      selectBoardRouteState({
+        productId: "/tmp/alpha-app",
+        projectBoard,
+        targetManager,
+      }),
+    ).toEqual({
+      status: "active",
+      productId: "/tmp/alpha-app",
+      productName: "alpha-app",
+      intent: { kind: "none" },
+    });
+  });
+
+  it("activates an already-open background project when the route matches it", () => {
+    expect(
+      selectBoardRouteState({
+        productId: "/tmp/beta-app",
+        projectBoard,
+        targetManager,
+      }),
+    ).toEqual({
+      status: "opening",
+      productId: "/tmp/beta-app",
+      productName: "beta-app",
+      intent: {
+        kind: "activate-project",
+        projectId: "project-beta",
+      },
+    });
+  });
+});
+
 describe("getPreferredEditorRoute", () => {
   it("prefers the active open project target path", () => {
     expect(getPreferredEditorRoute(projectBoard, targetManager)).toEqual({
@@ -205,5 +249,29 @@ describe("getPreferredEditorRoute", () => {
         },
       ),
     ).toBeNull();
+  });
+});
+
+describe("getPreferredBoardRoute", () => {
+  it("prefers the active open project target path", () => {
+    expect(getPreferredBoardRoute(projectBoard, targetManager)).toEqual({
+      view: "board",
+      productId: "/tmp/alpha-app",
+    });
+  });
+
+  it("falls back to the current target when no project is open", () => {
+    expect(
+      getPreferredBoardRoute(
+        {
+          activeProjectId: null,
+          openProjects: [],
+        },
+        targetManager,
+      ),
+    ).toEqual({
+      view: "board",
+      productId: "/tmp/alpha-app",
+    });
   });
 });

@@ -182,6 +182,16 @@ The board and ultimate work should align with those future packs by:
 - The live board outcome originally scoped for `UII-S05` shipped during
   `UII-S06` by consuming the already-published runtime `taskBoard` projection,
   so no separate board-story branch remains open.
+- Post-pack route hardening made the board explicitly project-scoped at
+  `#/board/<productId>` in `shipyard/ui/src/router.ts`,
+  `shipyard/ui/src/app-route.ts`, `shipyard/ui/src/App.tsx`,
+  `shipyard/ui/src/board-view-model.ts`,
+  `shipyard/ui/src/shell/NavBar.tsx`, and the focused coverage in
+  `shipyard/tests/ui/router.test.ts`,
+  `shipyard/tests/ui-route-state.test.ts`, and
+  `shipyard/tests/ui-board-view-model.test.ts`. The board now resolves and
+  persists against an explicit product route instead of ambient dashboard
+  selection.
 - `UII-S06` landed the cross-view resilience and release gate in
   `shipyard/ui/src/App.tsx`,
   `shipyard/ui/src/board-view-model.ts`,

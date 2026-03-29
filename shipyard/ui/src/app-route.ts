@@ -18,19 +18,23 @@ export function resolveAppRoute(pathname: string, hash: string): AppRoute {
   return parseHash(hash);
 }
 
-export type EditorRouteIntent =
+export type ProductRouteIntent =
   | { kind: "none" }
   | { kind: "activate-project"; projectId: string }
   | { kind: "switch-target"; targetPath: string };
 
-export interface EditorRouteState {
+export interface ProductRouteState {
   status: "active" | "opening" | "missing";
   productId: string;
   productName: string | null;
-  intent: EditorRouteIntent;
+  intent: ProductRouteIntent;
 }
 
-interface SelectEditorRouteStateOptions {
+export type EditorRouteIntent = ProductRouteIntent;
+export type EditorRouteState = ProductRouteState;
+export type BoardRouteState = ProductRouteState;
+
+interface SelectProductRouteStateOptions {
   productId: string;
   projectBoard: ProjectBoardViewModel | null;
   targetManager: TargetManagerViewModel | null;
@@ -45,9 +49,9 @@ function findOpenProject(
   );
 }
 
-export function selectEditorRouteState(
-  options: SelectEditorRouteStateOptions,
-): EditorRouteState {
+function selectProductRouteState(
+  options: SelectProductRouteStateOptions,
+): ProductRouteState {
   const activeProject = getActiveProject(options.projectBoard);
   const selectedTarget = getSelectedTarget(options.targetManager);
   const activeTargetPath = activeProject?.targetPath
@@ -105,27 +109,59 @@ export function selectEditorRouteState(
   };
 }
 
+export function selectEditorRouteState(
+  options: SelectProductRouteStateOptions,
+): EditorRouteState {
+  return selectProductRouteState(options);
+}
+
+export function selectBoardRouteState(
+  options: SelectProductRouteStateOptions,
+): BoardRouteState {
+  return selectProductRouteState(options);
+}
+
+function getPreferredProductId(
+  projectBoard: ProjectBoardViewModel | null,
+  targetManager: TargetManagerViewModel | null,
+): string | null {
+  const activeProject = getActiveProject(projectBoard);
+
+  if (activeProject) {
+    return activeProject.targetPath;
+  }
+
+  return getSelectedTargetPath(targetManager);
+}
+
 export function getPreferredEditorRoute(
   projectBoard: ProjectBoardViewModel | null,
   targetManager: TargetManagerViewModel | null,
 ): Extract<Route, { view: "editor" }> | null {
-  const activeProject = getActiveProject(projectBoard);
+  const productId = getPreferredProductId(projectBoard, targetManager);
 
-  if (activeProject) {
-    return {
-      view: "editor",
-      productId: activeProject.targetPath,
-    };
-  }
-
-  const currentTargetPath = getSelectedTargetPath(targetManager);
-
-  if (!currentTargetPath) {
+  if (!productId) {
     return null;
   }
 
   return {
     view: "editor",
-    productId: currentTargetPath,
+    productId,
+  };
+}
+
+export function getPreferredBoardRoute(
+  projectBoard: ProjectBoardViewModel | null,
+  targetManager: TargetManagerViewModel | null,
+): Extract<Route, { view: "board" }> | null {
+  const productId = getPreferredProductId(projectBoard, targetManager);
+
+  if (!productId) {
+    return null;
+  }
+
+  return {
+    view: "board",
+    productId,
   };
 }

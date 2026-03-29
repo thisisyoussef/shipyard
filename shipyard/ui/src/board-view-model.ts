@@ -1,15 +1,8 @@
 import type { BadgeTone } from "./primitives.js";
 import type {
-  ProjectBoardViewModel,
-  SessionStateViewModel,
-  TargetManagerViewModel,
   TaskBoardViewModel,
   WorkbenchConnectionState,
 } from "./view-models.js";
-import {
-  getActiveProject,
-  getSelectedTargetPath,
-} from "./target-selection.js";
 
 export interface BoardStoryOption {
   id: string;
@@ -65,9 +58,7 @@ export interface BoardViewModel {
 interface CreateBoardViewModelOptions {
   taskBoard: TaskBoardViewModel | null;
   connectionState: WorkbenchConnectionState;
-  sessionState: SessionStateViewModel | null;
-  targetManager: TargetManagerViewModel | null;
-  projectBoard: ProjectBoardViewModel | null;
+  scopeKey: string | null;
   selectedStoryId: string;
 }
 
@@ -203,38 +194,10 @@ function normalizeSelectedStoryId(selectedStoryId: string): string {
     : "all";
 }
 
-export function resolveBoardScopeKey(
-  options: Pick<
-    CreateBoardViewModelOptions,
-    "sessionState" | "targetManager" | "projectBoard"
-  >,
-): string | null {
-  const activeProject = getActiveProject(options.projectBoard);
-
-  if (activeProject?.targetPath) {
-    return activeProject.targetPath;
-  }
-
-  const selectedTargetPath = getSelectedTargetPath(options.targetManager);
-
-  if (selectedTargetPath) {
-    return selectedTargetPath;
-  }
-
-  if (
-    options.sessionState?.activePhase === "code" &&
-    options.sessionState.targetDirectory.trim().length > 0
-  ) {
-    return options.sessionState.targetDirectory;
-  }
-
-  return options.projectBoard?.openProjects[0]?.targetPath ?? null;
-}
-
 export function createBoardViewModel(
   options: CreateBoardViewModelOptions,
 ): BoardViewModel {
-  const scopeKey = resolveBoardScopeKey(options);
+  const { scopeKey } = options;
 
   if (!scopeKey) {
     return createMissingTargetState();

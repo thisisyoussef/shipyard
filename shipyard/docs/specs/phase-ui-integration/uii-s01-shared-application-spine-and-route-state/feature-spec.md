@@ -40,8 +40,8 @@ the new UI surfaces can be wired safely.
   editor, board, and human-feedback surfaces; route changes do not create
   duplicate sockets or duplicate upload state.
 - [x] AC-3: Hash-based routing supports `#/`, `#/editor/:productId`, and
-  `#/board`, while `/human-feedback` remains a backward-compatible operator
-  entry point.
+  project-scoped board routes at `#/board/:productId`, while `/human-feedback`
+  remains a backward-compatible operator entry point.
 - [x] AC-4: Reloading on editor or board routes restores the same session and
   resolves missing or inactive products to an explicit fallback state instead of
   silently showing mocks.
@@ -102,10 +102,10 @@ the new UI surfaces can be wired safely.
 
 - `shipyard/ui/src/app-route.ts`: route resolution and editor-target fallback
   logic are explicit and typed, including reload-safe `opening` and `missing`
-  states for deep-linked editor routes.
+  states for deep-linked editor and board routes.
 
   ```ts
-  export function selectEditorRouteState(options: SelectEditorRouteStateOptions): EditorRouteState {
+  export function selectBoardRouteState(options: SelectProductRouteStateOptions): BoardRouteState {
     const openProject = findOpenProject(options.projectBoard, options.productId);
     if (openProject) {
       return {

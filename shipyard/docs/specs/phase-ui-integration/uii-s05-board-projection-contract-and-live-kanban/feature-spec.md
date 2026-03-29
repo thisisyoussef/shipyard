@@ -82,3 +82,24 @@ throwaway visualization that future task-graph work has to replace wholesale.
 ## Done Definition
 - The board route renders a live, typed, read-only projection of current
   Shipyard work instead of mock data.
+- The board is addressable per product via `#/board/:productId` rather than as
+  an ambient dashboard-level surface.
+
+## Implementation Evidence
+
+- The project-scoped board route landed in `shipyard/ui/src/router.ts`,
+  `shipyard/ui/src/app-route.ts`, `shipyard/ui/src/App.tsx`,
+  `shipyard/ui/src/board-view-model.ts`, and
+  `shipyard/ui/src/shell/NavBar.tsx`, with focused coverage in
+  `shipyard/tests/ui/router.test.ts`,
+  `shipyard/tests/ui-route-state.test.ts`, and
+  `shipyard/tests/ui-board-view-model.test.ts`. Representative snippet:
+  ```ts
+  export function getPreferredBoardRoute(
+    projectBoard: ProjectBoardViewModel | null,
+    targetManager: TargetManagerViewModel | null,
+  ): Extract<Route, { view: "board" }> | null {
+    const productId = getPreferredProductId(projectBoard, targetManager);
+    return productId ? { view: "board", productId } : null;
+  }
+  ```

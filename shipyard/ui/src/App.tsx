@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   createBoardViewModel,
-  resolveBoardScopeKey,
 } from "./board-view-model.js";
 import {
   getBoardSelectedStory,
@@ -30,9 +29,12 @@ import {
   writeDashboardPreferences,
 } from "./dashboard-preferences.js";
 import {
+  getPreferredBoardRoute,
   getPreferredEditorRoute,
   resolveAppRoute,
+  selectBoardRouteState,
   selectEditorRouteState,
+  type BoardRouteState,
   type EditorRouteState,
 } from "./app-route.js";
 import type { Route } from "./router.js";
@@ -60,7 +62,7 @@ export {
 } from "./use-workbench-controller.js";
 
 function getEditorIntentKey(
-  routeState: EditorRouteState | null,
+  routeState: EditorRouteState | BoardRouteState | null,
 ): string | null {
   if (!routeState || routeState.status !== "opening") {
     return null;
@@ -76,13 +78,14 @@ function getEditorIntentKey(
   }
 }
 
-function isEditorRouteLoading(
+function isProductRouteLoading(
   route: Route,
-  routeState: EditorRouteState | null,
+  view: Extract<Route["view"], "editor" | "board">,
+  routeState: EditorRouteState | BoardRouteState | null,
   hasLoadedWorkbenchState: boolean,
 ): boolean {
   return (
-    route.view === "editor" &&
+    route.view === view &&
     routeState?.status === "missing" &&
     !hasLoadedWorkbenchState
   );
@@ -116,10 +119,23 @@ export function App() {
     controller.viewState.projectBoard,
     controller.viewState.targetManager,
   );
+  const preferredBoardRoute = getPreferredBoardRoute(
+    controller.viewState.projectBoard,
+    controller.viewState.targetManager,
+  );
   const navEditorRoute =
     appRoute.view === "editor" ? appRoute : preferredEditorRoute;
+  const navBoardRoute =
+    appRoute.view === "board" ? appRoute : preferredBoardRoute;
   const editorRouteState = appRoute.view === "editor"
     ? selectEditorRouteState({
+        productId: appRoute.productId,
+        projectBoard: controller.viewState.projectBoard,
+        targetManager: controller.viewState.targetManager,
+      })
+    : null;
+  const boardRouteState = appRoute.view === "board"
+    ? selectBoardRouteState({
         productId: appRoute.productId,
         projectBoard: controller.viewState.projectBoard,
         targetManager: controller.viewState.targetManager,
@@ -128,22 +144,26 @@ export function App() {
   const hasLoadedWorkbenchState =
     controller.viewState.targetManager !== null ||
     controller.viewState.projectBoard !== null;
-  const loadingEditorRoute = isEditorRouteLoading(
+  const loadingEditorRoute = isProductRouteLoading(
     appRoute,
+    "editor",
     editorRouteState,
     hasLoadedWorkbenchState,
   );
-  const boardScopeKey = resolveBoardScopeKey({
-    sessionState: controller.viewState.sessionState,
-    targetManager: controller.viewState.targetManager,
-    projectBoard: controller.viewState.projectBoard,
-  });
+  const loadingBoardRoute = isProductRouteLoading(
+    appRoute,
+    "board",
+    boardRouteState,
+    hasLoadedWorkbenchState,
+  );
+  const boardScopeKey =
+    appRoute.view === "board" && boardRouteState?.status === "active"
+      ? boardRouteState.productId
+      : null;
   const boardViewModel = createBoardViewModel({
     taskBoard: controller.viewState.taskBoard,
     connectionState: controller.viewState.connectionState,
-    sessionState: controller.viewState.sessionState,
-    targetManager: controller.viewState.targetManager,
-    projectBoard: controller.viewState.projectBoard,
+    scopeKey: boardScopeKey,
     selectedStoryId: boardScopeKey
       ? getBoardSelectedStory(boardPreferences, boardScopeKey)
       : "all",
@@ -162,17 +182,26 @@ export function App() {
         hasLoadedCatalog: hasLoadedWorkbenchState,
       })
       : null);
+  const productRouteState = appRoute.view === "editor"
+    ? editorRouteState
+    : appRoute.view === "board"
+      ? boardRouteState
+      : null;
+  const loadingProductRoute = appRoute.view === "editor"
+    ? loadingEditorRoute
+    : appRoute.view === "board"
+      ? loadingBoardRoute
+      : false;
 
   useEffect(() => {
-    const intentKey = getEditorIntentKey(editorRouteState);
-    const nextEditorRouteState = editorRouteState;
+    const intentKey = getEditorIntentKey(productRouteState);
+    const nextProductRouteState = productRouteState;
 
     if (
       !controller.hasUnlockedAccess ||
-      appRoute.view !== "editor" ||
-      !nextEditorRouteState ||
+      !nextProductRouteState ||
       !intentKey ||
-      loadingEditorRoute
+      loadingProductRoute
     ) {
       requestedEditorIntentRef.current = null;
       return;
@@ -184,12 +213,12 @@ export function App() {
 
     requestedEditorIntentRef.current = intentKey;
 
-    switch (nextEditorRouteState.intent.kind) {
+    switch (nextProductRouteState.intent.kind) {
       case "activate-project":
-        controller.onActivateProject(nextEditorRouteState.intent.projectId);
+        controller.onActivateProject(nextProductRouteState.intent.projectId);
         return;
       case "switch-target":
-        controller.onRequestTargetSwitch(nextEditorRouteState.intent.targetPath);
+        controller.onRequestTargetSwitch(nextProductRouteState.intent.targetPath);
         return;
       case "none":
         return;
@@ -197,9 +226,23 @@ export function App() {
   }, [
     appRoute,
     controller,
-    editorRouteState,
-    loadingEditorRoute,
+    loadingProductRoute,
+    productRouteState,
   ]);
+
+  useEffect(() => {
+    const hash = typeof window === "undefined" ? "" : window.location.hash;
+
+    if (hash !== "#/board" && hash !== "#/board/") {
+      return;
+    }
+
+    if (!preferredBoardRoute) {
+      return;
+    }
+
+    navigate(preferredBoardRoute);
+  }, [navigate, preferredBoardRoute]);
 
   useEffect(() => {
     if (!shouldFollowCreatedTargetRef.current || appRoute.view !== "editor") {
@@ -508,6 +551,72 @@ export function App() {
     );
   }
 
+  function renderBoardContent(): ReactNode {
+    if (loadingBoardRoute) {
+      return (
+        <RoutePlaceholderView
+          kicker="Board"
+          title="Loading board"
+          description="Shipyard is resolving the board route against the live target state."
+        />
+      );
+    }
+
+    if (!boardRouteState) {
+      return null;
+    }
+
+    if (boardRouteState.status === "opening") {
+      return (
+        <RoutePlaceholderView
+          kicker="Board"
+          title={`Opening ${boardRouteState.productName ?? "workspace"} board`}
+          description="Shipyard is synchronizing the requested project with the live browser session."
+          action={
+            preferredBoardRoute &&
+                preferredBoardRoute.productId !== boardRouteState.productId ? (
+              <button
+                type="button"
+                className="target-inline-action"
+                onClick={() => navigate(preferredBoardRoute)}
+              >
+                Open active board instead
+              </button>
+            ) : undefined
+          }
+        />
+      );
+    }
+
+    if (boardRouteState.status === "missing") {
+      return (
+        <RoutePlaceholderView
+          kicker="Board"
+          title="This product board is not available"
+          description="The requested board route does not match any open project or known target in the current Shipyard session."
+          action={
+            <button
+              type="button"
+              className="target-inline-action"
+              onClick={() => navigate({ view: "dashboard" })}
+            >
+              Return to dashboard
+            </button>
+          }
+        />
+      );
+    }
+
+    return (
+      <BoardView
+        board={boardViewModel}
+        preferredEditorRoute={preferredEditorRoute}
+        onNavigate={navigate}
+        onSelectStory={handleBoardStoryChange}
+      />
+    );
+  }
+
   if (!controller.hasUnlockedAccess) {
     return (
       <HostedAccessGate
@@ -549,7 +658,7 @@ export function App() {
       <NavBar
         currentView={appRoute.view}
         editorRoute={navEditorRoute}
-        boardDisabled={false}
+        boardRoute={navBoardRoute}
         onNavigate={navigate}
         ultimateState={controller.viewState.ultimateState}
         ultimateDisabled={
@@ -610,14 +719,7 @@ export function App() {
 
         {appRoute.view === "editor" ? renderEditorContent() : null}
 
-        {appRoute.view === "board" ? (
-          <BoardView
-            board={boardViewModel}
-            preferredEditorRoute={preferredEditorRoute}
-            onNavigate={navigate}
-            onSelectStory={handleBoardStoryChange}
-          />
-        ) : null}
+        {appRoute.view === "board" ? renderBoardContent() : null}
       </main>
     </div>
   );

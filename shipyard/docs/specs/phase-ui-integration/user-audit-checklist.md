@@ -6,8 +6,8 @@ for operator QA.
 ## Access and Routing
 
 - [ ] Hosted access gate still appears before the app unlocks when required.
-- [ ] `#/`, `#/editor/<product>`, `#/board`, and `/human-feedback` all open the
-      expected surface.
+- [ ] `#/`, `#/editor/<product>`, `#/board/<product>`, and `/human-feedback`
+      all open the expected surface.
 - [ ] Reloading on an editor or board route restores the same session/product
       without creating duplicate browser sessions.
 - [ ] Missing or deleted targets route to a clear fallback state instead of a
@@ -48,8 +48,9 @@ for operator QA.
 ## Board
 
 - [ ] Board columns are rendered from backend data, not hardcoded UI state.
-- [ ] The board route explains missing-target, loading, stale-snapshot, and
-      empty-board states instead of showing parked or mock content.
+- [ ] The board route is scoped to a specific product and explains
+      missing-target, loading, stale-snapshot, and empty-board states instead
+      of showing parked or mock content.
 - [ ] Story filters restore per product after reload and fall back safely if a
       stored story no longer exists in the latest board snapshot.
 - [ ] Story filters, blocked states, and active-task cues are accurate.

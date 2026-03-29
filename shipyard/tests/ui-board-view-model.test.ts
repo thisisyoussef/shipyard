@@ -4,101 +4,8 @@ import {
   createBoardViewModel,
 } from "../ui/src/board-view-model.js";
 import type {
-  ProjectBoardViewModel,
-  SessionStateViewModel,
-  TargetManagerViewModel,
   TaskBoardViewModel,
 } from "../ui/src/view-models.js";
-
-const targetManager: TargetManagerViewModel = {
-  currentTarget: {
-    path: "/tmp/alpha-app",
-    name: "alpha-app",
-    description: "Alpha product",
-    language: "typescript",
-    framework: "React",
-    hasProfile: true,
-  },
-  availableTargets: [
-    {
-      path: "/tmp/alpha-app",
-      name: "alpha-app",
-      description: "Alpha product",
-      language: "typescript",
-      framework: "React",
-      hasProfile: true,
-    },
-  ],
-  enrichmentStatus: {
-    status: "complete",
-    message: "Target profile saved.",
-  },
-};
-
-const targetManagerWithoutSelection: TargetManagerViewModel = {
-  ...targetManager,
-  currentTarget: {
-    path: "/tmp/targets",
-    name: "No target selected",
-    description: "Select a target to begin.",
-    language: null,
-    framework: null,
-    hasProfile: false,
-  },
-};
-
-const sessionState: SessionStateViewModel = {
-  sessionId: "session-board-1",
-  targetLabel: "alpha-app",
-  targetDirectory: "/tmp/alpha-app",
-  activePhase: "code",
-  workspaceDirectory: "/tmp",
-  turnCount: 7,
-  startedAt: "2026-03-29T00:00:00.000Z",
-  lastActiveAt: "2026-03-29T00:10:00.000Z",
-  discoverySummary: "React target",
-  discovery: {
-    isGreenfield: false,
-    language: "typescript",
-    framework: "React",
-    packageManager: "pnpm",
-    scripts: {},
-    hasReadme: true,
-    hasAgentsMd: true,
-    topLevelFiles: ["package.json"],
-    topLevelDirectories: ["src"],
-    projectName: "alpha-app",
-    previewCapability: {
-      status: "available",
-      kind: "dev-server",
-      runner: "pnpm",
-      scriptName: "dev",
-      command: "pnpm dev",
-      reason: "Ready",
-      autoRefresh: "native-hmr",
-    },
-  },
-  projectRulesLoaded: true,
-  tracePath: "/tmp/.shipyard/traces/session-board-1.jsonl",
-};
-
-const projectBoard: ProjectBoardViewModel = {
-  activeProjectId: "project-alpha",
-  openProjects: [
-    {
-      projectId: "project-alpha",
-      targetPath: "/tmp/alpha-app",
-      targetName: "alpha-app",
-      description: "Alpha product",
-      activePhase: "code",
-      status: "ready",
-      agentStatus: "Ready",
-      hasProfile: true,
-      lastActiveAt: "2026-03-29T00:10:00.000Z",
-      turnCount: 7,
-    },
-  ],
-};
 
 function createSourceControlSummary() {
   return {
@@ -235,17 +142,12 @@ const taskBoard: TaskBoardViewModel = {
 };
 
 describe("board view model", () => {
-  it("returns a missing-target state while Shipyard is still in target-manager mode", () => {
+  it("returns a missing-target state when the board route has no project scope", () => {
     expect(
       createBoardViewModel({
         taskBoard: null,
         connectionState: "ready",
-        sessionState: null,
-        targetManager: targetManagerWithoutSelection,
-        projectBoard: {
-          activeProjectId: null,
-          openProjects: [],
-        },
+        scopeKey: null,
         selectedStoryId: "all",
       }),
     ).toMatchObject({
@@ -263,9 +165,7 @@ describe("board view model", () => {
       createBoardViewModel({
         taskBoard,
         connectionState: "disconnected",
-        sessionState,
-        targetManager,
-        projectBoard,
+        scopeKey: "/tmp/alpha-app",
         selectedStoryId: "STORY-UI-001",
       }),
     ).toMatchObject({
@@ -308,9 +208,7 @@ describe("board view model", () => {
       createBoardViewModel({
         taskBoard,
         connectionState: "ready",
-        sessionState,
-        targetManager,
-        projectBoard,
+        scopeKey: "/tmp/alpha-app",
         selectedStoryId: "STORY-UNKNOWN",
       }),
     ).toMatchObject({
