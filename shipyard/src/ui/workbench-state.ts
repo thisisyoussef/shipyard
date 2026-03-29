@@ -493,6 +493,168 @@ function createTurnStatusFromDone(
   }
 }
 
+const MAX_PERSISTED_SESSION_HISTORY = 20;
+const MAX_PERSISTED_TURNS = 8;
+const MAX_PERSISTED_COMPLETED_ACTIVITY_ITEMS = 20;
+const MAX_PERSISTED_ACTIVE_ACTIVITY_ITEMS = 40;
+const MAX_PERSISTED_FILE_EVENTS = 40;
+const MAX_PERSISTED_CONTEXT_HISTORY = 30;
+const MAX_PERSISTED_AGENT_MESSAGES = 6;
+const MAX_PERSISTED_DIFF_LINES = 12;
+const MAX_PERSISTED_TEXT_CHARS = 1_200;
+const MAX_PERSISTED_PREVIEW_CHARS = 600;
+const MAX_PERSISTED_DETAIL_BODY_CHARS = 800;
+const MAX_PERSISTED_DIFF_CHARS = 240;
+
+function truncateWorkbenchText(
+  value: string | undefined,
+  limit: number,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value.length <= limit) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(limit - 1, 0))}…`;
+}
+
+function truncateWorkbenchPreview(
+  value: string | null | undefined,
+  limit: number,
+): string | null | undefined {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  return truncateWorkbenchText(value, limit);
+}
+
+function compactActivityItem(
+  item: ActivityItemViewModel,
+  preserveRichFields: boolean,
+): ActivityItemViewModel {
+  return {
+    ...item,
+    title: truncateWorkbenchText(item.title, 160) ?? item.title,
+    detail: truncateWorkbenchText(item.detail, MAX_PERSISTED_TEXT_CHARS) ?? item.detail,
+    detailBody: preserveRichFields
+      ? truncateWorkbenchText(item.detailBody, MAX_PERSISTED_DETAIL_BODY_CHARS)
+      : undefined,
+    diff: preserveRichFields
+      ? truncateWorkbenchText(item.diff, MAX_PERSISTED_DETAIL_BODY_CHARS)
+      : undefined,
+    beforePreview: preserveRichFields
+      ? truncateWorkbenchPreview(item.beforePreview, MAX_PERSISTED_PREVIEW_CHARS)
+      : undefined,
+    afterPreview: preserveRichFields
+      ? truncateWorkbenchPreview(item.afterPreview, MAX_PERSISTED_PREVIEW_CHARS)
+      : undefined,
+    command: truncateWorkbenchText(item.command, 240),
+    path: truncateWorkbenchText(item.path, 240),
+  };
+}
+
+function compactDiffLines(
+  diffLines: DiffLineViewModel[],
+): DiffLineViewModel[] {
+  return diffLines.slice(0, MAX_PERSISTED_DIFF_LINES).map((line) => ({
+    ...line,
+    text: truncateWorkbenchText(line.text, MAX_PERSISTED_DIFF_CHARS) ?? line.text,
+  }));
+}
+
+function selectRetainedTurnIds(state: WorkbenchViewState): Set<string> {
+  const mustKeepIds = new Set(
+    state.turns
+      .filter((turn) => turn.id === state.activeTurnId || turn.status === "working")
+      .map((turn) => turn.id),
+  );
+  const remainingSlots = Math.max(MAX_PERSISTED_TURNS - mustKeepIds.size, 0);
+  const supplementalTurns = state.turns
+    .filter((turn) => !mustKeepIds.has(turn.id))
+    .slice(0, remainingSlots);
+
+  return new Set([
+    ...mustKeepIds,
+    ...supplementalTurns.map((turn) => turn.id),
+  ]);
+}
+
+export function compactWorkbenchStateForPersistence(
+  state: WorkbenchViewState,
+): WorkbenchViewState {
+  const retainedTurnIds = selectRetainedTurnIds(state);
+  const retainedTurns = state.turns
+    .filter((turn) => retainedTurnIds.has(turn.id))
+    .map((turn) => {
+      const preserveRichFields =
+        turn.id === state.activeTurnId || turn.status === "working";
+      const retainedActivityCount = preserveRichFields
+        ? MAX_PERSISTED_ACTIVE_ACTIVITY_ITEMS
+        : MAX_PERSISTED_COMPLETED_ACTIVITY_ITEMS;
+
+      return {
+        ...turn,
+        instruction: truncateWorkbenchText(turn.instruction, MAX_PERSISTED_TEXT_CHARS) ?? turn.instruction,
+        summary: truncateWorkbenchText(turn.summary, 600) ?? turn.summary,
+        contextPreview: turn.contextPreview.map((item) =>
+          truncateWorkbenchText(item, 400) ?? item
+        ),
+        agentMessages: turn.agentMessages
+          .slice(-MAX_PERSISTED_AGENT_MESSAGES)
+          .map((message) =>
+            truncateWorkbenchText(message, 600) ?? message
+          ),
+        activity: turn.activity
+          .slice(-retainedActivityCount)
+          .map((item) => compactActivityItem(item, preserveRichFields)),
+      };
+    });
+
+  const retainedFileEvents = [
+    ...state.fileEvents.filter((event) => retainedTurnIds.has(event.turnId)),
+    ...state.fileEvents.filter((event) => !retainedTurnIds.has(event.turnId)),
+  ]
+    .slice(0, MAX_PERSISTED_FILE_EVENTS)
+    .map((event) => ({
+      ...event,
+      summary: truncateWorkbenchText(event.summary, 600) ?? event.summary,
+      diffLines: compactDiffLines(event.diffLines),
+      beforePreview: truncateWorkbenchPreview(
+        event.beforePreview,
+        MAX_PERSISTED_PREVIEW_CHARS,
+      ),
+      afterPreview: truncateWorkbenchPreview(
+        event.afterPreview,
+        MAX_PERSISTED_PREVIEW_CHARS,
+      ),
+    }));
+
+  const retainedPendingToolCalls = Object.fromEntries(
+    Object.entries(state.pendingToolCalls).filter(([, call]) =>
+      retainedTurnIds.has(call.turnId)
+    ),
+  );
+
+  return {
+    ...state,
+    agentStatus: truncateWorkbenchText(state.agentStatus, 400) ?? state.agentStatus,
+    sessionHistory: state.sessionHistory.slice(0, MAX_PERSISTED_SESSION_HISTORY),
+    turns: retainedTurns,
+    fileEvents: retainedFileEvents,
+    activeTurnId:
+      state.activeTurnId !== null && retainedTurnIds.has(state.activeTurnId)
+        ? state.activeTurnId
+        : null,
+    pendingToolCalls: retainedPendingToolCalls,
+    latestError: truncateWorkbenchText(state.latestError ?? undefined, 600) ?? null,
+    contextHistory: state.contextHistory.slice(-MAX_PERSISTED_CONTEXT_HISTORY),
+  };
+}
+
 export function ensureWorkbenchStateDefaults(
   state: Partial<WorkbenchViewState> | WorkbenchViewState,
 ): WorkbenchViewState {
