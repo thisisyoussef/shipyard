@@ -4,6 +4,10 @@ import {
   createDefaultHostingWorkbenchState,
   hostingWorkbenchStateSchema,
 } from "../hosting/contracts.js";
+import {
+  createIdleOrchestrationWorkbenchState,
+  orchestrationWorkbenchStateSchema,
+} from "../orchestration/contracts.js";
 import { SCAFFOLD_TYPES } from "../tools/target-manager/scaffolds.js";
 import { pipelineWorkbenchStateSchema } from "../pipeline/contracts.js";
 import {
@@ -339,6 +343,9 @@ export const workbenchStateSchema = z.object({
   projectBoard: projectBoardStateSchema.nullable().default(null),
   pipelineState: pipelineWorkbenchStateSchema.nullable().default(null),
   tddState: tddWorkbenchStateSchema.default(createIdleTddWorkbenchState()),
+  orchestration: orchestrationWorkbenchStateSchema.default(
+    createIdleOrchestrationWorkbenchState(),
+  ),
   sourceControl: sourceControlWorkbenchStateSchema.default(
     createDefaultSourceControlWorkbenchState(),
   ),
@@ -516,6 +523,11 @@ export const tasksStateMessageSchema = z.object({
   state: boardProjectionSchema,
 });
 
+export const orchestrationStateMessageSchema = z.object({
+  type: z.literal("orchestration:state"),
+  state: orchestrationWorkbenchStateSchema,
+});
+
 export const targetSwitchCompleteMessageSchema = z.object({
   type: z.literal("target:switch_complete"),
   success: z.boolean(),
@@ -549,6 +561,7 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   targetStateMessageSchema,
   projectsStateMessageSchema,
   tasksStateMessageSchema,
+  orchestrationStateMessageSchema,
   targetSwitchCompleteMessageSchema,
   targetEnrichmentProgressMessageSchema,
   deployStateMessageSchema,
@@ -571,6 +584,7 @@ export type TargetEnrichmentState = z.infer<
 >;
 export type ProjectBoardState = z.infer<typeof projectBoardStateSchema>;
 export type TaskBoardState = z.infer<typeof boardProjectionSchema>;
+export type OrchestrationState = z.infer<typeof orchestrationWorkbenchStateSchema>;
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
 export type DeploySummary = z.infer<typeof deploySummarySchema>;
 export type CodeBrowserTreeResponse = z.infer<

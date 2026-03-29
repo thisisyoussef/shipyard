@@ -3,7 +3,7 @@
 - Pack: Runtime Factory Foundations
 - Estimate: 36-48 hours
 - Date: 2026-03-28
-- Status: In progress; P11-S01, P11-S02, P11-S03, P11-S04, P11-S05, P11-S06, P11-S07, and P11-S08 implemented, P11-S09 remaining
+- Status: Complete; P11-S01 through P11-S09 implemented
 
 ## Pack Objectives
 
@@ -212,3 +212,20 @@ That later pack can concentrate on board interaction design, transitions, visual
   persistence, advisory lease lifecycle, threaded acknowledgements, runtime
   refs on nodes, and browser-visible task-board snapshots without shipping the
   visual board itself.
+- `shipyard/src/orchestration/contracts.ts`,
+  `shipyard/src/orchestration/store.ts`,
+  `shipyard/src/orchestration/runtime.ts`,
+  `shipyard/src/engine/ultimate-mode.ts`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: implement the master coordinator runtime,
+  durable `.shipyard/orchestration/runtime.json` state, task-graph-aware
+  scheduling, source-control and hosted-capacity gating, human reroutes and
+  reprioritization, first-merge-wins recovery dispatch, and additive
+  `orchestration:state` workbench projection for future kanban consumers.
+- `shipyard/tests/orchestration-runtime.test.ts`,
+  `shipyard/tests/ultimate-mode.test.ts`, and
+  `shipyard/tests/ui-view-models.test.ts`: validate dependency-aware worker
+  scheduling, approval waits, durable restart-safe coordinator recovery,
+  recovery-queue routing, coordinator-first ultimate-mode dispatch, failed
+  worker isolation, and reducer support for orchestration snapshots.
