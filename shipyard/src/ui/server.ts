@@ -46,6 +46,11 @@ import {
   isTaskRunnerInstruction,
   type ExecuteTaskRunnerTurnOptions,
 } from "../plans/task-runner.js";
+import {
+  executeTddTurn,
+  isTddInstruction,
+  type ExecuteTddTurnOptions,
+} from "../tdd/turn.js";
 import { abortTurn } from "../engine/cancellation.js";
 import type { AgentRuntimeDependencies } from "../engine/graph.js";
 import type { PreviewCapabilityReport, PreviewState } from "../artifacts/types.js";
@@ -156,6 +161,9 @@ export interface StartUiRuntimeServerOptions {
   executeTaskTurn?: (
     options: ExecuteTaskRunnerTurnOptions,
   ) => Promise<Awaited<ReturnType<typeof executeTaskRunnerTurn>>>;
+  executeTddTurn?: (
+    options: ExecuteTddTurnOptions,
+  ) => Promise<Awaited<ReturnType<typeof executeTddTurn>>>;
   executeUltimateMode?: (
     options: ExecuteUltimateModeOptions,
   ) => Promise<Awaited<ReturnType<typeof executeUltimateMode>>>;
@@ -948,6 +956,7 @@ export async function startUiRuntimeServer(
     options.executePipelineTurn ?? executePipelineTurn;
   const executeDeploy = options.executeDeploy ?? deployTargetTool;
   const executeTaskTurn = options.executeTaskTurn ?? executeTaskRunnerTurn;
+  const executeTddTurnImpl = options.executeTddTurn ?? executeTddTurn;
   const executeUltimateModeTurn = options.executeUltimateMode ?? executeUltimateMode;
   const projectRuntimes = new Map<string, BrowserProjectRuntime>();
   let activeProjectId = "";
@@ -2224,6 +2233,39 @@ export async function startUiRuntimeServer(
             }
           : null,
         langSmithTrace: pipelineResult.langSmithTrace,
+        runtimeSurface: "ui",
+      });
+      await saveSessionState(project.sessionState);
+    } else if (isTddInstruction(instruction)) {
+      const tddResult = await executeTddTurnImpl({
+        sessionState: project.sessionState,
+        runtimeState: project.runtimeState,
+        instruction,
+        reporter,
+        signal,
+        runtimeSurface: "ui",
+      });
+      await project.traceLogger.log("instruction.tdd", {
+        instruction,
+        command: tddResult.command,
+        status: tddResult.status,
+        summary: tddResult.summary,
+        lane: tddResult.lane
+          ? {
+              laneId: tddResult.lane.laneId,
+              status: tddResult.lane.status,
+              currentStage: tddResult.lane.currentStage,
+              selection: tddResult.lane.selection,
+              focusedValidationCommand: tddResult.lane.focusedValidationCommand,
+              stageAttempts: tddResult.lane.stageAttempts,
+              latestHandoffArtifact: tddResult.lane.latestHandoffArtifact,
+              latestEscalationArtifact: tddResult.lane.latestEscalationArtifact,
+              latestQualityArtifact: tddResult.lane.latestQualityArtifact,
+              optionalChecks: tddResult.lane.optionalChecks,
+            }
+          : null,
+        runtimeAssist: tddResult.runtimeAssist,
+        langSmithTrace: tddResult.langSmithTrace,
         runtimeSurface: "ui",
       });
       await saveSessionState(project.sessionState);

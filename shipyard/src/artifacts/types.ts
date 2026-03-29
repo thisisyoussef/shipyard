@@ -618,6 +618,87 @@ export interface BacklogArtifact {
   entries: BacklogEntry[];
 }
 
+export type TddStage = "test-author" | "implementer" | "reviewer";
+
+export type TddLaneStatus =
+  | "running"
+  | "blocked"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type TddValidationExpectedOutcome = "red" | "green";
+
+export type TddValidationObservedOutcome =
+  | "red"
+  | "green"
+  | "already-green"
+  | "blocked";
+
+export type TddOptionalCheckKind = "property" | "mutation";
+
+export type TddOptionalCheckStatus = "passed" | "skipped" | "blocked";
+
+export interface TddValidationRecord {
+  command: string;
+  expectedOutcome: TddValidationExpectedOutcome;
+  observedOutcome: TddValidationObservedOutcome;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  signal: string | null;
+  summary: string;
+}
+
+export interface TddOptionalCheckRecord {
+  kind: TddOptionalCheckKind;
+  command: string | null;
+  status: TddOptionalCheckStatus;
+  exitCode: number | null;
+  summary: string;
+}
+
+export interface TddHandoffArtifact {
+  laneId: string;
+  stage: TddStage;
+  stageAttempt: number;
+  summary: string;
+  finalText: string;
+  immutableTestPaths: string[];
+  editedPaths: string[];
+  validation: TddValidationRecord | null;
+  nextStage: TddStage | null;
+  optionalChecks: TddOptionalCheckRecord[];
+}
+
+export interface TddEscalationArtifact {
+  laneId: string;
+  stage: TddStage;
+  reason: string;
+  summary: string;
+  immutableTestPaths: string[];
+  offendingPaths: string[];
+  validation: TddValidationRecord | null;
+}
+
+export interface TddQualityFinding {
+  severity: "info" | "warning";
+  message: string;
+}
+
+export interface TddQualityReportArtifact {
+  laneId: string;
+  stage: "reviewer";
+  summary: string;
+  focusedValidation: TddValidationRecord | null;
+  optionalChecks: TddOptionalCheckRecord[];
+  immutableTestPaths: string[];
+  implementationPaths: string[];
+  missingTestRecommendations: string[];
+  findings: TddQualityFinding[];
+}
+
 export interface TargetProfile {
   name: string;
   description: string;
