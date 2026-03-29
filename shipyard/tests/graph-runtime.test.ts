@@ -1611,7 +1611,7 @@ describe("Phase 4 graph runtime contract", () => {
     expect(update.fileHashes).toEqual({
       "src/app.ts": restoredHash,
     });
-    expect(getTrackedReadHash("src/app.ts")).toBe(restoredHash);
+    expect(getTrackedReadHash(directory, "src/app.ts")).toBe(restoredHash);
   });
 
   it("act node checkpoints after 25 tool-loop iterations instead of failing", async () => {

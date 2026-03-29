@@ -704,12 +704,22 @@ export function useWorkbenchController() {
 
     queueComposerNotice({
       tone: "neutral",
-      title: "Stopping current turn",
+      title:
+        viewState.ultimateState.active || viewState.ultimateState.phase === "stopping"
+          ? "Stopping ultimate mode"
+          : "Stopping current turn",
       detail:
-        "Shipyard is interrupting the active turn. Your draft stays in place so you can send it as soon as the session is ready.",
+        viewState.ultimateState.active || viewState.ultimateState.phase === "stopping"
+          ? "Shipyard is interrupting the active ultimate loop. Your draft stays in place so you can send fresh feedback once the session returns to ready."
+          : "Shipyard is interrupting the active turn. Your draft stays in place so you can send it as soon as the session is ready.",
     });
     focusInstructionInput();
-  }, [queueComposerNotice, sendMessage]);
+  }, [
+    queueComposerNotice,
+    sendMessage,
+    viewState.ultimateState.active,
+    viewState.ultimateState.phase,
+  ]);
 
   const handleToggleUltimateArmed = useCallback((): void => {
     if (viewState.ultimateState.phase === "stopping") {
@@ -877,11 +887,33 @@ export function useWorkbenchController() {
     );
 
     if (submission === null) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Instruction required",
-        detail: "Enter an instruction before running Shipyard.",
-      });
+      if (workbenchComposerBehavior.mode === "ultimate-feedback") {
+        queueComposerNotice({
+          tone: "warning",
+          title: "Feedback required",
+          detail:
+            "Enter feedback for the active loop, or use Stop ultimate to interrupt it cleanly.",
+        });
+      } else if (workbenchComposerBehavior.mode === "ultimate-start") {
+        queueComposerNotice({
+          tone: "danger",
+          title: "Brief required",
+          detail: "Enter a standing brief before starting ultimate mode.",
+        });
+      } else if (workbenchComposerBehavior.mode === "ultimate-stopping") {
+        queueComposerNotice({
+          tone: "warning",
+          title: "Ultimate mode is stopping",
+          detail:
+            "Wait for the current cycle to finish stopping before starting another loop or sending more feedback.",
+        });
+      } else {
+        queueComposerNotice({
+          tone: "danger",
+          title: "Instruction required",
+          detail: "Enter an instruction before running Shipyard.",
+        });
+      }
       instructionInputRef.current?.focus();
       return;
     }

@@ -121,3 +121,17 @@ mode without relying on command memorization.
   state, routes feedback/stop into typed messages, and the dedicated
   `/human-feedback` page switches copy and submit behavior based on the same
   runtime projection.
+- Post-ship interrupt hardening landed in `shipyard/src/engine/ultimate-mode.ts`,
+  `shipyard/ui/src/use-workbench-controller.ts`,
+  `shipyard/ui/src/panels/ComposerPanel.tsx`, and
+  `shipyard/tests/ultimate-mode.test.ts`. Empty loop-feedback drafts now expose
+  an explicit `Stop ultimate` action, stopping copy stays distinct from normal
+  turn cancellation, and per-cycle final text no longer leaks into the main
+  transcript while the outer ultimate loop is still running. Representative
+  snippet:
+  ```ts
+  const wantsUltimateStop =
+    (composerBehavior.mode === "ultimate-feedback" &&
+      instruction.trim().length === 0) ||
+    composerBehavior.mode === "ultimate-stopping";
+  ```

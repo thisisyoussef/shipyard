@@ -132,6 +132,15 @@ export function ComposerPanel({
   // Submit button label
   const submitLabel =
     state === "submitting" ? "Sending..." : composerBehavior.submitLabel;
+  const wantsUltimateStop =
+    (composerBehavior.mode === "ultimate-feedback" && instruction.trim().length === 0) ||
+    composerBehavior.mode === "ultimate-stopping";
+  const interruptActionLabel =
+    composerBehavior.mode === "cancel"
+      ? "Cancel turn"
+      : composerBehavior.mode === "ultimate-stopping"
+        ? "Stopping..."
+        : "Stop ultimate";
 
   const handleFocus = useCallback(() => setIsFocused(true), []);
   const handleBlur = useCallback(() => setIsFocused(false), []);
@@ -277,15 +286,15 @@ export function ComposerPanel({
           />
 
           {/* Submit button attached to textarea */}
-          {composerBehavior.showCancelAction ? (
+          {composerBehavior.showCancelAction || wantsUltimateStop ? (
             <button
               type="button"
               className="composer-submit"
               onClick={onCancel}
-              disabled={!onCancel}
-              aria-disabled={!onCancel}
+              disabled={!onCancel || composerBehavior.mode === "ultimate-stopping"}
+              aria-disabled={!onCancel || composerBehavior.mode === "ultimate-stopping"}
             >
-              Cancel turn
+              {interruptActionLabel}
             </button>
           ) : (
             <button

@@ -180,7 +180,7 @@ describe("file tools", () => {
     expect(result.path).toBe("notes.txt");
     expect(result.contents).toBe("hello shipyard\n");
     expect(result.hash).toMatch(/^[a-f0-9]{64}$/);
-    expect(getTrackedReadHash("notes.txt")).toBe(result.hash);
+    expect(getTrackedReadHash(directory, "notes.txt")).toBe(result.hash);
   });
 
   it("writes a new file and rejects overwriting by default", async () => {
@@ -292,6 +292,51 @@ describe("file tools", () => {
         new_string: 'const value = "after";',
       }),
     ).rejects.toThrowError(/File changed since the last read: stale\.ts/);
+  });
+
+  it("isolates tracked read hashes by target directory", async () => {
+    const firstDirectory = await createTempProject();
+    const secondDirectory = await createTempProject();
+    const relativePath = "src/App.tsx";
+
+    await mkdir(path.join(firstDirectory, "src"), { recursive: true });
+    await mkdir(path.join(secondDirectory, "src"), { recursive: true });
+    await writeFile(
+      path.join(firstDirectory, relativePath),
+      'export const app = "first";\n',
+      "utf8",
+    );
+    await writeFile(
+      path.join(secondDirectory, relativePath),
+      'export const app = "second";\n',
+      "utf8",
+    );
+
+    await readTargetFile({
+      targetDirectory: firstDirectory,
+      path: relativePath,
+    });
+    await readTargetFile({
+      targetDirectory: secondDirectory,
+      path: relativePath,
+    });
+
+    await expect(
+      editBlock({
+        targetDirectory: firstDirectory,
+        path: relativePath,
+        old_string: 'export const app = "first";',
+        new_string: 'export const app = "updated";',
+      }),
+    ).resolves.toMatchObject({
+      changed: true,
+    });
+
+    expect(getTrackedReadHash(firstDirectory, relativePath)).toMatch(/^[a-f0-9]{64}$/);
+    expect(getTrackedReadHash(secondDirectory, relativePath)).toMatch(/^[a-f0-9]{64}$/);
+    expect(getTrackedReadHash(firstDirectory, relativePath)).not.toBe(
+      getTrackedReadHash(secondDirectory, relativePath),
+    );
   });
 
   it("tells the caller to use write_file when edit_block targets a missing file", async () => {
@@ -1636,13 +1681,13 @@ describe("tool registry", () => {
 
     const firstRead = await tool.execute({ path: "notes.txt" }, directory);
     expect(firstRead.success).toBe(true);
-    const firstHash = getTrackedReadHash("notes.txt");
+    const firstHash = getTrackedReadHash(directory, "notes.txt");
     expect(firstHash).toMatch(/^[a-f0-9]{64}$/);
 
     await writeFile(path.join(directory, "notes.txt"), "after\n", "utf8");
     const secondRead = await tool.execute({ path: "notes.txt" }, directory);
     expect(secondRead.success).toBe(true);
-    expect(getTrackedReadHash("notes.txt")).not.toBe(firstHash);
+    expect(getTrackedReadHash(directory, "notes.txt")).not.toBe(firstHash);
   });
 
   it("creates missing parent directories and reports line counts through write_file", async () => {
@@ -1753,7 +1798,7 @@ async function expectSingleEditPass(
   expect(next.changed).toBe(true);
   expect(next.contents).toContain(`const ${anchorLabel} = "updated";`);
   expect(next.hash).not.toBe(current.hash);
-  expect(getTrackedReadHash(relativePath)).toBe(next.hash);
+  expect(getTrackedReadHash(directory, relativePath)).toBe(next.hash);
 
   const fileOnDisk = await readFile(path.join(directory, relativePath), "utf8");
   expect(fileOnDisk).toContain(`const ${anchorLabel} = "updated";`);

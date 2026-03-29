@@ -88,21 +88,30 @@ export function countLines(contents: string): number {
   return withoutTrailingNewline.split("\n").length;
 }
 
+function createTrackedReadKey(
+  targetDirectory: string,
+  canonicalRelativePath: string,
+): string {
+  return resolveWithinTarget(targetDirectory, canonicalRelativePath).absolutePath;
+}
+
 export function rememberReadHash(
+  targetDirectory: string,
   canonicalRelativePath: string,
   fullHash: string,
 ): void {
   trackedReadHashes.set(
-    normalizeTargetRelativePath(canonicalRelativePath),
+    createTrackedReadKey(targetDirectory, canonicalRelativePath),
     fullHash,
   );
 }
 
 export function getTrackedReadHash(
+  targetDirectory: string,
   canonicalRelativePath: string,
 ): string | undefined {
   return trackedReadHashes.get(
-    normalizeTargetRelativePath(canonicalRelativePath),
+    createTrackedReadKey(targetDirectory, canonicalRelativePath),
   );
 }
 
