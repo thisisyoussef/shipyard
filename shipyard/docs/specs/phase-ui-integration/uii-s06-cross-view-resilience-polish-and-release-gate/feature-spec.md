@@ -125,6 +125,12 @@ validation, and docs sync.
   `shipyard/docs/specs/phase-ui-integration/user-audit-checklist.md`,
   `shipyard/docs/specs/phase-ui-integration/uii-s06-cross-view-resilience-polish-and-release-gate/task-breakdown.md`,
   and `shipyard/ui/src/README.md`.
+- Post-ship editor polish extended the same resilience/polish lane into
+  `shipyard/ui/src/styles.css`, `shipyard/ui/src/shell/shell.css`,
+  `shipyard/ui/src/panels/panels.css`, and
+  `shipyard/ui/src/panels/FormattedMessage.tsx` so the editor shell fills the
+  full available viewport and assistant replies stay readable when they contain
+  structured markdown-like content.
 - AC-5 is covered by the required validation matrix for this story:
   `pnpm --dir shipyard test`, `pnpm --dir shipyard typecheck`,
   `pnpm --dir shipyard build`, and `git diff --check`, plus the preview-harness

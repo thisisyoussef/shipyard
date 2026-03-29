@@ -46,6 +46,9 @@ Shipyard browser workbench.
 - `App.tsx` also branches between the live dashboard, full workbench shell,
   live board route, and dedicated `/human-feedback` surface while keeping the
   same hosted-access gate, socket lifecycle, and instruction submission path.
+- The editor route now stretches its chat/workspace panes through the full
+  available shell height instead of letting the route content collapse to the
+  height of its current tab contents.
 - The board route is project-scoped at `#/board/<productId>`, consumes the
   runtime `taskBoard` snapshot only after that product is resolved against live
   session state, preserves the selected story filter per product in browser
@@ -57,6 +60,9 @@ Shipyard browser workbench.
   transport is unavailable.
 - `ShipyardWorkbench.tsx` renders target/deploy status at the top, the
   transcript plus composer on the left, and file/output evidence on the right.
+- `ChatWorkspace.tsx` formats assistant replies into safe, dependency-free
+  rich text so headings, lists, emphasis, inline code, and fenced code blocks
+  remain readable without pulling a markdown runtime into the browser bundle.
 - `HumanFeedbackPage.tsx` exposes a focused textarea-only surface for feeding
   the running ultimate loop from the human side while reusing the same
   websocket `instruction` transport and surfacing explicit no-session and

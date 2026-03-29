@@ -130,7 +130,24 @@ without undermining edit safety.
 - Preview harness compatibility landed in
   `shipyard/ui/src/preview-harness.tsx` with a mock `CodeBrowserClient`
   injection so `/preview.html` stays standalone.
+- Post-ship editor fidelity work landed in
+  `shipyard/ui/src/panels/FormattedMessage.tsx`,
+  `shipyard/ui/src/panels/ChatWorkspace.tsx`,
+  `shipyard/ui/src/panels/panels.css`,
+  `shipyard/ui/src/shell/shell.css`,
+  `shipyard/ui/src/styles.css`, and
+  `shipyard/ui/src/preview-harness.tsx`. Assistant replies now preserve
+  headings, lists, emphasis, inline code, and fenced code blocks, while the
+  editor route stretches its chat and workspace panels through the full shell
+  height instead of shrinking around shorter tab content. Representative
+  snippet:
+  ```tsx
+  <div className="chat-bubble-body">
+    <FormattedMessage text={latestReply} />
+  </div>
+  ```
 - Coverage landed in `shipyard/tests/ui-editor-preferences.test.ts`,
   `shipyard/tests/ui-code-browser.test.ts`,
+  `shipyard/tests/ui-chat-workspace.test.ts`,
   `shipyard/tests/ui-editor-view.test.ts`, and
   `shipyard/tests/ui-runtime.test.ts`.

@@ -162,6 +162,17 @@ The board and ultimate work should align with those future packs by:
 - Post-pack hardening aligned the hosted code-browser HTTP gate with the shared
   access-cookie contract in `shipyard/src/ui/server.ts` and
   `shipyard/ui/src/code-browser-client.ts`.
+- Post-pack editor fidelity work normalized the editor route so the chat and
+  workspace panes stretch through the full shell height, and formatted
+  assistant replies into safe rich text in `shipyard/ui/src/styles.css`,
+  `shipyard/ui/src/shell/shell.css`,
+  `shipyard/ui/src/panels/panels.css`,
+  `shipyard/ui/src/panels/FormattedMessage.tsx`,
+  `shipyard/ui/src/panels/ChatWorkspace.tsx`, and
+  `shipyard/ui/src/preview-harness.tsx`, with focused coverage in
+  `shipyard/tests/ui-chat-workspace.test.ts`,
+  `shipyard/tests/ui-editor-view.test.ts`, and
+  `shipyard/tests/ui-workbench.test.ts`.
 - `UII-S04` landed the typed ultimate control plane and explicit composer
   semantics in `shipyard/src/ui/contracts.ts`,
   `shipyard/src/ui/workbench-state.ts`,
