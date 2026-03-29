@@ -172,7 +172,16 @@ const MOCK_TURNS: TurnViewModel[] = [
     startedAt: "2026-03-28T12:12:00.000Z",
     summary: "Read the package manifest and confirmed the scripts.",
     contextPreview: ["Preserve the current Vite setup."],
-    agentMessages: ["Read the package manifest and confirmed the scripts."],
+    agentMessages: [
+      [
+        "## Runtime snapshot",
+        "",
+        "- **Preview entrypoint** is still `vite`",
+        "- `pnpm test` remains available",
+        "",
+        "Shipyard can keep iterating without touching the current deploy flow.",
+      ].join("\n"),
+    ],
     langSmithTrace: null,
     activity: [],
   },
