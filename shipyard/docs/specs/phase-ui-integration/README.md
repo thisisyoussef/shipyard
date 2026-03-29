@@ -165,10 +165,4 @@ The board and ultimate work should align with those future packs by:
   `shipyard/tests/ui-view-models.test.ts`,
   `shipyard/tests/ui-human-feedback-page.test.ts`, and
   `shipyard/tests/ui-runtime.test.ts`.
-- Preview-harness-based Paper bootstrap support now lives in
-  `shipyard/ui/src/preview-harness-state.ts`,
-  `shipyard/ui/src/preview-harness.tsx`,
-  `scripts/import-ui-to-paper.mjs`,
-  `shipyard/tests/preview-harness-state.test.ts`, and
-  `shipyard/tests/import-ui-to-paper.test.ts`.
 - `UII-S05` and `UII-S06` remain planned.
