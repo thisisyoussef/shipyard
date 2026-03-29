@@ -25,9 +25,9 @@ Shipyard service URL, private preview URLs, and public target-app deploy URLs.
 | `SHIPYARD_UI_HOST` | `0.0.0.0` | Recommended explicit override. When Railway-hosted env signals are present, Shipyard now also falls back to `0.0.0.0` automatically so a missing bind var does not leave the service on loopback only. |
 | `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE` | `1` | Fails startup loudly when the hosted service is expected to use a durable mounted workspace but Railway has not attached the volume yet. |
 | `SHIPYARD_ACCESS_TOKEN` | shared secret | Protects `/api/access`, the SPA shell, and `/ws` with a lightweight hosted gate. |
-| `ANTHROPIC_API_KEY` | Anthropic API key | Enables the shipped default Anthropic runtime in hosted production. |
-| `SHIPYARD_MODEL_PROVIDER` | `anthropic` | Pins hosted production to the Anthropic provider even if local defaults change later. |
-| `SHIPYARD_ANTHROPIC_MODEL` | `claude-opus-4-6` | Pins hosted production to Claude Opus 4.6 for the default route. |
+| `OPENAI_API_KEY` | OpenAI API key | Enables the pinned OpenAI runtime in hosted production. |
+| `SHIPYARD_MODEL_PROVIDER` | `openai` | Pins hosted production to the OpenAI provider even though local defaults remain Anthropic. |
+| `SHIPYARD_OPENAI_MODEL` | `gpt-5.4` | Pins hosted production to GPT-5.4 for the default route. |
 | `GITHUB_TOKEN` | optional hosted-safe GitHub token | Enables canonical GitHub repo binding, PR, and merge operations inside Railway without relying on `gh auth`. |
 | `GITHUB_APP_ID` / `GITHUB_APP_INSTALLATION_ID` / `GITHUB_APP_PRIVATE_KEY` | optional hosted-safe GitHub App credentials | Alternative hosted-safe adapter when you want app-based repo access instead of a long-lived token. |
 | `GITHUB_OAUTH_TOKEN` | optional hosted-safe OAuth token | Alternative hosted-safe adapter for delegated GitHub repo operations. |
@@ -120,8 +120,8 @@ not confuse the Shipyard editor with the product being built.
   repository access, Shipyard enters an explicit degraded hosted mode. Planning,
   TDD, and standard code turns remain usable, but canonical GitHub binding, PR,
   and merge automation stay blocked until a hosted-safe adapter is restored.
-- If `ANTHROPIC_API_KEY` is missing while the hosted default route is
-  `anthropic`, turns fail clearly with missing-credential diagnostics instead
+- If `OPENAI_API_KEY` is missing while the hosted production route is
+  `openai`, turns fail clearly with missing-credential diagnostics instead
   of silently falling back to another provider.
 - If browser verification is requested but the Railway image does not include
   the lazily loaded Playwright runtime or the Chromium system libraries,
@@ -158,7 +158,7 @@ not confuse the Shipyard editor with the product being built.
   enabled later from the service settings if you want Railway to watch a branch
   directly.
 - The checked-in GitHub Actions deploy workflow now syncs
-  `SHIPYARD_ACCESS_TOKEN`, `ANTHROPIC_API_KEY`, `GITHUB_TOKEN` when the
+  `SHIPYARD_ACCESS_TOKEN`, `OPENAI_API_KEY`, `GITHUB_TOKEN` when the
   optional `SHIPYARD_GITHUB_TOKEN` secret is configured,
   `VERCEL_TOKEN` when configured,
   `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` to keep browser binaries out of the
@@ -166,8 +166,8 @@ not confuse the Shipyard editor with the product being built.
   `SHIPYARD_TARGETS_DIR=/app/workspace`,
   `SHIPYARD_UI_HOST=0.0.0.0`,
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1`,
-  `SHIPYARD_MODEL_PROVIDER=anthropic`, and
-  `SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6` into the production Railway
+  `SHIPYARD_MODEL_PROVIDER=openai`, and
+  `SHIPYARD_OPENAI_MODEL=gpt-5.4` into the production Railway
   service before switching the live service to the freshly pushed GHCR image.
 - The repo-controlled deploy step now shells through
   `.github/scripts/railway-ci-deploy.sh`, which updates `source.image`,

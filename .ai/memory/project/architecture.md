@@ -151,6 +151,22 @@ Record durable workspace decisions here.
   secret to stay configured, and future provider flips must treat runtime,
   docs, and Railway sync as one contract.
 
+- **ADR-ID**: ADR-0015
+- **Date**: 2026-03-29
+- **Context**: Operators want the Railway-hosted production runtime on OpenAI,
+  but the checked-in local Shipyard default remains Anthropic for direct runs
+  and local smoke flows.
+- **Decision**: Keep Anthropic as the checked-in local default route, but pin
+  the Railway production workflow to OpenAI `gpt-5.4` by syncing
+  `OPENAI_API_KEY`, `SHIPYARD_MODEL_PROVIDER=openai`, and
+  `SHIPYARD_OPENAI_MODEL=gpt-5.4` into the Railway service on each deploy.
+- **Alternatives Considered**: Flip the global runtime default back to OpenAI;
+  leave Railway production on Anthropic and treat operator intent as mistaken.
+- **Consequences**: Local documentation must distinguish local defaults from
+  hosted production routing, the Railway secret baseline now requires
+  `OPENAI_API_KEY`, and future provider work must audit both the local default
+  contract and the hosted production override.
+
 - **ADR-ID**: ADR-0014
 - **Date**: 2026-03-27
 - **Context**: `shipyard/CODEAGENT.md` had fallen behind the shipped runtime

@@ -282,9 +282,9 @@ target-manager flow:
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1` once the mount exists
 - set `SHIPYARD_ACCESS_TOKEN` if the public workbench should require a shared
   unlock token
-- set `ANTHROPIC_API_KEY`, `SHIPYARD_MODEL_PROVIDER=anthropic`, and
-  `SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6` to keep production on the
-  default Claude route
+- set `OPENAI_API_KEY`, `SHIPYARD_MODEL_PROVIDER=openai`, and
+  `SHIPYARD_OPENAI_MODEL=gpt-5.4` to pin hosted Railway production to
+  OpenAI even though local Shipyard defaults remain Anthropic
 - keep the current hosted token in the ignored `shipyard/.env` file for local
   operator convenience; `node scripts/print-hosted-access-url.mjs` prints a
   bootstrap link from that file

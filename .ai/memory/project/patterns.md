@@ -51,9 +51,11 @@ Capture repeatable patterns that match how this workspace actually works.
   correlation and an optional `initialInstruction`, so the backend can
   activate the new target, kick off automatic enrichment, and start the first
   browser turn through the same instruction path used everywhere else.
-- The shipped default route is currently Anthropic on `claude-opus-4-6`. When
-  that default changes, update the runtime default, operator docs/examples, and
-  the Railway production secret/model pin together in the same story.
+- The checked-in local default route is currently Anthropic on
+  `claude-opus-4-6`, while Railway hosted production is pinned to OpenAI on
+  `gpt-5.4`. When either contract changes, update the runtime docs/examples,
+  hosted deploy workflow, and provider secret/model pin together in the same
+  story.
 - `deploy_target` should treat raw Vercel CLI `stdout` as the deployment
   identifier, not automatically as the user-facing link. Resolve
   `productionUrl` from a labeled production alias in CLI output or from Vercel

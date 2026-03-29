@@ -64,3 +64,7 @@
   Ubuntu bootstrap, mission config, `systemd`, Caddy, and a two-hour Vercel
   sync timer so long-running `ultimate` missions can move off a laptop without
   inventing a second runtime model.
+- 2026-03-29: Re-pinned the Railway production deploy workflow to OpenAI
+  `gpt-5.4` while leaving the checked-in local Shipyard default on Anthropic,
+  and updated the hosted docs plus regression coverage so that split contract
+  is explicit.
