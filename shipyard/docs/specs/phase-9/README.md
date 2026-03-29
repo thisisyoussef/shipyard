@@ -225,7 +225,8 @@ printf '%s' "${SHIPYARD_ACCESS_TOKEN}" | railway variable set SHIPYARD_ACCESS_TO
 ```yaml
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1
-SHIPYARD_MODEL_PROVIDER=anthropic
+SHIPYARD_MODEL_PROVIDER=openai
+SHIPYARD_OPENAI_MODEL=gpt-5.4
 ```
 
 - The hosted runtime now also keeps the Playwright packages in dev dependency

@@ -79,7 +79,7 @@ describe("railway config", () => {
     expect(browserEvaluator).toContain("Browser runtime unavailable:");
   });
 
-  it("syncs the production Anthropic defaults before deploying to Railway", async () => {
+  it("syncs the production OpenAI defaults before deploying to Railway", async () => {
     const workflow = await readFile(railwayWorkflowPath, "utf8");
 
     expect(workflow).toContain("packages: write");
@@ -87,11 +87,11 @@ describe("railway config", () => {
     expect(workflow).toContain("uses: docker/build-push-action@v6");
     expect(workflow).toContain('image_repo="ghcr.io/${GITHUB_REPOSITORY,,}"');
     expect(workflow).toContain("RAILWAY_IMAGE_REF: ${{ steps.ghcr.outputs.image_ref }}");
-    expect(workflow).toContain("ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}");
-    expect(workflow).toContain("Missing ANTHROPIC_API_KEY GitHub secret");
+    expect(workflow).toContain("OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}");
+    expect(workflow).toContain("Missing OPENAI_API_KEY GitHub secret");
     expect(workflow).toContain("RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}");
     expect(workflow).toContain("railway project link \\");
-    expect(workflow).toContain("railway variable set ANTHROPIC_API_KEY --stdin");
+    expect(workflow).toContain("railway variable set OPENAI_API_KEY --stdin");
     expect(workflow).toContain("SHIPYARD_GITHUB_TOKEN: ${{ secrets.SHIPYARD_GITHUB_TOKEN }}");
     expect(workflow).toContain("railway variable set GITHUB_TOKEN --stdin");
     expect(workflow).toContain("railway variable set VERCEL_TOKEN --stdin");
@@ -99,8 +99,9 @@ describe("railway config", () => {
     expect(workflow).toContain("SHIPYARD_UI_HOST=0.0.0.0");
     expect(workflow).toContain("SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1");
     expect(workflow).toContain("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1");
-    expect(workflow).toContain("SHIPYARD_MODEL_PROVIDER=anthropic");
-    expect(workflow).toContain("SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6");
+    expect(workflow).toContain("SHIPYARD_MODEL_PROVIDER=openai");
+    expect(workflow).toContain("SHIPYARD_OPENAI_MODEL=gpt-5.4");
+    expect(workflow).not.toContain("SHIPYARD_MODEL_PROVIDER=anthropic");
     expect(workflow).toContain("bash .github/scripts/railway-ci-deploy.sh");
   });
 

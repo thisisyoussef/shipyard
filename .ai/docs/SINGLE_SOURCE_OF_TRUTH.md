@@ -66,9 +66,10 @@
   shared per-turn execution fingerprint in CLI output, browser completion
   state, local JSONL traces, and LangSmith metadata so local vs hosted/runtime
   routing differences are visible without code spelunking.
-- **Model-route baseline**: the shipped default provider is now Anthropic with
-  `claude-opus-4-6`; operator docs, local examples, and the Railway production
-  workflow must keep that default and its secret sync in lockstep.
+- **Model-route baseline**: the checked-in local default provider remains
+  Anthropic with `claude-opus-4-6`, while the Railway production workflow is
+  pinned to OpenAI with `gpt-5.4`; operator docs and deploy secret sync must
+  keep that split explicit.
 - **Deploy-link baseline**: `deploy_target` should not trust raw Vercel CLI
   `stdout` as the public app link. Resolve a shareable alias/domain from
   labeled CLI output or Vercel deployment metadata first, because generated

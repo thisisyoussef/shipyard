@@ -28,7 +28,7 @@ jobs:
       RAILWAY_SERVICE_ID: cb3f46eb-8591-467e-88ce-87672a24c666
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       SHIPYARD_GITHUB_TOKEN: ${{ secrets.SHIPYARD_GITHUB_TOKEN }}
       SHIPYARD_ACCESS_TOKEN: ${{ secrets.SHIPYARD_ACCESS_TOKEN }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -96,8 +96,8 @@ jobs:
 
       - name: Verify production credentials
         run: |
-          if [ -z "${ANTHROPIC_API_KEY}" ]; then
-            echo "Missing ANTHROPIC_API_KEY GitHub secret. Set it before deploying production." >&2
+          if [ -z "${OPENAI_API_KEY}" ]; then
+            echo "Missing OPENAI_API_KEY GitHub secret. Set it before deploying production." >&2
             exit 1
           fi
           if [ -z "${SHIPYARD_ACCESS_TOKEN}" ]; then
@@ -119,7 +119,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ env.RAILWAY_CONTROL_TOKEN }}
         run: |
-          printf '%s' "${ANTHROPIC_API_KEY}" | railway variable set ANTHROPIC_API_KEY --stdin \
+          printf '%s' "${OPENAI_API_KEY}" | railway variable set OPENAI_API_KEY --stdin \
             --skip-deploys \
             --environment "${RAILWAY_ENVIRONMENT_ID}" \
             --service "${RAILWAY_SERVICE_ID}"
@@ -144,8 +144,8 @@ jobs:
             SHIPYARD_TARGETS_DIR=/app/workspace \
             SHIPYARD_UI_HOST=0.0.0.0 \
             SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1 \
-            SHIPYARD_MODEL_PROVIDER=anthropic \
-            SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6 \
+            SHIPYARD_MODEL_PROVIDER=openai \
+            SHIPYARD_OPENAI_MODEL=gpt-5.4 \
             --skip-deploys \
             --environment "${RAILWAY_ENVIRONMENT_ID}" \
             --service "${RAILWAY_SERVICE_ID}"

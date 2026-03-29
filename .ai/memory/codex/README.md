@@ -18,3 +18,8 @@ Notes:
   handbook for the live runtime. If it starts reading like a historical
   appendix or submission template, refresh it from `shipyard/src/**`,
   `shipyard/ui/**`, and `shipyard/docs/architecture/**`.
+- 2026-03-29: For provider incidents, check both
+  `.github/workflows/railway-main-deploy.yml` and
+  `shipyard/src/engine/model-routing.ts`. This repo can intentionally pin
+  Railway production to a different provider/model than the checked-in local
+  default.
