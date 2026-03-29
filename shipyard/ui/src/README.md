@@ -50,9 +50,6 @@ Shipyard browser workbench.
 - `HumanFeedbackPage.tsx` exposes a focused textarea-only surface for feeding
   the running ultimate loop from the human side while reusing the same
   websocket `instruction` transport.
-- `preview-harness.tsx` now renders the same dashboard, editor, board, and
-  human-feedback routes with mock data and honors `dashboardTab` /
-  `editorTab` query params so scripted captures can target stable UI states.
 - File attachments go through `/api/uploads`, then appear as bounded receipts in
   workbench state and the next-turn context preview.
 - `TargetSwitcher.tsx` and `TargetCreationDialog.tsx` drive target selection and

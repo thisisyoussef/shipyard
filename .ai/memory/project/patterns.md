@@ -114,6 +114,3 @@ Capture repeatable patterns that match how this workspace actually works.
 - `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES=1` makes those later scripted UI phase bridges Claude-first; leaving it unset keeps them Codex-first.
 - The Paper + Codex workflow should keep `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES` unset unless the story explicitly wants a Claude experiment.
 - Scripted UI phase bridges write artifacts under `.ai/state/ui-phase-bridge/<story-id>/`.
-- When a UI story needs a Paper starting point and no design file exists yet,
-  use `node scripts/import-ui-to-paper.mjs` against the mock-backed preview
-  harness to seed route-level Paper artboards from stable screenshots.

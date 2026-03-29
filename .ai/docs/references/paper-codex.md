@@ -48,34 +48,6 @@ node scripts/generate-design-brief.mjs --story <story-id> --provider codex
 4. Use short Codex prompts against the selected Paper frame to critique, duplicate, and vary the design before locking the brief.
 5. Keep later UI phase bridges on the default Codex-first path unless the story explicitly wants a Claude experiment.
 
-## Bootstrap From Live UI
-
-If there is no Shipyard Paper file yet, use the preview harness plus Codex to
-seed one from the current UI surfaces:
-
-```bash
-node scripts/import-ui-to-paper.mjs --paper-file-name "Shipyard UI"
-```
-
-What this does:
-
-- starts the mock-backed preview harness at `/preview.html`
-- captures the current dashboard, editor, board, and human-feedback surfaces
-- feeds those screenshots to Codex with Paper MCP access
-- creates new Paper artboards for each captured screen in the currently open
-  Paper file
-
-Useful flags:
-
-- `--dry-run` to inspect the exact surface catalog and output paths
-- `--capture-only` to save screenshots without touching Paper
-- `--surface <id>` to limit the run to one or more screens
-- `--allow-any-paper-file` when you intentionally want to seed whatever Paper
-  file is open instead of requiring an exact file name
-
-The importer is safest when you open a blank Paper file first and pass its exact
-file name with `--paper-file-name`.
-
 ## Prompting Guidance
 
 Good Paper prompts are frame-specific and revision-oriented.
