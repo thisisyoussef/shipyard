@@ -211,6 +211,16 @@ SHIPYARD_ACCESS_TOKEN: ${{ secrets.SHIPYARD_ACCESS_TOKEN }}
 printf '%s' "${SHIPYARD_ACCESS_TOKEN}" | railway variable set SHIPYARD_ACCESS_TOKEN --stdin
 ```
 
+- Hosted Railway deploys now keep Playwright browser downloads out of the
+  default production image and rely on the existing degraded-verification path
+  unless an operator intentionally provisions those browsers:
+
+```yaml
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1
+SHIPYARD_MODEL_PROVIDER=anthropic
+```
+
 - Upload receipts become next-turn context instead of raw websocket blobs:
 
 ```ts

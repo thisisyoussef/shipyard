@@ -50,6 +50,7 @@ describe("railway config", () => {
     expect(workflow).toContain("SHIPYARD_TARGETS_DIR=/app/workspace");
     expect(workflow).toContain("SHIPYARD_UI_HOST=0.0.0.0");
     expect(workflow).toContain("SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1");
+    expect(workflow).toContain("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1");
     expect(workflow).toContain("SHIPYARD_MODEL_PROVIDER=anthropic");
     expect(workflow).toContain("SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6");
     expect(workflow).toContain("bash .github/scripts/railway-ci-deploy.sh");

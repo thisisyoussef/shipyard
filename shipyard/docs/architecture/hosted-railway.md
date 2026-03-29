@@ -149,7 +149,10 @@ not confuse the Shipyard editor with the product being built.
 - The checked-in GitHub Actions deploy workflow now syncs
   `SHIPYARD_ACCESS_TOKEN`, `ANTHROPIC_API_KEY`, `GITHUB_TOKEN` when the
   optional `SHIPYARD_GITHUB_TOKEN` secret is configured,
-  `VERCEL_TOKEN` when configured, `SHIPYARD_TARGETS_DIR=/app/workspace`,
+  `VERCEL_TOKEN` when configured,
+  `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` to keep browser binaries out of the
+  default hosted image,
+  `SHIPYARD_TARGETS_DIR=/app/workspace`,
   `SHIPYARD_UI_HOST=0.0.0.0`,
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1`,
   `SHIPYARD_MODEL_PROVIDER=anthropic`, and
@@ -160,6 +163,11 @@ not confuse the Shipyard editor with the product being built.
   logging and retries deploys that fail after a completed build or surface the
   transient registry/container-pull errors that have been hitting the hosted
   service.
+- Because the hosted runtime already degrades browser evaluation when Chromium
+  is unavailable, the default Railway workflow now skips Playwright browser
+  downloads to keep the production image smaller. If you want full hosted
+  browser verification, replace that default with an image or install step that
+  intentionally provisions the browser binaries and Linux dependencies.
 - For local operator convenience, keep the same hosted token in the ignored
   `shipyard/.env` file and optionally add `SHIPYARD_HOSTED_URL`; the repo-root
   helper `node scripts/print-hosted-access-url.mjs` prints a bootstrap URL

@@ -114,3 +114,12 @@ generated project files under a predictable server-side workspace path.
 run: |
   bash .github/scripts/railway-ci-deploy.sh
 ```
+
+- The hosted Railway workflow now keeps Playwright browser downloads out of the
+  default production image and relies on the already-shipped degraded
+  verification path unless operators explicitly provision those browsers:
+
+```yaml
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1
+```
