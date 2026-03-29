@@ -643,7 +643,7 @@ function createFallbackUiHtml(sessionState: SessionState): string {
   "cancel": { "requestId": "string?" },
   "status": {},
   "target:switch_request": { "targetPath": "string", "requestId": "string?" },
-  "target:create_request": { "name": "string", "description": "string", "scaffoldType": "ts-pnpm-workspace|empty|react-ts|express-ts|python|go?", "requestId": "string?" },
+  "target:create_request": { "name": "string", "description": "string", "initialInstruction": "string?", "scaffoldType": "ts-pnpm-workspace|empty|react-ts|express-ts|python|go?", "requestId": "string?" },
   "target:enrich_request": { "userDescription": "string?" },
   "deploy:request": { "platform": "vercel" }
 }</pre>
@@ -3153,6 +3153,40 @@ export async function startUiRuntimeServer(
     };
   };
 
+  const startBrowserInstructionForProject = async (
+    project: BrowserProjectRuntime,
+    options: {
+      text: string;
+      injectedContext: string[] | undefined;
+    },
+  ): Promise<void> => {
+    const handoff = await prepareInstructionHandoffForProject(
+      project,
+      {
+        instructionLabel: options.text,
+        injectedContext: options.injectedContext,
+        traceInstruction: options.text,
+      },
+    );
+    const turnController = new AbortController();
+    project.activeInstructionController = turnController;
+    project.activeInstruction = runBrowserInstruction(
+      project,
+      options.text,
+      handoff.injectedContext,
+      turnController.signal,
+    );
+
+    try {
+      await project.activeInstruction;
+    } finally {
+      project.activeInstruction = null;
+      project.activeInstructionController = null;
+      project.activeUltimateController = null;
+      await broadcastProjectsState();
+    }
+  };
+
   const queueUltimateFeedbackForProject = async (
     project: BrowserProjectRuntime,
     text: string,
@@ -3638,6 +3672,13 @@ export async function startUiRuntimeServer(
                   creationDescription: message.description,
                   requestId: message.requestId,
                 });
+
+                if (message.initialInstruction) {
+                  await startBrowserInstructionForProject(project, {
+                    text: message.initialInstruction,
+                    injectedContext: undefined,
+                  });
+                }
               } catch (error) {
                 const errorMessage = error instanceof Error
                   ? error.message
@@ -3853,31 +3894,10 @@ export async function startUiRuntimeServer(
                 break;
               }
 
-              const handoff = await prepareInstructionHandoffForProject(
-                activeProject,
-                {
-                  instructionLabel: message.text,
-                  injectedContext: message.injectedContext,
-                  traceInstruction: message.text,
-                },
-              );
-              const turnController = new AbortController();
-              activeProject.activeInstructionController = turnController;
-              activeProject.activeInstruction = runBrowserInstruction(
-                activeProject,
-                message.text,
-                handoff.injectedContext,
-                turnController.signal,
-              );
-
-              try {
-                await activeProject.activeInstruction;
-              } finally {
-                activeProject.activeInstruction = null;
-                activeProject.activeInstructionController = null;
-                activeProject.activeUltimateController = null;
-                await broadcastProjectsState();
-              }
+              await startBrowserInstructionForProject(activeProject, {
+                text: message.text,
+                injectedContext: message.injectedContext,
+              });
               break;
             }
           }

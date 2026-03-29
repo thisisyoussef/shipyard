@@ -22,7 +22,8 @@
 - Data flow summary: dashboard projection combines `targetManager`,
   `projectBoard`, current session state, and local preferences to create cards;
   hero prompt and card-open actions register a launch intent; matching backend
-  completion events route the app into the editor and preserve the draft.
+  completion events route the app into the editor and queue the first browser
+  instruction.
 
 ## Pack Cohesion and Sequencing
 - Higher-level pack objectives:
@@ -57,7 +58,7 @@
 
 ## Data Model / API Contracts
 - Request shape:
-  - optional `requestId` on `target:create_request`
+  - optional `requestId` and `initialInstruction` on `target:create_request`
   - existing `project:activate_request` and `target:switch_request`
 - Response shape:
   - optional matching `requestId` on `target:switch_complete`
@@ -82,7 +83,7 @@
   - dashboard projection maps runtime truth into card truth
   - preference hydration and persistence
 - Integration tests:
-  - hero prompt create flow preserves launch intent
+  - hero prompt create flow preserves launch intent and starts the first turn
   - card open resolves the correct product into the editor route
 - E2E or smoke tests:
   - create target from dashboard, land in editor, reload, and return to dashboard
@@ -128,7 +129,8 @@
     `shipyard/ui/src/views/ProductCard.tsx`: presentational dashboard UI fed by
     live catalog models instead of mock target mapping.
   - `shipyard/src/ui/contracts.ts` and `shipyard/src/ui/server.ts`: optional
-    `requestId` support on create/switch traffic.
+    `requestId` support on create/switch traffic plus `initialInstruction`
+    handoff for dashboard launches.
   - `shipyard/tests/ui-dashboard-catalog.test.ts`,
     `shipyard/tests/ui-dashboard-launch.test.ts`,
     `shipyard/tests/ui-events.test.ts`, and `shipyard/tests/ui-runtime.test.ts`:
@@ -146,12 +148,9 @@ const dashboardCatalog = buildDashboardCatalog({
 ```
 
 ```ts
-await emitProjectMessage(project, {
-  type: "target:switch_complete",
-  success,
-  message,
-  state: nextTargetManagerState,
-  requestId,
+await startBrowserInstructionForProject(project, {
+  text: message.initialInstruction,
+  injectedContext: undefined,
 });
 ```
 

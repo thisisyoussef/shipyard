@@ -425,6 +425,7 @@ export const targetCreateRequestMessageSchema = z.object({
   type: z.literal("target:create_request"),
   name: nonEmptyTextSchema,
   description: nonEmptyTextSchema,
+  initialInstruction: nonEmptyTextSchema.optional(),
   scaffoldType: scaffoldTypeSchema.optional(),
   requestId: z.string().trim().min(1).optional(),
 });

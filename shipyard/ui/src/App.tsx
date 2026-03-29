@@ -287,10 +287,6 @@ export function App() {
       )
     );
 
-    if (pendingDashboardLaunch.promptDraft) {
-      controller.onInstructionChange(pendingDashboardLaunch.promptDraft);
-    }
-
     setDashboardHeroPrompt("");
     setDashboardNotice(null);
     setDashboardCreateDialogOpen(false);
@@ -301,7 +297,6 @@ export function App() {
     });
   }, [
     controller.lastTargetSwitchCompletion,
-    controller.onInstructionChange,
     navigate,
     pendingDashboardLaunch,
   ]);
@@ -335,16 +330,9 @@ export function App() {
 
   function handleDashboardHeroSubmit(prompt: string): void {
     const launchIntent = createDashboardHeroLaunch(prompt);
-    const sent = controller.onRequestTargetCreate(
-      {
-        name: launchIntent.request.name,
-        description: launchIntent.request.description,
-        scaffoldType: launchIntent.request.scaffoldType,
-      },
-      {
-        requestId: launchIntent.requestId,
-      },
-    );
+    const sent = controller.onRequestTargetCreate(launchIntent.request, {
+      requestId: launchIntent.requestId,
+    });
 
     if (!sent) {
       setDashboardNotice({
@@ -361,7 +349,7 @@ export function App() {
       tone: "neutral",
       title: `Creating ${launchIntent.createdName}`,
       detail:
-        "Shipyard is scaffolding the product and will carry your brief into the editor composer.",
+        "Shipyard is scaffolding the product, starting background enrichment, and queueing the first build turn.",
     });
   }
 
@@ -371,16 +359,9 @@ export function App() {
     scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
   }): void {
     const launchIntent = createDashboardManualLaunch(input);
-    const sent = controller.onRequestTargetCreate(
-      {
-        name: launchIntent.request.name,
-        description: launchIntent.request.description,
-        scaffoldType: launchIntent.request.scaffoldType,
-      },
-      {
-        requestId: launchIntent.requestId,
-      },
-    );
+    const sent = controller.onRequestTargetCreate(launchIntent.request, {
+      requestId: launchIntent.requestId,
+    });
 
     if (!sent) {
       setDashboardNotice({

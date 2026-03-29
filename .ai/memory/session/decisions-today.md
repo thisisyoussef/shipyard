@@ -50,3 +50,4 @@
   scoped instruction plus queued human feedback, and added traced regression
   coverage for that continuation path.
 - 2026-03-28: Added a dedicated Paper + Codex setup helper plus workflow references so visible UI stories can use the selected Paper frame as live design context while the Claude UI bridge flag stays off by default.
+- 2026-03-28: Dashboard hero launches now use a backend-backed `initialInstruction` handoff on `target:create_request`, so target creation, automatic enrichment, and the first queued turn stay correlated instead of relying on frontend draft injection after route navigation.

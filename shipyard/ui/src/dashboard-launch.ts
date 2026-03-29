@@ -10,6 +10,7 @@ export interface DashboardLaunchRequest {
   requestId: string;
   name: string;
   description: string;
+  initialInstruction?: string;
   scaffoldType: DashboardScaffoldType;
 }
 
@@ -17,7 +18,7 @@ export interface DashboardLaunchIntent {
   kind: "hero-create" | "manual-create";
   requestId: string;
   createdName: string;
-  promptDraft: string | null;
+  initialInstruction: string | null;
   scaffoldType: DashboardScaffoldType;
   startedAt: string;
   request: DashboardLaunchRequest;
@@ -118,7 +119,7 @@ export function createDashboardHeroLaunch(
     kind: "hero-create",
     requestId,
     createdName,
-    promptDraft: prompt,
+    initialInstruction: prompt,
     scaffoldType,
     startedAt,
     request: {
@@ -126,6 +127,7 @@ export function createDashboardHeroLaunch(
       requestId,
       name: createdName,
       description: prompt,
+      initialInstruction: prompt,
       scaffoldType,
     },
   };
@@ -146,7 +148,7 @@ export function createDashboardManualLaunch(
     kind: "manual-create",
     requestId,
     createdName: input.name,
-    promptDraft: null,
+    initialInstruction: null,
     scaffoldType: input.scaffoldType,
     startedAt,
     request: {

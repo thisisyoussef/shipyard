@@ -46,6 +46,11 @@ Capture repeatable patterns that match how this workspace actually works.
 - Shared runtime code should depend on Shipyard-owned turn/tool contracts, while
   provider adapters project `ToolDefinition[]` into provider-specific wire
   formats inside adapter modules.
+- Dashboard hero creates should piggyback on the existing
+  `target:create_request` websocket contract with explicit `requestId`
+  correlation and an optional `initialInstruction`, so the backend can
+  activate the new target, kick off automatic enrichment, and start the first
+  browser turn through the same instruction path used everywhere else.
 - The shipped default route is currently Anthropic on `claude-opus-4-6`. When
   that default changes, update the runtime default, operator docs/examples, and
   the Railway production secret/model pin together in the same story.

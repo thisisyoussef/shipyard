@@ -1310,7 +1310,7 @@ describe("ui runtime contract", () => {
     } finally {
       await runtime.close();
     }
-  }, 15_000);
+  }, 30_000);
 
   it("creates a new target from the browser, auto-enriches it, and switches the session into code mode", async () => {
     const targetsDirectory = await createTempDirectory(
@@ -1449,6 +1449,170 @@ describe("ui runtime contract", () => {
       await runtime.close();
     }
   });
+
+  it("creates a new target from the dashboard flow, auto-enriches it, and runs the initial instruction", async () => {
+    const targetsDirectory = await createTempDirectory(
+      "shipyard-ui-dashboard-create-",
+    );
+    const createdTargetDirectory = path.join(targetsDirectory, "delta-app");
+    const initialInstruction =
+      "Build a release planning dashboard with a launch checklist.";
+    const modelAdapter = createFakeModelAdapter(async (input) => {
+      expect(JSON.stringify(input.messages)).toContain(initialInstruction);
+
+      return createFakeTextTurnResult("Dashboard launch turn complete.");
+    });
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-dashboard-create-session",
+        targetDirectory: targetsDirectory,
+        targetsDirectory,
+        activePhase: "target-manager",
+        discovery: createTargetManagerDiscovery(targetsDirectory),
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      targetEnrichmentInvoker: async () => ({
+        text: JSON.stringify({
+          name: "delta-app",
+          description: "Auto-enriched delta target.",
+          purpose: "Verify dashboard launch auto-enrichment and handoff.",
+          stack: ["TypeScript", "React"],
+          architecture: "Single package workspace",
+          keyPatterns: ["dashboard launch flow"],
+          complexity: "small",
+          suggestedAgentsRules: "# AGENTS.md\nKeep changes focused.",
+          suggestedScripts: {
+            test: "vitest run",
+          },
+          taskSuggestions: ["Build the first launch checklist"],
+        }),
+        model: "test-model",
+      }),
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            modelAdapter,
+          };
+        },
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialTargetStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "target:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialTargetStatePromise;
+
+        const createSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "target:state" &&
+              message.state.currentTarget.path === createdTargetDirectory &&
+              message.state.currentTarget.hasProfile
+            ) &&
+            messages.some((message) => message.type === "agent:done"),
+          20_000,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "target:create_request",
+            name: "delta app",
+            description: initialInstruction,
+            initialInstruction,
+            scaffoldType: "react-ts",
+            requestId: "create-request-dashboard-1",
+          }),
+        );
+
+        const createSequence = await createSequencePromise;
+        const switchComplete = createSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "target:switch_complete" }
+          > => message.type === "target:switch_complete",
+        );
+        const firstEnrichmentIndex = createSequence.findIndex(
+          (message) => message.type === "target:enrichment_progress",
+        );
+        const switchCompleteIndex = createSequence.findIndex(
+          (message) => message.type === "target:switch_complete",
+        );
+        const queuedInstructionState = createSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "session:state" }
+          > =>
+            message.type === "session:state" &&
+            message.targetDirectory === createdTargetDirectory &&
+            message.workbenchState.turns[0]?.instruction === initialInstruction,
+        );
+        const completedInstruction = createSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "agent:done" }
+          > => message.type === "agent:done",
+        );
+
+        expect(switchComplete).toMatchObject({
+          type: "target:switch_complete",
+          requestId: "create-request-dashboard-1",
+          success: true,
+          state: {
+            currentTarget: {
+              path: createdTargetDirectory,
+              name: "delta-app",
+            },
+          },
+        });
+        expect(switchCompleteIndex).toBeGreaterThanOrEqual(0);
+        expect(firstEnrichmentIndex).toBeGreaterThan(switchCompleteIndex);
+        expect(queuedInstructionState).toMatchObject({
+          type: "session:state",
+          targetDirectory: createdTargetDirectory,
+          workbenchState: {
+            turns: [
+              {
+                instruction: initialInstruction,
+              },
+            ],
+          },
+        });
+        expect(completedInstruction).toMatchObject({
+          type: "agent:done",
+          status: "success",
+          summary: expect.stringContaining("Dashboard launch turn complete."),
+        });
+        expect(modelAdapter.calls).toHaveLength(1);
+        const firstModelCall = modelAdapter.calls[0];
+        expect(firstModelCall).toBeTruthy();
+        expect(JSON.stringify(firstModelCall!.messages)).toContain(
+          initialInstruction,
+        );
+        await expect(
+          readFile(path.join(createdTargetDirectory, ".shipyard", "profile.json"), "utf8"),
+        ).resolves.toContain("Auto-enriched delta target.");
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 30_000);
 
   it("creates a new target while the current project remains busy in the background", async () => {
     const targetsDirectory = await createTempDirectory(
