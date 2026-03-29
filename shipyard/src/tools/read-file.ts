@@ -88,7 +88,7 @@ export async function readFileTool(
 
     const contents = await readFile(resolvedPath.absolutePath, "utf8");
     const hash = hashContents(contents);
-    rememberReadHash(resolvedPath.canonicalPath, hash);
+    rememberReadHash(input.targetDirectory, resolvedPath.canonicalPath, hash);
 
     return {
       path: resolvedPath.canonicalPath,

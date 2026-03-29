@@ -260,7 +260,7 @@ export async function editBlockTool(
   input: EditBlockInput,
 ): Promise<EditBlockResult> {
   const current = await readCurrentFileState(input.targetDirectory, input.path);
-  const trackedHash = getTrackedReadHash(current.path);
+  const trackedHash = getTrackedReadHash(input.targetDirectory, current.path);
 
   if (!trackedHash) {
     throw new ToolError(
@@ -277,7 +277,7 @@ export async function editBlockTool(
   countOccurrences(current.contents, input.old_string);
 
   if (input.old_string === input.new_string) {
-    rememberReadHash(current.path, current.hash);
+    rememberReadHash(input.targetDirectory, current.path, current.hash);
 
     return {
       ...current,
@@ -342,7 +342,7 @@ export async function editBlockTool(
   }
 
   const nextHash = hashContents(nextContents);
-  rememberReadHash(current.path, nextHash);
+  rememberReadHash(input.targetDirectory, current.path, nextHash);
 
   return {
     path: current.path,

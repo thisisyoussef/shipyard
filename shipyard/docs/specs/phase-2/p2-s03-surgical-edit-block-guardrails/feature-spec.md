@@ -56,3 +56,30 @@
 - Guardrail failures are covered by focused tests.
 - Success output is concise but specific enough for the coordinator to reason about.
 - Large rewrites are rejected before write time.
+
+## Code References
+
+- [`../../../../src/tools/file-state.ts`](../../../../src/tools/file-state.ts):
+  keys tracked read hashes by the resolved target path so identical relative
+  file names from different targets do not overwrite each other.
+- [`../../../../src/tools/read-file.ts`](../../../../src/tools/read-file.ts):
+  records stale-read hashes with the target directory plus canonical path
+  whenever a file is read.
+- [`../../../../src/tools/edit-block.ts`](../../../../src/tools/edit-block.ts):
+  validates `edit_block` against the target-scoped stale-read key and refreshes
+  that scoped hash after no-op and successful edits.
+- [`../../../../tests/tooling.test.ts`](../../../../tests/tooling.test.ts) and
+  [`../../../../tests/graph-runtime.test.ts`](../../../../tests/graph-runtime.test.ts):
+  prove same-path files in different targets no longer collide and that the
+  graph runtime still sees the refreshed hash contract.
+
+## Representative Snippets
+
+```ts
+function createTrackedReadKey(
+  targetDirectory: string,
+  canonicalRelativePath: string,
+): string {
+  return resolveWithinTarget(targetDirectory, canonicalRelativePath).absolutePath;
+}
+```

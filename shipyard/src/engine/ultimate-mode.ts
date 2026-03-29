@@ -237,7 +237,6 @@ function createUltimateModeInnerReporter(
     onToolCall: reporter.onToolCall,
     onToolResult: reporter.onToolResult,
     onEdit: reporter.onEdit,
-    onText: reporter.onText,
     onTurnState(event) {
       if (event.connectionState === "agent-busy") {
         return reporter.onTurnState?.(event);

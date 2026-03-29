@@ -327,6 +327,7 @@ describe("ultimate mode", () => {
     const turnStates: TurnStateEvent[] = [];
     const doneEvents: DoneEvent[] = [];
     const thinkingMessages: string[] = [];
+    const textMessages: string[] = [];
 
     const executeTurn = vi.fn(
       async (options): Promise<InstructionTurnResult> => {
@@ -381,6 +382,9 @@ describe("ultimate mode", () => {
         onThinking(message) {
           thinkingMessages.push(message);
         },
+        onText(message) {
+          textMessages.push(message);
+        },
       },
       dependencies: {
         async runHumanSimulator(input) {
@@ -426,6 +430,9 @@ describe("ultimate mode", () => {
       status: "cancelled",
       summary: expect.stringContaining("Ultimate mode stopped by human interrupt"),
     });
+    expect(textMessages).toEqual([
+      expect.stringContaining("Ultimate mode stopped by human interrupt after 2 cycles."),
+    ]);
     expect(thinkingMessages).toContain(
       "Ultimate mode activated. Shipyard and the human simulator will keep handing work back and forth until you interrupt them.",
     );
