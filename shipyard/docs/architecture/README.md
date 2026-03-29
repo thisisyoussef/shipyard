@@ -223,6 +223,8 @@ flowchart TD
   can revert failed attempts.
 - `src/tracing/`: writes local JSONL traces, records handoff and harness-route
   metadata, and attaches LangSmith metadata when configured.
+- `src/mission-control/`: holds long-run supervision policy shared by the
+  mission-control scripts.
 - `src/ui/`: is the backend half of browser mode. It manages WebSocket
   streaming, hosted access, uploads, target-manager state, preview-state
   publishing, and deploy summaries.
@@ -248,5 +250,8 @@ flowchart TD
   handoff artifacts, with only lightweight pointers persisted in session state.
 - Keep browser evaluation loopback-only; production deployment URLs belong to
   `deploy_target`, not the preview supervisor.
+- Keep long-run supervision outside the core runtime loop: policy belongs in
+  `src/mission-control/`, while operators launch it via the mission-control
+  scripts and target-local mission bundles.
 - When documenting new features, prefer durable notes here and link out to the
   relevant story pack under `docs/specs/`.

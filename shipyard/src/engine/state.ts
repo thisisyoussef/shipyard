@@ -12,6 +12,7 @@ import { discoverTarget, normalizeDiscoveryReport } from "../context/discovery.j
 import { createInitialPreviewState } from "../preview/contracts.js";
 import { loadTargetProfile } from "../tools/target-manager/profile-io.js";
 import {
+  compactWorkbenchStateForPersistence,
   createInitialDeploySummary,
   createInitialWorkbenchState,
   ensureWorkbenchStateDefaults,
@@ -157,7 +158,7 @@ export function createSessionSnapshot(state: SessionState): SessionSnapshot {
     activePlanId: state.activePlanId,
     activeTask: state.activeTask,
     recentTouchedFiles: [...state.recentTouchedFiles],
-    workbenchState: state.workbenchState,
+    workbenchState: compactWorkbenchStateForPersistence(state.workbenchState),
   };
 }
 
@@ -252,6 +253,7 @@ export async function ensureShipyardDirectories(
 
 export async function saveSessionState(state: SessionState): Promise<string> {
   await ensureShipyardDirectories(state.targetDirectory);
+  state.workbenchState = compactWorkbenchStateForPersistence(state.workbenchState);
 
   const sessionFilePath = getSessionFilePath(
     state.targetDirectory,
@@ -260,6 +262,28 @@ export async function saveSessionState(state: SessionState): Promise<string> {
   await writeFile(sessionFilePath, JSON.stringify(state, null, 2), "utf8");
 
   return sessionFilePath;
+}
+
+function prepareWorkbenchStateForResume(options: {
+  workbenchState: WorkbenchViewState;
+  activePhase: SessionPhase;
+  discovery: DiscoveryReport;
+}): WorkbenchViewState {
+  const activeWorkingTurn = options.workbenchState.turns.find((turn) =>
+    turn.status === "working"
+  );
+
+  return {
+    ...options.workbenchState,
+    connectionState: "ready",
+    latestError: null,
+    activeTurnId: activeWorkingTurn?.id ?? null,
+    pendingToolCalls: {},
+    previewState: createInitialPreviewState({
+      activePhase: options.activePhase,
+      discovery: options.discovery,
+    }),
+  };
 }
 
 export async function loadSessionState(
@@ -278,17 +302,16 @@ export async function loadSessionState(
   const parsed = JSON.parse(contents) as Partial<SessionState> &
     Omit<SessionState, "workbenchState">;
   const discovery = normalizeDiscoveryReport(parsed.discovery);
-  const workbenchState = ensureWorkbenchStateDefaults(
-    parsed.workbenchState ?? createInitialWorkbenchState(),
-  );
   const activePhase = parsed.activePhase ?? "code";
-
-  if (!workbenchState.previewState) {
-    workbenchState.previewState = createInitialPreviewState({
-      activePhase,
-      discovery,
-    });
-  }
+  const workbenchState = prepareWorkbenchStateForResume({
+    workbenchState: compactWorkbenchStateForPersistence(
+      ensureWorkbenchStateDefaults(
+        parsed.workbenchState ?? createInitialWorkbenchState(),
+      ),
+    ),
+    activePhase,
+    discovery,
+  });
 
   if (!Array.isArray(workbenchState.pendingUploads)) {
     workbenchState.pendingUploads = [];

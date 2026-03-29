@@ -152,6 +152,34 @@ bootstrap empty-target guard.
   sends notes through the same websocket instruction path so you can feed the
   running ultimate loop without opening the full workbench shell.
 
+## Long-Run Mission Control
+
+- `pnpm mission:watchdog -- --config /abs/path/to/mission.config.json` launches
+  a two-layer supervisor for long-running `ultimate` sessions.
+- `pnpm mission:launch-agent -- --config /abs/path/to/mission.config.json`
+  writes a locked bootstrap env file, installs a per-mission macOS LaunchAgent,
+  and keeps the watchdog restartable even after the launching terminal or app
+  goes away.
+- The inner mission controller (`scripts/ultimate-mission-control.ts`) keeps a
+  passive websocket attached so local preview supervision stays alive, polls
+  authenticated `/api/health` runtime telemetry, captures session + handoff
+  backups, restarts the UI runtime on crashes/stalls/memory pressure, and
+  replays the saved `ultimate start` brief plus sticky human feedback after
+  recovery. Before each fresh runtime launch it also repairs the saved session
+  JSON and active handoff from the latest mission backups when those artifacts
+  are missing or corrupt.
+- The outer watchdog (`scripts/ultimate-mission-watchdog.ts`) supervises the
+  controller itself by watching the heartbeat in `mission-state.json` and
+  respawning mission control if the inner loop exits or stops updating.
+- Mission bundles live outside source control alongside the target (for
+  example `target/.shipyard/ops/<sessionId>/`) and typically contain
+  `mission.config.json`, a durable `brief.md`, and a `sticky-feedback.json`
+  array. Long-run bundles can also declare `environment.envFiles` so cold-start
+  relaunches have a durable secret source instead of depending on the shell
+  environment that originally launched Shipyard.
+- See [`docs/architecture/mission-control.md`](./docs/architecture/mission-control.md)
+  for the config contract, state files, and failure-recovery flow.
+
 ## Repo Map
 
 ```text

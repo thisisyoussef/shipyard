@@ -74,6 +74,12 @@ import type {
   TargetManagerState,
 } from "./contracts.js";
 import {
+  hasUiHealthRuntimeDetails,
+  isUiHealthResponse,
+  type UiHealthResponse,
+  type UiRuntimeDiagnostics,
+} from "./health.js";
+import {
   createClearedAccessCookie,
   createGrantedAccessCookie,
   getUiAccessState,
@@ -182,17 +188,6 @@ const workspaceDirectory = path.resolve(packageRoot, "..");
 const builtUiDirectory = path.join(packageRoot, "dist", "ui");
 const builtUiIndexPath = path.join(builtUiDirectory, "index.html");
 
-interface UiHealthResponse {
-  ok: true;
-  runtimeMode: "ui";
-  accessProtected: boolean;
-  sessionId?: string;
-  targetLabel?: string;
-  targetDirectory?: string;
-  workspaceDirectory?: string;
-  turnCount?: number;
-}
-
 interface BrowserProjectRuntime {
   projectId: string;
   sessionState: SessionState;
@@ -233,8 +228,68 @@ export interface UiPortResolution {
   existingRuntime: ExistingUiRuntimeInfo | null;
 }
 
+function createRuntimeConnectionState(
+  project: BrowserProjectRuntime,
+): "ready" | "agent-busy" | "error" {
+  if (project.activeInstruction !== null || project.deployInFlight) {
+    return "agent-busy";
+  }
+
+  if (
+    project.sessionState.workbenchState.connectionState === "error" ||
+    project.sessionState.workbenchState.latestError
+  ) {
+    return "error";
+  }
+
+  return "ready";
+}
+
+function createRuntimeDiagnostics(
+  project: BrowserProjectRuntime,
+): UiRuntimeDiagnostics {
+  const memoryUsage = process.memoryUsage();
+  const previewState = project.sessionState.workbenchState.previewState;
+  const ultimateController = project.activeUltimateController;
+  const pendingHumanFeedback =
+    ultimateController?.getPendingHumanFeedback().length ?? 0;
+
+  return {
+    pid: process.pid,
+    uptimeMs: Math.floor(process.uptime() * 1_000),
+    connectionState: createRuntimeConnectionState(project),
+    agentStatus: project.sessionState.workbenchState.agentStatus,
+    latestError: project.sessionState.workbenchState.latestError,
+    activeTurnId: project.sessionState.workbenchState.activeTurnId,
+    instructionInFlight: project.activeInstruction !== null,
+    deployInFlight: project.deployInFlight,
+    memoryUsage: {
+      rssBytes: memoryUsage.rss,
+      heapTotalBytes: memoryUsage.heapTotal,
+      heapUsedBytes: memoryUsage.heapUsed,
+      externalBytes: memoryUsage.external,
+      arrayBuffersBytes: memoryUsage.arrayBuffers,
+    },
+    preview: {
+      status: previewState.status,
+      summary: previewState.summary,
+      url: previewState.url,
+      logTail: [...previewState.logTail],
+      lastRestartReason: previewState.lastRestartReason,
+    },
+    ultimate: {
+      active: ultimateController !== null,
+      brief: ultimateController?.initialBrief ?? null,
+      startedAt: ultimateController?.startedAt ?? null,
+      pendingHumanFeedback,
+      statusText: formatUltimateModeStatus(ultimateController),
+    },
+    lastActiveAt: project.sessionState.lastActiveAt,
+  };
+}
+
 function createHealthResponse(
-  sessionState: SessionState,
+  project: BrowserProjectRuntime,
   options: {
     accessProtected: boolean;
     includeRuntimeDetails: boolean;
@@ -252,11 +307,14 @@ function createHealthResponse(
 
   return {
     ...baseResponse,
-    sessionId: sessionState.sessionId,
-    targetLabel: path.basename(sessionState.targetDirectory) || sessionState.targetDirectory,
-    targetDirectory: sessionState.targetDirectory,
+    sessionId: project.sessionState.sessionId,
+    targetLabel:
+      path.basename(project.sessionState.targetDirectory) ||
+      project.sessionState.targetDirectory,
+    targetDirectory: project.sessionState.targetDirectory,
     workspaceDirectory,
-    turnCount: sessionState.turnCount,
+    turnCount: project.sessionState.turnCount,
+    runtime: createRuntimeDiagnostics(project),
   };
 }
 
@@ -339,39 +397,6 @@ function requestIsAuthorized(request: IncomingMessage): boolean {
   }
 
   return readAccessToken(request) === expectedToken;
-}
-
-function isRecord(
-  value: unknown,
-): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isUiHealthResponse(value: unknown): value is UiHealthResponse {
-  return (
-    isRecord(value) &&
-    value.ok === true &&
-    value.runtimeMode === "ui" &&
-    typeof value.accessProtected === "boolean"
-  );
-}
-
-function hasUiHealthRuntimeDetails(
-  value: UiHealthResponse,
-): value is UiHealthResponse & {
-  sessionId: string;
-  targetLabel: string;
-  targetDirectory: string;
-  workspaceDirectory: string;
-  turnCount: number;
-} {
-  return (
-    typeof value.sessionId === "string" &&
-    typeof value.targetLabel === "string" &&
-    typeof value.targetDirectory === "string" &&
-    typeof value.workspaceDirectory === "string" &&
-    typeof value.turnCount === "number"
-  );
 }
 
 function isPortInUseError(error: unknown): error is NodeJS.ErrnoException {
@@ -683,6 +708,10 @@ function getDeployUnavailableReason(
   }
 
   return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function isDeployResultData(value: unknown): value is DeployResultData {
@@ -1053,7 +1082,7 @@ export async function startUiRuntimeServer(
         sendJson(
           response,
           200,
-          createHealthResponse(activeProject.sessionState, {
+          createHealthResponse(activeProject, {
             accessProtected: accessState.required,
             includeRuntimeDetails:
               accessState.authenticated || !accessState.required,
@@ -1174,28 +1203,14 @@ export async function startUiRuntimeServer(
   const projectConnectionState = (
     project: BrowserProjectRuntime,
   ): "ready" | "agent-busy" => {
-    if (project.activeInstruction !== null || project.deployInFlight) {
-      return "agent-busy";
-    }
-
-    return "ready";
+    const connectionState = createRuntimeConnectionState(project);
+    return connectionState === "error" ? "ready" : connectionState;
   };
 
   const projectBoardStatus = (
     project: BrowserProjectRuntime,
   ): "ready" | "agent-busy" | "error" => {
-    if (project.activeInstruction !== null || project.deployInFlight) {
-      return "agent-busy";
-    }
-
-    if (
-      project.sessionState.workbenchState.connectionState === "error" ||
-      project.sessionState.workbenchState.latestError
-    ) {
-      return "error";
-    }
-
-    return "ready";
+    return createRuntimeConnectionState(project);
   };
 
   const sendToSocket = async (

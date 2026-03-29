@@ -2355,6 +2355,23 @@ describe("ui runtime contract", () => {
         workspaceDirectory,
         targetDirectory,
       });
+      expect(healthJson.runtime).toMatchObject({
+        connectionState: "ready",
+        instructionInFlight: false,
+        deployInFlight: false,
+        ultimate: {
+          active: false,
+          statusText: "Ultimate mode is idle.",
+        },
+        preview: {
+          status: expect.any(String),
+          summary: expect.any(String),
+        },
+        memoryUsage: {
+          rssBytes: expect.any(Number),
+          heapUsedBytes: expect.any(Number),
+        },
+      });
 
       const socket = new WebSocket(runtime.socketUrl);
       const initialStatePromise = waitForSocketMessage(
@@ -4054,6 +4071,12 @@ describe("ui runtime contract", () => {
         sessionId: "ui-access-session",
         workspaceDirectory,
         targetDirectory,
+        runtime: {
+          connectionState: "ready",
+          ultimate: {
+            active: false,
+          },
+        },
       });
 
       const unlockedSocket = new WebSocket(runtime.socketUrl, {
