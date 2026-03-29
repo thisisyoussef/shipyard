@@ -89,6 +89,8 @@ describe("railway config", () => {
     expect(workflow).toContain("RAILWAY_IMAGE_REF: ${{ steps.ghcr.outputs.image_ref }}");
     expect(workflow).toContain("OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}");
     expect(workflow).toContain("Missing OPENAI_API_KEY GitHub secret");
+    expect(workflow).toContain('if [ -n "${RAILWAY_TOKEN}" ]; then');
+    expect(workflow).toContain("RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}");
     expect(workflow).toContain("RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}");
     expect(workflow).toContain("railway project link \\");
     expect(workflow).toContain("railway variable set OPENAI_API_KEY --stdin");
