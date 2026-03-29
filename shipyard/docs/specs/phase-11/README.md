@@ -3,7 +3,7 @@
 - Pack: Runtime Factory Foundations
 - Estimate: 36-48 hours
 - Date: 2026-03-28
-- Status: In progress; P11-S01, P11-S02, P11-S03, P11-S04, P11-S05, P11-S06, and P11-S07 implemented, remaining runtime-only stories planned
+- Status: In progress; P11-S01, P11-S02, P11-S03, P11-S04, P11-S05, P11-S06, P11-S07, and P11-S08 implemented, P11-S09 remaining
 
 ## Pack Objectives
 
@@ -191,3 +191,24 @@ That later pack can concentrate on board interaction design, transitions, visual
   durable workspace restore, degraded hosted fallback, workbench/health
   projection, hosted availability metadata, and the Railway workflow env +
   secret contract needed to run the same factory runtime remotely.
+- `shipyard/src/tasks/contracts.ts`,
+  `shipyard/src/tasks/store.ts`,
+  `shipyard/src/tasks/runtime.ts`,
+  `shipyard/src/coordination/contracts.ts`,
+  `shipyard/src/coordination/store.ts`,
+  `shipyard/src/coordination/runtime.ts`,
+  `shipyard/src/engine/state.ts`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: implement the persisted task graph,
+  coordination-bus contracts, advisory leases, threaded acknowledgements,
+  source-control and hosted-runtime refs on nodes, additive `taskBoard`
+  workbench snapshots, and explicit `tasks:state` websocket publication for
+  future kanban and coordinator consumers.
+- `shipyard/tests/task-graph-runtime.test.ts`,
+  `shipyard/tests/coordination-runtime.test.ts`, and
+  `shipyard/tests/task-graph-ui-runtime.test.ts`: validate backlog-to-graph
+  projection, dependency blocking, deterministic board columns, restart-safe
+  persistence, advisory lease lifecycle, threaded acknowledgements, runtime
+  refs on nodes, and browser-visible task-board snapshots without shipping the
+  visual board itself.

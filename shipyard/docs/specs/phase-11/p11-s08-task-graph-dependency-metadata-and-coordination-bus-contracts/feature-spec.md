@@ -40,21 +40,21 @@ shipping the visual board yet.
   instead of rebuilding state from sessions or raw artifacts.
 
 ## Acceptance Criteria
-- [ ] AC-1: Shipyard has typed contracts for story nodes, task nodes,
+- [x] AC-1: Shipyard has typed contracts for story nodes, task nodes,
   dependency edges, assignments, task or story status, source-control refs, and
   hosted workspace refs.
-- [ ] AC-2: Shipyard has a coordination-bus contract for message threads,
+- [x] AC-2: Shipyard has a coordination-bus contract for message threads,
   acknowledgements, and advisory file or scope leases.
-- [ ] AC-3: The runtime can project the task graph into non-visual board
+- [x] AC-3: The runtime can project the task graph into non-visual board
   columns and card metadata, including phase, assigned agent, branch or PR
   state, degraded-source mode, and hosted runtime availability, without
   shipping the board UI itself.
-- [ ] AC-4: Task graph state can reference approved specs, active TDD lanes,
+- [x] AC-4: Task graph state can reference approved specs, active TDD lanes,
   quality reports, GitHub bindings or degraded-local source mode, Railway
   workspace status, and later apply or review decisions.
-- [ ] AC-5: File leases and coordination messages are explicit and auditable
+- [x] AC-5: File leases and coordination messages are explicit and auditable
   rather than informal chat convention.
-- [ ] AC-6: The data contracts stay provider-neutral and external-system-neutral
+- [x] AC-6: The data contracts stay provider-neutral and external-system-neutral
   at the core even though first-party GitHub and Railway adapters ship first.
 
 ## Edge Cases
@@ -87,3 +87,75 @@ shipping the visual board yet.
 - Shipyard has a durable non-visual story/task graph plus coordination-bus
   contracts that later UI and orchestration work can consume directly,
   including GitHub and hosted-runtime status.
+
+## Implementation Evidence
+
+- `shipyard/src/tasks/contracts.ts`: defines the durable `StoryNode`,
+  `TaskNode`, `TaskDependency`, `TaskAssignment`, `SourceControlRef`,
+  `HostedWorkspaceRef`, `BoardCardProjection`, and `BoardProjection`
+  contracts, plus the persisted task-graph state shape.
+
+  ```ts
+  export const boardProjectionSchema = z.object({
+    updatedAt: z.string().trim().min(1),
+    summary: z.string().trim().min(1),
+    storyCount: z.number().int().nonnegative(),
+    taskCount: z.number().int().nonnegative(),
+    columns: z.array(boardColumnProjectionSchema).length(5),
+  });
+  ```
+
+- `shipyard/src/tasks/store.ts` and `shipyard/src/engine/state.ts`: add the
+  `.shipyard/tasks/runtime.json` persistence path plus the new `.shipyard/tasks`
+  and `.shipyard/coordination` directories to the standard target-local
+  Shipyard state tree.
+
+- `shipyard/src/tasks/runtime.ts`: projects approved backlog/story/spec
+  artifacts into one task graph, derives dependency edges and blocked states,
+  attaches TDD/source-control/hosted-runtime refs, preserves assignments,
+  emits a deterministic board projection, and syncs the result into the active
+  session workbench.
+
+- `shipyard/src/coordination/contracts.ts`,
+  `shipyard/src/coordination/store.ts`, and
+  `shipyard/src/coordination/runtime.ts`: add explicit coordination threads,
+  acknowledgements, advisory file leases, lease lifecycle persistence, and
+  auditable mutation logs under `.shipyard/coordination/runtime.json`.
+
+- `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: add additive `taskBoard` session state,
+  `tasks:state` websocket publication, and task-board refreshes on session and
+  preview updates without replacing the existing project board.
+
+- `shipyard/tests/task-graph-runtime.test.ts`,
+  `shipyard/tests/coordination-runtime.test.ts`, and
+  `shipyard/tests/task-graph-ui-runtime.test.ts`: validate backlog-to-graph
+  projection, dependency blocking, deterministic columns, restart-safe task
+  graph persistence, lease/acknowledgement audit behavior, source-control plus
+  hosted-runtime freshness, assignment projection, and browser-visible
+  `tasks:state` snapshots.
+
+## LangSmith / Monitoring
+
+- Fresh deterministic finish-check trace on project
+  `shipyard-p11-s08-finishcheck`:
+  - task-graph + coordination happy-path trace:
+    `019d3731-6e4b-7000-8000-0345c28c7557`
+- Commands reviewed:
+  - traced runtime script via
+    `pnpm --dir shipyard exec node --import tsx ./.p11-s08-finishcheck.mts`
+  - `pnpm --dir shipyard exec langsmith trace list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --limit 5 --full`
+  - `pnpm --dir shipyard exec langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
+  - `pnpm --dir shipyard exec langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3`
+- The reviewed trace confirmed that Shipyard:
+  - projected approved backlog, story, and spec artifacts into a two-story task
+    graph with one blocked dependency
+  - attached the hosted-safe GitHub binding and persistent Railway workspace
+    metadata to the projection path
+  - preserved the implementer ownership on the board card while also recording
+    an advisory file lease and an open coordination thread for the same story
+- `langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
+  returned `[]` for the isolated finish-check project.
+- `langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3` returned
+  `null` for the isolated finish-check project.

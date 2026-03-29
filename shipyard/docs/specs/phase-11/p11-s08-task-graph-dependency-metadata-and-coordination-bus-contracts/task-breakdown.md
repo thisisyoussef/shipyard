@@ -45,21 +45,31 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `projects backlog artifacts into a story and task graph`
-  - [ ] `detects blocked tasks from dependency edges`
-  - [ ] `computes non-visual board columns deterministically`
+  - [x] `projects backlog artifacts into a story and task graph`
+  - [x] `detects blocked tasks from dependency edges`
+  - [x] `computes non-visual board columns deterministically`
 - T002 tests:
-  - [ ] `persists task graph state across restart`
+  - [x] `persists task graph state across restart`
 - T003 tests:
-  - [ ] `records advisory file lease acquisition renewal and release`
-  - [ ] `threads coordination messages with acknowledgement state`
-  - [ ] `surfaces source-control and hosted-runtime freshness on nodes`
+  - [x] `records advisory file lease acquisition renewal and release`
+  - [x] `threads coordination messages with acknowledgement state`
+  - [x] `surfaces source-control and hosted-runtime freshness on nodes`
 - T004 tests:
-  - [ ] `publishes board projection snapshots without a rendered board ui`
-  - [ ] `includes branch pr and degraded-source metadata in board cards`
+  - [x] `publishes board projection snapshots without a rendered board ui`
+  - [x] `includes branch pr and degraded-source metadata in board cards`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Completion Notes
+
+- `T001-T004` landed in the new `shipyard/src/tasks/**` and
+  `shipyard/src/coordination/**` runtime lanes, with additive workbench wiring
+  in `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`.
+- The story deliberately does not ship the kanban UI itself. The forward
+  boundary is the persisted `BoardProjection` plus the browser-visible
+  `tasks:state` message.
