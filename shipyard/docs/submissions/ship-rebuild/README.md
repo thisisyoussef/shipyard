@@ -8,9 +8,9 @@ Ship product in `/Users/youss/Development/gauntlet/ship`.
 The write-up is grounded in the recoverable runtime evidence, not just memory:
 
 - session state:
-  `/Users/youss/Development/gauntlet/ship-promptpack-ultimate/.shipyard/sessions/feXVo-pa-Pb-LXYgUNEEh.json`
-- local trace:
-  `/Users/youss/Development/gauntlet/ship-promptpack-ultimate/.shipyard/traces/feXVo-pa-Pb-LXYgUNEEh.jsonl`
+  `/Users/youss/Development/gauntlet/ship-promptpack-ultimate/.shipyard/sessions/*.json`
+- local traces:
+  `/Users/youss/Development/gauntlet/ship-promptpack-ultimate/.shipyard/traces/*.jsonl`
 - release archive index:
   `/Users/youss/Development/gauntlet/.shipyard-target-releases/index.json`
 - watchdog and deploy logs:
@@ -28,8 +28,10 @@ The write-up is grounded in the recoverable runtime evidence, not just memory:
 ## Runtime Anchors
 
 - Rebuild session: `feXVo-pa-Pb-LXYgUNEEh`
-- Recoverable top-level turns: `121`
-- Recoverable `ultimate` starts: `12`
+- Recoverable non-empty target sessions: `4`
+- Recoverable top-level turns across those sessions: `268`
+- Recoverable `ultimate` activations across saved traces: `17`
+- Recoverable `ultimate` cycles across saved traces: `211`
 - Recoverable release-archive saves: `10`
 - Latest archived refresh tag:
   `refresh-20260329t032429369z-turn-106`

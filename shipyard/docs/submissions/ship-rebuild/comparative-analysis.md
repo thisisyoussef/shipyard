@@ -65,7 +65,7 @@ speed:
 | E2E specs in original repo | `78` | `0` in target | The original product has wide behavioral coverage; the remake does not. |
 | Strict build status | original app designed for full package builds | target `npm run build` fails | The remake is previewable, not contract-clean. |
 | Fallback production bundle | not measured here | `751.83 kB` JS, `56.01 kB` CSS, built in `1.96s` with `npx vite build` | The submission deploy works only because the automation bypasses the TypeScript gate. |
-| Recoverable long-run session activity | not applicable | `121` turns, `12` `ultimate` starts, `10` archived refreshes | The rebuild was a long autonomous run with repeated intervention. |
+| Recoverable long-run session activity | not applicable | `4` non-empty sessions, `268` top-level turns, `17` `ultimate` activations, `211` internal cycles, `10` archived refreshes | The rebuild was a long autonomous run with repeated intervention. |
 
 The strict target build failure is especially important. At the time of writing,
 `npm run build` in the target fails with cross-file type errors in
