@@ -1,7 +1,13 @@
 import { z } from "zod";
 
-import { AGENT_ROLE_IDS, type AgentRoleId } from "../agents/profiles.js";
-import { MODEL_ROUTE_IDS, type ModelRouteId } from "../engine/model-routing.js";
+import {
+  AGENT_ROLE_IDS,
+  type AgentRoleId,
+} from "../agents/agent-role-ids.js";
+import {
+  MODEL_ROUTE_IDS,
+  type ModelRouteId,
+} from "../engine/model-route-ids.js";
 import type {
   ArtifactContentKind,
   ArtifactJsonValue,

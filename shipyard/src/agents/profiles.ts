@@ -1,4 +1,11 @@
-import type { ModelRouteId } from "../engine/model-routing.js";
+export {
+  AGENT_ROLE_IDS,
+  type AgentRoleId,
+} from "./agent-role-ids.js";
+import {
+  AGENT_ROLE_IDS,
+  type AgentRoleId,
+} from "./agent-role-ids.js";
 import {
   BROWSER_EVALUATOR_MODEL_ROUTE,
   CODE_PHASE_MODEL_ROUTE,
@@ -8,28 +15,8 @@ import {
   TARGET_ENRICHMENT_MODEL_ROUTE,
   TARGET_MANAGER_PHASE_MODEL_ROUTE,
   VERIFIER_MODEL_ROUTE,
-} from "../engine/model-routing.js";
-
-export const AGENT_ROLE_IDS = [
-  "coordinator",
-  "target-manager",
-  "discovery",
-  "pm",
-  "pr-ops",
-  "test-author",
-  "implementer",
-  "reviewer",
-  "qa",
-  "deploy",
-  "explorer",
-  "planner",
-  "verifier",
-  "browser-evaluator",
-  "human-simulator",
-  "target-enrichment",
-] as const;
-
-export type AgentRoleId = (typeof AGENT_ROLE_IDS)[number];
+  type ModelRouteId,
+} from "../engine/model-route-ids.js";
 
 export interface AgentProfile {
   id: AgentRoleId;
