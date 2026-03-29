@@ -110,8 +110,10 @@ jobs:
       - name: Link Railway production project
         run: |
           if [ "${RAILWAY_CONTROL_TOKEN_KIND}" = "api" ]; then
+            unset RAILWAY_TOKEN
             export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"
           else
+            unset RAILWAY_API_TOKEN
             export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"
           fi
           railway project link \
@@ -123,8 +125,10 @@ jobs:
         working-directory: shipyard
         run: |
           if [ "${RAILWAY_CONTROL_TOKEN_KIND}" = "api" ]; then
+            unset RAILWAY_TOKEN
             export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"
           else
+            unset RAILWAY_API_TOKEN
             export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"
           fi
           printf '%s' "${OPENAI_API_KEY}" | railway variable set OPENAI_API_KEY --stdin \
@@ -163,8 +167,10 @@ jobs:
       - name: Deploy hosted image to Railway
         run: |
           if [ "${RAILWAY_CONTROL_TOKEN_KIND}" = "api" ]; then
+            unset RAILWAY_TOKEN
             export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"
           else
+            unset RAILWAY_API_TOKEN
             export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"
           fi
           export RAILWAY_IMAGE_REF="${{ steps.ghcr.outputs.image_ref }}"
