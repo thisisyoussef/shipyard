@@ -44,6 +44,9 @@ export interface SyncHostedRuntimeStateResult {
   state: PersistedHostedRuntimeState;
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+const HTTPS_URL_PATTERN = /https:\/\/[^\s"'`]+/gu;
+
 function trimToNull(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
     return null;
@@ -88,6 +91,139 @@ function normalizeHostedUrl(value: string | null): string | null {
   }
 
   return `https://${trimmed}`;
+}
+
+function sanitizePublicTargetUrlCandidate(
+  value: string | null | undefined,
+): string | null {
+  const normalized = normalizeHostedUrl(trimToNull(value));
+
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return null;
+    }
+
+    if (LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())) {
+      return null;
+    }
+
+    if (parsed.pathname === "/" && !parsed.search && !parsed.hash) {
+      return parsed.origin;
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function createComparableOrigin(value: string | null | undefined): string | null {
+  const candidate = sanitizePublicTargetUrlCandidate(value);
+
+  if (!candidate) {
+    return null;
+  }
+
+  try {
+    return new URL(candidate).origin;
+  } catch {
+    return candidate;
+  }
+}
+
+function extractHttpsUrls(text: string): string[] {
+  return [...text.matchAll(HTTPS_URL_PATTERN)]
+    .map((match) => sanitizePublicTargetUrlCandidate(match[0]))
+    .filter((candidate): candidate is string => candidate !== null);
+}
+
+function deriveShareableVercelAlias(candidateUrl: string): string | null {
+  try {
+    const parsed = new URL(candidateUrl);
+
+    if (!parsed.hostname.endsWith(".vercel.app")) {
+      return null;
+    }
+
+    const label = parsed.hostname.slice(0, -".vercel.app".length);
+    const aliasMatch = label.match(
+      /^(?<base>.+)-(?<suffix>(?=.*[a-z])(?=.*\d)[a-z0-9]{6,})$/u,
+    );
+    const baseLabel = aliasMatch?.groups?.base;
+
+    if (!baseLabel) {
+      return null;
+    }
+
+    return sanitizePublicTargetUrlCandidate(`https://${baseLabel}.vercel.app`);
+  } catch {
+    return null;
+  }
+}
+
+function collectPublicUrlHints(sessionState: SessionState): string[] {
+  return [
+    sessionState.workbenchState.hosting.publicDeploymentUrl,
+    sessionState.workbenchState.latestDeploy.summary,
+    sessionState.workbenchState.latestDeploy.logExcerpt,
+    sessionState.workbenchState.ultimateState.currentBrief,
+    ...sessionState.workbenchState.turns.map((turn) => turn.instruction),
+    ...sessionState.workbenchState.contextHistory.map((entry) => entry.text),
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+export function resolveHostedPublicDeploymentUrl(
+  sessionState: SessionState,
+  options: {
+    serviceUrl?: string | null;
+    privatePreviewUrl?: string | null;
+  } = {},
+): string | null {
+  const explicitDeployUrl = sanitizePublicTargetUrlCandidate(
+    sessionState.workbenchState.latestDeploy.productionUrl,
+  );
+  const blockedOrigins = new Set(
+    [
+      options.serviceUrl ?? sessionState.workbenchState.hosting.serviceUrl,
+      options.privatePreviewUrl ?? sessionState.workbenchState.previewState.url,
+    ]
+      .map((value) => createComparableOrigin(value))
+      .filter((value): value is string => value !== null),
+  );
+  const isBlocked = (candidateUrl: string): boolean => {
+    const candidateOrigin = createComparableOrigin(candidateUrl);
+    return candidateOrigin ? blockedOrigins.has(candidateOrigin) : false;
+  };
+
+  if (explicitDeployUrl && !isBlocked(explicitDeployUrl)) {
+    return explicitDeployUrl;
+  }
+
+  const orderedCandidates: string[] = [];
+  const seen = new Set<string>();
+  const pushCandidate = (candidateUrl: string | null) => {
+    if (!candidateUrl || isBlocked(candidateUrl) || seen.has(candidateUrl)) {
+      return;
+    }
+
+    seen.add(candidateUrl);
+    orderedCandidates.push(candidateUrl);
+  };
+
+  for (const hint of collectPublicUrlHints(sessionState)) {
+    for (const extractedCandidate of extractHttpsUrls(hint)) {
+      pushCandidate(deriveShareableVercelAlias(extractedCandidate));
+      pushCandidate(extractedCandidate);
+    }
+  }
+
+  return orderedCandidates[0] ?? null;
 }
 
 function createHealthUrl(serviceUrl: string | null): string | null {
@@ -362,9 +498,13 @@ export async function syncSessionHostedRuntimeState(
     ...options,
     targetsDirectory: options.targetsDirectory ?? sessionState.targetsDirectory,
   });
+  const publicDeploymentUrl = resolveHostedPublicDeploymentUrl(sessionState, {
+    serviceUrl: result.state.profile.serviceUrl,
+    privatePreviewUrl: sessionState.workbenchState.previewState.url,
+  });
   const workbenchState = createHostedWorkbenchState(result.state, {
     privatePreviewUrl: sessionState.workbenchState.previewState.url,
-    publicDeploymentUrl: sessionState.workbenchState.latestDeploy.productionUrl,
+    publicDeploymentUrl,
   });
 
   sessionState.workbenchState.hosting = workbenchState;
