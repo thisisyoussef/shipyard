@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { AGENT_ROLE_IDS, type AgentRoleId } from "../agents/profiles.js";
+import {
+  AGENT_ROLE_IDS,
+  type AgentRoleId,
+} from "../agents/agent-role-ids.js";
 
 export const COORDINATION_STATE_VERSION = 1;
 

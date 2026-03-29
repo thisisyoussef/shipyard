@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { AGENT_ROLE_IDS } from "../agents/profiles.js";
+import { AGENT_ROLE_IDS } from "../agents/agent-role-ids.js";
 
 export const SOURCE_CONTROL_STATE_VERSION = 1;
 export const SOURCE_CONTROL_PR_OPS_ROLE_ID = "pr-ops";
