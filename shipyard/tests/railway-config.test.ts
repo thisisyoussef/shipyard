@@ -6,10 +6,11 @@ import { describe, expect, it } from "vitest";
 
 interface RailwayConfig {
   build?: {
-    buildCommand?: string;
+    builder?: string | null;
+    buildCommand?: string | null;
   };
   deploy?: {
-    startCommand?: string;
+    startCommand?: string | null;
     healthcheckPath?: string;
   };
 }
@@ -24,18 +25,34 @@ const railwayDeployScriptPath = path.resolve(
   testsDirectory,
   "../../.github/scripts/railway-ci-deploy.sh",
 );
+const railwayDockerfilePath = path.resolve(testsDirectory, "../Dockerfile");
 
 describe("railway config", () => {
-  it("runs build and start commands from the shipyard app root", async () => {
+  it("pins hosted Railway deploys to the checked-in Dockerfile runtime", async () => {
     const config = JSON.parse(
       await readFile(railwayConfigPath, "utf8"),
     ) as RailwayConfig;
 
-    expect(config.build?.buildCommand).toBe(
-      "pnpm install --frozen-lockfile && pnpm build",
+    expect(config.build?.builder).toBe("DOCKERFILE");
+    expect(config.build?.buildCommand).toBeNull();
+    expect(config.deploy?.startCommand).toBe(
+      "node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui",
     );
-    expect(config.deploy?.startCommand).toBe("pnpm start -- --ui");
     expect(config.deploy?.healthcheckPath).toBe("/api/health");
+  });
+
+  it("keeps the hosted runtime image to compiled output, built-in skills, and production dependencies", async () => {
+    const dockerfile = await readFile(railwayDockerfilePath, "utf8");
+
+    expect(dockerfile).toContain("FROM node:20-bookworm-slim AS build");
+    expect(dockerfile).toContain("ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1");
+    expect(dockerfile).toContain("RUN pnpm build && pnpm prune --prod");
+    expect(dockerfile).toContain("COPY --from=build /app/node_modules ./node_modules");
+    expect(dockerfile).toContain("COPY --from=build /app/dist ./dist");
+    expect(dockerfile).toContain("COPY --from=build /app/skills ./skills");
+    expect(dockerfile).toContain(
+      'CMD ["node", "--env-file-if-exists=.env", "./dist/bin/shipyard.js", "--ui"]',
+    );
   });
 
   it("syncs the production Anthropic defaults before deploying to Railway", async () => {

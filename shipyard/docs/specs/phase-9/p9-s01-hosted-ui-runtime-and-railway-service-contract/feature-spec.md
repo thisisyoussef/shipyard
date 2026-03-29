@@ -90,6 +90,7 @@ generated project files under a predictable server-side workspace path.
 ## Implementation Evidence
 
 ### Code References
+- `shipyard/Dockerfile`
 - `shipyard/railway.json`
 - `shipyard/README.md`
 - `shipyard/docs/architecture/hosted-railway.md`
@@ -99,11 +100,13 @@ generated project files under a predictable server-side workspace path.
 ### Representative Snippets
 
 - Native Railway GitHub sync now has one explicit monorepo contract: point the
-  service at the nested app root and let the checked-in config run from there.
+  service at the nested app root, force the Dockerfile builder for that deploy,
+  and boot the compiled UI runtime instead of TypeScript source.
 
 ```json
-"buildCommand": "pnpm install --frozen-lockfile && pnpm build",
-"startCommand": "pnpm start -- --ui"
+"builder": "DOCKERFILE",
+"buildCommand": null,
+"startCommand": "node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui"
 ```
 
 - Repo-controlled deploys keep the same contract by uploading the nested app as

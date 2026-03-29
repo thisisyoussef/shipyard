@@ -10,9 +10,9 @@ Shipyard service URL, private preview URLs, and public target-app deploy URLs.
 
 ## Service Contract
 
-- Runtime mode: `shipyard --ui`
-- Build command: `pnpm install --frozen-lockfile && pnpm build`
-- Start command: `pnpm start -- --ui`
+- Runtime mode: `node ./dist/bin/shipyard.js --ui`
+- Build system: checked-in multistage `shipyard/Dockerfile`
+- Start command: `node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui`
 - Health check path: `/api/health`
 - Fixed hosted targets directory: `/app/workspace`
 - Recommended volume mount path: `/app/workspace`
@@ -131,9 +131,9 @@ not confuse the Shipyard editor with the product being built.
 - If Railway is connected to the full repo, set the service `Root Directory`
   to `/shipyard` so `package.json`, `pnpm-lock.yaml`, and `railway.json`
   resolve together.
-- The checked-in `shipyard/railway.json` commands assume Railway is already
-  operating inside `/shipyard`; running the same commands from the repo root
-  will fail because the lockfile lives under `shipyard/`.
+- The checked-in `shipyard/railway.json` now pins Railway to the checked-in
+  `Dockerfile`, clears the old build-command override, and starts the compiled
+  runtime from `dist/bin/shipyard.js`.
 - If you prefer repo-controlled auto-deploy instead of Railway's native GitHub
   integration, add a root GitHub Actions workflow that runs on pushes to
   `main`, changes into `shipyard/`, and deploys with
@@ -163,10 +163,13 @@ not confuse the Shipyard editor with the product being built.
   logging and retries deploys that fail after a completed build or surface the
   transient registry/container-pull errors that have been hitting the hosted
   service.
-- Because the hosted runtime already degrades browser evaluation when Chromium
-  is unavailable, the default Railway workflow now skips Playwright browser
-  downloads to keep the production image smaller. If you want full hosted
-  browser verification, replace that default with an image or install step that
+- The Dockerfile now compiles Shipyard in a build stage, prunes dev
+  dependencies, and copies only `package.json`, `node_modules`, `dist/`, and
+  built-in `skills/` into the final runtime image. Because the hosted runtime
+  already degrades browser evaluation when Chromium is unavailable, the build
+  stage also keeps `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` so browser binaries stay
+  out of the default production image. If you want full hosted browser
+  verification, replace that default with an image or install step that
   intentionally provisions the browser binaries and Linux dependencies.
 - For local operator convenience, keep the same hosted token in the ignored
   `shipyard/.env` file and optionally add `SHIPYARD_HOSTED_URL`; the repo-root
@@ -176,7 +179,7 @@ not confuse the Shipyard editor with the product being built.
   provider is watching the full repo, or keep `railway.json` at the uploaded
   app root when deploying only the `shipyard/` directory.
 - If you configure service settings directly in the Railway dashboard, use the
-  build and start commands above.
+  checked-in Dockerfile builder plus the compiled start command above.
 - Attach a persistent volume at `/app/workspace` before enabling
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1`.
 - When you want full hosted browser verification, use a Railway image or build
