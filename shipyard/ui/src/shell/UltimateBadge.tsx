@@ -5,24 +5,34 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { formatUltimatePhaseLabel } from "../ultimate-composer.js";
+import type { UltimateUiStateViewModel } from "../view-models.js";
+
 export interface UltimateBadgeProps {
-  active: boolean;
+  phase: UltimateUiStateViewModel["phase"];
   turnCount: number;
+  pendingFeedbackCount: number;
   currentBrief: string | null;
+  lastCycleSummary: string | null;
   onSendFeedback: (text: string) => void;
   onStop: () => void;
 }
 
 export function UltimateBadge({
-  active,
+  phase,
   turnCount,
+  pendingFeedbackCount,
   currentBrief,
+  lastCycleSummary,
   onSendFeedback,
   onStop,
 }: UltimateBadgeProps) {
   const [open, setOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const phaseLabel = formatUltimatePhaseLabel(phase);
+  const canSendFeedback = phase === "running";
+  const canStop = phase === "running";
 
   /* Close dropdown on outside click */
   useEffect(() => {
@@ -41,9 +51,8 @@ export function UltimateBadge({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
-  if (!active) return null;
-
   function handleSend() {
+    if (!canSendFeedback) return;
     const trimmed = feedback.trim();
     if (!trimmed) return;
     onSendFeedback(trimmed);
@@ -65,14 +74,20 @@ export function UltimateBadge({
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
         aria-haspopup="true"
-        aria-label="Ultimate mode controls"
+        aria-label={`Ultimate mode controls (${phaseLabel.toLowerCase()})`}
       >
         <span className="navbar-ultimate-dot" aria-hidden="true" />
         <span className="navbar-ultimate-label">Ultimate</span>
+        <span className="navbar-ultimate-state">{phaseLabel}</span>
       </button>
 
       {open && (
         <div className="ultimate-dropdown" role="dialog" aria-label="Ultimate mode">
+          <div className="ultimate-dropdown-section">
+            <span className="ultimate-dropdown-label">Status</span>
+            <span className="ultimate-dropdown-value">{phaseLabel}</span>
+          </div>
+
           {/* Brief */}
           <div className="ultimate-dropdown-section">
             <span className="ultimate-dropdown-label">Brief</span>
@@ -87,6 +102,20 @@ export function UltimateBadge({
             <span className="ultimate-dropdown-value">{turnCount}</span>
           </div>
 
+          <div className="ultimate-dropdown-section">
+            <span className="ultimate-dropdown-label">Queued feedback</span>
+            <span className="ultimate-dropdown-value">
+              {String(pendingFeedbackCount)}
+            </span>
+          </div>
+
+          <div className="ultimate-dropdown-section">
+            <span className="ultimate-dropdown-label">Last cycle</span>
+            <span className="ultimate-dropdown-value">
+              {lastCycleSummary ?? "Waiting for the next cycle summary"}
+            </span>
+          </div>
+
           {/* Feedback */}
           <div className="ultimate-dropdown-section">
             <span className="ultimate-dropdown-label">Feedback</span>
@@ -96,15 +125,26 @@ export function UltimateBadge({
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Send feedback... (Cmd+Enter)"
+              placeholder={
+                canSendFeedback
+                  ? "Send feedback... (Cmd+Enter)"
+                  : phase === "stopping"
+                    ? "Ultimate mode is stopping..."
+                    : "Start a new loop from the editor composer to send feedback again."
+              }
+              disabled={!canSendFeedback}
             />
             <button
               type="button"
               className="ultimate-dropdown-send"
               onClick={handleSend}
-              disabled={!feedback.trim()}
+              disabled={!canSendFeedback || !feedback.trim()}
             >
-              Send
+              {canSendFeedback
+                ? "Send"
+                : phase === "stopping"
+                  ? "Stopping..."
+                  : "Unavailable"}
             </button>
           </div>
 
@@ -113,8 +153,9 @@ export function UltimateBadge({
             type="button"
             className="ultimate-dropdown-stop"
             onClick={onStop}
+            disabled={!canStop}
           >
-            Stop Ultimate Mode
+            {canStop ? "Stop Ultimate Mode" : "Ultimate loop is not running"}
           </button>
         </div>
       )}

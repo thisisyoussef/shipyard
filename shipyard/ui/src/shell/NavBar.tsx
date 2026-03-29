@@ -4,15 +4,20 @@
  */
 
 import type { Route } from "../router.js";
+import { shouldShowUltimateBadge } from "../ultimate-composer.js";
+import type { UltimateUiStateViewModel } from "../view-models.js";
+import { UltimateBadge } from "./UltimateBadge.js";
 
 export interface NavBarProps {
   currentView: Route["view"];
   editorRoute: Extract<Route, { view: "editor" }> | null;
   boardDisabled?: boolean;
   onNavigate: (route: Route) => void;
-  ultimateActive: boolean;
+  ultimateState: UltimateUiStateViewModel;
   ultimateDisabled?: boolean;
   onUltimateClick: () => void;
+  onSendUltimateFeedback: (text: string) => void;
+  onStopUltimate: () => void;
 }
 
 /* ── Inline SVG brand mark ────────────────────── */
@@ -39,9 +44,11 @@ export function NavBar({
   editorRoute,
   boardDisabled = false,
   onNavigate,
-  ultimateActive,
+  ultimateState,
   ultimateDisabled = false,
   onUltimateClick,
+  onSendUltimateFeedback,
+  onStopUltimate,
 }: NavBarProps) {
   const navItems: Array<{ label: string; view: Route["view"]; disabled?: boolean }> = [
     { label: "Dashboard", view: "dashboard" },
@@ -89,17 +96,27 @@ export function NavBar({
       {/* Spacer */}
       <div className="navbar-spacer" />
 
-      {/* Ultimate mode badge */}
-      <button
-        type="button"
-        className={`navbar-ultimate-badge${ultimateActive ? " navbar-ultimate-badge--active" : ""}`}
-        disabled={ultimateDisabled}
-        onClick={onUltimateClick}
-        aria-label={ultimateActive ? "Ultimate mode active" : "Activate ultimate mode"}
-      >
-        {ultimateActive && <span className="navbar-ultimate-dot" aria-hidden="true" />}
-        <span className="navbar-ultimate-label">Ultimate</span>
-      </button>
+      {shouldShowUltimateBadge(ultimateState) ? (
+        <UltimateBadge
+          phase={ultimateState.phase}
+          turnCount={ultimateState.turnCount}
+          pendingFeedbackCount={ultimateState.pendingFeedbackCount}
+          currentBrief={ultimateState.currentBrief}
+          lastCycleSummary={ultimateState.lastCycleSummary}
+          onSendFeedback={onSendUltimateFeedback}
+          onStop={onStopUltimate}
+        />
+      ) : (
+        <button
+          type="button"
+          className="navbar-ultimate-badge"
+          disabled={ultimateDisabled}
+          onClick={onUltimateClick}
+          aria-label="Arm ultimate mode in the editor"
+        >
+          <span className="navbar-ultimate-label">Ultimate</span>
+        </button>
+      )}
     </nav>
   );
 }

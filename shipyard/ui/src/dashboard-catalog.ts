@@ -8,6 +8,7 @@ import type {
   DashboardPreferences,
   DashboardTabId,
 } from "./dashboard-preferences.js";
+import { getSelectedTarget } from "./target-selection.js";
 
 export type DashboardCardStatus =
   | "ready"
@@ -226,10 +227,7 @@ function createEmptyState(
 function shouldIncludeCurrentTarget(
   targetManager: TargetManagerViewModel | null,
 ): boolean {
-  return (
-    Boolean(targetManager?.currentTarget.path) &&
-    targetManager?.currentTarget.name !== "No target selected"
-  );
+  return getSelectedTarget(targetManager) !== null;
 }
 
 export function buildDashboardCatalog(
@@ -255,7 +253,7 @@ export function buildDashboardCatalog(
   }
 
   if (shouldIncludeCurrentTarget(options.targetManager)) {
-    const currentTarget = options.targetManager!.currentTarget;
+    const currentTarget = getSelectedTarget(options.targetManager)!;
     const existingSeed = seeds.get(currentTarget.path);
 
     seeds.set(currentTarget.path, {

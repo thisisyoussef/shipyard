@@ -5,6 +5,7 @@
 
 export interface UltimateToggleProps {
   enabled: boolean;
+  disabled?: boolean;
   onToggle: () => void;
 }
 
@@ -26,13 +27,18 @@ function LightningIcon() {
   );
 }
 
-export function UltimateToggle({ enabled, onToggle }: UltimateToggleProps) {
+export function UltimateToggle({
+  enabled,
+  disabled = false,
+  onToggle,
+}: UltimateToggleProps) {
   return (
     <button
       type="button"
       className={`ultimate-toggle${enabled ? " ultimate-toggle--active" : ""}`}
       onClick={onToggle}
       aria-pressed={enabled}
+      disabled={disabled}
     >
       <LightningIcon />
       <span>Ultimate</span>

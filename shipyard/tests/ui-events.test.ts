@@ -317,4 +317,71 @@ describe("ui event helpers", () => {
       success: true,
     });
   });
+
+  it("validates the additive ultimate control-plane websocket contracts", () => {
+    expect(
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "ultimate:toggle",
+          enabled: true,
+          brief: "Keep improving the dashboard forever.",
+          injectedContext: ["Use the uploaded mock as the visual anchor."],
+        }),
+      ),
+    ).toEqual({
+      type: "ultimate:toggle",
+      enabled: true,
+      brief: "Keep improving the dashboard forever.",
+      injectedContext: ["Use the uploaded mock as the visual anchor."],
+    });
+
+    expect(
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "ultimate:feedback",
+          text: "Tighten the hero spacing and raise CTA contrast.",
+          injectedContext: ["Prioritize the dashboard first."],
+        }),
+      ),
+    ).toEqual({
+      type: "ultimate:feedback",
+      text: "Tighten the hero spacing and raise CTA contrast.",
+      injectedContext: ["Prioritize the dashboard first."],
+    });
+
+    expect(() =>
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "ultimate:feedback",
+          text: "   ",
+        }),
+      ),
+    ).toThrow('Invalid client message payload for "ultimate:feedback".');
+
+    expect(
+      JSON.parse(
+        serializeBackendMessage({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "running",
+            currentBrief: "Keep improving the dashboard forever.",
+            turnCount: 3,
+            pendingFeedbackCount: 2,
+            startedAt: "2026-03-29T00:00:00.000Z",
+            lastCycleSummary: "Cycle 3 tightened the hero spacing.",
+          },
+        }),
+      ),
+    ).toMatchObject({
+      type: "ultimate:state",
+      state: {
+        active: true,
+        phase: "running",
+        currentBrief: "Keep improving the dashboard forever.",
+        turnCount: 3,
+        pendingFeedbackCount: 2,
+      },
+    });
+  });
 });

@@ -2,6 +2,7 @@ import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { resolveWorkbenchComposerBehavior } from "../ui/src/ultimate-composer.js";
 import { EditorView } from "../ui/src/views/EditorView.js";
 import type { ComposerAttachment } from "../ui/src/panels/ComposerPanel.js";
 import type {
@@ -162,6 +163,15 @@ const latestDeploy: LatestDeployViewModel = {
 const contextHistory: ContextReceiptViewModel[] = [];
 const pendingUploads: PendingUploadReceiptViewModel[] = [];
 const sessionHistory: SessionRunSummaryViewModel[] = [];
+const idleUltimateState = {
+  active: false,
+  phase: "idle" as const,
+  currentBrief: null,
+  turnCount: 0,
+  pendingFeedbackCount: 0,
+  startedAt: null,
+  lastCycleSummary: null,
+};
 
 function renderEditor(overrides?: {
   previewState?: PreviewStateViewModel;
@@ -187,8 +197,14 @@ function renderEditor(overrides?: {
       pendingUploads,
       connectionState: "ready",
       agentStatus: "Ready for the next instruction.",
+      ultimateState: idleUltimateState,
       instruction: "",
       contextDraft: "",
+      composerBehavior: resolveWorkbenchComposerBehavior({
+        connectionState: "ready",
+        ultimateState: idleUltimateState,
+        armed: false,
+      }),
       composerNotice: null,
       composerAttachments: overrides?.composerAttachments ?? [],
       instructionInputRef: createRef<HTMLTextAreaElement>(),
@@ -205,6 +221,7 @@ function renderEditor(overrides?: {
       onContextKeyDown: () => undefined,
       onClearContext: () => undefined,
       onAttachFiles: () => undefined,
+      onToggleUltimateArmed: () => undefined,
       onSubmitInstruction: () => undefined,
       onCancelInstruction: () => undefined,
       onRemoveAttachment: () => undefined,

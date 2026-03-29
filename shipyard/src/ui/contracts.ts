@@ -80,6 +80,12 @@ const enrichmentStatusSchema = z.enum([
   "error",
 ]);
 const deployStatusSchema = z.enum(["idle", "deploying", "success", "error"]);
+const ultimateUiPhaseSchema = z.enum([
+  "idle",
+  "running",
+  "stopping",
+  "error",
+]);
 
 const nonEmptyTextSchema = z.string().trim().min(1);
 const discoverySchema = z.object({
@@ -322,6 +328,29 @@ export const runtimeAssistStateSchema = z.object({
   activeProfileRoute: z.string().nullable(),
   loadedSkills: z.array(z.string()),
 });
+export const ultimateUiStateSchema = z.object({
+  active: z.boolean(),
+  phase: ultimateUiPhaseSchema,
+  currentBrief: z.string().nullable(),
+  turnCount: z.number().int().nonnegative(),
+  pendingFeedbackCount: z.number().int().nonnegative(),
+  startedAt: z.string().nullable(),
+  lastCycleSummary: z.string().nullable(),
+});
+export type UltimateUiState = z.infer<typeof ultimateUiStateSchema>;
+
+export function createIdleUltimateUiState(): UltimateUiState {
+  return {
+    active: false,
+    phase: "idle",
+    currentBrief: null,
+    turnCount: 0,
+    pendingFeedbackCount: 0,
+    startedAt: null,
+    lastCycleSummary: null,
+  };
+}
+
 export const workbenchStateSchema = z.object({
   connectionState: uiConnectionStateSchema,
   agentStatus: z.string(),
@@ -353,6 +382,7 @@ export const workbenchStateSchema = z.object({
     createDefaultHostingWorkbenchState(),
   ),
   taskBoard: boardProjectionSchema.nullable().default(null),
+  ultimateState: ultimateUiStateSchema.default(createIdleUltimateUiState()),
   runtimeAssist: runtimeAssistStateSchema,
 });
 
@@ -412,6 +442,27 @@ export const deployRequestMessageSchema = z.object({
   platform: z.enum(["vercel"]).default("vercel"),
 });
 
+export const ultimateToggleMessageSchema = z.object({
+  type: z.literal("ultimate:toggle"),
+  enabled: z.boolean(),
+  brief: z.string().trim().optional(),
+  injectedContext: z.array(nonEmptyTextSchema).optional(),
+}).superRefine((value, context) => {
+  if (value.enabled && !value.brief) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["brief"],
+      message: "A brief is required when starting ultimate mode.",
+    });
+  }
+});
+
+export const ultimateFeedbackMessageSchema = z.object({
+  type: z.literal("ultimate:feedback"),
+  text: nonEmptyTextSchema,
+  injectedContext: z.array(nonEmptyTextSchema).optional(),
+});
+
 export const sessionResumeRequestMessageSchema = z.object({
   type: z.literal("session:resume_request"),
   sessionId: nonEmptyTextSchema,
@@ -421,6 +472,8 @@ export const frontendToBackendMessageSchema = z.discriminatedUnion("type", [
   instructionMessageSchema,
   cancelMessageSchema,
   statusMessageSchema,
+  ultimateToggleMessageSchema,
+  ultimateFeedbackMessageSchema,
   sessionResumeRequestMessageSchema,
   targetSwitchRequestMessageSchema,
   targetCreateRequestMessageSchema,
@@ -548,6 +601,11 @@ export const deployStateMessageSchema = z.object({
   deploy: deploySummarySchema,
 });
 
+export const ultimateStateMessageSchema = z.object({
+  type: z.literal("ultimate:state"),
+  state: ultimateUiStateSchema,
+});
+
 export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   sessionStateMessageSchema,
   agentThinkingMessageSchema,
@@ -565,6 +623,7 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   targetSwitchCompleteMessageSchema,
   targetEnrichmentProgressMessageSchema,
   deployStateMessageSchema,
+  ultimateStateMessageSchema,
 ]);
 
 export type BackendToFrontendMessage = z.infer<
@@ -633,6 +692,8 @@ export function parseFrontendMessage(
     "instruction",
     "cancel",
     "status",
+    "ultimate:toggle",
+    "ultimate:feedback",
     "session:resume_request",
     "target:switch_request",
     "target:create_request",
@@ -649,12 +710,12 @@ export function parseFrontendMessage(
     }
 
     throw new Error(
-      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.`,
+      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, ultimate:toggle, ultimate:feedback, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.`,
     );
   }
 
   throw new Error(
-    "Invalid client message: expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.",
+    "Invalid client message: expected instruction, cancel, status, ultimate:toggle, ultimate:feedback, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.",
   );
 }
 

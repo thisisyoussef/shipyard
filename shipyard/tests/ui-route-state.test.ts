@@ -183,4 +183,27 @@ describe("getPreferredEditorRoute", () => {
       productId: "/tmp/alpha-app",
     });
   });
+
+  it("does not expose an editor route when no target is selected yet", () => {
+    expect(
+      getPreferredEditorRoute(
+        {
+          activeProjectId: null,
+          openProjects: [],
+        },
+        {
+          ...targetManager,
+          currentTarget: {
+            path: "/tmp/targets",
+            name: "No target selected",
+            description:
+              "Select an existing target or create a new scaffold to begin.",
+            language: null,
+            framework: null,
+            hasProfile: false,
+          },
+        },
+      ),
+    ).toBeNull();
+  });
 });

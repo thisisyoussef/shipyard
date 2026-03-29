@@ -86,6 +86,13 @@ export interface UltimateModeTurnRotationEvent {
   turnResult: InstructionTurnResult;
 }
 
+export interface UltimateModeCycleCompleteEvent {
+  iteration: number;
+  simulatorDecision: HumanSimulatorDecision;
+  turnResult: InstructionTurnResult;
+  pendingFeedbackCount: number;
+}
+
 export interface ExecuteUltimateModeDependencies {
   runHumanSimulator?: (
     input: HumanSimulatorInput,
@@ -121,6 +128,9 @@ export interface ExecuteUltimateModeOptions {
   signal?: AbortSignal;
   runtimeSurface?: RuntimeSurface;
   cycleRotationInterval?: number;
+  onCycleComplete?: (
+    event: UltimateModeCycleCompleteEvent,
+  ) => Promise<void> | void;
   onCycleRotation?: (
     event: UltimateModeTurnRotationEvent,
   ) => Promise<void> | void;
@@ -671,6 +681,25 @@ export async function executeUltimateMode(
       });
 
       latestTurn = turnResult;
+
+      if (options.onCycleComplete) {
+        try {
+          await options.onCycleComplete({
+            iteration,
+            simulatorDecision: decision,
+            turnResult,
+            pendingFeedbackCount: controller.getPendingHumanFeedback().length,
+          });
+        } catch (error) {
+          const message = error instanceof Error
+            ? error.message
+            : "Unknown cycle callback error.";
+
+          await reporter?.onThinking?.(
+            `Ultimate mode could not update its UI projection after cycle ${String(iteration)}. Continuing the loop. ${message}`,
+          );
+        }
+      }
 
       rememberRecentHistoryEntry(history, {
         iteration,

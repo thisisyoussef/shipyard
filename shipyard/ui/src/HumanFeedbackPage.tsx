@@ -10,10 +10,12 @@ import {
   SectionHeader,
   SurfaceCard,
 } from "./primitives.js";
+import { formatUltimatePhaseLabel } from "./ultimate-composer.js";
 import type {
   PreviewStateViewModel,
   SessionStateViewModel,
   TurnViewModel,
+  UltimateUiStateViewModel,
   WorkbenchConnectionState,
 } from "./view-models.js";
 
@@ -29,7 +31,11 @@ export interface HumanFeedbackPageProps {
   turns: TurnViewModel[];
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
+  ultimateState: UltimateUiStateViewModel;
   instruction: string;
+  submitLabel: string;
+  submitDisabled?: boolean;
+  helpText: string;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   notice: HumanFeedbackNotice | null;
   onInstructionChange: (value: string) => void;
@@ -101,13 +107,98 @@ function getPreviewLabel(previewState: PreviewStateViewModel): string {
   }
 }
 
+function getUltimateTone(
+  ultimateState: UltimateUiStateViewModel,
+): BadgeTone {
+  switch (ultimateState.phase) {
+    case "running":
+      return "accent";
+    case "stopping":
+      return "warning";
+    case "error":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function resolveHumanFeedbackNotice(input: {
+  notice: HumanFeedbackNotice | null;
+  sessionState: SessionStateViewModel | null;
+  connectionState: WorkbenchConnectionState;
+}): HumanFeedbackNotice | null {
+  if (input.notice) {
+    return input.notice;
+  }
+
+  if (!input.sessionState?.sessionId) {
+    return {
+      tone: "warning",
+      title: "No active Shipyard session yet",
+      detail:
+        "Open the editor and start a product session before sending feedback from the dedicated ultimate-mode page.",
+    };
+  }
+
+  switch (input.connectionState) {
+    case "connecting":
+      return {
+        tone: "accent",
+        title: "Reconnecting to the browser runtime",
+        detail:
+          "You can review the last loop state while Shipyard reconnects. New feedback will unlock again as soon as the session is ready.",
+      };
+    case "disconnected":
+      return {
+        tone: "warning",
+        title: "Feedback is paused while Shipyard reconnects",
+        detail:
+          "This page is showing the last synced loop state. Wait for the browser runtime to reconnect before sending new feedback.",
+      };
+    case "error":
+      return {
+        tone: "danger",
+        title: "Feedback is unavailable after a connection error",
+        detail:
+          "Shipyard needs the browser runtime connection restored before this page can send another note.",
+      };
+    default:
+      return null;
+  }
+}
+
+function getActionStatusText(
+  sessionState: SessionStateViewModel | null,
+  connectionState: WorkbenchConnectionState,
+  agentStatus: string,
+): string {
+  if (!sessionState?.sessionId) {
+    return "Shipyard needs an active session before this page can send feedback.";
+  }
+
+  switch (connectionState) {
+    case "connecting":
+      return "Reconnecting to the browser runtime before sending feedback.";
+    case "disconnected":
+      return "Waiting for the browser runtime to reconnect before sending feedback.";
+    case "error":
+      return "Feedback is paused until Shipyard restores the runtime connection.";
+    default:
+      return agentStatus;
+  }
+}
+
 export function HumanFeedbackPage({
   sessionState,
   previewState,
   turns,
   connectionState,
   agentStatus,
+  ultimateState,
   instruction,
+  submitLabel,
+  submitDisabled = false,
+  helpText,
   textareaRef,
   notice,
   onInstructionChange,
@@ -118,7 +209,21 @@ export function HumanFeedbackPage({
   const recentTurns = turns.slice(0, 4);
   const previewLabel = getPreviewLabel(previewState);
   const connectionLabel = getConnectionLabel(connectionState);
-  const canSubmit = Boolean(sessionState?.sessionId);
+  const effectiveNotice = resolveHumanFeedbackNotice({
+    notice,
+    sessionState,
+    connectionState,
+  });
+  const canSubmit =
+    Boolean(sessionState?.sessionId) &&
+    !submitDisabled &&
+    (connectionState === "ready" || connectionState === "agent-busy");
+  const ultimatePhaseLabel = formatUltimatePhaseLabel(ultimateState.phase);
+  const actionStatusText = getActionStatusText(
+    sessionState,
+    connectionState,
+    agentStatus,
+  );
 
   return (
     <main className="human-feedback-page">
@@ -156,6 +261,9 @@ export function HumanFeedbackPage({
             <Badge tone={getConnectionTone(connectionState)}>
               {connectionLabel}
             </Badge>
+            <Badge tone={getUltimateTone(ultimateState)}>
+              Ultimate {ultimatePhaseLabel}
+            </Badge>
             <Badge tone="accent">
               {sessionState?.targetLabel ?? "No active target"}
             </Badge>
@@ -183,15 +291,15 @@ export function HumanFeedbackPage({
               )}
             />
 
-            {notice ? (
+            {effectiveNotice ? (
               <div
                 className="human-feedback-notice"
-                data-tone={notice.tone}
-                role={notice.tone === "danger" ? "alert" : "status"}
-                aria-live={notice.tone === "danger" ? "assertive" : "polite"}
+                data-tone={effectiveNotice.tone}
+                role={effectiveNotice.tone === "danger" ? "alert" : "status"}
+                aria-live={effectiveNotice.tone === "danger" ? "assertive" : "polite"}
               >
-                <Badge tone={notice.tone}>{notice.title}</Badge>
-                <p>{notice.detail}</p>
+                <Badge tone={effectiveNotice.tone}>{effectiveNotice.title}</Badge>
+                <p>{effectiveNotice.detail}</p>
               </div>
             ) : null}
 
@@ -212,9 +320,7 @@ export function HumanFeedbackPage({
               </label>
 
               <p id="human-feedback-hint" className="human-feedback-help">
-                Press Cmd/Ctrl+Enter to queue the note. If ultimate mode is not
-                active, Shipyard will treat this like a normal browser
-                instruction instead.
+                {helpText}
               </p>
 
               <div className="human-feedback-actions">
@@ -222,14 +328,14 @@ export function HumanFeedbackPage({
                   id="human-feedback-status"
                   className="human-feedback-action-copy"
                 >
-                  {agentStatus}
+                  {actionStatusText}
                 </p>
                 <button
                   type="submit"
                   className="primary-action"
                   disabled={!canSubmit}
                 >
-                  Queue feedback
+                  {submitLabel}
                 </button>
               </div>
             </form>
@@ -244,6 +350,10 @@ export function HumanFeedbackPage({
                   <dd>{connectionLabel}</dd>
                 </div>
                 <div>
+                  <dt>Ultimate</dt>
+                  <dd>{ultimatePhaseLabel}</dd>
+                </div>
+                <div>
                   <dt>Agent status</dt>
                   <dd>{agentStatus}</dd>
                 </div>
@@ -256,8 +366,20 @@ export function HumanFeedbackPage({
                   <dd>{previewLabel}</dd>
                 </div>
                 <div>
-                  <dt>Turns</dt>
-                  <dd>{String(sessionState?.turnCount ?? 0)}</dd>
+                  <dt>Loop turns</dt>
+                  <dd>{String(ultimateState.turnCount)}</dd>
+                </div>
+                <div>
+                  <dt>Queued feedback</dt>
+                  <dd>{String(ultimateState.pendingFeedbackCount)}</dd>
+                </div>
+                <div>
+                  <dt>Brief</dt>
+                  <dd>{ultimateState.currentBrief ?? "No active brief"}</dd>
+                </div>
+                <div>
+                  <dt>Last cycle</dt>
+                  <dd>{ultimateState.lastCycleSummary ?? "Waiting for the next loop update"}</dd>
                 </div>
               </dl>
             </SurfaceCard>

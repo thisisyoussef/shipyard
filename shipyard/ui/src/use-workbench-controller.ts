@@ -25,6 +25,10 @@ import type { BadgeTone } from "./primitives.js";
 import type { ComposerAttachment } from "./panels/ComposerPanel.js";
 import { createSocketManager, type SocketManager } from "./socket-manager.js";
 import {
+  resolveHumanFeedbackBehavior,
+  resolveWorkbenchComposerBehavior,
+} from "./ultimate-composer.js";
+import {
   appendPendingUploadReceipts,
   applyBackendMessage,
   createInitialWorkbenchState,
@@ -160,8 +164,13 @@ export function resolveUiPage(pathname: string): UiPage {
 export function shouldCancelBusyInstructionOnSubmit(
   page: UiPage,
   connectionState: WorkbenchConnectionState,
+  ultimateActive = false,
 ): boolean {
-  return page !== "human-feedback" && connectionState === "agent-busy";
+  return (
+    page !== "human-feedback" &&
+    connectionState === "agent-busy" &&
+    !ultimateActive
+  );
 }
 
 export function useWorkbenchController() {
@@ -188,6 +197,7 @@ export function useWorkbenchController() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(() =>
     readSidebarState("shipyard:sidebar-right", true),
   );
+  const [ultimateArmed, setUltimateArmed] = useState(false);
   const [
     lastTargetSwitchCompletion,
     setLastTargetSwitchCompletion,
@@ -212,6 +222,20 @@ export function useWorkbenchController() {
   const hasUnlockedAccess =
     accessState.checked &&
     (!accessState.required || accessState.authenticated);
+  const workbenchComposerBehavior = resolveWorkbenchComposerBehavior({
+    connectionState: viewState.connectionState,
+    ultimateState: viewState.ultimateState,
+    armed: ultimateArmed,
+  });
+  const humanFeedbackBehavior = resolveHumanFeedbackBehavior({
+    ultimateState: viewState.ultimateState,
+  });
+
+  useEffect(() => {
+    if (viewState.ultimateState.phase !== "idle" && ultimateArmed) {
+      setUltimateArmed(false);
+    }
+  }, [ultimateArmed, viewState.ultimateState.phase]);
 
   const toggleLeftSidebar = useCallback(() => {
     setLeftSidebarOpen((prev) => {
@@ -687,8 +711,149 @@ export function useWorkbenchController() {
     focusInstructionInput();
   }, [queueComposerNotice, sendMessage]);
 
+  const handleToggleUltimateArmed = useCallback((): void => {
+    if (viewState.ultimateState.phase === "stopping") {
+      queueComposerNotice({
+        tone: "warning",
+        title: "Ultimate mode is stopping",
+        detail:
+          "Wait for the active loop to finish stopping before arming another ultimate run.",
+      });
+      return;
+    }
+
+    if (viewState.ultimateState.active) {
+      queueComposerNotice({
+        tone: "neutral",
+        title: "Ultimate mode is already active",
+        detail:
+          "The next send will queue feedback for the active loop instead of starting a new one.",
+      });
+      return;
+    }
+
+    if (viewState.connectionState === "agent-busy") {
+      queueComposerNotice({
+        tone: "warning",
+        title: "Shipyard is still busy",
+        detail:
+          "Wait for the current non-ultimate turn to finish before arming ultimate mode.",
+      });
+      return;
+    }
+
+    setUltimateArmed((currentValue) => !currentValue);
+    focusInstructionInput();
+  }, [
+    queueComposerNotice,
+    viewState.connectionState,
+    viewState.ultimateState.active,
+    viewState.ultimateState.phase,
+  ]);
+
+  const handlePrimeUltimateStart = useCallback((): void => {
+    if (
+      viewState.ultimateState.active ||
+      viewState.ultimateState.phase === "stopping"
+    ) {
+      return;
+    }
+
+    if (viewState.connectionState === "agent-busy") {
+      queueComposerNotice({
+        tone: "warning",
+        title: "Shipyard is still busy",
+        detail:
+          "Wait for the current non-ultimate turn to finish before starting ultimate mode.",
+      });
+      return;
+    }
+
+    setUltimateArmed(true);
+    focusInstructionInput();
+  }, [
+    queueComposerNotice,
+    viewState.connectionState,
+    viewState.ultimateState.active,
+    viewState.ultimateState.phase,
+  ]);
+
+  const handleSendUltimateFeedback = useCallback((
+    text: string,
+    injectedContext?: string[],
+  ): boolean => {
+    const normalizedText = text.trim();
+
+    if (!normalizedText) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Feedback required",
+        detail: "Enter feedback before queuing it for the active ultimate loop.",
+      });
+      return false;
+    }
+
+    if (viewState.ultimateState.phase === "stopping") {
+      queueComposerNotice({
+        tone: "warning",
+        title: "Ultimate mode is stopping",
+        detail:
+          "Shipyard is finishing the current cycle and is not accepting more loop feedback right now.",
+      });
+      return false;
+    }
+
+    const sent = sendMessage({
+      type: "ultimate:feedback",
+      text: normalizedText,
+      injectedContext,
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Browser runtime disconnected",
+        detail:
+          "Wait for reconnect or refresh the session before queuing more loop feedback.",
+      });
+      return false;
+    }
+
+    return true;
+  }, [queueComposerNotice, sendMessage, viewState.ultimateState.phase]);
+
+  const handleStopUltimateMode = useCallback((): void => {
+    const sent = sendMessage({
+      type: "ultimate:toggle",
+      enabled: false,
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Stop unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before stopping ultimate mode.",
+      });
+      return;
+    }
+
+    queueComposerNotice({
+      tone: "neutral",
+      title: "Stopping ultimate mode",
+      detail:
+        "Shipyard is finishing the current cycle and will return to idle as soon as it can stop cleanly.",
+    });
+  }, [queueComposerNotice, sendMessage]);
+
   const submitInstruction = useCallback(() => {
-    if (shouldCancelBusyInstructionOnSubmit(activePage, viewState.connectionState)) {
+    if (
+      shouldCancelBusyInstructionOnSubmit(
+        activePage,
+        viewState.connectionState,
+        viewState.ultimateState.active,
+      )
+    ) {
       handleCancelInstruction();
       return;
     }
@@ -721,62 +886,163 @@ export function useWorkbenchController() {
       return;
     }
 
-    const sent = sendMessage({
-      type: "instruction",
-      text: submission.instruction,
-      injectedContext: submission.injectedContext,
-    });
-
-    if (!sent) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Browser runtime disconnected",
-        detail:
-          "Wait for reconnect or refresh the session before submitting another turn.",
-      });
-      return;
-    }
-
-    startTransition(() => {
-      setViewState((currentState) =>
-        queueInstructionTurn(
-          currentState,
-          submission.instruction,
-          submission.contextPreview,
-        ),
-      );
-    });
-    setInstruction("");
-    setContextDraft(submission.clearedContextDraft);
     const attachedUploadCount = viewState.pendingUploads.length;
     const explicitContextCount = submission.injectedContext?.length ?? 0;
-    queueComposerNotice(
-      attachedUploadCount > 0 || explicitContextCount > 0
-        ? {
-            tone: "success",
-            title: attachedUploadCount > 0 ? "Attachments queued" : "Context attached",
-            detail: `Attached ${String(attachedUploadCount + explicitContextCount)} context item${(attachedUploadCount + explicitContextCount) === 1 ? "" : "s"} to the next turn.`,
-          }
-        : {
-            tone: "accent",
-            title: "Instruction queued",
+    const contextItemCount = attachedUploadCount + explicitContextCount;
+    const contextItemLabel = `Attached ${String(contextItemCount)} context item${contextItemCount === 1 ? "" : "s"}`;
+
+    switch (workbenchComposerBehavior.mode) {
+      case "ultimate-stopping":
+        queueComposerNotice({
+          tone: "warning",
+          title: "Ultimate mode is stopping",
+          detail:
+            "Wait for the current cycle to stop before starting another loop or queuing more feedback.",
+        });
+        return;
+      case "ultimate-start": {
+        const sent = sendMessage({
+          type: "ultimate:toggle",
+          enabled: true,
+          brief: submission.instruction,
+          injectedContext: submission.injectedContext,
+        });
+
+        if (!sent) {
+          queueComposerNotice({
+            tone: "danger",
+            title: "Browser runtime disconnected",
             detail:
-              "Shipyard accepted the next turn and will keep streaming activity below.",
-          },
-    );
-    focusInstructionInput();
+              "Wait for reconnect or refresh the session before starting ultimate mode.",
+          });
+          return;
+        }
+
+        setUltimateArmed(false);
+        setInstruction("");
+        setContextDraft(submission.clearedContextDraft);
+        queueComposerNotice(
+          contextItemCount > 0
+            ? {
+                tone: "success",
+                title: "Ultimate mode starting",
+                detail:
+                  `${contextItemLabel} to the standing brief and Shipyard is starting the loop now.`,
+              }
+            : {
+                tone: "success",
+                title: "Ultimate mode starting",
+                detail:
+                  "Shipyard accepted the standing brief and is starting the loop now.",
+              },
+        );
+        focusInstructionInput();
+        return;
+      }
+      case "ultimate-feedback": {
+        const sent = handleSendUltimateFeedback(
+          submission.instruction,
+          submission.injectedContext,
+        );
+
+        if (!sent) {
+          return;
+        }
+
+        setInstruction("");
+        setContextDraft(submission.clearedContextDraft);
+        queueComposerNotice(
+          contextItemCount > 0
+            ? {
+                tone: "success",
+                title: "Feedback queued",
+                detail:
+                  `${contextItemLabel} for the active ultimate loop and Shipyard will apply it on the next review cycle.`,
+              }
+            : {
+                tone: "success",
+                title: "Feedback queued",
+                detail:
+                  "Shipyard accepted the note for the active ultimate loop.",
+              },
+        );
+        focusInstructionInput();
+        return;
+      }
+      case "cancel":
+        handleCancelInstruction();
+        return;
+      case "instruction":
+      default: {
+        const sent = sendMessage({
+          type: "instruction",
+          text: submission.instruction,
+          injectedContext: submission.injectedContext,
+        });
+
+        if (!sent) {
+          queueComposerNotice({
+            tone: "danger",
+            title: "Browser runtime disconnected",
+            detail:
+              "Wait for reconnect or refresh the session before submitting another turn.",
+          });
+          return;
+        }
+
+        startTransition(() => {
+          setViewState((currentState) =>
+            queueInstructionTurn(
+              currentState,
+              submission.instruction,
+              submission.contextPreview,
+            ),
+          );
+        });
+        setInstruction("");
+        setContextDraft(submission.clearedContextDraft);
+        queueComposerNotice(
+          contextItemCount > 0
+            ? {
+                tone: "success",
+                title: attachedUploadCount > 0 ? "Attachments queued" : "Context attached",
+                detail: `${contextItemLabel} to the next turn.`,
+              }
+            : {
+                tone: "accent",
+                title: "Instruction queued",
+                detail:
+                  "Shipyard accepted the next turn and will keep streaming activity below.",
+              },
+        );
+        focusInstructionInput();
+      }
+    }
   }, [
     activePage,
     contextDraft,
     handleCancelInstruction,
+    handleSendUltimateFeedback,
     instruction,
     queueComposerNotice,
+    workbenchComposerBehavior.mode,
     viewState.connectionState,
     viewState.pendingUploads,
+    viewState.ultimateState.active,
     sendMessage,
   ]);
 
   const submitHumanFeedback = useCallback(() => {
+    if (humanFeedbackBehavior.submitDisabled) {
+      queueComposerNotice({
+        tone: "warning",
+        title: "Ultimate mode is stopping",
+        detail: humanFeedbackBehavior.helpText,
+      });
+      focusHumanFeedbackInput();
+      return;
+    }
+
     const submission = prepareInstructionSubmission(
       humanFeedbackInstruction,
       "",
@@ -793,31 +1059,49 @@ export function useWorkbenchController() {
       return;
     }
 
-    const sent = sendMessage({
-      type: "instruction",
-      text: submission.instruction,
-      injectedContext: submission.injectedContext,
-    });
+    const sent = viewState.ultimateState.active
+      ? handleSendUltimateFeedback(
+          submission.instruction,
+          submission.injectedContext,
+        )
+      : sendMessage({
+          type: "instruction",
+          text: submission.instruction,
+          injectedContext: submission.injectedContext,
+        });
 
     if (!sent) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Browser runtime disconnected",
-        detail:
-          "Wait for reconnect or refresh the session before submitting another note.",
-      });
+      if (!viewState.ultimateState.active) {
+        queueComposerNotice({
+          tone: "danger",
+          title: "Browser runtime disconnected",
+          detail:
+            "Wait for reconnect or refresh the session before submitting another note.",
+        });
+      }
       return;
     }
 
     setHumanFeedbackInstruction("");
     queueComposerNotice({
       tone: "success",
-      title: "Feedback queued",
-      detail:
-        "Shipyard accepted the note and will route it into ultimate mode when the loop is active.",
+      title: viewState.ultimateState.active
+        ? "Feedback queued"
+        : "Instruction queued",
+      detail: viewState.ultimateState.active
+        ? "Shipyard accepted the note for the active ultimate loop."
+        : "Shipyard accepted the note as a normal browser instruction because ultimate mode is idle.",
     });
     focusHumanFeedbackInput();
-  }, [humanFeedbackInstruction, queueComposerNotice, sendMessage]);
+  }, [
+    handleSendUltimateFeedback,
+    humanFeedbackBehavior.helpText,
+    humanFeedbackBehavior.submitDisabled,
+    humanFeedbackInstruction,
+    queueComposerNotice,
+    sendMessage,
+    viewState.ultimateState.active,
+  ]);
 
   const handleInstructionSubmit = useCallback((event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -1077,18 +1361,21 @@ export function useWorkbenchController() {
     accessSubmitting,
     accessToken,
     composerAttachments,
+    composerBehavior: workbenchComposerBehavior,
     composerNotice,
     contextDraft,
     deferredContextHistory,
     deferredFileEvents,
     deferredTurns,
     hasUnlockedAccess,
+    humanFeedbackBehavior,
     humanFeedbackInstruction,
     humanFeedbackInputRef,
     instruction,
     instructionInputRef,
     leftSidebarOpen,
     lastTargetSwitchCompletion,
+    onActivateUltimate: handlePrimeUltimateStart,
     onAccessTokenChange: handleAccessTokenChange,
     onAccessSubmit: handleHostedAccessSubmit,
     onActivateProject: handleProjectActivate,
@@ -1107,12 +1394,16 @@ export function useWorkbenchController() {
     onRequestSessionResume: handleSessionResume,
     onRequestTargetCreate: handleTargetCreate,
     onRequestTargetSwitch: handleTargetSwitch,
+    onSendUltimateFeedback: handleSendUltimateFeedback,
+    onStopUltimateMode: handleStopUltimateMode,
     onSubmitHumanFeedback: handleHumanFeedbackSubmit,
     onSubmitInstruction: handleInstructionSubmit,
     onToggleLeftSidebar: toggleLeftSidebar,
     onToggleRightSidebar: toggleRightSidebar,
+    onToggleUltimateArmed: handleToggleUltimateArmed,
     rightSidebarOpen,
     traceButtonLabel,
+    ultimateArmed,
     viewState,
     contextInputRef,
   };

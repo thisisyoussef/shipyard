@@ -9,6 +9,40 @@ interface HostedAccessGateProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
+function getStatusModel(props: HostedAccessGateProps): {
+  tone: "neutral" | "accent" | "danger";
+  message: string;
+} {
+  if (props.message) {
+    return {
+      tone: "danger",
+      message: props.message,
+    };
+  }
+
+  if (props.checking) {
+    return {
+      tone: "accent",
+      message:
+        "Checking the hosted access token and restoring the shared Shipyard session.",
+    };
+  }
+
+  if (props.submitting) {
+    return {
+      tone: "accent",
+      message:
+        "Unlocking Shipyard and reconnecting the shared workspace.",
+    };
+  }
+
+  return {
+    tone: "neutral",
+    message:
+      "Shipyard keeps the shared token out of its persisted session artifacts and prompt traces.",
+  };
+}
+
 export function HostedAccessGate(props: HostedAccessGateProps) {
   const busy = props.checking || props.submitting;
   const buttonLabel = props.checking
@@ -16,12 +50,14 @@ export function HostedAccessGate(props: HostedAccessGateProps) {
     : props.submitting
       ? "Unlocking..."
       : "Unlock Shipyard";
+  const status = getStatusModel(props);
 
   return (
     <main className="hosted-access-shell">
       <section
         className="hosted-access-card"
         aria-labelledby="hosted-access-title"
+        aria-busy={busy}
       >
         <span className="hosted-access-kicker">Hosted access</span>
         <h1 id="hosted-access-title">Unlock the shared Shipyard workspace</h1>
@@ -53,12 +89,11 @@ export function HostedAccessGate(props: HostedAccessGateProps) {
         <p
           id="hosted-access-message"
           className="hosted-access-message"
-          data-tone={props.message ? "danger" : "neutral"}
-          role={props.message ? "alert" : "status"}
-          aria-live={props.message ? "assertive" : "polite"}
+          data-tone={status.tone}
+          role={status.tone === "danger" ? "alert" : "status"}
+          aria-live={status.tone === "danger" ? "assertive" : "polite"}
         >
-          {props.message ??
-            "Shipyard keeps the shared token out of its persisted session artifacts and prompt traces."}
+          {status.message}
         </p>
       </section>
     </main>
