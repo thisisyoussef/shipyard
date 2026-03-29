@@ -231,6 +231,27 @@ function collectMessagesUntil(
   });
 }
 
+async function waitForAsyncValue<T>(
+  loadValue: () => Promise<T | null>,
+  timeoutMs = 10_000,
+): Promise<T> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const value = await loadValue();
+
+    if (value !== null) {
+      return value;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 25);
+    });
+  }
+
+  throw new Error("Timed out waiting for the expected async value.");
+}
+
 function getSocketMessages(socket: WebSocket): BackendToFrontendMessage[] {
   const existing = socketMessageBuffers.get(socket);
 
@@ -2809,6 +2830,191 @@ describe("ui runtime contract", () => {
             )
           ),
         );
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("archives refreshed targets into a sidecar git repo without blocking the session", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-preview-archive-");
+    const archiveRoot = await createTempDirectory("shipyard-ui-preview-archive-root-");
+    await scaffoldPreviewableTarget({
+      targetDirectory,
+      name: "ui-preview-archive-target",
+    });
+    await initializeGitRepository(targetDirectory);
+    await expectRawCommandSuccess(targetDirectory, "git add package.json");
+    await expectRawCommandSuccess(
+      targetDirectory,
+      "git commit -m \"Initial preview archive target\"",
+    );
+
+    const targetProfile = {
+      name: "ui-preview-archive-target",
+      description: "Archive-backed preview target.",
+      purpose: "Verify refresh snapshots land in a sidecar git repo.",
+      stack: ["TypeScript", "React"],
+      architecture: "Single package workspace",
+      keyPatterns: ["preview refresh", "archive git tags"],
+      complexity: "small" as const,
+      suggestedAgentsRules: "# AGENTS.md\nKeep archive writes out of the hot path.",
+      suggestedScripts: {
+        test: "vitest run",
+      },
+      taskSuggestions: ["Review archived refresh tags"],
+      enrichedAt: "2026-03-28T00:00:00.000Z",
+      enrichmentModel: "test-model",
+      discoverySnapshot: await discoverTarget(targetDirectory),
+    };
+    await ensureShipyardDirectories(targetDirectory);
+    await writeFile(
+      path.join(targetDirectory, ".shipyard", "profile.json"),
+      `${JSON.stringify(targetProfile, null, 2)}\n`,
+      "utf8",
+    );
+
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-preview-archive-session",
+      targetDirectory,
+      discovery,
+      targetProfile,
+    });
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read_file_preview_archive",
+          name: "read_file",
+          input: {
+            path: "package.json",
+          },
+        },
+        {
+          id: "toolu_edit_block_preview_archive",
+          name: "edit_block",
+          input: {
+            path: "package.json",
+            old_string: '  "name": "ui-preview-archive-target",',
+            new_string: '  "name": "ui-preview-archive-target-edited",',
+          },
+        },
+      ]),
+      createFakeTextTurnResult("Preview archive edit complete."),
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_run_command_preview_archive",
+          name: "run_command",
+          input: {
+            command: "git diff --stat",
+          },
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        command: "git diff --stat",
+        exitCode: 0,
+        passed: true,
+        stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
+        stderr: "",
+        summary: "Verification passed.",
+      })),
+    ]);
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "Always inspect the file before editing it.",
+      projectRulesLoaded: true,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            modelAdapter,
+          };
+        },
+      },
+      targetReleaseArchiveRoot: archiveRoot,
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const previewReadyPromise = waitForSocketMessage(
+        socket,
+        (message) =>
+          message.type === "preview:state" &&
+          message.preview.status === "running" &&
+          message.preview.url !== null,
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await previewReadyPromise;
+
+        const turnMessagesPromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.turnCount === 1 &&
+              message.connectionState === "ready"
+            ) &&
+            messages.some((message) =>
+              message.type === "preview:state" &&
+              message.preview.status === "running" &&
+              message.preview.lastRestartReason?.includes("Refresh requested") === true
+            ),
+          10_000,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "rename the package in package.json",
+          }),
+        );
+
+        await turnMessagesPromise;
+
+        const archivedTarget = await waitForAsyncValue(async () => {
+          try {
+            const parsed = JSON.parse(
+              await readFile(path.join(archiveRoot, "index.json"), "utf8"),
+            ) as {
+              targets: Array<{
+                targetDirectory: string;
+                archiveRepoPath: string;
+                latestTag: string;
+                latestDescription: string;
+              }>;
+            };
+
+            return parsed.targets.find((entry) =>
+              entry.targetDirectory === targetDirectory &&
+              entry.latestTag.trim().length > 0
+            ) ?? null;
+          } catch {
+            return null;
+          }
+        });
+
+        expect(archivedTarget.latestDescription).toBe(
+          "Archive-backed preview target.",
+        );
+
+        const tagList = await runRawCommand(
+          archivedTarget.archiveRepoPath,
+          "git tag --list",
+        );
+        expect(tagList.exitCode).toBe(0);
+        expect(tagList.stdout.split("\n").filter(Boolean)).toContain(
+          archivedTarget.latestTag,
+        );
+
+        const archivedPackageJson = await readFile(
+          path.join(archivedTarget.archiveRepoPath, "package.json"),
+          "utf8",
+        );
+        expect(archivedPackageJson).toContain("ui-preview-archive-target-edited");
       } finally {
         socket.close();
       }

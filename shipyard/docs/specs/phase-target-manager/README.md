@@ -50,6 +50,9 @@
 - Newly created or newly selected targets without a saved profile are enriched automatically.
 - The browser workbench shows the active target, allows switching via the UI, and treats enrichment as passive background work instead of a separate button-driven action.
 - The browser workbench can keep multiple targets open concurrently, activate an already-open target instantly, and open or create another target without forcing the current project run to stop first.
+- Successful preview refreshes can be mirrored into sidecar git archive repos
+  under `<targetsDir>/.shipyard-target-releases/` with description and derived
+  tags, without mutating the live target repo or interrupting the active loop.
 - All existing `--target <path>` behavior is unchanged (backward compatible).
 
 ## Implementation Evidence
@@ -77,6 +80,12 @@
   ship the browser target manager state, create/switch events, recovery on
   reload, passive background enrichment, stale-run protection, and the
   multi-project runtime registry plus project-board summaries.
+- [`../../../src/tools/target-manager/release-archive.ts`](../../../src/tools/target-manager/release-archive.ts),
+  [`../../../src/ui/server.ts`](../../../src/ui/server.ts), and
+  [`../../../src/tracing/local-log.ts`](../../../src/tracing/local-log.ts):
+  add sidecar target release archives that mirror refreshed targets into
+  dedicated git repos, write archive metadata plus a shared archive index, and
+  keep late trace writes best-effort during teardown.
 - [`../../../ui/src/TargetHeader.tsx`](../../../ui/src/TargetHeader.tsx),
   [`../../../ui/src/TargetSwitcher.tsx`](../../../ui/src/TargetSwitcher.tsx),
   [`../../../ui/src/TargetCreationDialog.tsx`](../../../ui/src/TargetCreationDialog.tsx),
@@ -87,11 +96,13 @@
   status, and the open-project activation board on the split-pane workbench UI.
 - [`../../../tests/target-manager.test.ts`](../../../tests/target-manager.test.ts),
   [`../../../tests/target-auto-enrichment.test.ts`](../../../tests/target-auto-enrichment.test.ts),
+  [`../../../tests/target-release-archive.test.ts`](../../../tests/target-release-archive.test.ts),
+  [`../../../tests/local-log.test.ts`](../../../tests/local-log.test.ts),
   [`../../../tests/ui-runtime.test.ts`](../../../tests/ui-runtime.test.ts), and
   [`../../../tests/ui-workbench.test.ts`](../../../tests/ui-workbench.test.ts):
   cover the tool contracts, CLI/browser switching, background auto-enrichment,
-  reload recovery, no-button UI expectations, and concurrent open-project
-  browser behavior.
+  reload recovery, no-button UI expectations, concurrent open-project browser
+  behavior, refresh-driven archive snapshots, and late trace-write cleanup.
 
 ### Representative Snippets
 
@@ -124,4 +135,23 @@ if (plan.kind === "skip-existing-profile") {
   targetManager={props.targetManager}
   onOpenSwitcher={() => setTargetSwitcherOpen(true)}
 />
+```
+
+```ts
+if (
+  previousPreviewState.status !== "running" &&
+  previewState.status === "running" &&
+  previewState.lastRestartReason?.includes("Refresh requested")
+) {
+  const archive = await captureTargetReleaseArchive({
+    archiveRoot: project.targetReleaseArchiveRoot,
+    targetDirectory: project.sessionState.targetDirectory,
+    targetsDirectory: project.sessionState.targetsDirectory,
+    sessionId: project.sessionState.sessionId,
+    turnCount: project.sessionState.turnCount,
+    previewState,
+    discovery: project.sessionState.discovery,
+    targetProfile: project.sessionState.targetProfile,
+  });
+}
 ```
