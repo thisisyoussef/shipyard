@@ -28,6 +28,7 @@ export interface DashboardCardViewModel {
   lastActivity: string | null;
   starred: boolean;
   previewThumbnail?: string;
+  previewUrl?: string;
   previewLabel: string;
   previewDetail: string;
   active: boolean;
@@ -185,6 +186,35 @@ function createPreviewLabel(
   return card.statusLabel;
 }
 
+function normalizeUrl(url: string | null | undefined): string | undefined {
+  const trimmed = url?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function resolvePreviewSurface(
+  project: ProjectBoardProjectViewModel | null,
+): Pick<DashboardCardViewModel, "previewUrl" | "previewLabel"> | null {
+  const privatePreviewUrl = normalizeUrl(project?.privatePreviewUrl);
+
+  if (privatePreviewUrl) {
+    return {
+      previewUrl: privatePreviewUrl,
+      previewLabel: "Live preview",
+    };
+  }
+
+  const publicDeploymentUrl = normalizeUrl(project?.publicDeploymentUrl);
+
+  if (publicDeploymentUrl) {
+    return {
+      previewUrl: publicDeploymentUrl,
+      previewLabel: "Production deploy",
+    };
+  }
+
+  return null;
+}
+
 function createEmptyState(
   activeTab: DashboardTabId,
   hasLoadedCatalog: boolean,
@@ -332,6 +362,7 @@ export function buildDashboardCatalog(
           : null,
       );
       const stackLabel = seed.framework ?? seed.language ?? "Unknown stack";
+      const previewSurface = resolvePreviewSurface(project);
 
       const baseCard: DashboardCardViewModel = {
         id: seed.path,
@@ -344,14 +375,17 @@ export function buildDashboardCatalog(
         lastActivity,
         starred: preference.starred,
         previewDetail: createPreviewDetail(seed, project),
-        previewLabel: "Available",
+        previewLabel: previewSurface?.previewLabel ?? "Available",
         active,
         open,
+        previewUrl: previewSurface?.previewUrl,
       };
 
       return {
         ...baseCard,
-        previewLabel: createPreviewLabel(baseCard),
+        previewLabel:
+          previewSurface?.previewLabel ??
+          createPreviewLabel(baseCard),
       };
     })
     .sort(compareDashboardCards);

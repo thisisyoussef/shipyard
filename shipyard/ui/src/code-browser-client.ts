@@ -65,6 +65,7 @@ export function createHttpCodeBrowserClient(): CodeBrowserClient {
           headers: {
             accept: "application/json",
           },
+          credentials: "same-origin",
         },
       );
 
@@ -81,6 +82,7 @@ export function createHttpCodeBrowserClient(): CodeBrowserClient {
           headers: {
             accept: "application/json",
           },
+          credentials: "same-origin",
         },
       );
 

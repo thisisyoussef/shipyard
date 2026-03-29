@@ -105,6 +105,9 @@ const MOCK_PROJECT_BOARD: ProjectBoardViewModel = {
       hasProfile: true,
       lastActiveAt: "2026-03-28T12:10:00.000Z",
       turnCount: 11,
+      privatePreviewUrl:
+        "data:text/html,%3C!doctype%20html%3E%3Chtml%3E%3Cbody%20style%3D%22margin%3A0%3Bfont-family%3AGeorgia%2Cserif%3Bbackground%3Alinear-gradient(135deg%2C%23f8f3e4%200%25%2C%23f1e2b5%2048%25%2C%23142036%2048%25%2C%230d1730%20100%25)%3Bdisplay%3Agrid%3Bplace-items%3Acenter%3Bheight%3A100vh%3B%22%3E%3Cdiv%20style%3D%22width%3A82%25%3Bpadding%3A24px%3Bbackground%3Argba(255%2C255%2C255%2C0.88)%3Bborder-radius%3A24px%3Bbox-shadow%3A0%2024px%2072px%20rgba(10%2C18%2C34%2C0.24)%3B%22%3E%3Ch1%20style%3D%22margin%3A0%200%2012px%3Bfont-size%3A42px%3Bcolor%3A%23142036%3B%22%3ECraft%20Your%20Vision%3C%2Fh1%3E%3Cp%20style%3D%22margin%3A0%3Bfont-size%3A18px%3Bline-height%3A1.5%3Bcolor%3A%233f4d67%3B%22%3EBuild%20a%20polished%20launch%20canvas%20with%20live%20AI-guided%20iteration.%3C%2Fp%3E%3C%2Fdiv%3E%3C%2Fbody%3E%3C%2Fhtml%3E",
+      publicDeploymentUrl: "https://craft-your-vision.vercel.app",
     },
     {
       projectId: "project-papyr-connect",
@@ -117,6 +120,9 @@ const MOCK_PROJECT_BOARD: ProjectBoardViewModel = {
       hasProfile: true,
       lastActiveAt: "2026-03-28T12:06:00.000Z",
       turnCount: 8,
+      privatePreviewUrl: null,
+      publicDeploymentUrl:
+        "data:text/html,%3C!doctype%20html%3E%3Chtml%3E%3Cbody%20style%3D%22margin%3A0%3Bfont-family%3AArial%2Csans-serif%3Bbackground%3Alinear-gradient(180deg%2C%230f172a%200%25%2C%231f3b5a%20100%25)%3Bcolor%3Awhite%3Bdisplay%3Agrid%3Bplace-items%3Acenter%3Bheight%3A100vh%3B%22%3E%3Cdiv%20style%3D%22width%3A76%25%3Bdisplay%3Agrid%3Bgap%3A12px%3B%22%3E%3Cdiv%20style%3D%22height%3A18px%3Bwidth%3A32%25%3Bbackground%3Argba(255%2C255%2C255%2C0.2)%3Bborder-radius%3A999px%3B%22%3E%3C%2Fdiv%3E%3Cdiv%20style%3D%22height%3A88px%3Bbackground%3Argba(255%2C255%2C255%2C0.12)%3Bborder-radius%3A20px%3B%22%3E%3C%2Fdiv%3E%3Cdiv%20style%3D%22display%3Agrid%3Bgrid-template-columns%3A1fr%201fr%3Bgap%3A12px%3B%22%3E%3Cdiv%20style%3D%22height%3A132px%3Bbackground%3Argba(255%2C255%2C255%2C0.12)%3Bborder-radius%3A20px%3B%22%3E%3C%2Fdiv%3E%3Cdiv%20style%3D%22height%3A132px%3Bbackground%3Argba(255%2C255%2C255%2C0.12)%3Bborder-radius%3A20px%3B%22%3E%3C%2Fdiv%3E%3C%2Fdiv%3E%3C%2Fdiv%3E%3C%2Fbody%3E%3C%2Fhtml%3E",
     },
   ],
 };

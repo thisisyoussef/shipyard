@@ -4515,6 +4515,14 @@ describe("ui runtime contract", () => {
         accessProtected: true,
       });
 
+      const lockedCodeTreeResponse = await fetch(
+        `${runtime.url}/api/files/tree?projectId=${encodeURIComponent(targetDirectory)}`,
+      );
+      expect(lockedCodeTreeResponse.status).toBe(401);
+      await expect(lockedCodeTreeResponse.json()).resolves.toMatchObject({
+        error: "Code browser access token is missing or invalid.",
+      });
+
       const lockedSocket = new WebSocket(runtime.socketUrl);
       await expect(waitForSocketFailure(lockedSocket)).rejects.toThrowError(
         /Unauthorized|Unexpected server response: 401/i,
@@ -4554,6 +4562,25 @@ describe("ui runtime contract", () => {
       await expect(grantedAccessResponse.json()).resolves.toMatchObject({
         required: true,
         authenticated: true,
+      });
+
+      const unlockedCodeTreeResponse = await fetch(
+        `${runtime.url}/api/files/tree?projectId=${encodeURIComponent(targetDirectory)}`,
+        {
+          headers: grantedCookie
+            ? {
+                cookie: grantedCookie,
+              }
+            : undefined,
+        },
+      );
+      expect(unlockedCodeTreeResponse.status).toBe(200);
+      await expect(unlockedCodeTreeResponse.json()).resolves.toMatchObject({
+        projectId: targetDirectory,
+        root: {
+          path: ".",
+        },
+        nodes: [],
       });
 
       const unlockedHealthResponse = await fetch(`${runtime.url}/api/health`, {
