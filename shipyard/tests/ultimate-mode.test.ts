@@ -570,6 +570,78 @@ describe("ultimate mode", () => {
     expect(seenTaskIds).toEqual(["task-story-301"]);
   });
 
+  it("reports coordinator-dispatched cycles through the onCycleComplete callback", async () => {
+    const targetsDirectory = await createTempDirectory("shipyard-ultimate-cycle-complete-");
+    const targetDirectory = path.join(targetsDirectory, "demo-app");
+    const now = "2026-03-29T01:15:00.000Z";
+
+    await seedApprovedPlanningArtifacts(targetDirectory, now, [
+      {
+        id: "STORY-511",
+        epicId: "EPIC-511",
+        title: "Coordinator cycle complete story",
+      },
+    ]);
+
+    const sessionState = createSessionState({
+      sessionId: "ultimate-mode-cycle-complete-session",
+      targetDirectory,
+      targetsDirectory,
+      discovery: createDiscoveryReport(),
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "Keep UI projections in sync for every ultimate cycle.",
+    });
+    const onCycleComplete = vi.fn();
+
+    const result = await executeUltimateMode({
+      sessionState,
+      runtimeState,
+      brief: "Implement the approved story and surface the cycle callback.",
+      onCycleComplete,
+      dependencies: {
+        async runHumanSimulator() {
+          return {
+            summary: "Fallback review.",
+            instruction: "Fallback instruction.",
+            focusAreas: [],
+          };
+        },
+        async executeTurn(options) {
+          return createTurnResult({
+            status: "cancelled",
+            summary: "Human stopped ultimate mode.",
+            finalText: "Turn cancelled.",
+            taskPlan: {
+              instruction: options.instruction,
+              goal: options.instruction,
+              targetFilePaths: [],
+              plannedSteps: [],
+            },
+          });
+        },
+      },
+    });
+
+    expect(result.status).toBe("cancelled");
+    expect(onCycleComplete).toHaveBeenCalledTimes(1);
+    expect(onCycleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        iteration: 1,
+        simulatorDecision: expect.objectContaining({
+          summary: expect.any(String),
+          instruction: expect.any(String),
+          focusAreas: [],
+        }),
+        turnResult: expect.objectContaining({
+          status: "cancelled",
+          summary: "Human stopped ultimate mode.",
+        }),
+        pendingFeedbackCount: 0,
+      }),
+    );
+  });
+
   it("keeps failed coordinator workers isolated while still-ready work continues", async () => {
     const targetsDirectory = await createTempDirectory("shipyard-ultimate-workers-");
     const targetDirectory = path.join(targetsDirectory, "demo-app");

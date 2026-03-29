@@ -159,6 +159,26 @@ progressing without collapsing back into one giant turn transcript.
   executor, record per-worker results, and only fall back to the human
   simulator when no task-graph-backed orchestration is available.
 
+  Post-ship follow-up: coordinator-dispatched cycles now trigger the same
+  `onCycleComplete` callback path as simulator fallback cycles, so browser UI
+  projections and downstream automation hooks observe every completed ultimate
+  cycle instead of only the fallback path.
+
+  ```ts
+  await notifyUltimateModeCycleComplete({
+    iteration,
+    reporter,
+    onCycleComplete: options.onCycleComplete,
+    simulatorDecision: {
+      summary: coordinatorCycle.decision.summary,
+      instruction: coordinatorCycle.decision.instruction,
+      focusAreas: [],
+    },
+    turnResult,
+    pendingFeedbackCount: controller.getPendingHumanFeedback().length,
+  });
+  ```
+
 - `shipyard/src/ui/contracts.ts`,
   `shipyard/src/ui/workbench-state.ts`, and
   `shipyard/src/ui/server.ts`: add additive `orchestration` snapshot state and
@@ -170,7 +190,8 @@ progressing without collapsing back into one giant turn transcript.
   `shipyard/tests/ui-view-models.test.ts`: validate dependency-aware scheduling,
   approval wait handling, hosted-capacity limits, first-merge-wins recovery,
   durable restart behavior, coordinator-first `ultimate mode` dispatch, failed
-  worker isolation, and workbench reducer support for orchestration state.
+  worker isolation, coordinator-path cycle completion callbacks, and workbench
+  reducer support for orchestration state.
 
 ## LangSmith / Monitoring
 

@@ -53,6 +53,11 @@
   `shipyard/docs/specs/phase-ui-integration/user-audit-checklist.md`,
   `shipyard/docs/specs/phase-ui-integration/uii-s06-cross-view-resilience-polish-and-release-gate/feature-spec.md`,
   and `shipyard/ui/src/README.md`
+- Post-ship follow-up: `shipyard/src/ui/server.ts`,
+  `shipyard/tests/ui-runtime.test.ts`,
+  `shipyard/docs/architecture/hosted-railway.md`, and `shipyard/README.md`
+  extend the same release gate so successful edited `ultimate` cycles auto-publish
+  to Vercel instead of leaving deployment automation only on non-ultimate turns.
 
 ## Completion Criteria
 - [x] All must-have tasks complete
