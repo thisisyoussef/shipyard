@@ -13,6 +13,7 @@ import {
   loadHostedRuntimeState,
 } from "../src/hosting/store.js";
 import {
+  resolveHostedPublicDeploymentUrl,
   syncHostedRuntimeState,
   syncSessionHostedRuntimeState,
   type HostedRuntimeGitRepositoryInspection,
@@ -340,6 +341,60 @@ describe("hosting runtime", () => {
     );
     expect(message.workbenchState.hosting.summary).toContain(
       "https://shipyard-demo.vercel.app",
+    );
+  });
+
+  it("falls back to a shareable public Vercel alias from the ultimate brief when no deploy summary exists yet", async () => {
+    const targetsDirectory = await createTempDirectory("shipyard-hosted-brief-");
+    const targetDirectory = path.join(targetsDirectory, "demo-app");
+    await mkdir(targetDirectory, { recursive: true });
+
+    const sessionState = createSessionState({
+      sessionId: "hosted-brief-session",
+      targetDirectory,
+      targetsDirectory,
+      discovery: createDiscovery(),
+    });
+    sessionState.workbenchState.previewState = {
+      status: "running",
+      summary: "Private loopback preview is running.",
+      url: "http://127.0.0.1:44587/",
+      logTail: [],
+      lastRestartReason: null,
+    };
+    sessionState.workbenchState.ultimateState = {
+      ...sessionState.workbenchState.ultimateState,
+      active: true,
+      phase: "running",
+      currentBrief:
+        "Continue building from https://ship-promptpack-ultimate-static-m2209un3v.vercel.app as the current shipped baseline.",
+    };
+
+    expect(
+      resolveHostedPublicDeploymentUrl(sessionState, {
+        serviceUrl: "https://shipyard-production.up.railway.app",
+        privatePreviewUrl: sessionState.workbenchState.previewState.url,
+      }),
+    ).toBe("https://ship-promptpack-ultimate-static.vercel.app");
+
+    await syncSessionHostedRuntimeState(sessionState, {
+      targetsDirectory,
+      env: {
+        SHIPYARD_TARGETS_DIR: targetsDirectory,
+        SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE: "1",
+        RAILWAY_VOLUME_MOUNT_PATH: targetsDirectory,
+        RAILWAY_PUBLIC_DOMAIN: "shipyard-production.up.railway.app",
+        GITHUB_TOKEN: "github-token",
+      },
+      inspectGitHubCliAuth: async () => createCliAuthStatus(),
+      inspectGitRepository: async () => createGitInspection(),
+    });
+
+    expect(sessionState.workbenchState.hosting.publicDeploymentUrl).toBe(
+      "https://ship-promptpack-ultimate-static.vercel.app",
+    );
+    expect(sessionState.workbenchState.hosting.summary).toContain(
+      "https://ship-promptpack-ultimate-static.vercel.app",
     );
   });
 });

@@ -74,6 +74,7 @@ import {
 } from "../hosting/contracts.js";
 import {
   isRailwayHostedEnvironment,
+  resolveHostedPublicDeploymentUrl,
   syncHostedRuntimeState,
 } from "../hosting/runtime.js";
 import { syncSessionOrchestrationState } from "../orchestration/runtime.js";
@@ -1110,6 +1111,16 @@ export async function startUiRuntimeServer(
     };
   };
 
+  const resolveProjectHostedPublicDeploymentUrl = (
+    project: BrowserProjectRuntime,
+  ): string | null =>
+    resolveHostedPublicDeploymentUrl(project.sessionState, {
+      serviceUrl:
+        project.hostedRuntimeState?.profile.serviceUrl
+        ?? project.sessionState.workbenchState.hosting.serviceUrl,
+      privatePreviewUrl: project.sessionState.workbenchState.previewState.url,
+    });
+
   const createProjectRuntime = async (
     sessionState: SessionState,
     seed?: {
@@ -1181,8 +1192,7 @@ export async function startUiRuntimeServer(
       project.hostedRuntimeState,
       {
         privatePreviewUrl: project.sessionState.workbenchState.previewState.url,
-        publicDeploymentUrl:
-          project.sessionState.workbenchState.latestDeploy.productionUrl,
+        publicDeploymentUrl: resolveProjectHostedPublicDeploymentUrl(project),
       },
     );
     await syncSessionTaskGraphState(project.sessionState, {
@@ -1538,7 +1548,7 @@ export async function startUiRuntimeServer(
         project.hostedRuntimeState,
         {
           privatePreviewUrl: project.sessionState.workbenchState.previewState.url,
-          publicDeploymentUrl: nextDeploy.productionUrl,
+          publicDeploymentUrl: resolveProjectHostedPublicDeploymentUrl(project),
         },
       );
     }
@@ -1610,8 +1620,7 @@ export async function startUiRuntimeServer(
         project.hostedRuntimeState,
         {
           privatePreviewUrl: previewState.url,
-          publicDeploymentUrl:
-            project.sessionState.workbenchState.latestDeploy.productionUrl,
+          publicDeploymentUrl: resolveProjectHostedPublicDeploymentUrl(project),
         },
       );
     }
