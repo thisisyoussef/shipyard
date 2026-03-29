@@ -1,20 +1,17 @@
 /**
  * PreviewPanel — Local preview status and inline result surface.
  *
- * Shows preview lifecycle, direct navigation link, embedded result, and recent
- * preview logs without introducing a second UI system.
+ * Shows the live preview itself plus the smallest navigation affordance needed
+ * to open it outside Shipyard. Editor-specific deploy and log chrome lives
+ * elsewhere; this panel stays focused on the workspace canvas.
  */
 
 import type { BadgeTone } from "../primitives.js";
 import { Badge, StatusDot } from "../primitives.js";
-import type {
-  LatestDeployViewModel,
-  PreviewStateViewModel,
-} from "../view-models.js";
+import type { PreviewStateViewModel } from "../view-models.js";
 
 export interface PreviewPanelProps {
   preview: PreviewStateViewModel;
-  deploy: LatestDeployViewModel;
   hostedEditorUrl: string;
 }
 
@@ -104,69 +101,18 @@ function shouldRenderPreviewFrame(
   );
 }
 
-function getDeployTone(deploy: LatestDeployViewModel): BadgeTone {
-  if (deploy.status === "success") {
-    return "success";
-  }
-
-  if (deploy.status === "deploying") {
-    return "accent";
-  }
-
-  if (deploy.status === "error") {
-    return "danger";
-  }
-
-  return deploy.available ? "neutral" : "warning";
-}
-
-function getDeployLabel(deploy: LatestDeployViewModel): string {
-  if (deploy.status === "success") {
-    return "Success";
-  }
-
-  if (deploy.status === "deploying") {
-    return "Deploying";
-  }
-
-  if (deploy.status === "error") {
-    return "Error";
-  }
-
-  return deploy.available ? "Ready" : "Unavailable";
-}
-
-function getProductionUrlLabel(deploy: LatestDeployViewModel): string {
-  if (deploy.status === "success") {
-    return "Deployed target-app URL";
-  }
-
-  if (deploy.status === "deploying") {
-    return "Current production URL";
-  }
-
-  if (deploy.status === "error" && deploy.productionUrl) {
-    return "Last successful production URL";
-  }
-
-  return "Target-app URL";
-}
-
 export function PreviewPanel({
   preview,
-  deploy,
   hostedEditorUrl,
 }: PreviewPanelProps) {
   const tone = getPreviewTone(preview.status);
   const label = getPreviewLabel(preview.status);
-  const deployTone = getDeployTone(deploy);
-  const deployLabel = getDeployLabel(deploy);
   const showPulse =
     preview.status === "starting" || preview.status === "refreshing";
-  const showDeployPulse = deploy.status === "deploying";
   const showPreviewLink = preview.url !== null;
   const showPreviewFrame = shouldRenderPreviewFrame(preview);
-  const showProductionLink = deploy.productionUrl !== null;
+  const editorUrl = hostedEditorUrl.trim();
+  const showEditorLink = !showPreviewLink && editorUrl.length > 0;
 
   return (
     <section
@@ -188,7 +134,6 @@ export function PreviewPanel({
       </div>
 
       <div className="panel-preview">
-        {/* Preview iframe — hero element, takes up most of the space */}
         {showPreviewFrame ? (
           <div className="preview-frame-shell">
             <iframe
@@ -210,7 +155,6 @@ export function PreviewPanel({
           </div>
         )}
 
-        {/* Preview toolbar — compact bar below the iframe */}
         {showPreviewLink ? (
           <div className="preview-toolbar">
             <code className="preview-url">{preview.url}</code>
@@ -224,67 +168,19 @@ export function PreviewPanel({
               Open preview
             </a>
           </div>
-        ) : null}
-
-        {/* Deploy status — collapsible section below preview */}
-        <details className="preview-deploy-section">
-          <summary className="preview-deploy-summary">
-            <span className="preview-deploy-label">Deploy</span>
-            <Badge tone={deployTone}>
-              <StatusDot tone={deployTone} pulse={showDeployPulse} />
-              {deployLabel}
-            </Badge>
-          </summary>
-
-          <div className="preview-deploy-body">
-            <p className="preview-summary">{deploy.summary}</p>
-
-            {showProductionLink ? (
-              <div className="preview-link-row">
-                <div className="preview-link-copy">
-                  <span className="preview-link-label">
-                    {getProductionUrlLabel(deploy)}
-                  </span>
-                  <code className="preview-url">{deploy.productionUrl}</code>
-                </div>
-                <a
-                  className="target-inline-action preview-open-link"
-                  href={deploy.productionUrl ?? undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={`Open deployed app at ${deploy.productionUrl}`}
-                >
-                  Open deployed app
-                </a>
-              </div>
-            ) : (
-              <p className="preview-note" data-tone={deployTone}>
-                Deploy to publish a public URL you can share outside Shipyard.
-              </p>
-            )}
-
-            {deploy.unavailableReason ? (
-              <p className="preview-note" data-tone={deployTone}>
-                <strong>Prerequisites:</strong> {deploy.unavailableReason}
-              </p>
-            ) : null}
-
-            {deploy.status === "error" && deploy.logExcerpt ? (
-              <details className="preview-log-shell">
-                <summary>Provider output</summary>
-                <pre className="preview-log-output">{deploy.logExcerpt}</pre>
-              </details>
-            ) : null}
+        ) : showEditorLink ? (
+          <div className="preview-toolbar">
+            <code className="preview-url">{editorUrl}</code>
+            <a
+              className="target-inline-action preview-open-link"
+              href={editorUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Open editor at ${editorUrl}`}
+            >
+              Open editor
+            </a>
           </div>
-        </details>
-
-        {preview.logTail.length > 0 ? (
-          <details className="preview-log-shell">
-            <summary>Recent preview logs</summary>
-            <pre className="preview-log-output">
-              {preview.logTail.join("\n")}
-            </pre>
-          </details>
         ) : null}
       </div>
     </section>

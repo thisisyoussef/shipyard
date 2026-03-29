@@ -83,6 +83,8 @@ export interface WorkbenchRuntimeProps {
   onToggleRightSidebar: () => void;
 }
 
+export type WorkbenchConversationChrome = "full" | "chat-only";
+
 interface WorkbenchConversationSurfaceProps
   extends Pick<
     WorkbenchRuntimeProps,
@@ -108,6 +110,7 @@ interface WorkbenchConversationSurfaceProps
     | "onActivateProject"
   > {
   onOpenTargets: () => void;
+  chrome?: WorkbenchConversationChrome;
   emptyConversationContent?: ReactNode;
 }
 
@@ -115,16 +118,19 @@ export function WorkbenchConversationSurface(
   props: WorkbenchConversationSurfaceProps,
 ) {
   const activePhase = props.sessionState?.activePhase ?? "target-manager";
+  const chrome = props.chrome ?? "full";
 
   return (
     <div className="conversation-pane">
-      <ProjectBoard
-        projectBoard={props.projectBoard}
-        onActivateProject={props.onActivateProject}
-        onOpenTargets={props.onOpenTargets}
-      />
+      {chrome === "full" ? (
+        <ProjectBoard
+          projectBoard={props.projectBoard}
+          onActivateProject={props.onActivateProject}
+          onOpenTargets={props.onOpenTargets}
+        />
+      ) : null}
 
-      {props.targetManager ? (
+      {chrome === "full" && props.targetManager ? (
         <TargetHeader
           activePhase={activePhase}
           targetManager={props.targetManager}
