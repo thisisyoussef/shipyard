@@ -148,4 +148,21 @@ The board and ultimate work should align with those future packs by:
   `shipyard/tests/ui-editor-preferences.test.ts`,
   `shipyard/tests/ui-code-browser.test.ts`, and
   `shipyard/tests/ui-runtime.test.ts`.
-- `UII-S04`, `UII-S05`, and `UII-S06` remain planned.
+- `UII-S04` landed the typed ultimate control plane and explicit composer
+  semantics in `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/ui/server.ts`,
+  `shipyard/src/engine/ultimate-mode.ts`,
+  `shipyard/ui/src/ultimate-composer.ts`,
+  `shipyard/ui/src/use-workbench-controller.ts`,
+  `shipyard/ui/src/panels/ComposerPanel.tsx`,
+  `shipyard/ui/src/HumanFeedbackPage.tsx`,
+  `shipyard/ui/src/shell/NavBar.tsx`,
+  `shipyard/ui/src/shell/UltimateBadge.tsx`,
+  `shipyard/ui/src/shell/UltimateToggle.tsx`,
+  `shipyard/tests/ui-ultimate-composer.test.ts`,
+  `shipyard/tests/ui-events.test.ts`,
+  `shipyard/tests/ui-view-models.test.ts`,
+  `shipyard/tests/ui-human-feedback-page.test.ts`, and
+  `shipyard/tests/ui-runtime.test.ts`.
+- `UII-S05` and `UII-S06` remain planned.

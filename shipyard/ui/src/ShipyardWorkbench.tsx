@@ -103,13 +103,16 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
             turns={props.turns}
             latestDeploy={props.latestDeploy}
             connectionState={props.connectionState}
+            ultimateState={props.ultimateState}
             instruction={props.instruction}
+            composerBehavior={props.composerBehavior}
             composerNotice={props.composerNotice}
             composerAttachments={props.composerAttachments}
             instructionInputRef={props.instructionInputRef}
             onInstructionChange={props.onInstructionChange}
             onInstructionKeyDown={props.onInstructionKeyDown}
             onAttachFiles={props.onAttachFiles}
+            onToggleUltimateArmed={props.onToggleUltimateArmed}
             onSubmitInstruction={props.onSubmitInstruction}
             onCancelInstruction={props.onCancelInstruction}
             onRemoveAttachment={props.onRemoveAttachment}

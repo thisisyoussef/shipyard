@@ -437,8 +437,10 @@ export function App() {
         pendingUploads={controller.viewState.pendingUploads}
         connectionState={controller.viewState.connectionState}
         agentStatus={controller.viewState.agentStatus}
+        ultimateState={controller.viewState.ultimateState}
         instruction={controller.instruction}
         contextDraft={controller.contextDraft}
+        composerBehavior={controller.composerBehavior}
         composerNotice={controller.composerNotice}
         composerAttachments={controller.composerAttachments}
         instructionInputRef={controller.instructionInputRef}
@@ -449,6 +451,7 @@ export function App() {
         onContextKeyDown={controller.onContextKeyDown}
         onClearContext={controller.onClearContext}
         onAttachFiles={controller.onAttachFiles}
+        onToggleUltimateArmed={controller.onToggleUltimateArmed}
         onSubmitInstruction={controller.onSubmitInstruction}
         onCancelInstruction={controller.onCancelInstruction}
         onRemoveAttachment={controller.onRemoveAttachment}
@@ -489,7 +492,11 @@ export function App() {
         turns={controller.deferredTurns}
         connectionState={controller.viewState.connectionState}
         agentStatus={controller.viewState.agentStatus}
+        ultimateState={controller.viewState.ultimateState}
         instruction={controller.humanFeedbackInstruction}
+        submitLabel={controller.humanFeedbackBehavior.submitLabel}
+        submitDisabled={controller.humanFeedbackBehavior.submitDisabled}
+        helpText={controller.humanFeedbackBehavior.helpText}
         textareaRef={controller.humanFeedbackInputRef}
         notice={controller.composerNotice}
         onInstructionChange={controller.onHumanFeedbackInstructionChange}
@@ -507,9 +514,19 @@ export function App() {
         editorRoute={navEditorRoute}
         boardDisabled={true}
         onNavigate={navigate}
-        ultimateActive={false}
-        ultimateDisabled={true}
-        onUltimateClick={() => undefined}
+        ultimateState={controller.viewState.ultimateState}
+        ultimateDisabled={
+          controller.viewState.ultimateState.phase === "idle" &&
+          navEditorRoute === null
+        }
+        onUltimateClick={() => {
+          if (navEditorRoute) {
+            navigate(navEditorRoute);
+          }
+          controller.onActivateUltimate();
+        }}
+        onSendUltimateFeedback={controller.onSendUltimateFeedback}
+        onStopUltimate={controller.onStopUltimateMode}
       />
 
       <main className="app-route-content">

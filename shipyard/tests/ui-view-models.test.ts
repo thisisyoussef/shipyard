@@ -4,6 +4,7 @@ import { createUnavailablePreviewCapability } from "../src/preview/contracts.js"
 import {
   addPendingUploads,
   applyBackendMessage,
+  applySessionSnapshot,
   clearPendingUploads,
   appendPendingUploadReceipts,
   consumePendingUploadsForInstruction,
@@ -253,6 +254,101 @@ describe("ui view models", () => {
       status: "idle",
       summary:
         "Rotated to a fresh live turn after cycle 5 to keep ultimate mode responsive.",
+    });
+  });
+
+  it("applies additive ultimate-state updates without disturbing the current turn", () => {
+    let state = queueInstructionTurn(
+      createInitialWorkbenchState(),
+      "inspect package.json",
+      [],
+    );
+
+    state = applyBackendMessage(state, {
+      type: "ultimate:state",
+      state: {
+        active: true,
+        phase: "running",
+        currentBrief: "Keep improving the dashboard forever.",
+        turnCount: 3,
+        pendingFeedbackCount: 2,
+        startedAt: "2026-03-29T00:00:00.000Z",
+        lastCycleSummary: "Cycle 3 tightened the hero spacing.",
+      },
+    });
+
+    expect(state.turns[0]).toMatchObject({
+      instruction: "inspect package.json",
+      status: "working",
+    });
+    expect(state.ultimateState).toEqual({
+      active: true,
+      phase: "running",
+      currentBrief: "Keep improving the dashboard forever.",
+      turnCount: 3,
+      pendingFeedbackCount: 2,
+      startedAt: "2026-03-29T00:00:00.000Z",
+      lastCycleSummary: "Cycle 3 tightened the hero spacing.",
+    });
+  });
+
+  it("recovers ultimate state from session snapshots on reload", () => {
+    const initialState = createInitialWorkbenchState();
+    const recoveredState = applySessionSnapshot(initialState, {
+      type: "session:state",
+      runtimeMode: "ui",
+      connectionState: "agent-busy",
+      sessionId: "session-ultimate-123",
+      targetLabel: "shipyard-demo",
+      targetDirectory: "/tmp/shipyard-demo",
+      activePhase: "code",
+      workspaceDirectory: "/tmp/shipyard-workspace",
+      turnCount: 12,
+      startedAt: "2026-03-29T00:00:00.000Z",
+      lastActiveAt: "2026-03-29T00:05:00.000Z",
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: true,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: ["src"],
+        projectName: "shipyard-demo",
+        previewCapability: createUnavailablePreviewCapability(
+          "Preview is unavailable in this synthetic snapshot.",
+        ),
+      },
+      discoverySummary: "typescript (React) via pnpm",
+      projectRulesLoaded: true,
+      sessionHistory: [],
+      workbenchState: {
+        ...createInitialWorkbenchState(),
+        agentStatus: "Ultimate mode is running.",
+        connectionState: "agent-busy",
+        ultimateState: {
+          active: true,
+          phase: "running",
+          currentBrief: "Keep improving the dashboard forever.",
+          turnCount: 3,
+          pendingFeedbackCount: 2,
+          startedAt: "2026-03-29T00:00:00.000Z",
+          lastCycleSummary: "Cycle 3 tightened the hero spacing.",
+        },
+      },
+    });
+
+    expect(recoveredState.connectionState).toBe("agent-busy");
+    expect(recoveredState.ultimateState).toMatchObject({
+      active: true,
+      phase: "running",
+      turnCount: 3,
+      pendingFeedbackCount: 2,
+      currentBrief: "Keep improving the dashboard forever.",
     });
   });
 

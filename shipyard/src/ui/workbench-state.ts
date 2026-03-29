@@ -14,6 +14,7 @@ import {
 import type { RuntimeAssistSummary } from "../skills/contracts.js";
 import type { TddWorkbenchState } from "../tdd/contracts.js";
 import { createIdleTddWorkbenchState } from "../tdd/contracts.js";
+import { createIdleUltimateUiState } from "./contracts.js";
 import type {
   BackendToFrontendMessage,
   DeploySummary,
@@ -25,6 +26,7 @@ import type {
   TargetManagerState,
   TargetSummary,
   UiLangSmithTraceReference,
+  UltimateUiState,
 } from "./contracts.js";
 
 export type WorkbenchConnectionState =
@@ -144,6 +146,7 @@ export interface RuntimeAssistViewModel extends RuntimeAssistSummary {}
 export interface SourceControlViewModel extends SourceControlWorkbenchState {}
 
 export interface HostingViewModel extends HostingWorkbenchState {}
+export interface UltimateUiStateViewModel extends UltimateUiState {}
 
 export interface WorkbenchViewState {
   connectionState: WorkbenchConnectionState;
@@ -169,6 +172,7 @@ export interface WorkbenchViewState {
   tddState: TddWorkbenchStateViewModel;
   sourceControl: SourceControlViewModel;
   hosting: HostingViewModel;
+  ultimateState: UltimateUiStateViewModel;
   runtimeAssist: RuntimeAssistViewModel;
 }
 
@@ -698,6 +702,13 @@ export function compactWorkbenchStateForPersistence(
     pendingToolCalls: retainedPendingToolCalls,
     latestError: truncateWorkbenchText(state.latestError ?? undefined, 600) ?? null,
     contextHistory: state.contextHistory.slice(-MAX_PERSISTED_CONTEXT_HISTORY),
+    ultimateState: {
+      ...state.ultimateState,
+      currentBrief:
+        truncateWorkbenchText(state.ultimateState.currentBrief ?? undefined, 600) ?? null,
+      lastCycleSummary:
+        truncateWorkbenchText(state.ultimateState.lastCycleSummary ?? undefined, 600) ?? null,
+    },
   };
 }
 
@@ -726,6 +737,7 @@ export function ensureWorkbenchStateDefaults(
     tddState: state.tddState ?? initialState.tddState,
     sourceControl: state.sourceControl ?? initialState.sourceControl,
     hosting: state.hosting ?? initialState.hosting,
+    ultimateState: state.ultimateState ?? initialState.ultimateState,
     runtimeAssist: state.runtimeAssist ?? initialState.runtimeAssist,
   };
 }
@@ -757,6 +769,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     tddState: createIdleTddWorkbenchState(),
     sourceControl: createDefaultSourceControlWorkbenchState(),
     hosting: createDefaultHostingWorkbenchState(),
+    ultimateState: createIdleUltimateUiState(),
     runtimeAssist: createInitialRuntimeAssistState(),
   };
 }
@@ -1262,6 +1275,12 @@ export function applyBackendMessage(
           message.deploy.status === "idle" && message.deploy.available
             ? state.agentStatus
             : message.deploy.summary,
+      };
+
+    case "ultimate:state":
+      return {
+        ...state,
+        ultimateState: message.state,
       };
 
     case "target:state":

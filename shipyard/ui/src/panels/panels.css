@@ -83,6 +83,36 @@
   gap: var(--space-2);
 }
 
+.composer-mode-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.composer-mode-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.composer-mode-label {
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-default);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.composer-mode-summary {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  color: var(--text-muted);
+}
+
 .composer-file-input {
   position: absolute;
   width: 1px;
@@ -167,6 +197,10 @@
 .composer-textarea[data-state="submitting"] {
   border-color: var(--accent-strong);
   box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.composer-shell[data-state="busy"] .composer-mode-summary {
+  color: var(--warning-strong);
 }
 
 /* composer-toolbar removed — attach button now lives in input-row */

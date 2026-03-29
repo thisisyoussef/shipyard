@@ -22,20 +22,40 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] typed ultimate messages validate and reject malformed payloads
-  - [ ] reducer applies `ultimate:state` snapshots correctly
-  - [ ] composer send action changes meaning clearly between idle and active modes
+  - [x] typed ultimate messages validate and reject malformed payloads
+  - [x] reducer applies `ultimate:state` snapshots correctly
+  - [x] composer send action changes meaning clearly between idle and active modes
 - T002 tests:
-  - [ ] session snapshots carry ultimate state on reload
+  - [x] session snapshots carry ultimate state on reload
 - T003 tests:
-  - [ ] feedback queues on the active loop
-  - [ ] stop requests surface a truthful stopping state
+  - [x] feedback queues on the active loop
+  - [x] stop requests surface a truthful stopping state
 - T004 tests:
-  - [ ] human-feedback page still reaches the active loop
+  - [x] human-feedback page still reaches the active loop
+
+## Implementation Evidence
+
+- T001: `shipyard/tests/ui-ultimate-composer.test.ts`,
+  `shipyard/tests/ui-events.test.ts`,
+  `shipyard/tests/ui-view-models.test.ts`, and
+  `shipyard/tests/ui-human-feedback-page.test.ts`
+- T002: `shipyard/src/ui/contracts.ts` and
+  `shipyard/src/ui/workbench-state.ts`
+- T003: `shipyard/src/ui/server.ts`,
+  `shipyard/src/engine/ultimate-mode.ts`, and
+  `shipyard/tests/ui-runtime.test.ts`
+- T004: `shipyard/ui/src/use-workbench-controller.ts`,
+  `shipyard/ui/src/ultimate-composer.ts`,
+  `shipyard/ui/src/panels/ComposerPanel.tsx`,
+  `shipyard/ui/src/shell/NavBar.tsx`,
+  `shipyard/ui/src/shell/UltimateBadge.tsx`,
+  `shipyard/ui/src/shell/UltimateToggle.tsx`, and
+  `shipyard/ui/src/HumanFeedbackPage.tsx`
+- T005: this story pack plus `shipyard/docs/specs/phase-ui-integration/README.md`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Ultimate mode is startable, observable, and stoppable from the UI
-- [ ] Text-command fallback remains intact
-- [ ] Reload/reconnect restores truthful ultimate state
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Ultimate mode is startable, observable, and stoppable from the UI
+- [x] Text-command fallback remains intact
+- [x] Reload/reconnect restores truthful ultimate state

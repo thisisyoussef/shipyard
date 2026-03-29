@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { ShipyardWorkbench } from "../ui/src/ShipyardWorkbench.js";
 import type { ComposerAttachment } from "../ui/src/panels/ComposerPanel.js";
+import { resolveWorkbenchComposerBehavior } from "../ui/src/ultimate-composer.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
@@ -278,6 +279,15 @@ const sessionHistory: SessionRunSummaryViewModel[] = [
     isCurrent: false,
   },
 ];
+const idleUltimateState = {
+  active: false,
+  phase: "idle" as const,
+  currentBrief: null,
+  turnCount: 0,
+  pendingFeedbackCount: 0,
+  startedAt: null,
+  lastCycleSummary: null,
+};
 
 function renderWorkbench(overrides?: {
   connectionState?: "connecting" | "ready" | "agent-busy" | "disconnected" | "error";
@@ -306,8 +316,14 @@ function renderWorkbench(overrides?: {
       projectBoard: overrides?.projectBoard ?? projectBoard,
       connectionState: overrides?.connectionState ?? "ready",
       agentStatus: overrides?.agentStatus ?? "Ready for the next instruction.",
+      ultimateState: idleUltimateState,
       instruction: "",
       contextDraft: overrides?.contextDraft ?? "",
+      composerBehavior: resolveWorkbenchComposerBehavior({
+        connectionState: overrides?.connectionState ?? "ready",
+        ultimateState: idleUltimateState,
+        armed: false,
+      }),
       composerNotice: null,
       composerAttachments:
         overrides?.composerAttachments ??
@@ -325,6 +341,7 @@ function renderWorkbench(overrides?: {
       onContextKeyDown: () => undefined,
       onClearContext: () => undefined,
       onAttachFiles: () => undefined,
+      onToggleUltimateArmed: () => undefined,
       onSubmitInstruction: () => undefined,
       onCancelInstruction: () => undefined,
       onRemoveAttachment: () => undefined,

@@ -129,6 +129,11 @@
     box-shadow var(--duration-fast, 120ms) var(--ease-out, ease-out);
 }
 
+.navbar-ultimate-state {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+
 .navbar-ultimate-badge:hover {
   color: var(--text-default);
   border-color: var(--border-strong);
@@ -154,6 +159,10 @@
 .navbar-ultimate-badge--active:hover {
   color: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+
+.navbar-ultimate-badge--active .navbar-ultimate-state {
+  color: inherit;
 }
 
 /* ── Pulsing dot ────────────────────────────── */
@@ -286,6 +295,11 @@
     color 120ms ease-out;
 }
 
-.ultimate-dropdown-stop:hover {
+.ultimate-dropdown-stop:hover:not(:disabled) {
   background: var(--danger-soft);
+}
+
+.ultimate-dropdown-stop:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

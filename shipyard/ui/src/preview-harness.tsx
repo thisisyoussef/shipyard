@@ -11,7 +11,6 @@ import type {
   CodeBrowserTreeResponse,
 } from "../../src/ui/contracts.js";
 import { NavBar } from "./shell/index.js";
-import { UltimateBadge } from "./shell/index.js";
 import { DashboardView, EditorView, KanbanView } from "./views/index.js";
 import { buildDashboardCatalog } from "./dashboard-catalog.js";
 import {
@@ -22,6 +21,7 @@ import {
 import { useRouter } from "./use-router.js";
 import type { Route } from "./router.js";
 import type { CodeBrowserClient } from "./code-browser-client.js";
+import { resolveWorkbenchComposerBehavior } from "./ultimate-composer.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
@@ -214,6 +214,15 @@ const MOCK_LATEST_DEPLOY: LatestDeployViewModel = {
 const MOCK_CONTEXT_HISTORY: ContextReceiptViewModel[] = [];
 const MOCK_PENDING_UPLOADS: PendingUploadReceiptViewModel[] = [];
 const MOCK_SESSION_HISTORY: SessionRunSummaryViewModel[] = [];
+const MOCK_ULTIMATE_STATE = {
+  active: true,
+  phase: "running" as const,
+  currentBrief: "Build a landing page",
+  turnCount: 7,
+  pendingFeedbackCount: 1,
+  startedAt: "2026-03-28T11:45:00.000Z",
+  lastCycleSummary: "Cycle 7 tightened the headline hierarchy and CTA spacing.",
+};
 
 const MOCK_CODE_TREE: CodeBrowserTreeResponse = {
   projectId: "/projects/craft-vision",
@@ -294,6 +303,7 @@ export function PreviewHarness() {
   const [instructionDraft, setInstructionDraft] = useState("");
   const [contextDraft, setContextDraft] = useState("");
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [ultimateArmed, setUltimateArmed] = useState(false);
   const instructionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const contextInputRef = useRef<HTMLTextAreaElement | null>(null);
   const editorRoute =
@@ -335,6 +345,11 @@ export function PreviewHarness() {
     // eslint-disable-next-line no-console
     console.log("[PreviewHarness] ultimate click");
   }, []);
+  const composerBehavior = resolveWorkbenchComposerBehavior({
+    connectionState: "ready",
+    ultimateState: MOCK_ULTIMATE_STATE,
+    armed: ultimateArmed,
+  });
 
   // ── View dispatch ──────────────────────────────
 
@@ -360,8 +375,10 @@ export function PreviewHarness() {
           pendingUploads={MOCK_PENDING_UPLOADS}
           connectionState="ready"
           agentStatus="Ready for the next instruction."
+          ultimateState={MOCK_ULTIMATE_STATE}
           instruction={instructionDraft}
           contextDraft={contextDraft}
+          composerBehavior={composerBehavior}
           composerNotice={null}
           composerAttachments={[]}
           instructionInputRef={instructionInputRef}
@@ -374,6 +391,7 @@ export function PreviewHarness() {
           onContextKeyDown={() => undefined}
           onClearContext={() => setContextDraft("")}
           onAttachFiles={() => undefined}
+          onToggleUltimateArmed={() => setUltimateArmed((current) => !current)}
           onSubmitInstruction={(event) => {
             event.preventDefault();
           }}
@@ -437,19 +455,14 @@ export function PreviewHarness() {
         editorRoute={editorRoute}
         onNavigate={handleNavigate}
         boardDisabled={false}
-        ultimateActive={true}
+        ultimateState={MOCK_ULTIMATE_STATE}
         ultimateDisabled={false}
         onUltimateClick={handleUltimateClick}
-      />
-      <UltimateBadge
-        active={true}
-        turnCount={7}
-        currentBrief="Build a landing page"
-        onSendFeedback={(text) => {
+        onSendUltimateFeedback={(text) => {
           // eslint-disable-next-line no-console
           console.log("[PreviewHarness] ultimateFeedback", text);
         }}
-        onStop={() => {
+        onStopUltimate={() => {
           // eslint-disable-next-line no-console
           console.log("[PreviewHarness] ultimate stop");
         }}

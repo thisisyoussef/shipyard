@@ -3616,6 +3616,235 @@ describe("ui runtime contract", () => {
     }
   }, 20_000);
 
+  it("supports typed ultimate start, feedback, stop, and reconnect state", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-runtime-ultimate-typed-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-ultimate-typed-session",
+      targetDirectory,
+      discovery,
+    });
+    let observedFeedback: string | null = null;
+
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      executeUltimateMode: async (options) => {
+        if (!options.controller) {
+          throw new Error("Expected an ultimate mode controller.");
+        }
+
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "agent-busy",
+        });
+        await options.reporter?.onThinking?.(
+          "Ultimate mode activated for the typed control-plane test.",
+        );
+
+        const feedbackTimeoutAt = Date.now() + 5_000;
+        while (
+          options.controller.getPendingHumanFeedback().length === 0 &&
+          !options.signal?.aborted
+        ) {
+          if (Date.now() >= feedbackTimeoutAt) {
+            throw new Error("Timed out waiting for typed ultimate feedback.");
+          }
+
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
+        }
+
+        observedFeedback =
+          options.controller.getPendingHumanFeedback()[0]?.text ?? null;
+
+        const abortTimeoutAt = Date.now() + 5_000;
+        while (!options.signal?.aborted) {
+          if (Date.now() >= abortTimeoutAt) {
+            throw new Error("Timed out waiting for the typed stop request.");
+          }
+
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
+        }
+
+        observedFeedback =
+          options.controller.drainHumanFeedback()[0]?.text ?? observedFeedback;
+
+        await options.reporter?.onText?.("Ultimate mode typed control-plane test complete.");
+        await options.reporter?.onDone?.({
+          status: "cancelled",
+          summary: "Human stopped ultimate mode.",
+          langSmithTrace: null,
+          executionFingerprint: null,
+        });
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "ready",
+        });
+
+        return {
+          status: "cancelled",
+          summary: "Human stopped ultimate mode.",
+          finalText: "Ultimate mode typed control-plane test complete.",
+          iterations: 0,
+          history: [],
+          lastTurn: null,
+        };
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const secondSocket = new WebSocket(runtime.socketUrl);
+
+      try {
+        await waitForSocketOpen(socket);
+        await waitForSocketMessage(socket, (message) => message.type === "session:state");
+
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:toggle",
+            enabled: true,
+            brief: "Keep improving the dashboard forever.",
+            injectedContext: ["Use the uploaded mock as the visual anchor."],
+          }),
+        );
+
+        const runningState = await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.active &&
+            message.state.phase === "running",
+        );
+
+        expect(runningState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "running",
+            currentBrief: "Keep improving the dashboard forever.",
+            pendingFeedbackCount: 0,
+          },
+        });
+
+        await waitForSocketOpen(secondSocket);
+        const recoveredSnapshot = await waitForSocketMessage(
+          secondSocket,
+          (message) =>
+            message.type === "session:state" &&
+            message.workbenchState.ultimateState.active,
+        );
+
+        expect(recoveredSnapshot).toMatchObject({
+          type: "session:state",
+          connectionState: "agent-busy",
+          workbenchState: {
+            ultimateState: {
+              active: true,
+              phase: "running",
+              currentBrief: "Keep improving the dashboard forever.",
+            },
+          },
+        });
+
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:feedback",
+            text: "Make the hero tighter and raise CTA contrast.",
+            injectedContext: ["Prioritize the dashboard first."],
+          }),
+        );
+
+        const queuedFeedbackState = await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.pendingFeedbackCount === 1,
+        );
+
+        expect(queuedFeedbackState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "running",
+            pendingFeedbackCount: 1,
+          },
+        });
+
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:toggle",
+            enabled: false,
+          }),
+        );
+
+        const stoppingState = await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.phase === "stopping",
+        );
+
+        expect(stoppingState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "stopping",
+          },
+        });
+
+        const finalSequence = await collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "agent:done" &&
+                message.status === "cancelled",
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "ultimate:state" &&
+                message.state.active === false &&
+                message.state.phase === "idle",
+            ),
+        );
+
+        const finalUltimateState = finalSequence.find(
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.active === false,
+        );
+
+        expect(finalUltimateState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: false,
+            phase: "idle",
+            pendingFeedbackCount: 0,
+          },
+        });
+        expect(observedFeedback).toContain(
+          "Make the hero tighter and raise CTA contrast.",
+        );
+        expect(observedFeedback).toContain(
+          "Attached human context 1:\nPrioritize the dashboard first.",
+        );
+      } finally {
+        socket.close();
+        secondSocket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
   it("publishes approval-wait pipeline state through the ui session snapshot", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-runtime-pipeline-");
     const discovery = await discoverTarget(targetDirectory);
@@ -3799,9 +4028,15 @@ describe("ui runtime contract", () => {
         );
         expect(invalidMessageError).toMatchObject({
           type: "agent:error",
-          message:
-            "Invalid client message type: bogus. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.",
+          message: expect.stringContaining(
+            "Invalid client message type: bogus. Expected instruction, cancel, status",
+          ),
         });
+        if (invalidMessageError.type !== "agent:error") {
+          throw new Error("Expected an agent:error response.");
+        }
+        expect(invalidMessageError.message).toContain("ultimate:toggle");
+        expect(invalidMessageError.message).toContain("ultimate:feedback");
       } finally {
         socket.close();
       }
