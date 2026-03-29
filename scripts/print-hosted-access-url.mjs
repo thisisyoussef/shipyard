@@ -5,7 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-const DEFAULT_HOSTED_URL = "https://shipyard-production-f2e5.up.railway.app";
+const DEFAULT_HOSTED_URL = "https://shipyard-production-7d07.up.railway.app";
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDirectory, "..");
 const defaultEnvPath = path.join(repoRoot, "shipyard", ".env");

@@ -23,9 +23,9 @@ jobs:
     name: Deploy hosted Shipyard
     runs-on: ubuntu-latest
     env:
-      RAILWAY_PROJECT_ID: c7288cb4-d64f-497f-863d-f3914b76f48f
-      RAILWAY_ENVIRONMENT_ID: 0753d01d-fb6c-4f37-8753-412fb855dc0a
-      RAILWAY_SERVICE_ID: cb3f46eb-8591-467e-88ce-87672a24c666
+      RAILWAY_PROJECT_ID: 56dd4ac3-b6b0-4ce1-a5a3-f881edccb2db
+      RAILWAY_ENVIRONMENT_ID: e2c39753-7fc8-486e-b1e6-d4d190220b51
+      RAILWAY_SERVICE_ID: ef598033-aca2-450f-8bae-5cec3de9247d
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -150,6 +150,7 @@ jobs:
           railway variable set \
             PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
             RAILWAY_VOLUME_MOUNT_PATH=/app/workspace \
+            SHIPYARD_HOSTED_URL=https://shipyard-production-7d07.up.railway.app \
             SHIPYARD_TARGETS_DIR=/app/workspace \
             SHIPYARD_UI_HOST=0.0.0.0 \
             SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1 \

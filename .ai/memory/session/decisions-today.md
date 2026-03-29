@@ -72,3 +72,8 @@
   to `RAILWAY_TOKEN` first with `RAILWAY_API_TOKEN` as fallback, because the
   broader token path was unauthorized for the production project and blocked
   the OpenAI pin from reaching Railway.
+- 2026-03-29: Reset hosted production onto a fresh Railway project
+  (`56dd4ac3-b6b0-4ce1-a5a3-f881edccb2db`), service
+  (`ef598033-aca2-450f-8bae-5cec3de9247d`), and public domain
+  (`shipyard-production-7d07.up.railway.app`), then repointed the repo-owned
+  deploy workflow and hosted-access helper to that clean surface.

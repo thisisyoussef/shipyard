@@ -167,6 +167,7 @@ not confuse the Shipyard editor with the product being built.
   default hosted image,
   `RAILWAY_VOLUME_MOUNT_PATH=/app/workspace` to keep the hosted persistence
   contract explicit for startup validation,
+  `SHIPYARD_HOSTED_URL` when production uses a pinned public Railway domain,
   `SHIPYARD_TARGETS_DIR=/app/workspace`,
   `SHIPYARD_UI_HOST=0.0.0.0`,
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1`,
@@ -202,6 +203,10 @@ not confuse the Shipyard editor with the product being built.
   app root when deploying only the `shipyard/` directory.
 - If you configure service settings directly in the Railway dashboard, use the
   checked-in Dockerfile builder plus the compiled start command above.
+- On a brand-new Railway project, generate the first public domain with
+  `railway domain --service <service> --port 8080` after the first successful
+  deploy, then pin that value into `SHIPYARD_HOSTED_URL` so hosted runtime
+  state surfaces the same shareable service URL on every boot.
 - Attach a persistent volume at `/app/workspace` before enabling
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1`.
 - When you want full hosted browser verification, use a Railway image or build
