@@ -114,6 +114,12 @@ Capture repeatable patterns that match how this workspace actually works.
 - Comparative write-ups about Shipyard behavior should be grounded in local
   artifacts such as session files, JSONL traces, watchdog/deploy logs, and
   release-archive metadata whenever those artifacts exist.
+- Remote mission operations docs now live under `shipyard/docs/ops/`, with
+  ready-to-copy templates in `shipyard/docs/ops/templates/linux-mission/`.
+- The durable remote-hosting pattern is: persistent server workspace,
+  mission-config bundle beside the target, `systemd` owning the watchdog,
+  Caddy owning public HTTPS for the workbench, and Vercel owning the public app
+  URL. Do not collapse those roles into one raw preview surface.
 
 ## UI Workflow Pattern
 

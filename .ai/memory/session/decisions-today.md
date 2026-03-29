@@ -59,3 +59,8 @@
   operations layer, release archiving, mission control, and the broader
   multi-actor design beyond read-only helper subagents, then linked that
   appendix from `.claude/CLAUDE.md` and `shipyard/docs/README.md`.
+- 2026-03-29: Added a server-first Linux hosting pack under
+  `shipyard/docs/ops/remote-linux-mission.md` with checked-in templates for
+  Ubuntu bootstrap, mission config, `systemd`, Caddy, and a two-hour Vercel
+  sync timer so long-running `ultimate` missions can move off a laptop without
+  inventing a second runtime model.

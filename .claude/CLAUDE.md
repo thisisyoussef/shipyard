@@ -22,6 +22,10 @@ When working on the Ship rebuild deliverables, also use:
 - `shipyard/docs/submissions/ship-rebuild/README.md`
 - `shipyard/CODEAGENT.md#ship-rebuild-submission-appendix`
 
+When working on long-run remote hosting or server deployment, also use:
+- `shipyard/docs/ops/remote-linux-mission.md`
+- `shipyard/docs/architecture/mission-control.md`
+
 ## Workspace Layout
 
 ```
@@ -128,6 +132,12 @@ After completing work, update the memory update set:
 - `shipyard/docs/submissions/ship-rebuild/ai-cost-analysis.md` — actual-cost gap note, reconstructed floor, and production projections
 - `shipyard/docs/submissions/ship-rebuild/ship-rebuild-log.md` — human intervention log with failure analysis
 - `shipyard/CODEAGENT.md#ship-rebuild-submission-appendix` — MVP/final appendix that ties the runtime contract to the submission material
+
+## Hosted Ops Docs
+
+- `shipyard/docs/ops/remote-linux-mission.md` — Linux VM deployment pack for long-running `ultimate` missions, remote workbench access, and scheduled Vercel sync
+- `shipyard/docs/architecture/mission-control.md` — long-run supervision model, mission bundle contract, and recovery flow
+- `shipyard/docs/architecture/hosted-railway.md` — managed hosted baseline for the browser runtime when you want plain hosted UI instead of the full Linux mission stack
 
 ## Shipyard App Architecture
 
