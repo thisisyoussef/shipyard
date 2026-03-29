@@ -220,6 +220,7 @@ describe("ui event helpers", () => {
           type: "target:create_request",
           name: "alpha app",
           description: "Create a demo target.",
+          initialInstruction: "Build the first release checklist.",
           scaffoldType: "react-ts",
           requestId: "request-create-1",
         }),
@@ -228,6 +229,7 @@ describe("ui event helpers", () => {
       type: "target:create_request",
       name: "alpha app",
       description: "Create a demo target.",
+      initialInstruction: "Build the first release checklist.",
       scaffoldType: "react-ts",
       requestId: "request-create-1",
     });

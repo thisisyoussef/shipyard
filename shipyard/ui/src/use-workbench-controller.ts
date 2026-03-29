@@ -1254,6 +1254,7 @@ export function useWorkbenchController() {
   const handleTargetCreate = useCallback((input: {
     name: string;
     description: string;
+    initialInstruction?: string;
     scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
   }, options: {
     requestId?: string;
@@ -1262,6 +1263,7 @@ export function useWorkbenchController() {
       type: "target:create_request",
       name: input.name,
       description: input.description,
+      initialInstruction: input.initialInstruction,
       scaffoldType: input.scaffoldType,
       requestId: options.requestId,
     });

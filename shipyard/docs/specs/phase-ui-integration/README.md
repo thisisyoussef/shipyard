@@ -134,6 +134,12 @@ The board and ultimate work should align with those future packs by:
   `shipyard/src/ui/server.ts`,
   `shipyard/tests/ui-dashboard-catalog.test.ts`, and
   `shipyard/tests/ui-dashboard-launch.test.ts`.
+- Post-pack launch hardening extended `UII-S02` so hero submits now carry an
+  `initialInstruction` through `shipyard/ui/src/dashboard-launch.ts`,
+  `shipyard/ui/src/App.tsx`, `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/server.ts`, `shipyard/tests/ui-events.test.ts`, and
+  `shipyard/tests/ui-runtime.test.ts`, which lets a dashboard create request
+  scaffold, auto-enrich, and queue the first turn atomically.
 - Post-pack polish extended the `UII-S02` dashboard cards with live preview and
   deployment surfaces by projecting preview URLs through
   `shipyard/src/ui/server.ts`, `shipyard/src/ui/contracts.ts`,

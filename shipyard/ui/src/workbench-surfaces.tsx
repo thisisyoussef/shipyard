@@ -36,6 +36,7 @@ export interface WorkbenchComposerNotice {
 export interface WorkbenchTargetCreationInput {
   name: string;
   description: string;
+  initialInstruction?: string;
   scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
 }
 

@@ -6,7 +6,7 @@ import {
 } from "../ui/src/dashboard-launch.js";
 
 describe("dashboard launch helpers", () => {
-  it("derives a deterministic hero launch payload and preserves the draft", () => {
+  it("derives a deterministic hero launch payload and preserves the initial instruction", () => {
     const launch = createDashboardHeroLaunch(
       "Build a kanban board for weekly release planning.",
       {
@@ -18,7 +18,7 @@ describe("dashboard launch helpers", () => {
     expect(launch).toMatchObject({
       kind: "hero-create",
       requestId: "dashboard-launch-1",
-      promptDraft: "Build a kanban board for weekly release planning.",
+      initialInstruction: "Build a kanban board for weekly release planning.",
       createdName: "Kanban Board Weekly Release",
       startedAt: "2026-03-28T12:15:00.000Z",
       request: {
@@ -26,6 +26,7 @@ describe("dashboard launch helpers", () => {
         requestId: "dashboard-launch-1",
         name: "Kanban Board Weekly Release",
         description: "Build a kanban board for weekly release planning.",
+        initialInstruction: "Build a kanban board for weekly release planning.",
         scaffoldType: "react-ts",
       },
     });
