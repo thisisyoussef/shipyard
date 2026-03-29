@@ -127,6 +127,7 @@
 
 - Hosted runtime + Railway contract:
   - `.github/workflows/railway-main-deploy.yml`
+  - `.github/scripts/railway-ci-deploy.sh`
   - `shipyard/src/bin/shipyard.ts`
   - `shipyard/src/ui/server.ts`
   - `shipyard/package.json`
@@ -198,13 +199,8 @@ if (envTargetsDirectory) {
   a manual Railway upload:
 
 ```yaml
-working-directory: shipyard
 run: |
-  railway up . \
-    --path-as-root \
-    --project "${RAILWAY_PROJECT_ID}" \
-    --environment "${RAILWAY_ENVIRONMENT_ID}" \
-    --service "${RAILWAY_SERVICE_ID}"
+  bash .github/scripts/railway-ci-deploy.sh
 ```
 
 - Hosted access-token rotations now ride the same deploy workflow and local

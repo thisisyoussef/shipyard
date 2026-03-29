@@ -94,6 +94,7 @@ generated project files under a predictable server-side workspace path.
 - `shipyard/README.md`
 - `shipyard/docs/architecture/hosted-railway.md`
 - `.github/workflows/railway-main-deploy.yml`
+- `.github/scripts/railway-ci-deploy.sh`
 
 ### Representative Snippets
 
@@ -106,15 +107,10 @@ generated project files under a predictable server-side workspace path.
 ```
 
 - Repo-controlled deploys keep the same contract by uploading the nested app as
-  the deployment root:
+  the deployment root, while the checked-in wrapper retries transient post-build
+  Railway handoff failures:
 
 ```yaml
-working-directory: shipyard
 run: |
-  railway up . \
-    --path-as-root \
-    --ci \
-    --project "${RAILWAY_PROJECT_ID}" \
-    --environment "${RAILWAY_ENVIRONMENT_ID}" \
-    --service "${RAILWAY_SERVICE_ID}"
+  bash .github/scripts/railway-ci-deploy.sh
 ```
