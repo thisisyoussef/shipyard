@@ -2824,6 +2824,7 @@ describe("ui runtime contract", () => {
         ).toBeLessThan(
           turnMessages.findIndex((message) =>
             message.type === "preview:state" &&
+            message.preview.lastRestartReason?.includes("Refresh requested") === true &&
             (
               message.preview.status === "refreshing" ||
               message.preview.status === "running"

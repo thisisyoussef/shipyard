@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { AGENT_ROLE_IDS } from "../agents/profiles.js";
+import { AGENT_ROLE_IDS } from "../agents/agent-role-ids.js";
 
 export const ORCHESTRATION_STATE_VERSION = 1;
 

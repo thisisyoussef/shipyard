@@ -1,13 +1,10 @@
-import {
-  access,
-  mkdir,
-  readFile,
-  rename,
-  writeFile,
-} from "node:fs/promises";
 import path from "node:path";
 
 import { getCoordinationDirectory } from "../engine/state.js";
+import {
+  readParsedJsonFileIfPresent,
+  writeTextFileAtomically,
+} from "../persistence/json-file.js";
 import {
   persistedCoordinationStateSchema,
   type PersistedCoordinationState,
@@ -15,20 +12,6 @@ import {
 
 export function getCoordinationFilePath(targetDirectory: string): string {
   return path.join(getCoordinationDirectory(targetDirectory), "runtime.json");
-}
-
-async function writeAtomically(
-  filePath: string,
-  contents: string,
-): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = path.join(
-    path.dirname(filePath),
-    `${path.basename(filePath)}.tmp-${process.pid}-${Math.random().toString(16).slice(2)}`,
-  );
-
-  await writeFile(tempPath, contents, "utf8");
-  await rename(tempPath, filePath);
 }
 
 export async function saveCoordinationState(
@@ -39,8 +22,7 @@ export async function saveCoordinationState(
     state,
   ) as PersistedCoordinationState;
 
-  await mkdir(getCoordinationDirectory(targetDirectory), { recursive: true });
-  await writeAtomically(
+  await writeTextFileAtomically(
     getCoordinationFilePath(targetDirectory),
     `${JSON.stringify(validated, null, 2)}\n`,
   );
@@ -51,17 +33,11 @@ export async function saveCoordinationState(
 export async function loadCoordinationState(
   targetDirectory: string,
 ): Promise<PersistedCoordinationState | null> {
-  const filePath = getCoordinationFilePath(targetDirectory);
-
-  try {
-    await access(filePath);
-  } catch {
-    return null;
-  }
-
-  const contents = await readFile(filePath, "utf8");
-  const parsed = JSON.parse(contents);
-  return persistedCoordinationStateSchema.parse(
-    parsed,
-  ) as PersistedCoordinationState;
+  return await readParsedJsonFileIfPresent(
+    getCoordinationFilePath(targetDirectory),
+    (parsed) =>
+      persistedCoordinationStateSchema.parse(
+        parsed,
+      ) as PersistedCoordinationState,
+  );
 }
