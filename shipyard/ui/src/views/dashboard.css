@@ -401,23 +401,32 @@
 }
 
 .product-card-star-toggle:focus-visible,
-.product-card-open:focus-visible {
+.product-card-open-hitarea:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
 .product-card-open {
+  position: relative;
   display: grid;
   gap: 0;
+  text-align: left;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.product-card-open-hitarea {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   border: none;
   background: transparent;
   padding: 0;
-  text-align: left;
+  margin: 0;
+  cursor: pointer;
   color: inherit;
   font: inherit;
-  cursor: pointer;
   border-radius: inherit;
-  overflow: hidden;
 }
 
 /* Preview area */
@@ -448,6 +457,54 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.product-card-live-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(135deg, rgba(212, 168, 67, 0.08), transparent 55%),
+    var(--surface-inset);
+  overflow: hidden;
+}
+
+.product-card-live-preview-frame {
+  width: 200%;
+  height: 200%;
+  border: none;
+  transform: scale(0.5);
+  transform-origin: top left;
+  background: color-mix(in srgb, var(--surface-base) 18%, white);
+}
+
+.product-card-live-preview-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(10, 18, 34, 0.14), transparent 36%),
+    linear-gradient(180deg, transparent 58%, rgba(10, 18, 34, 0.28));
+  pointer-events: none;
+}
+
+.product-card-live-preview-badge {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 55%, transparent);
+  border-radius: var(--radius-pill);
+  background: rgba(10, 18, 34, 0.72);
+  color: var(--accent-strong);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  backdrop-filter: blur(10px);
 }
 
 .product-card-initial {

@@ -73,6 +73,8 @@ const projectBoard: ProjectBoardViewModel = {
       hasProfile: true,
       lastActiveAt: "2026-03-28T12:10:00.000Z",
       turnCount: 3,
+      privatePreviewUrl: "http://127.0.0.1:4173",
+      publicDeploymentUrl: "https://alpha-app.vercel.app",
     },
     {
       projectId: "project-delta",
@@ -85,6 +87,8 @@ const projectBoard: ProjectBoardViewModel = {
       hasProfile: false,
       lastActiveAt: "2026-03-28T12:07:00.000Z",
       turnCount: 8,
+      privatePreviewUrl: null,
+      publicDeploymentUrl: "https://delta-app.vercel.app",
     },
   ],
 };
@@ -178,6 +182,7 @@ describe("dashboard catalog", () => {
       open: true,
       stackLabel: "React",
       lastActivity: "2026-03-28T12:10:00.000Z",
+      previewUrl: "http://127.0.0.1:4173",
     });
 
     expect(
@@ -188,6 +193,7 @@ describe("dashboard catalog", () => {
       statusLabel: "Needs attention",
       active: false,
       open: true,
+      previewUrl: "https://delta-app.vercel.app",
       previewDetail: "Open this product to inspect the runtime and recover it.",
     });
 

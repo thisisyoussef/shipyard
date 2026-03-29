@@ -317,6 +317,8 @@ export const projectBoardProjectSchema = z.object({
   hasProfile: z.boolean(),
   lastActiveAt: z.string(),
   turnCount: z.number().int().nonnegative(),
+  privatePreviewUrl: z.string().nullable().optional(),
+  publicDeploymentUrl: z.string().nullable().optional(),
 });
 export const projectBoardStateSchema = z.object({
   activeProjectId: z.string().nullable(),

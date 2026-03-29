@@ -407,7 +407,7 @@ function readCookie(
   return null;
 }
 
-function readAccessToken(request: IncomingMessage): string | null {
+function readLegacyAccessToken(request: IncomingMessage): string | null {
   const authorizationHeader = request.headers.authorization;
 
   if (typeof authorizationHeader === "string") {
@@ -428,13 +428,17 @@ function readAccessToken(request: IncomingMessage): string | null {
 }
 
 function requestIsAuthorized(request: IncomingMessage): boolean {
+  if (isRequestAuthorized(request)) {
+    return true;
+  }
+
   const expectedToken = process.env.SHIPYARD_ACCESS_TOKEN?.trim();
 
   if (!expectedToken) {
     return true;
   }
 
-  return readAccessToken(request) === expectedToken;
+  return readLegacyAccessToken(request) === expectedToken;
 }
 
 function isPortInUseError(error: unknown): error is NodeJS.ErrnoException {
@@ -1438,6 +1442,10 @@ export async function startUiRuntimeServer(
           hasProfile: currentTarget.hasProfile,
           lastActiveAt: project.sessionState.lastActiveAt,
           turnCount: project.sessionState.turnCount,
+          privatePreviewUrl:
+            project.sessionState.workbenchState.hosting.privatePreviewUrl,
+          publicDeploymentUrl:
+            project.sessionState.workbenchState.hosting.publicDeploymentUrl,
         };
       })
       .sort((left, right) => {

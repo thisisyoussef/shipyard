@@ -120,3 +120,19 @@ untrustworthy. Shipyard needs a live product catalog plus a clean bridge from
     requestId: z.string().trim().min(1).optional(),
   });
   ```
+
+- Post-ship polish now projects live preview/deploy URLs through
+  `shipyard/src/ui/server.ts`, `shipyard/src/ui/contracts.ts`,
+  `shipyard/ui/src/dashboard-catalog.ts`, and
+  `shipyard/ui/src/views/ProductCard.tsx` so dashboard cards render real visual
+  previews when Shipyard already has a live preview or public deploy URL.
+
+  ```ts
+  const previewSurface = resolvePreviewSurface(project);
+
+  return {
+    ...baseCard,
+    previewUrl: previewSurface?.previewUrl,
+    previewLabel: previewSurface?.previewLabel ?? createPreviewLabel(baseCard),
+  };
+  ```

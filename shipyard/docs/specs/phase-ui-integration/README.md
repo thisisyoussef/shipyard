@@ -134,6 +134,11 @@ The board and ultimate work should align with those future packs by:
   `shipyard/src/ui/server.ts`,
   `shipyard/tests/ui-dashboard-catalog.test.ts`, and
   `shipyard/tests/ui-dashboard-launch.test.ts`.
+- Post-pack polish extended the `UII-S02` dashboard cards with live preview and
+  deployment surfaces by projecting preview URLs through
+  `shipyard/src/ui/server.ts`, `shipyard/src/ui/contracts.ts`,
+  `shipyard/ui/src/dashboard-catalog.ts`, and
+  `shipyard/ui/src/views/ProductCard.tsx`.
 - `UII-S03` landed the live editor runtime composition and safe code explorer in
   `shipyard/ui/src/views/EditorView.tsx`,
   `shipyard/ui/src/workbench-surfaces.tsx`,
@@ -148,6 +153,9 @@ The board and ultimate work should align with those future packs by:
   `shipyard/tests/ui-editor-preferences.test.ts`,
   `shipyard/tests/ui-code-browser.test.ts`, and
   `shipyard/tests/ui-runtime.test.ts`.
+- Post-pack hardening aligned the hosted code-browser HTTP gate with the shared
+  access-cookie contract in `shipyard/src/ui/server.ts` and
+  `shipyard/ui/src/code-browser-client.ts`.
 - `UII-S04` landed the typed ultimate control plane and explicit composer
   semantics in `shipyard/src/ui/contracts.ts`,
   `shipyard/src/ui/workbench-state.ts`,

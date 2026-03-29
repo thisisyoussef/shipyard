@@ -105,6 +105,19 @@ without undermining edit safety.
     return;
   }
   ```
+- Post-ship hosted access hardening aligned the code-browser HTTP gate with the
+  same shared access-cookie contract used by `/api/access`, keeping direct
+  token fallback additive for older callers.
+  Representative snippet:
+  ```ts
+  function requestIsAuthorized(request: IncomingMessage): boolean {
+    if (isRequestAuthorized(request)) {
+      return true;
+    }
+
+    return readLegacyAccessToken(request) === expectedToken;
+  }
+  ```
 - Per-target layout persistence landed in
   `shipyard/ui/src/editor-preferences.ts` and
   `shipyard/ui/src/views/EditorView.tsx`.

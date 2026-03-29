@@ -94,12 +94,13 @@ export function ProductCard({
         </button>
       </div>
 
-      <button
-        type="button"
-        className="product-card-open"
-        onClick={() => onOpen(product.id)}
-        aria-label={`Open ${product.name}`}
-      >
+      <div className="product-card-open">
+        <button
+          type="button"
+          className="product-card-open-hitarea"
+          onClick={() => onOpen(product.id)}
+          aria-label={`Open ${product.name}`}
+        />
         <div className="product-card-preview">
           {product.previewThumbnail ? (
             <img
@@ -107,6 +108,20 @@ export function ProductCard({
               alt={`${product.name} preview`}
               className="product-card-thumbnail"
             />
+          ) : product.previewUrl ? (
+            <div className="product-card-live-preview">
+              <iframe
+                src={product.previewUrl}
+                title={`${product.name} live preview`}
+                className="product-card-live-preview-frame"
+                loading="lazy"
+                tabIndex={-1}
+              />
+              <div className="product-card-live-preview-scrim" aria-hidden="true" />
+              <span className="product-card-live-preview-badge">
+                {product.previewLabel}
+              </span>
+            </div>
           ) : (
             <div className="product-card-preview-copy">
               <span className="product-card-initial" aria-hidden="true">
@@ -140,7 +155,7 @@ export function ProductCard({
             </span>
           </div>
         </div>
-      </button>
+      </div>
     </article>
   );
 }
