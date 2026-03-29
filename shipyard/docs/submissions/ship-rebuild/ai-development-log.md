@@ -5,7 +5,9 @@
 The primary tool was Shipyard itself running in browser workbench mode with the
 `ultimate` loop enabled. That gave me a live preview, transcript, target-local
 state, checkpoint-backed handoffs, and a human-simulator continuation layer on
-top of Claude-driven turns. Around that core loop, I used:
+top of a mixed-provider runtime: Anthropic-backed target enrichment and early
+turns, then later OpenAI `gpt-5.4` mission-control and human-simulator routes
+once the long-run session was rewired. Around that core loop, I used:
 
 - `gh` for runtime-fix PRs and merges back to `main`
 - LangSmith trace links emitted by Shipyard for normal and failure paths
@@ -82,7 +84,7 @@ Limitations on this project:
 ## Key Learnings
 
 - Instrument cost and usage before the run starts. Reconstructing spend later is
-  avoidable pain.
+  avoidable pain, especially once OpenAI and Anthropic are both in play.
 - Long-run autonomy needs mission control, not optimism.
 - Smaller file budgets produce better edits than broad "finish this whole mode"
   prompts.
