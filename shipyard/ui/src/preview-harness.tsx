@@ -302,7 +302,7 @@ export function PreviewHarness() {
   );
   const [instructionDraft, setInstructionDraft] = useState("");
   const [contextDraft, setContextDraft] = useState("");
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
   const [ultimateArmed, setUltimateArmed] = useState(false);
   const instructionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const contextInputRef = useRef<HTMLTextAreaElement | null>(null);

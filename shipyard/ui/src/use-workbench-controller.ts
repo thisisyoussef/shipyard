@@ -192,7 +192,7 @@ export function useWorkbenchController() {
   );
   const [traceButtonLabel, setTraceButtonLabel] = useState("Copy trace path");
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(() =>
-    readSidebarState("shipyard:sidebar-left", true),
+    readSidebarState("shipyard:sidebar-left", false),
   );
   const [rightSidebarOpen, setRightSidebarOpen] = useState(() =>
     readSidebarState("shipyard:sidebar-right", true),

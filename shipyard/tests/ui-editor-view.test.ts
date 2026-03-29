@@ -209,7 +209,7 @@ function renderEditor(overrides?: {
       composerAttachments: overrides?.composerAttachments ?? [],
       instructionInputRef: createRef<HTMLTextAreaElement>(),
       contextInputRef: createRef<HTMLTextAreaElement>(),
-      leftSidebarOpen: true,
+      leftSidebarOpen: false,
       rightSidebarOpen: false,
       initialLayout: {
         activeTab: overrides?.initialActiveTab ?? "preview",
@@ -240,16 +240,20 @@ function renderEditor(overrides?: {
 }
 
 describe("EditorView", () => {
-  it("renders the live conversation and preview surfaces instead of mock editor content", () => {
+  it("keeps the editor body aligned to chat plus workspace instead of legacy workbench chrome", () => {
     const markup = renderEditor({
       initialActiveTab: "preview",
     });
 
-    expect(markup).toContain("Open projects");
     expect(markup).toContain("Latest conversation");
     expect(markup).toContain("Attach files");
     expect(markup).toContain("Preview ready");
+    expect(markup).toContain("Open preview");
     expect(markup).toContain("http://127.0.0.1:4173");
+    expect(markup).not.toContain("Open projects");
+    expect(markup).not.toContain("Managed local git mode is active");
+    expect(markup).not.toContain("Deploy");
+    expect(markup).not.toContain("Recent preview logs");
     expect(markup).not.toContain("Preview will appear here when a dev server is running");
     expect(markup).not.toContain("Ultimate mode: off");
   });
