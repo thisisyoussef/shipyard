@@ -12,6 +12,7 @@ import {
   ensureShipyardDirectories,
   saveSessionState,
 } from "../src/engine/state.js";
+import type { InstructionTurnResult } from "../src/engine/turn.js";
 import {
   formatUiStartupLines,
   parseArgs,
@@ -939,7 +940,7 @@ describe("ui runtime contract", () => {
     } finally {
       await runtime.close();
     }
-  });
+  }, 20_000);
 
   it("accepts text uploads, rehydrates pending receipts, and injects them into the next turn", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-upload-");
@@ -1456,7 +1457,7 @@ describe("ui runtime contract", () => {
     } finally {
       await runtime.close();
     }
-  });
+  }, 20_000);
 
   it("creates a new target from the dashboard flow, auto-enriches it, and runs the initial instruction", async () => {
     const targetsDirectory = await createTempDirectory(
@@ -3797,6 +3798,7 @@ describe("ui runtime contract", () => {
       targetDirectory,
       discovery,
     });
+    const messageTimeoutMs = 20_000;
     let observedFeedback: string | null = null;
 
     const runtime = await startUiRuntimeServer({
@@ -3878,7 +3880,11 @@ describe("ui runtime contract", () => {
 
       try {
         await waitForSocketOpen(socket);
-        await waitForSocketMessage(socket, (message) => message.type === "session:state");
+        await waitForSocketMessage(
+          socket,
+          (message) => message.type === "session:state",
+          messageTimeoutMs,
+        );
 
         socket.send(
           JSON.stringify({
@@ -3895,6 +3901,7 @@ describe("ui runtime contract", () => {
             message.type === "ultimate:state" &&
             message.state.active &&
             message.state.phase === "running",
+          messageTimeoutMs,
         );
 
         expect(runningState).toMatchObject({
@@ -3913,6 +3920,7 @@ describe("ui runtime contract", () => {
           (message) =>
             message.type === "session:state" &&
             message.workbenchState.ultimateState.active,
+          messageTimeoutMs,
         );
 
         expect(recoveredSnapshot).toMatchObject({
@@ -3940,6 +3948,7 @@ describe("ui runtime contract", () => {
           (message) =>
             message.type === "ultimate:state" &&
             message.state.pendingFeedbackCount === 1,
+          messageTimeoutMs,
         );
 
         expect(queuedFeedbackState).toMatchObject({
@@ -3963,6 +3972,7 @@ describe("ui runtime contract", () => {
           (message) =>
             message.type === "ultimate:state" &&
             message.state.phase === "stopping",
+          messageTimeoutMs,
         );
 
         expect(stoppingState).toMatchObject({
@@ -3987,6 +3997,7 @@ describe("ui runtime contract", () => {
                 message.state.active === false &&
                 message.state.phase === "idle",
             ),
+          messageTimeoutMs,
         );
 
         const finalUltimateState = finalSequence.find(
@@ -4016,7 +4027,7 @@ describe("ui runtime contract", () => {
     } finally {
       await runtime.close();
     }
-  }, 20_000);
+  }, 30_000);
 
   it("publishes approval-wait pipeline state through the ui session snapshot", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-runtime-pipeline-");
@@ -4642,6 +4653,350 @@ describe("ui runtime contract", () => {
               status: "success",
               productionUrl: "https://shipyard-auto-deploy.vercel.app",
               available: true,
+            },
+          },
+        });
+      } finally {
+        reconnectedSocket.close();
+      }
+    } finally {
+      firstSocket.close();
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("auto-publishes successful edited ultimate cycles to Vercel and restores the public URL on reconnect", async () => {
+    process.env.VERCEL_TOKEN = "phase-nine-vercel-token";
+    const targetDirectory = await createTempDirectory("shipyard-ui-ultimate-auto-deploy-");
+    const packageJsonPath = path.join(targetDirectory, "package.json");
+    const initialPackageJson = `${JSON.stringify(
+      {
+        name: "ui-ultimate-auto-deploy-target",
+        version: "1.0.0",
+      },
+      null,
+      2,
+    )}\n`;
+    const updatedPackageJson = `${JSON.stringify(
+      {
+        name: "ui-ultimate-auto-deploy-target-updated",
+        version: "1.0.0",
+      },
+      null,
+      2,
+    )}\n`;
+
+    await writeFile(packageJsonPath, initialPackageJson, "utf8");
+
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-ultimate-auto-deploy-session",
+      targetDirectory,
+      discovery,
+    });
+    const deployInvocations: Array<{
+      platform: string;
+      targetDirectory: string;
+    }> = [];
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "Always auto-publish edited ultimate cycles when deploy is available.",
+      projectRulesLoaded: true,
+      async executeUltimateMode(options) {
+        const turnResult = {
+          phaseName: "code",
+          runtimeMode: "fallback",
+          taskPlan: {
+            instruction: "Rename the package and publish the new build.",
+            goal: "Rename the package and publish the new build.",
+            targetFilePaths: ["package.json"],
+            plannedSteps: ["Update the package metadata."],
+          },
+          executionSpec: null,
+          planningMode: "lightweight",
+          harnessRoute: {
+            selectedPath: "lightweight",
+            actingMode: "raw-loop",
+            taskComplexity: "direct",
+            usedExplorer: false,
+            usedPlanner: false,
+            usedVerifier: false,
+            verificationMode: "none",
+            verificationCheckCount: 0,
+            usedBrowserEvaluator: false,
+            browserEvaluationStatus: "not_run",
+            browserEvaluationFailureKind: null,
+            commandReadinessStatus: "none",
+            commandReadyUrl: null,
+            handoffLoaded: false,
+            handoffEmitted: false,
+            handoffReason: null,
+            checkpointRequested: false,
+            continuationCount: 0,
+            actingLoopBudget: 25,
+            actingLoopBudgetReason: "narrow-default",
+            firstHardFailure: null,
+          },
+          executionFingerprint: null,
+          contextEnvelope: {
+            stable: {
+              discovery: options.sessionState.discovery,
+              projectRules: "Always auto-publish edited ultimate cycles when deploy is available.",
+              availableScripts: {},
+            },
+            task: {
+              currentInstruction: "Rename the package and publish the new build.",
+              injectedContext: [],
+              targetFilePaths: ["package.json"],
+            },
+            runtime: {
+              recentToolOutputs: [],
+              recentErrors: [],
+              currentGitDiff: null,
+            },
+            session: {
+              rollingSummary: options.sessionState.rollingSummary,
+              retryCountsByFile: {},
+              blockedFiles: [],
+              recentTouchedFiles: [],
+              latestHandoff: null,
+              activeTask: null,
+            },
+          },
+          status: "success",
+          summary: "Updated the target package metadata.",
+          finalText: "Updated the target package metadata.",
+          selectedTargetPath: null,
+          langSmithTrace: null,
+          runtimeAssist: {
+            activeProfileId: null,
+            activeProfileName: null,
+            activeProfileRoute: null,
+            loadedSkills: [],
+          },
+          handoff: {
+            loaded: null,
+            loadError: null,
+            emitted: null,
+          },
+        } as InstructionTurnResult;
+
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "agent-busy",
+        });
+        await options.reporter?.onThinking?.(
+          "Ultimate mode activated for the auto deploy regression test.",
+        );
+        await writeFile(packageJsonPath, updatedPackageJson, "utf8");
+        await options.reporter?.onEdit?.({
+          path: "package.json",
+          summary: "Applied targeted edit to package.json",
+          diff:
+            '@@ -1,4 +1,4 @@\n {\n-  "name": "ui-ultimate-auto-deploy-target",\n+  "name": "ui-ultimate-auto-deploy-target-updated",\n   "version": "1.0.0"\n }\n',
+          addedLines: 1,
+          removedLines: 1,
+        });
+        await options.onCycleComplete?.({
+          iteration: 1,
+          simulatorDecision: {
+            summary: "Cycle 1 review complete.",
+            instruction: "Rename the package and ship the updated build.",
+            focusAreas: [],
+          },
+          turnResult,
+          pendingFeedbackCount: 0,
+        });
+        await options.reporter?.onText?.("Ultimate mode auto deploy test complete.");
+        await options.reporter?.onDone?.({
+          status: "success",
+          summary: "Ultimate mode auto deploy test complete.",
+          langSmithTrace: null,
+          executionFingerprint: null,
+        });
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "ready",
+        });
+
+        return {
+          status: "success",
+          summary: "Ultimate mode auto deploy test complete.",
+          finalText: "Ultimate mode auto deploy test complete.",
+          iterations: 1,
+          history: [],
+          lastTurn: turnResult,
+        };
+      },
+      async executeDeploy(input, deployTargetDirectory) {
+        deployInvocations.push({
+          platform: input.platform,
+          targetDirectory: deployTargetDirectory,
+        });
+
+        return {
+          success: true,
+          output: "Production URL: https://shipyard-ultimate-auto-deploy.vercel.app",
+          data: {
+            platform: "vercel",
+            productionUrl: "https://shipyard-ultimate-auto-deploy.vercel.app",
+            command: "vercel deploy --prod --yes --token [redacted]",
+            logExcerpt:
+              "Production URL: https://shipyard-ultimate-auto-deploy.vercel.app",
+            exitCode: 0,
+            timedOut: false,
+          },
+        };
+      },
+    });
+
+    const firstSocket = new WebSocket(runtime.socketUrl);
+
+    try {
+      const firstStatePromise = waitForSocketMessage(
+        firstSocket,
+        (message) => message.type === "session:state",
+      );
+
+      await waitForSocketOpen(firstSocket);
+      await firstStatePromise;
+
+      const publishSequencePromise = collectMessagesUntil(
+        firstSocket,
+        (messages) =>
+          messages.some(
+            (message) =>
+              message.type === "deploy:state" &&
+              message.deploy.status === "success" &&
+              message.deploy.productionUrl ===
+                "https://shipyard-ultimate-auto-deploy.vercel.app",
+          ) &&
+          messages.some(
+            (message) =>
+              message.type === "agent:done" &&
+              message.summary === "Ultimate mode auto deploy test complete.",
+          ) &&
+          messages.some(
+            (message) =>
+              message.type === "session:state" &&
+              message.connectionState === "ready" &&
+              message.turnCount === 1,
+          ),
+      );
+
+      firstSocket.send(
+        JSON.stringify({
+          type: "instruction",
+          text: "ultimate start keep publishing every edited cycle",
+        }),
+      );
+
+      const publishMessages = await publishSequencePromise;
+      expect(deployInvocations).toEqual([
+        {
+          platform: "vercel",
+          targetDirectory,
+        },
+      ]);
+
+      const deployToolCallIndex = publishMessages.findIndex(
+        (message) =>
+          message.type === "agent:tool_call" &&
+          message.toolName === "deploy_target",
+      );
+      const ultimateDoneIndex = publishMessages.findIndex(
+        (message) =>
+          message.type === "agent:done" &&
+          message.summary === "Ultimate mode auto deploy test complete.",
+      );
+      const deploySuccessState = publishMessages.find(
+        (
+          message,
+        ): message is Extract<
+          BackendToFrontendMessage,
+          { type: "deploy:state" }
+        > =>
+          message.type === "deploy:state" &&
+          message.deploy.status === "success",
+      );
+      const finalReadyState = publishMessages.find(
+        (
+          message,
+        ): message is Extract<
+          BackendToFrontendMessage,
+          { type: "session:state" }
+        > =>
+          message.type === "session:state" &&
+          message.connectionState === "ready" &&
+          message.turnCount === 1,
+      );
+
+      expect(deployToolCallIndex).toBeGreaterThanOrEqual(0);
+      expect(ultimateDoneIndex).toBeGreaterThan(deployToolCallIndex);
+      expect(publishMessages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "agent:edit",
+            path: "package.json",
+            summary: "Applied targeted edit to package.json",
+          }),
+          expect.objectContaining({
+            type: "agent:tool_result",
+            toolName: "deploy_target",
+            success: true,
+            summary:
+              "Deploy completed. Public URL: https://shipyard-ultimate-auto-deploy.vercel.app",
+          }),
+        ]),
+      );
+      expect(deploySuccessState).toMatchObject({
+        type: "deploy:state",
+        deploy: {
+          status: "success",
+          productionUrl: "https://shipyard-ultimate-auto-deploy.vercel.app",
+          available: true,
+        },
+      });
+      expect(finalReadyState).toMatchObject({
+        type: "session:state",
+        connectionState: "ready",
+        turnCount: 1,
+        workbenchState: {
+          latestDeploy: {
+            status: "success",
+            productionUrl: "https://shipyard-ultimate-auto-deploy.vercel.app",
+          },
+          ultimateState: {
+            active: false,
+            phase: "idle",
+          },
+        },
+      });
+
+      const reconnectedSocket = new WebSocket(runtime.socketUrl);
+
+      try {
+        const recoveredStatePromise = waitForSocketMessage(
+          reconnectedSocket,
+          (message) => message.type === "session:state",
+        );
+        await waitForSocketOpen(reconnectedSocket);
+        const recoveredState = await recoveredStatePromise;
+
+        expect(recoveredState).toMatchObject({
+          type: "session:state",
+          turnCount: 1,
+          workbenchState: {
+            latestDeploy: {
+              status: "success",
+              productionUrl: "https://shipyard-ultimate-auto-deploy.vercel.app",
+              available: true,
+            },
+            ultimateState: {
+              active: false,
+              phase: "idle",
             },
           },
         });

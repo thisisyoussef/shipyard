@@ -31,7 +31,7 @@ Shipyard service URL, private preview URLs, and public target-app deploy URLs.
 | `GITHUB_TOKEN` | optional hosted-safe GitHub token | Enables canonical GitHub repo binding, PR, and merge operations inside Railway without relying on `gh auth`. |
 | `GITHUB_APP_ID` / `GITHUB_APP_INSTALLATION_ID` / `GITHUB_APP_PRIVATE_KEY` | optional hosted-safe GitHub App credentials | Alternative hosted-safe adapter when you want app-based repo access instead of a long-lived token. |
 | `GITHUB_OAUTH_TOKEN` | optional hosted-safe OAuth token | Alternative hosted-safe adapter for delegated GitHub repo operations. |
-| `VERCEL_TOKEN` | Vercel token | Enables the `deploy_target` tool and automatic public publishing after successful edited turns. Shipyard uses it to create or recover the target's `.vercel/project.json` link and keep production URLs public by default. |
+| `VERCEL_TOKEN` | Vercel token | Enables the `deploy_target` tool and automatic public publishing after successful edited turns, including successful edited `ultimate` cycles. Shipyard uses it to create or recover the target's `.vercel/project.json` link and keep production URLs public by default. |
 | `SHIPYARD_VERCEL_PUBLIC_DEPLOYS` | `1` by default | When enabled, Shipyard disables Vercel Authentication on the resolved target project before deploy so production URLs stay shareable. Set it to `0` only when you intentionally want to preserve a protected Vercel project. |
 
 ## Provider Environment
@@ -90,11 +90,11 @@ not confuse the Shipyard editor with the product being built.
 3. Select or create a target inside `/app/workspace`.
 4. Optionally attach reference files from the browser; Shipyard stores them
    inside the workspace and injects safe previews into the next turn.
-5. After a successful edited turn, Shipyard automatically publishes the current
-   target to Vercel when `VERCEL_TOKEN` is configured. On the first deploy it
-   creates or recovers a deterministic `.vercel/project.json` link for that
-   target and keeps Vercel Authentication disabled by default unless
-   `SHIPYARD_VERCEL_PUBLIC_DEPLOYS=0`.
+5. After a successful edited turn, including successful edited `ultimate`
+   cycles, Shipyard automatically publishes the current target to Vercel when
+   `VERCEL_TOKEN` is configured. On the first deploy it creates or recovers a
+   deterministic `.vercel/project.json` link for that target and keeps Vercel
+   Authentication disabled by default unless `SHIPYARD_VERCEL_PUBLIC_DEPLOYS=0`.
 6. Use the hosted runtime status or target header to distinguish the active
    Shipyard service URL, any private preview URL, and the latest public target
    deployment URL.

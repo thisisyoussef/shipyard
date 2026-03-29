@@ -2590,7 +2590,7 @@ export async function startUiRuntimeServer(
   ): {
     reporter: InstructionTurnReporter;
     flushPendingTurnState: () => Promise<void>;
-    getTurnProducedEdits: () => boolean;
+    consumeTurnProducedEdits: () => boolean;
   } => {
     const baseReporter = createUiInstructionReporter({
       send(message) {
@@ -2667,10 +2667,58 @@ export async function startUiRuntimeServer(
           pendingTurnState = null;
         }
       },
-      getTurnProducedEdits() {
-        return turnProducedEdits;
+      consumeTurnProducedEdits() {
+        const producedEdits = turnProducedEdits;
+        turnProducedEdits = false;
+        return producedEdits;
       },
     };
+  };
+
+  const maybeAutoPublishBrowserEdits = async (
+    project: BrowserProjectRuntime,
+    options: {
+      turnStatus: "success" | "error" | "cancelled";
+      turnProducedEdits: boolean;
+      selectedTargetPath: string | null;
+      signal?: AbortSignal;
+    },
+  ): Promise<void> => {
+    if (
+      options.turnStatus !== "success" ||
+      !options.turnProducedEdits ||
+      options.selectedTargetPath !== null ||
+      project.sessionState.activePhase !== "code" ||
+      options.signal?.aborted
+    ) {
+      return;
+    }
+
+    const deployUnavailableReason = getDeployUnavailableReason(project.sessionState);
+
+    if (deployUnavailableReason !== null) {
+      return;
+    }
+
+    project.deployInFlight = true;
+
+    try {
+      await runBrowserDeploy(
+        project,
+        {
+          platform: "vercel",
+        },
+        options.signal,
+        {
+          mode: "automatic",
+        },
+      );
+    } finally {
+      project.deployInFlight = false;
+      syncLatestDeploy(project);
+      await saveSessionState(project.sessionState);
+      await broadcastProjectsState();
+    }
   };
 
   const runBrowserUltimateMode = async (
@@ -2690,6 +2738,7 @@ export async function startUiRuntimeServer(
     const {
       reporter,
       flushPendingTurnState,
+      consumeTurnProducedEdits,
     } = createBrowserInstructionReporter(project);
     await publishUltimateUiState(
       project,
@@ -2726,6 +2775,13 @@ export async function startUiRuntimeServer(
             },
           ),
         );
+
+        await maybeAutoPublishBrowserEdits(project, {
+          turnStatus: turnResult.status,
+          turnProducedEdits: consumeTurnProducedEdits(),
+          selectedTargetPath: turnResult.selectedTargetPath,
+          signal: options.signal,
+        });
       },
       onCycleRotation: async ({ iteration, turnResult }) => {
         const previousStatus = turnResult.status === "error"
@@ -2794,7 +2850,7 @@ export async function startUiRuntimeServer(
     const {
       reporter,
       flushPendingTurnState,
-      getTurnProducedEdits,
+      consumeTurnProducedEdits,
     } = createBrowserInstructionReporter(project);
     const ultimateCommand = parseUltimateModeCommand(instruction);
 
@@ -2970,39 +3026,12 @@ export async function startUiRuntimeServer(
         });
       }
 
-      if (
-        turnResult.status === "success" &&
-        getTurnProducedEdits() &&
-        turnResult.selectedTargetPath === null &&
-        project.sessionState.activePhase === "code" &&
-        !signal?.aborted
-      ) {
-        const deployUnavailableReason = getDeployUnavailableReason(project.sessionState);
-
-        if (deployUnavailableReason === null) {
-          project.deployInFlight = true;
-
-          try {
-            await runBrowserDeploy(
-              project,
-              {
-                platform: "vercel",
-              },
-              signal,
-              {
-                mode: "automatic",
-              },
-            );
-          } finally {
-            project.deployInFlight = false;
-            syncLatestDeploy(project);
-            await saveSessionState(project.sessionState);
-            await broadcastProjectsState();
-          }
-
-          await flushPendingTurnState();
-        }
-      }
+      await maybeAutoPublishBrowserEdits(project, {
+        turnStatus: turnResult.status,
+        turnProducedEdits: consumeTurnProducedEdits(),
+        selectedTargetPath: turnResult.selectedTargetPath,
+        signal,
+      });
     }
 
     await flushPendingTurnState();

@@ -171,6 +171,20 @@ validation, and docs sync.
   Railway-hosted UI boot now falls back to `0.0.0.0` when `SHIPYARD_UI_HOST`
   is missing, preventing loopback-only startup from taking down the hosted
   `/api/health`, static asset, and `/ws` surfaces.
+- Post-ship ultimate auto-publish hardening extended the same release lane into
+  `shipyard/src/ui/server.ts`, `shipyard/tests/ui-runtime.test.ts`,
+  `shipyard/docs/architecture/hosted-railway.md`, and `shipyard/README.md` so
+  successful edited `ultimate` cycles now auto-publish through the same Vercel
+  browser deploy contract that already covered standard edited turns.
+
+  ```ts
+  await maybeAutoPublishBrowserEdits(project, {
+    turnStatus: turnResult.status,
+    turnProducedEdits: consumeTurnProducedEdits(),
+    selectedTargetPath: turnResult.selectedTargetPath,
+    signal: options.signal,
+  });
+  ```
 - AC-5 is covered by the required validation matrix for this story:
   `pnpm --dir shipyard test`, `pnpm --dir shipyard typecheck`,
   `pnpm --dir shipyard build`, and `git diff --check`, plus the preview-harness

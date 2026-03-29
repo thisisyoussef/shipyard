@@ -286,6 +286,38 @@ async function maybeRotateUltimateModeTurn(options: {
   }
 }
 
+async function notifyUltimateModeCycleComplete(options: {
+  iteration: number;
+  reporter?: InstructionTurnReporter;
+  onCycleComplete?: (
+    event: UltimateModeCycleCompleteEvent,
+  ) => Promise<void> | void;
+  simulatorDecision: HumanSimulatorDecision;
+  turnResult: InstructionTurnResult;
+  pendingFeedbackCount: number;
+}): Promise<void> {
+  if (!options.onCycleComplete) {
+    return;
+  }
+
+  try {
+    await options.onCycleComplete({
+      iteration: options.iteration,
+      simulatorDecision: options.simulatorDecision,
+      turnResult: options.turnResult,
+      pendingFeedbackCount: options.pendingFeedbackCount,
+    });
+  } catch (error) {
+    const message = error instanceof Error
+      ? error.message
+      : "Unknown cycle callback error.";
+
+    await options.reporter?.onThinking?.(
+      `Ultimate mode could not update its UI projection after cycle ${String(options.iteration)}. Continuing the loop. ${message}`,
+    );
+  }
+}
+
 function createDefaultHumanSimulatorRunner(
   runtimeState: InstructionRuntimeState,
   signal?: AbortSignal,
@@ -577,6 +609,19 @@ export async function executeUltimateMode(
           turnResult,
         });
 
+        await notifyUltimateModeCycleComplete({
+          iteration,
+          reporter,
+          onCycleComplete: options.onCycleComplete,
+          simulatorDecision: {
+            summary: coordinatorCycle.decision.summary,
+            instruction: coordinatorCycle.decision.instruction,
+            focusAreas: [],
+          },
+          turnResult,
+          pendingFeedbackCount: controller.getPendingHumanFeedback().length,
+        });
+
         rememberRecentHistoryEntry(history, {
           iteration,
           simulatorSummary: coordinatorCycle.decision.summary,
@@ -681,24 +726,14 @@ export async function executeUltimateMode(
 
       latestTurn = turnResult;
 
-      if (options.onCycleComplete) {
-        try {
-          await options.onCycleComplete({
-            iteration,
-            simulatorDecision: decision,
-            turnResult,
-            pendingFeedbackCount: controller.getPendingHumanFeedback().length,
-          });
-        } catch (error) {
-          const message = error instanceof Error
-            ? error.message
-            : "Unknown cycle callback error.";
-
-          await reporter?.onThinking?.(
-            `Ultimate mode could not update its UI projection after cycle ${String(iteration)}. Continuing the loop. ${message}`,
-          );
-        }
-      }
+      await notifyUltimateModeCycleComplete({
+        iteration,
+        reporter,
+        onCycleComplete: options.onCycleComplete,
+        simulatorDecision: decision,
+        turnResult,
+        pendingFeedbackCount: controller.getPendingHumanFeedback().length,
+      });
 
       rememberRecentHistoryEntry(history, {
         iteration,
