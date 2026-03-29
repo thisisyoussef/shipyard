@@ -33,16 +33,16 @@ without undermining edit safety.
   back after reload.
 
 ## Acceptance Criteria
-- [ ] AC-1: The editor route renders live chat, composer, preview, files, and
+- [x] AC-1: The editor route renders live chat, composer, preview, files, and
   session context against the shared browser controller instead of mock data.
-- [ ] AC-2: Legacy `ShipyardWorkbench` behavior remains available through
+- [x] AC-2: Legacy `ShipyardWorkbench` behavior remains available through
   extracted reusable surfaces or a supported fallback path during the refactor.
-- [ ] AC-3: The Code tab can browse the active target directory through a
+- [x] AC-3: The Code tab can browse the active target directory through a
   read-only sandboxed API with path validation, size limits, and binary-file
   handling.
-- [ ] AC-4: Editor split ratio and active tab persist per target or project and
+- [x] AC-4: Editor split ratio and active tab persist per target or project and
   restore cleanly after reload.
-- [ ] AC-5: Preview-unavailable, no-diff, no-session, large-file, binary-file,
+- [x] AC-5: Preview-unavailable, no-diff, no-session, large-file, binary-file,
   and denied-path states are explicit and user-readable.
 
 ## Edge Cases
@@ -77,3 +77,47 @@ without undermining edit safety.
 ## Done Definition
 - The new editor route becomes a real Shipyard workspace with live runtime
   panels and a safe read-only code browser.
+
+## Implementation Evidence
+
+- Shared live editor/runtime composition landed in `shipyard/ui/src/App.tsx`,
+  `shipyard/ui/src/views/EditorView.tsx`,
+  `shipyard/ui/src/workbench-surfaces.tsx`, and
+  `shipyard/ui/src/ShipyardWorkbench.tsx`.
+  Representative snippet:
+  ```tsx
+  <EditorView
+    productId={editorRouteState.productId}
+    sessionState={controller.viewState.sessionState}
+    turns={controller.deferredTurns}
+    fileEvents={controller.deferredFileEvents}
+    previewState={controller.viewState.previewState}
+  />
+  ```
+- The safe code browser contract landed in `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/code-browser.ts`, `shipyard/src/ui/server.ts`,
+  `shipyard/ui/src/code-browser-client.ts`, and
+  `shipyard/ui/src/panels/CodeExplorerPanel.tsx`.
+  Representative snippet:
+  ```ts
+  if (requestPath === "/api/files/tree") {
+    await handleCodeBrowserTreeRequest(request, response, requestLocation);
+    return;
+  }
+  ```
+- Per-target layout persistence landed in
+  `shipyard/ui/src/editor-preferences.ts` and
+  `shipyard/ui/src/views/EditorView.tsx`.
+  Representative snippet:
+  ```ts
+  nextPreferences = setEditorActiveTab(nextPreferences, editorScopeKey, layout.activeTab);
+  nextPreferences = setEditorSplitRatio(nextPreferences, editorScopeKey, layout.splitRatio);
+  writeEditorPreferences(nextPreferences);
+  ```
+- Preview harness compatibility landed in
+  `shipyard/ui/src/preview-harness.tsx` with a mock `CodeBrowserClient`
+  injection so `/preview.html` stays standalone.
+- Coverage landed in `shipyard/tests/ui-editor-preferences.test.ts`,
+  `shipyard/tests/ui-code-browser.test.ts`,
+  `shipyard/tests/ui-editor-view.test.ts`, and
+  `shipyard/tests/ui-runtime.test.ts`.

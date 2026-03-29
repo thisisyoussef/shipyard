@@ -19,6 +19,10 @@ export {
   type ChatWorkspaceProps,
 } from "./ChatWorkspace.js";
 export {
+  CodeExplorerPanel,
+  type CodeExplorerPanelProps,
+} from "./CodeExplorerPanel.js";
+export {
   ContextPanel,
   type ContextPanelProps,
 } from "./ContextPanel.js";

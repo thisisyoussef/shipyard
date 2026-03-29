@@ -4367,4 +4367,143 @@ describe("ui runtime contract", () => {
       await runtime.close();
     }
   }, 20_000);
+
+  it("serves a sandboxed code-browser tree and bounded file contents for the active project", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-code-browser-");
+    await mkdir(path.join(targetDirectory, "src"), { recursive: true });
+    await mkdir(path.join(targetDirectory, "node_modules", "left-pad"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(targetDirectory, "src", "App.tsx"),
+      "export function App() { return null; }\n",
+      "utf8",
+    );
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify({ name: "code-browser-target" }, null, 2),
+      "utf8",
+    );
+    const discovery = await discoverTarget(targetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-code-browser-session",
+        targetDirectory,
+        discovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const treeResponse = await fetch(
+        `${runtime.url}/api/files/tree?projectId=${encodeURIComponent(targetDirectory)}`,
+      );
+      expect(treeResponse.status).toBe(200);
+      await expect(treeResponse.json()).resolves.toMatchObject({
+        projectId: targetDirectory,
+        root: {
+          path: ".",
+        },
+        nodes: [
+          {
+            name: "src",
+            path: "src",
+            type: "directory",
+            children: [
+              {
+                name: "App.tsx",
+                path: "src/App.tsx",
+                type: "file",
+              },
+            ],
+          },
+          {
+            name: "package.json",
+            path: "package.json",
+            type: "file",
+          },
+        ],
+      });
+
+      const readResponse = await fetch(
+        `${runtime.url}/api/files/read?projectId=${encodeURIComponent(targetDirectory)}&path=${encodeURIComponent("src/App.tsx")}`,
+      );
+      expect(readResponse.status).toBe(200);
+      await expect(readResponse.json()).resolves.toMatchObject({
+        projectId: targetDirectory,
+        path: "src/App.tsx",
+        binary: false,
+        truncated: false,
+        contents: "export function App() { return null; }\n",
+      });
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("rejects traversal and reports binary or truncated code-browser reads explicitly", async () => {
+    const targetDirectory = await createTempDirectory(
+      "shipyard-ui-code-browser-read-",
+    );
+    await mkdir(path.join(targetDirectory, "assets"), { recursive: true });
+    await mkdir(path.join(targetDirectory, "src"), { recursive: true });
+    await writeFile(
+      path.join(targetDirectory, "assets", "logo.bin"),
+      Buffer.from([0, 1, 2, 3, 4]),
+    );
+    await writeFile(
+      path.join(targetDirectory, "src", "large.ts"),
+      `export const payload = "${"x".repeat(9_200)}";\n`,
+      "utf8",
+    );
+    const discovery = await discoverTarget(targetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-code-browser-read-session",
+        targetDirectory,
+        discovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const traversalResponse = await fetch(
+        `${runtime.url}/api/files/read?projectId=${encodeURIComponent(targetDirectory)}&path=${encodeURIComponent("../secret.txt")}`,
+      );
+      expect(traversalResponse.status).toBe(403);
+      await expect(traversalResponse.json()).resolves.toMatchObject({
+        error: expect.stringContaining("Access denied"),
+      });
+
+      const binaryResponse = await fetch(
+        `${runtime.url}/api/files/read?projectId=${encodeURIComponent(targetDirectory)}&path=${encodeURIComponent("assets/logo.bin")}`,
+      );
+      expect(binaryResponse.status).toBe(200);
+      await expect(binaryResponse.json()).resolves.toMatchObject({
+        path: "assets/logo.bin",
+        binary: true,
+        truncated: false,
+        contents: null,
+      });
+
+      const truncatedResponse = await fetch(
+        `${runtime.url}/api/files/read?projectId=${encodeURIComponent(targetDirectory)}&path=${encodeURIComponent("src/large.ts")}`,
+      );
+      expect(truncatedResponse.status).toBe(200);
+      await expect(truncatedResponse.json()).resolves.toMatchObject({
+        path: "src/large.ts",
+        binary: false,
+        truncated: true,
+        contents: expect.stringContaining("[...truncated"),
+      });
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
 });

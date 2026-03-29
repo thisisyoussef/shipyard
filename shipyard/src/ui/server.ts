@@ -87,6 +87,11 @@ import {
   serializeBackendMessage,
 } from "./contracts.js";
 import {
+  CodeBrowserError,
+  listCodeBrowserTree,
+  readCodeBrowserFile,
+} from "./code-browser.js";
+import {
   createSessionStateMessage,
   createUiInstructionReporter,
 } from "./events.js";
@@ -1159,6 +1164,16 @@ export async function startUiRuntimeServer(
         return;
       }
 
+      if (requestPath === "/api/files/tree") {
+        await handleCodeBrowserTreeRequest(request, response, requestLocation);
+        return;
+      }
+
+      if (requestPath === "/api/files/read") {
+        await handleCodeBrowserReadRequest(request, response, requestLocation);
+        return;
+      }
+
       await serveBuiltUi(requestPath, response, fallbackHtml);
     },
   );
@@ -1714,6 +1729,140 @@ export async function startUiRuntimeServer(
       }, project);
       sendJson(response, statusCode, {
         error: message,
+      });
+    }
+  };
+
+  const resolveCodeBrowserProject = (
+    requestLocation: URL,
+  ): BrowserProjectRuntime => {
+    const requestedProjectId = requestLocation.searchParams.get("projectId")?.trim();
+
+    if (!requestedProjectId) {
+      return getActiveProject();
+    }
+
+    const normalizedProjectId = path.resolve(requestedProjectId);
+    const directMatch =
+      projectRuntimes.get(requestedProjectId) ??
+      projectRuntimes.get(normalizedProjectId);
+
+    if (directMatch) {
+      return directMatch;
+    }
+
+    const projectMatch = [...projectRuntimes.values()].find((project) =>
+      path.resolve(project.projectId) === normalizedProjectId ||
+      path.resolve(project.sessionState.targetDirectory) === normalizedProjectId
+    );
+
+    if (projectMatch) {
+      return projectMatch;
+    }
+
+    throw new CodeBrowserError(
+      `Project ${requestedProjectId} is not available in the current browser session.`,
+      404,
+      "not_found",
+    );
+  };
+
+  const handleCodeBrowserTreeRequest = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    requestLocation: URL,
+  ): Promise<void> => {
+    try {
+      if (!requestIsAuthorized(request)) {
+        sendJson(response, 401, {
+          error: "Code browser access token is missing or invalid.",
+        });
+        return;
+      }
+
+      if (request.method !== "GET") {
+        sendJson(response, 405, {
+          error: "Code browser tree requests require GET.",
+        });
+        return;
+      }
+
+      const project = resolveCodeBrowserProject(requestLocation);
+      const tree = await listCodeBrowserTree({
+        targetDirectory: project.sessionState.targetDirectory,
+        projectId: project.sessionState.targetDirectory,
+        rootPath: requestLocation.searchParams.get("root")?.trim() || undefined,
+        depth: requestLocation.searchParams.has("depth")
+          ? Number(requestLocation.searchParams.get("depth"))
+          : undefined,
+      });
+
+      sendJson(response, 200, tree);
+    } catch (error) {
+      const statusCode = error instanceof CodeBrowserError
+        ? error.statusCode
+        : 400;
+      const message = error instanceof Error
+        ? error.message
+        : "Code browser tree request failed.";
+      const code = error instanceof CodeBrowserError ? error.code : undefined;
+
+      sendJson(response, statusCode, {
+        error: message,
+        code,
+      });
+    }
+  };
+
+  const handleCodeBrowserReadRequest = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    requestLocation: URL,
+  ): Promise<void> => {
+    try {
+      if (!requestIsAuthorized(request)) {
+        sendJson(response, 401, {
+          error: "Code browser access token is missing or invalid.",
+        });
+        return;
+      }
+
+      if (request.method !== "GET") {
+        sendJson(response, 405, {
+          error: "Code browser read requests require GET.",
+        });
+        return;
+      }
+
+      const requestedPath = requestLocation.searchParams.get("path")?.trim();
+
+      if (!requestedPath) {
+        sendJson(response, 400, {
+          error: "Code browser read requests require a relative file path.",
+        });
+        return;
+      }
+
+      const project = resolveCodeBrowserProject(requestLocation);
+      const file = await readCodeBrowserFile({
+        targetDirectory: project.sessionState.targetDirectory,
+        projectId: project.sessionState.targetDirectory,
+        filePath: requestedPath,
+      });
+
+      sendJson(response, 200, file);
+    } catch (error) {
+      const statusCode = error instanceof CodeBrowserError
+        ? error.statusCode
+        : 400;
+      const message = error instanceof Error
+        ? error.message
+        : "Code browser read request failed.";
+      const code = error instanceof CodeBrowserError ? error.code : undefined;
+
+      sendJson(response, statusCode, {
+        error: message,
+        code,
       });
     }
   };

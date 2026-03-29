@@ -221,6 +221,46 @@ export const deploySummarySchema = z.object({
   requestedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
 });
+export type CodeBrowserTreeNode = {
+  name: string;
+  type: "file" | "directory";
+  path: string;
+  children?: CodeBrowserTreeNode[];
+};
+export const codeBrowserTreeNodeSchema: z.ZodType<CodeBrowserTreeNode> = z.lazy(() =>
+  z.object({
+    name: z.string(),
+    type: z.enum(["file", "directory"]),
+    path: z.string(),
+    children: z.array(codeBrowserTreeNodeSchema).optional(),
+  })
+);
+export const codeBrowserTreeResponseSchema = z.object({
+  projectId: z.string(),
+  root: z.object({
+    path: z.string(),
+    name: z.string(),
+  }),
+  nodes: z.array(codeBrowserTreeNodeSchema),
+});
+export const codeBrowserReadResponseSchema = z.object({
+  projectId: z.string(),
+  path: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  contents: z.string().nullable(),
+  truncated: z.boolean(),
+  binary: z.boolean(),
+});
+export const codeBrowserErrorResponseSchema = z.object({
+  error: z.string(),
+  code: z.enum([
+    "access_denied",
+    "not_found",
+    "not_directory",
+    "not_file",
+    "read_failed",
+  ]).optional(),
+});
 const pendingToolCallSchema = z.object({
   turnId: z.string(),
   fileEventId: z.string().optional(),
@@ -505,6 +545,15 @@ export type TargetEnrichmentState = z.infer<
 export type ProjectBoardState = z.infer<typeof projectBoardStateSchema>;
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
 export type DeploySummary = z.infer<typeof deploySummarySchema>;
+export type CodeBrowserTreeResponse = z.infer<
+  typeof codeBrowserTreeResponseSchema
+>;
+export type CodeBrowserReadResponse = z.infer<
+  typeof codeBrowserReadResponseSchema
+>;
+export type CodeBrowserErrorResponse = z.infer<
+  typeof codeBrowserErrorResponseSchema
+>;
 export type UploadReceiptsResponse = z.infer<typeof uploadReceiptsResponseSchema>;
 export type UploadDeleteResponse = z.infer<typeof uploadDeleteResponseSchema>;
 export type UploadErrorResponse = z.infer<typeof uploadErrorResponseSchema>;

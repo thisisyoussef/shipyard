@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { HostedAccessGate } from "./HostedAccessGate.js";
 import { HumanFeedbackPage } from "./HumanFeedbackPage.js";
-import { ShipyardWorkbench } from "./ShipyardWorkbench.js";
 import {
   buildDashboardCatalog,
 } from "./dashboard-catalog.js";
@@ -35,10 +34,11 @@ import {
   useWorkbenchController,
 } from "./use-workbench-controller.js";
 import { useRouter } from "./use-router.js";
+import type { DashboardViewNotice } from "./views/DashboardView.js";
 import {
   DashboardView,
-  type DashboardViewNotice,
-} from "./views/DashboardView.js";
+  EditorView,
+} from "./views/index.js";
 import { RoutePlaceholderView } from "./views/RoutePlaceholderView.js";
 
 export {
@@ -416,7 +416,15 @@ export function App() {
     }
 
     return (
-      <ShipyardWorkbench
+      <EditorView
+        productId={editorRouteState.productId}
+        productName={editorRouteState.productName ?? "Untitled target"}
+        scaffoldType={
+          controller.viewState.targetManager?.currentTarget.framework ?? ""
+        }
+        hostedEditorUrl={
+          typeof window === "undefined" ? "" : window.location.origin
+        }
         sessionState={controller.viewState.sessionState}
         sessionHistory={controller.viewState.sessionHistory}
         targetManager={controller.viewState.targetManager}
@@ -455,6 +463,7 @@ export function App() {
         rightSidebarOpen={controller.rightSidebarOpen}
         onToggleLeftSidebar={controller.onToggleLeftSidebar}
         onToggleRightSidebar={controller.onToggleRightSidebar}
+        onNavigate={navigate}
       />
     );
   }
