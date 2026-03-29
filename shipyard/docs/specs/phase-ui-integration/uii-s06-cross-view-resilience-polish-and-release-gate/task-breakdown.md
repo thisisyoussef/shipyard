@@ -21,19 +21,42 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] route fallbacks and reconnect states are explicit
-  - [ ] legacy entry surfaces still work
+  - [x] route fallbacks and reconnect states are explicit
+  - [x] legacy entry surfaces still work
 - T002 tests:
-  - [ ] stored UI memory restores safely after reload
-  - [ ] missing/stale runtime cases render explanatory copy
+  - [x] stored UI memory restores safely after reload
+  - [x] missing/stale runtime cases render explanatory copy
 - T003 tests:
-  - [ ] no high-severity a11y/perf issues remain unnoticed
+  - [x] no high-severity a11y/perf issues remain unnoticed
 - T004 tests:
-  - [ ] docs and audit checklist match the shipped route behavior
+  - [x] docs and audit checklist match the shipped route behavior
+
+## Implementation Evidence
+
+- T001: `shipyard/tests/ui-route-state.test.ts`,
+  `shipyard/tests/ui-board-view-model.test.ts`,
+  `shipyard/tests/ui-dashboard-system-notice.test.ts`,
+  `shipyard/tests/ui-access.test.ts`, and
+  `shipyard/tests/ui-human-feedback-page.test.ts`
+- T002: `shipyard/ui/src/board-preferences.ts`,
+  `shipyard/ui/src/board-view-model.ts`,
+  `shipyard/ui/src/target-selection.ts`,
+  `shipyard/ui/src/App.tsx`, and
+  `shipyard/ui/src/views/BoardView.tsx`
+- T003: `shipyard/ui/src/HostedAccessGate.tsx`,
+  `shipyard/ui/src/HumanFeedbackPage.tsx`,
+  `shipyard/ui/src/dashboard-system-notice.ts`,
+  `shipyard/ui/src/views/KanbanView.tsx`,
+  `shipyard/ui/src/views/TaskCard.tsx`, and
+  `shipyard/ui/src/styles.css`
+- T004: `shipyard/docs/specs/phase-ui-integration/README.md`,
+  `shipyard/docs/specs/phase-ui-integration/user-audit-checklist.md`,
+  `shipyard/docs/specs/phase-ui-integration/uii-s06-cross-view-resilience-polish-and-release-gate/feature-spec.md`,
+  and `shipyard/ui/src/README.md`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Cross-view system states are explicit and trustworthy
-- [ ] Preview harness and legacy operator paths still work
-- [ ] Docs and audit artifacts are updated with final behavior
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Cross-view system states are explicit and trustworthy
+- [x] Preview harness and legacy operator paths still work
+- [x] Docs and audit artifacts are updated with final behavior

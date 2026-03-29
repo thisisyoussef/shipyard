@@ -122,6 +122,72 @@ function getUltimateTone(
   }
 }
 
+function resolveHumanFeedbackNotice(input: {
+  notice: HumanFeedbackNotice | null;
+  sessionState: SessionStateViewModel | null;
+  connectionState: WorkbenchConnectionState;
+}): HumanFeedbackNotice | null {
+  if (input.notice) {
+    return input.notice;
+  }
+
+  if (!input.sessionState?.sessionId) {
+    return {
+      tone: "warning",
+      title: "No active Shipyard session yet",
+      detail:
+        "Open the editor and start a product session before sending feedback from the dedicated ultimate-mode page.",
+    };
+  }
+
+  switch (input.connectionState) {
+    case "connecting":
+      return {
+        tone: "accent",
+        title: "Reconnecting to the browser runtime",
+        detail:
+          "You can review the last loop state while Shipyard reconnects. New feedback will unlock again as soon as the session is ready.",
+      };
+    case "disconnected":
+      return {
+        tone: "warning",
+        title: "Feedback is paused while Shipyard reconnects",
+        detail:
+          "This page is showing the last synced loop state. Wait for the browser runtime to reconnect before sending new feedback.",
+      };
+    case "error":
+      return {
+        tone: "danger",
+        title: "Feedback is unavailable after a connection error",
+        detail:
+          "Shipyard needs the browser runtime connection restored before this page can send another note.",
+      };
+    default:
+      return null;
+  }
+}
+
+function getActionStatusText(
+  sessionState: SessionStateViewModel | null,
+  connectionState: WorkbenchConnectionState,
+  agentStatus: string,
+): string {
+  if (!sessionState?.sessionId) {
+    return "Shipyard needs an active session before this page can send feedback.";
+  }
+
+  switch (connectionState) {
+    case "connecting":
+      return "Reconnecting to the browser runtime before sending feedback.";
+    case "disconnected":
+      return "Waiting for the browser runtime to reconnect before sending feedback.";
+    case "error":
+      return "Feedback is paused until Shipyard restores the runtime connection.";
+    default:
+      return agentStatus;
+  }
+}
+
 export function HumanFeedbackPage({
   sessionState,
   previewState,
@@ -143,8 +209,21 @@ export function HumanFeedbackPage({
   const recentTurns = turns.slice(0, 4);
   const previewLabel = getPreviewLabel(previewState);
   const connectionLabel = getConnectionLabel(connectionState);
-  const canSubmit = Boolean(sessionState?.sessionId) && !submitDisabled;
+  const effectiveNotice = resolveHumanFeedbackNotice({
+    notice,
+    sessionState,
+    connectionState,
+  });
+  const canSubmit =
+    Boolean(sessionState?.sessionId) &&
+    !submitDisabled &&
+    (connectionState === "ready" || connectionState === "agent-busy");
   const ultimatePhaseLabel = formatUltimatePhaseLabel(ultimateState.phase);
+  const actionStatusText = getActionStatusText(
+    sessionState,
+    connectionState,
+    agentStatus,
+  );
 
   return (
     <main className="human-feedback-page">
@@ -212,15 +291,15 @@ export function HumanFeedbackPage({
               )}
             />
 
-            {notice ? (
+            {effectiveNotice ? (
               <div
                 className="human-feedback-notice"
-                data-tone={notice.tone}
-                role={notice.tone === "danger" ? "alert" : "status"}
-                aria-live={notice.tone === "danger" ? "assertive" : "polite"}
+                data-tone={effectiveNotice.tone}
+                role={effectiveNotice.tone === "danger" ? "alert" : "status"}
+                aria-live={effectiveNotice.tone === "danger" ? "assertive" : "polite"}
               >
-                <Badge tone={notice.tone}>{notice.title}</Badge>
-                <p>{notice.detail}</p>
+                <Badge tone={effectiveNotice.tone}>{effectiveNotice.title}</Badge>
+                <p>{effectiveNotice.detail}</p>
               </div>
             ) : null}
 
@@ -249,7 +328,7 @@ export function HumanFeedbackPage({
                   id="human-feedback-status"
                   className="human-feedback-action-copy"
                 >
-                  {agentStatus}
+                  {actionStatusText}
                 </p>
                 <button
                   type="submit"

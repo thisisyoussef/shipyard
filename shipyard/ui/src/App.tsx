@@ -1,10 +1,21 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import {
+  createBoardViewModel,
+  resolveBoardScopeKey,
+} from "./board-view-model.js";
+import {
+  getBoardSelectedStory,
+  readBoardPreferences,
+  setBoardSelectedStory,
+  writeBoardPreferences,
+} from "./board-preferences.js";
 import { HostedAccessGate } from "./HostedAccessGate.js";
 import { HumanFeedbackPage } from "./HumanFeedbackPage.js";
 import {
   buildDashboardCatalog,
 } from "./dashboard-catalog.js";
+import { resolveDashboardSystemNotice } from "./dashboard-system-notice.js";
 import {
   createDashboardHeroLaunch,
   createDashboardManualLaunch,
@@ -36,6 +47,7 @@ import {
 import { useRouter } from "./use-router.js";
 import type { DashboardViewNotice } from "./views/DashboardView.js";
 import {
+  BoardView,
   DashboardView,
   EditorView,
 } from "./views/index.js";
@@ -83,6 +95,9 @@ export function App() {
   const shouldFollowCreatedTargetRef = useRef(false);
   const lastOpenedEditorProductRef = useRef<string | null>(null);
   const handledTargetSwitchCompletionRef = useRef<number | null>(null);
+  const [boardPreferences, setBoardPreferences] = useState(() =>
+    readBoardPreferences(),
+  );
   const [dashboardPreferences, setDashboardPreferences] = useState(() =>
     readDashboardPreferences(),
   );
@@ -118,12 +133,35 @@ export function App() {
     editorRouteState,
     hasLoadedWorkbenchState,
   );
+  const boardScopeKey = resolveBoardScopeKey({
+    sessionState: controller.viewState.sessionState,
+    targetManager: controller.viewState.targetManager,
+    projectBoard: controller.viewState.projectBoard,
+  });
+  const boardViewModel = createBoardViewModel({
+    taskBoard: controller.viewState.taskBoard,
+    connectionState: controller.viewState.connectionState,
+    sessionState: controller.viewState.sessionState,
+    targetManager: controller.viewState.targetManager,
+    projectBoard: controller.viewState.projectBoard,
+    selectedStoryId: boardScopeKey
+      ? getBoardSelectedStory(boardPreferences, boardScopeKey)
+      : "all",
+  });
   const dashboardCatalog = buildDashboardCatalog({
     targetManager: controller.viewState.targetManager,
     projectBoard: controller.viewState.projectBoard,
     sessionState: controller.viewState.sessionState,
     preferences: dashboardPreferences,
   });
+  const effectiveDashboardNotice =
+    dashboardNotice ??
+    (pendingDashboardLaunch === null
+      ? resolveDashboardSystemNotice({
+        connectionState: controller.viewState.connectionState,
+        hasLoadedCatalog: hasLoadedWorkbenchState,
+      })
+      : null);
 
   useEffect(() => {
     const intentKey = getEditorIntentKey(editorRouteState);
@@ -180,6 +218,10 @@ export function App() {
     shouldFollowCreatedTargetRef.current = false;
     navigate(preferredEditorRoute);
   }, [appRoute, navigate, preferredEditorRoute]);
+
+  useEffect(() => {
+    writeBoardPreferences(boardPreferences);
+  }, [boardPreferences]);
 
   useEffect(() => {
     writeDashboardPreferences(dashboardPreferences);
@@ -360,6 +402,20 @@ export function App() {
     });
   }
 
+  function handleBoardStoryChange(storyId: string): void {
+    if (!boardViewModel.scopeKey) {
+      return;
+    }
+
+    setBoardPreferences((currentPreferences) =>
+      setBoardSelectedStory(
+        currentPreferences,
+        boardViewModel.scopeKey!,
+        storyId,
+      )
+    );
+  }
+
   function renderEditorContent(): ReactNode {
     if (loadingEditorRoute) {
       return (
@@ -512,7 +568,7 @@ export function App() {
       <NavBar
         currentView={appRoute.view}
         editorRoute={navEditorRoute}
-        boardDisabled={true}
+        boardDisabled={false}
         onNavigate={navigate}
         ultimateState={controller.viewState.ultimateState}
         ultimateDisabled={
@@ -538,7 +594,7 @@ export function App() {
               activeTab={dashboardCatalog.activeTab}
               cards={dashboardCatalog.visibleCards}
               emptyState={dashboardCatalog.emptyState}
-              notice={dashboardNotice}
+              notice={effectiveDashboardNotice}
               onHeroPromptChange={(value) => {
                 setDashboardHeroPrompt(value);
                 if (pendingDashboardLaunch === null && dashboardNotice) {
@@ -574,29 +630,11 @@ export function App() {
         {appRoute.view === "editor" ? renderEditorContent() : null}
 
         {appRoute.view === "board" ? (
-          <RoutePlaceholderView
-            kicker="Board"
-            title="Kanban is parked for now"
-            description="The shared route shell is live, but the production board projection is intentionally waiting for its dedicated backend story."
-            action={
-              preferredEditorRoute ? (
-                <button
-                  type="button"
-                  className="target-inline-action"
-                  onClick={() => navigate(preferredEditorRoute)}
-                >
-                  Return to editor
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="target-inline-action"
-                  onClick={() => navigate({ view: "dashboard" })}
-                >
-                  Return to dashboard
-                </button>
-              )
-            }
+          <BoardView
+            board={boardViewModel}
+            preferredEditorRoute={preferredEditorRoute}
+            onNavigate={navigate}
+            onSelectStory={handleBoardStoryChange}
           />
         ) : null}
       </main>

@@ -33,16 +33,16 @@ validation, and docs sync.
   new experience end to end.
 
 ## Acceptance Criteria
-- [ ] AC-1: Dashboard, editor, board, hosted-access, and human-feedback routes
+- [x] AC-1: Dashboard, editor, board, hosted-access, and human-feedback routes
   all have explicit loading, empty, error, reconnect, and missing-target states
   where applicable.
-- [ ] AC-2: Local UI memory restores active product, dashboard preferences,
+- [x] AC-2: Local UI memory restores active product, dashboard preferences,
   editor layout/tab state, and board filters after reload when possible.
-- [ ] AC-3: `/human-feedback`, hosted access gating, preview harness, and any
+- [x] AC-3: `/human-feedback`, hosted access gating, preview harness, and any
   legacy bookmarks used by operators still work after the pack lands.
-- [ ] AC-4: The pack’s docs, spec index, and user audit checklist are updated
+- [x] AC-4: The pack’s docs, spec index, and user audit checklist are updated
   to reflect the shipped experience and any intentional deferred work.
-- [ ] AC-5: Build, typecheck, focused tests, and a final `git diff --check`
+- [x] AC-5: Build, typecheck, focused tests, and a final `git diff --check`
   pass; high-severity UX/a11y/perf issues are fixed or explicitly documented.
 
 ## Edge Cases
@@ -80,3 +80,52 @@ validation, and docs sync.
 ## Done Definition
 - The integrated multi-view Shipyard UI is resilient, documented, auditable,
   and ready for implementation validation instead of feeling like a partial demo.
+
+## Implementation Evidence
+
+- AC-1 landed in `shipyard/ui/src/App.tsx`,
+  `shipyard/ui/src/views/BoardView.tsx`,
+  `shipyard/ui/src/board-view-model.ts`,
+  `shipyard/ui/src/dashboard-system-notice.ts`,
+  `shipyard/ui/src/HostedAccessGate.tsx`,
+  `shipyard/ui/src/HumanFeedbackPage.tsx`,
+  `shipyard/ui/src/views/KanbanView.tsx`, and the focused coverage in
+  `shipyard/tests/ui-board-view-model.test.ts`,
+  `shipyard/tests/ui-dashboard-system-notice.test.ts`,
+  `shipyard/tests/ui-access.test.ts`, and
+  `shipyard/tests/ui-human-feedback-page.test.ts`. Representative snippet:
+  ```ts
+  if (board.status === "loading") {
+    return (
+      <RoutePlaceholderView
+        kicker="Board"
+        title={board.emptyState?.title ?? "Loading board"}
+        description={board.emptyState?.detail ?? "..."}
+      />
+    );
+  }
+  ```
+- AC-2 landed in `shipyard/ui/src/board-preferences.ts`,
+  `shipyard/ui/src/board-view-model.ts`,
+  `shipyard/ui/src/target-selection.ts`,
+  `shipyard/ui/src/App.tsx`,
+  `shipyard/ui/src/dashboard-preferences.ts`,
+  `shipyard/ui/src/editor-preferences.ts`, and
+  `shipyard/tests/ui-board-preferences.test.ts`. The board now persists its
+  selected story filter per target path, while editor and dashboard preference
+  restore behavior stays intact.
+- AC-3 landed in `shipyard/ui/src/views/KanbanView.tsx`,
+  `shipyard/ui/src/views/BoardView.tsx`,
+  `shipyard/ui/src/preview-harness.tsx`,
+  `shipyard/ui/src/HostedAccessGate.tsx`, and
+  `shipyard/ui/src/HumanFeedbackPage.tsx`. The preview harness still renders
+  mock board data because `KanbanView` keeps a prop-optional mock fallback,
+  while the production app now passes live board state through `BoardView`.
+- AC-4 landed in `shipyard/docs/specs/phase-ui-integration/README.md`,
+  `shipyard/docs/specs/phase-ui-integration/user-audit-checklist.md`,
+  `shipyard/docs/specs/phase-ui-integration/uii-s06-cross-view-resilience-polish-and-release-gate/task-breakdown.md`,
+  and `shipyard/ui/src/README.md`.
+- AC-5 is covered by the required validation matrix for this story:
+  `pnpm --dir shipyard test`, `pnpm --dir shipyard typecheck`,
+  `pnpm --dir shipyard build`, and `git diff --check`, plus the preview-harness
+  smoke verification at `/preview.html`.
