@@ -37,6 +37,11 @@ without becoming a bag of one-off agent loops.
 - One supervisory overlay:
   - `ultimate ...` loops that alternate between the human-simulator and the
     shared standard turn executor
+- One long-run operations layer:
+  - mission-control recovery for stale-heartbeat relaunches
+  - release archiving on preview refresh so live targets can be rolled back
+  - optional scheduled deploy sync that consumes archived target state without
+    changing the core turn graph
 - Current shipped model default:
   - Anthropic via `claude-opus-4-6`
 - Current public deploy path:
@@ -386,6 +391,24 @@ The target-manager path has matured beyond simple directory selection.
   from labeled output or deployment metadata so the browser workbench can show
   a real public link instead of a login-gated candidate.
 
+### Release archiving and rollback
+
+Long-running generated targets need a safer rollback story than "hope the target
+repo already has clean git history."
+
+[`src/tools/target-manager/release-archive.ts`](./src/tools/target-manager/release-archive.ts)
+adds that missing layer:
+
+- preview refreshes can enqueue a serialized archive job
+- the job mirrors the live target into a sidecar git repo under the targets
+  directory instead of mutating the target repo itself
+- each saved release writes a description, tag metadata, an index entry, a git
+  commit, and an annotated git tag
+
+This is intentionally outside the normal model tool surface. The model keeps
+working against the live target; the archive layer preserves recoverable target
+states in the background.
+
 ## Helper Roles And Model Routing
 
 Helper roles are isolated runtimes, not long-lived side conversations.
@@ -405,6 +428,24 @@ Rules that keep this sane:
 - each helper has a narrow tool allowlist
 - communication is artifact-based, not "copy the whole conversation over there"
 - the coordinator is the only role allowed to mutate the target repository
+
+### Multi-actor design beyond helper agents
+
+Shipyard now has more than "one writer plus a few read-only helpers." The
+runtime is a coordinated actor system with distinct boundaries:
+
+| Actor | Main code | Responsibility | Writes to target? |
+| --- | --- | --- | --- |
+| Coordinator | [`src/agents/coordinator.ts`](./src/agents/coordinator.ts) | choose route, merge evidence, own all target writes | yes |
+| Read-only helpers | [`src/agents/*`](./src/agents) | exploration, planning, verification, browser inspection, continuation feedback | no |
+| UI runtime | [`src/ui/server.ts`](./src/ui/server.ts) | operator transport, session bootstrap, preview/deploy publishing, archive-job enqueueing | no direct repo edits |
+| Mission control | [`src/mission-control/*`](./src/mission-control) | stale-heartbeat recovery, env hydration, session relaunch policy, handoff restore | no direct repo edits |
+| Preview supervisor | [`src/preview/*`](./src/preview) | loopback preview lifecycle and readiness | no |
+| Release archiver | [`src/tools/target-manager/release-archive.ts`](./src/tools/target-manager/release-archive.ts) | sidecar git history for refreshed targets | no live-target writes |
+
+The important design point is that these actors communicate through typed state,
+session files, logs, traces, handoffs, and archive metadata rather than through
+shared hidden chat memory.
 
 ### Model routing
 
@@ -561,6 +602,51 @@ The runtime records more than raw text:
 This makes local versus hosted behavior, planner-backed routing, and
 continuation-driven turns visible without digging through raw prompts.
 
+## Long-Run Operations And Recovery
+
+The inner agent loop is only half the story now. Shipyard also has an explicit
+outer recovery layer for long-running browser sessions.
+
+[`src/mission-control/config.ts`](./src/mission-control/config.ts),
+[`src/mission-control/env.ts`](./src/mission-control/env.ts),
+[`src/mission-control/policy.ts`](./src/mission-control/policy.ts),
+[`src/mission-control/recovery.ts`](./src/mission-control/recovery.ts), and
+[`src/mission-control/runtime-env.ts`](./src/mission-control/runtime-env.ts)
+define that layer.
+
+Mission control is not a second planner and not a second coordinator. Its job
+is operational:
+
+- detect stale or missing UI-runtime heartbeats
+- restore saved session metadata and the latest handoff path
+- reload required runtime environment for routed model providers
+- relaunch the browser runtime in a way that keeps the same target-local state
+  tree intact
+- preserve recovery evidence so a long autonomous run can be diagnosed after the
+  fact
+
+This separation matters. The inner graph decides what to build. Mission control
+decides how the session survives process failure, dead previews, or stale
+runtime health.
+
+### What lives inside Shipyard versus outside it
+
+Inside the repo:
+
+- mission-control policies and recovery logic
+- preview lifecycle management
+- target release archiving
+- session, trace, and handoff persistence
+
+Typically outside the repo but intentionally supported:
+
+- launchd or other host supervisors
+- standalone live-console or health sidecars
+- scheduled deploy-sync scripts that publish the latest archived target state
+
+That boundary keeps the core runtime legible while still making true long-run
+operation possible.
+
 ## Browser Workbench And Hosted Contract
 
 The browser runtime is not a toy shell around the CLI. It is a first-class
@@ -642,6 +728,109 @@ Important details:
 
 This means `ultimate` amplifies the existing architecture instead of bypassing
 it.
+
+## Ship Rebuild Submission Appendix
+
+This appendix is the durable bridge between Shipyard's implementation contract
+and the final Ship rebuild submission material.
+
+### Agent Architecture (MVP)
+
+The rebuild used a layered architecture:
+
+1. browser workbench operator surface
+2. shared turn wrapper and graph runtime
+3. coordinator-owned write lane with read-only helper roles
+4. target-local session, checkpoint, trace, and handoff state
+5. outer mission-control and archive layers for long-run recovery
+
+Normal entry condition:
+
+- operator submits a turn or starts `ultimate`
+
+Normal exit condition:
+
+- turn completes with response metadata, optional verification evidence, and
+  optional continuation handoff
+
+Error branches:
+
+- verification failure restores checkpoint and can block files
+- acting-loop budget can emit a durable handoff instead of overrunning context
+- stale-heartbeat or dead-runtime conditions are handled by mission control
+  rather than by the model loop itself
+
+### File Editing Strategy (MVP)
+
+Shipyard's editing strategy is still anchor-based surgical mutation:
+
+1. `read_file` captures live contents and file hash
+2. `edit_block` re-reads the file before writing
+3. the old string must match exactly once
+4. large ambiguous rewrites are rejected
+5. checkpoints are created before mutation
+6. failed verification can restore the checkpoint automatically
+
+This is intentionally conservative. It trades some velocity for safer long-run
+autonomy.
+
+### Multi-Agent Design (MVP)
+
+The rebuild's multi-agent design had two layers:
+
+- inner helper roles:
+  coordinator, explorer, planner, verifier, browser-evaluator,
+  human-simulator
+- outer runtime actors:
+  UI runtime, mission control, preview supervisor, and release archiver
+
+Communication is artifact-based:
+
+- helper roles return typed reports
+- the coordinator merges those reports into one write-authoritative turn
+- mission control and the UI runtime coordinate through session state, logs,
+  heartbeats, and handoffs instead of hidden shared memory
+
+### Trace Links (MVP)
+
+- Trace 1 (long-running checkpoint-backed coding path):
+  `https://smith.langchain.com/o/4610debb-3062-47a4-a18d-faee6ddaa4c3/projects/p/debcf987-99bc-4986-b3e1-5af61ee1ff78/r/019d372e-0341-7000-8000-03fd59eebdff?trace_id=019d372e-0341-7000-8000-03fd59eebdff&start_time=2026-03-29T01:20:55.617001`
+- Trace 2 (error path, bounded-review failure):
+  `https://smith.langchain.com/o/4610debb-3062-47a4-a18d-faee6ddaa4c3/projects/p/debcf987-99bc-4986-b3e1-5af61ee1ff78/r/019d366f-882a-7000-8000-009dbafb7056?trace_id=019d366f-882a-7000-8000-009dbafb7056&start_time=2026-03-28T21:52:52.266001`
+
+### Architecture Decisions (Final Submission)
+
+The most important final decisions were:
+
+- keep the coordinator as the only writer
+- add mission control instead of burying recovery inside the prompt
+- archive refreshed targets outside the live target repo
+- keep preview and deploy as separate subsystems
+- accept that long autonomy needed operational actors beyond prompt-level
+  subagents
+
+See the deeper analysis in
+[`docs/submissions/ship-rebuild/comparative-analysis.md`](./docs/submissions/ship-rebuild/comparative-analysis.md).
+
+### Ship Rebuild Log (Final Submission)
+
+See
+[`docs/submissions/ship-rebuild/ship-rebuild-log.md`](./docs/submissions/ship-rebuild/ship-rebuild-log.md).
+
+### Comparative Analysis (Final Submission)
+
+See
+[`docs/submissions/ship-rebuild/comparative-analysis.md`](./docs/submissions/ship-rebuild/comparative-analysis.md).
+
+### AI Development Log (Required)
+
+See
+[`docs/submissions/ship-rebuild/ai-development-log.md`](./docs/submissions/ship-rebuild/ai-development-log.md).
+
+### Cost Analysis (Final Submission)
+
+See
+[`docs/submissions/ship-rebuild/ai-cost-analysis.md`](./docs/submissions/ship-rebuild/ai-cost-analysis.md).
 
 ## Extension Rules
 

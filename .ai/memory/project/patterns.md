@@ -107,6 +107,13 @@ Capture repeatable patterns that match how this workspace actually works.
   Shipyard's shared runtime. Prefer stable subsystem boundaries, turn routing,
   artifact layout, and extension rules over historical submission-template
   framing.
+- Ship rebuild submission material now lives under
+  `shipyard/docs/submissions/ship-rebuild/` and should be linked from the main
+  operator entry points instead of living as ad hoc notes or external-only
+  documents.
+- Comparative write-ups about Shipyard behavior should be grounded in local
+  artifacts such as session files, JSONL traces, watchdog/deploy logs, and
+  release-archive metadata whenever those artifacts exist.
 
 ## UI Workflow Pattern
 
