@@ -98,7 +98,7 @@ function createHealthUrl(serviceUrl: string | null): string | null {
   return new URL("/api/health", serviceUrl).toString();
 }
 
-function isRailwayHostedEnvironment(env: NodeJS.ProcessEnv): boolean {
+export function isRailwayHostedEnvironment(env: NodeJS.ProcessEnv): boolean {
   return Boolean(
     trimToNull(env.RAILWAY_VOLUME_MOUNT_PATH) ??
       trimToNull(env.RAILWAY_PUBLIC_DOMAIN) ??

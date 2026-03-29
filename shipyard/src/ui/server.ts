@@ -72,7 +72,10 @@ import {
   createHostedWorkbenchState,
   type PersistedHostedRuntimeState,
 } from "../hosting/contracts.js";
-import { syncHostedRuntimeState } from "../hosting/runtime.js";
+import {
+  isRailwayHostedEnvironment,
+  syncHostedRuntimeState,
+} from "../hosting/runtime.js";
 import { syncSessionOrchestrationState } from "../orchestration/runtime.js";
 import { createPreviewSupervisor } from "../preview/supervisor.js";
 import type { PreviewSupervisor } from "../preview/supervisor.js";
@@ -945,6 +948,10 @@ export function resolveUiHost(hostOverride?: string): string {
 
   if (envHost) {
     return envHost;
+  }
+
+  if (isRailwayHostedEnvironment(process.env)) {
+    return "0.0.0.0";
   }
 
   return "127.0.0.1";
