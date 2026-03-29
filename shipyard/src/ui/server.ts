@@ -575,8 +575,8 @@ function createFallbackUiHtml(sessionState: SessionState): string {
   "instruction": { "text": "string", "injectedContext": ["string"] },
   "cancel": { "requestId": "string?" },
   "status": {},
-  "target:switch_request": { "targetPath": "string" },
-  "target:create_request": { "name": "string", "description": "string", "scaffoldType": "ts-pnpm-workspace|empty|react-ts|express-ts|python|go?" },
+  "target:switch_request": { "targetPath": "string", "requestId": "string?" },
+  "target:create_request": { "name": "string", "description": "string", "scaffoldType": "ts-pnpm-workspace|empty|react-ts|express-ts|python|go?", "requestId": "string?" },
   "target:enrich_request": { "userDescription": "string?" },
   "deploy:request": { "platform": "vercel" }
 }</pre>
@@ -1448,6 +1448,7 @@ export async function startUiRuntimeServer(
     success: boolean,
     message: string,
     nextTargetManagerState: TargetManagerState,
+    requestId?: string,
   ): Promise<void> => {
     await emitProjectMessage(project, {
       type: "target:switch_complete",
@@ -1455,6 +1456,7 @@ export async function startUiRuntimeServer(
       message,
       state: nextTargetManagerState,
       projectId: project.projectId,
+      requestId,
     });
     await saveSessionState(project.sessionState);
   };
@@ -2025,6 +2027,7 @@ export async function startUiRuntimeServer(
       enrichmentState?: TargetEnrichmentState;
       autoEnrichReason?: string;
       creationDescription?: string;
+      requestId?: string;
     } = {},
   ): Promise<void> => {
     activeProjectId = project.projectId;
@@ -2042,6 +2045,7 @@ export async function startUiRuntimeServer(
         true,
         options.successMessage,
         nextTargetManagerState,
+        options.requestId,
       );
     }
 
@@ -2665,6 +2669,7 @@ export async function startUiRuntimeServer(
                 await activateProject(project, {
                   successMessage: `Switched to ${project.targetManagerState.currentTarget.name}.`,
                   autoEnrichReason: `browser:switch:${message.targetPath}`,
+                  requestId: message.requestId,
                 });
               } catch (error) {
                 const errorMessage = error instanceof Error
@@ -2677,6 +2682,7 @@ export async function startUiRuntimeServer(
                   false,
                   errorMessage,
                   nextTargetManagerState,
+                  message.requestId,
                 );
               }
               break;
@@ -2699,6 +2705,7 @@ export async function startUiRuntimeServer(
                     `Created and selected ${project.targetManagerState.currentTarget.name}.`,
                   autoEnrichReason: `browser:create:${createdTarget.path}`,
                   creationDescription: message.description,
+                  requestId: message.requestId,
                 });
               } catch (error) {
                 const errorMessage = error instanceof Error
@@ -2711,6 +2718,7 @@ export async function startUiRuntimeServer(
                   false,
                   errorMessage,
                   nextTargetManagerState,
+                  message.requestId,
                 );
               }
               break;

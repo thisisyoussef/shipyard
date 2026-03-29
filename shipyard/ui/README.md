@@ -5,8 +5,11 @@
 ## Key Files
 
 - `src/main.tsx`: frontend bootstrap
-- `src/App.tsx`: hosted-access bootstrap, upload handling, socket lifecycle,
-  transport state, and workbench state orchestration
+- `src/App.tsx`: route shell that mounts the dashboard, editor, parked board,
+  and human-feedback surfaces on top of the shared runtime controller
+- `src/dashboard-catalog.ts`, `src/dashboard-preferences.ts`, and
+  `src/dashboard-launch.ts`: live dashboard catalog shaping, browser-local
+  recent/starred memory, and request-correlated launch helpers
 - `src/ShipyardWorkbench.tsx`: current split-pane shell composition
 - `src/TargetHeader.tsx`, `src/TargetSwitcher.tsx`,
   `src/TargetCreationDialog.tsx`, `src/EnrichmentIndicator.tsx`,
@@ -22,6 +25,13 @@
 
 ## Workbench Highlights
 
+- The dashboard is now a truthful entry surface backed by live target/project
+  state instead of mock cards.
+- Hero prompt launches correlate `target:create_request` to
+  `target:switch_complete` via `requestId` so the editor opens the intended
+  product and preserves the draft brief.
+- Recent and starred dashboard tabs persist in browser storage and are derived
+  from actual product opens plus live project activity.
 - The header strip surfaces workspace identity, trace-copy, and refresh
   controls.
 - The target header shows the active target, enrichment status, deploy
@@ -49,6 +59,7 @@ See [`src/README.md`](./src/README.md) for the source-level guide.
 flowchart LR
   Vite["Vite root"]
   App["App.tsx"]
+  Dashboard["dashboard-* helpers"]
   Workbench["ShipyardWorkbench.tsx"]
   Panels["panels/*"]
   TargetUi["TargetHeader / switcher / dialogs / gate"]
@@ -59,6 +70,7 @@ flowchart LR
   Backend["../src/ui/server.ts"]
 
   Vite --> App
+  App --> Dashboard
   App --> Socket
   App --> ViewModels
   App --> Workbench

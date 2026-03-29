@@ -783,6 +783,7 @@ describe("ui runtime contract", () => {
           JSON.stringify({
             type: "target:switch_request",
             targetPath: betaTargetDirectory,
+            requestId: "switch-request-1",
           }),
         );
 
@@ -820,6 +821,7 @@ describe("ui runtime contract", () => {
 
         expect(switchComplete).toMatchObject({
           type: "target:switch_complete",
+          requestId: "switch-request-1",
           success: true,
           state: {
             currentTarget: {
@@ -1302,6 +1304,7 @@ describe("ui runtime contract", () => {
             name: "gamma app",
             description: "Created from the browser workbench.",
             scaffoldType: "react-ts",
+            requestId: "create-request-1",
           }),
         );
 
@@ -1339,6 +1342,7 @@ describe("ui runtime contract", () => {
 
         expect(switchComplete).toMatchObject({
           type: "target:switch_complete",
+          requestId: "create-request-1",
           success: true,
           state: {
             currentTarget: {

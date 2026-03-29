@@ -5,13 +5,23 @@
  * Open via /preview.html on the Vite dev server.
  */
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { NavBar } from "./shell/index.js";
 import { UltimateBadge } from "./shell/index.js";
 import { DashboardView, EditorView, KanbanView } from "./views/index.js";
+import { buildDashboardCatalog } from "./dashboard-catalog.js";
+import {
+  createInitialDashboardPreferences,
+  setDashboardActiveTab,
+  toggleDashboardProductStar,
+} from "./dashboard-preferences.js";
 import { useRouter } from "./use-router.js";
 import type { Route } from "./router.js";
-import type { TargetManagerViewModel } from "./view-models.js";
+import type {
+  ProjectBoardViewModel,
+  SessionStateViewModel,
+  TargetManagerViewModel,
+} from "./view-models.js";
 
 // ── Mock Data ──────────────────────────────────
 
@@ -69,10 +79,81 @@ const MOCK_TARGET_MANAGER: TargetManagerViewModel = {
   enrichmentStatus: { status: "complete", message: "Ready" },
 };
 
+const MOCK_PROJECT_BOARD: ProjectBoardViewModel = {
+  activeProjectId: "project-craft-vision",
+  openProjects: [
+    {
+      projectId: "project-craft-vision",
+      targetPath: "/projects/craft-vision",
+      targetName: "Craft Your Vision",
+      description: "AI-powered design tool",
+      activePhase: "code",
+      status: "ready",
+      agentStatus: "Ready",
+      hasProfile: true,
+      lastActiveAt: "2026-03-28T12:10:00.000Z",
+      turnCount: 11,
+    },
+    {
+      projectId: "project-papyr-connect",
+      targetPath: "/projects/papyr-connect",
+      targetName: "Papyr Connect",
+      description: "Business networking platform",
+      activePhase: "code",
+      status: "agent-busy",
+      agentStatus: "Background work in progress",
+      hasProfile: true,
+      lastActiveAt: "2026-03-28T12:06:00.000Z",
+      turnCount: 8,
+    },
+  ],
+};
+
+const MOCK_SESSION_STATE: SessionStateViewModel = {
+  sessionId: "preview-session",
+  targetLabel: "Craft Your Vision",
+  targetDirectory: "/projects/craft-vision",
+  activePhase: "code",
+  workspaceDirectory: "/projects",
+  turnCount: 11,
+  startedAt: "2026-03-28T11:00:00.000Z",
+  lastActiveAt: "2026-03-28T12:10:00.000Z",
+  discoverySummary: "React app ready for iteration",
+  discovery: {
+    isGreenfield: false,
+    language: "TypeScript",
+    framework: "React",
+    packageManager: "pnpm",
+    scripts: {
+      dev: "vite",
+    },
+    hasReadme: true,
+    hasAgentsMd: true,
+    topLevelFiles: [],
+    topLevelDirectories: [],
+    projectName: "Craft Your Vision",
+    previewCapability: {
+      status: "available",
+      kind: "dev-server",
+      runner: "pnpm",
+      scriptName: "dev",
+      command: "pnpm dev",
+      reason: "Ready",
+      autoRefresh: "native-hmr",
+    },
+  },
+  projectRulesLoaded: true,
+  tracePath: "/tmp/preview.ndjson",
+};
+
 // ── Component ──────────────────────────────────
 
 export function PreviewHarness() {
   const { route, navigate } = useRouter();
+  const [heroPrompt, setHeroPrompt] = useState("");
+  const [preferences, setPreferences] = useState(() =>
+    createInitialDashboardPreferences(),
+  );
   const editorRoute =
     route.view === "editor"
       ? route
@@ -89,13 +170,9 @@ export function PreviewHarness() {
   );
 
   const handleCreateProduct = useCallback(
-    (input: {
-      name: string;
-      description: string;
-      scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
-    }) => {
+    () => {
       // eslint-disable-next-line no-console
-      console.log("[PreviewHarness] createProduct", input);
+      console.log("[PreviewHarness] createProduct");
     },
     [],
   );
@@ -104,6 +181,13 @@ export function PreviewHarness() {
     // eslint-disable-next-line no-console
     console.log("[PreviewHarness] heroPrompt", prompt);
   }, []);
+
+  const dashboardCatalog = buildDashboardCatalog({
+    targetManager: MOCK_TARGET_MANAGER,
+    projectBoard: MOCK_PROJECT_BOARD,
+    sessionState: MOCK_SESSION_STATE,
+    preferences,
+  });
 
   const handleUltimateClick = useCallback(() => {
     // eslint-disable-next-line no-console
@@ -135,10 +219,28 @@ export function PreviewHarness() {
     default:
       view = (
         <DashboardView
-          targetManager={MOCK_TARGET_MANAGER}
-          onNavigate={handleNavigate}
-          onCreateProduct={handleCreateProduct}
+          heroPrompt={heroPrompt}
+          heroBusy={false}
+          activeTab={dashboardCatalog.activeTab}
+          cards={dashboardCatalog.visibleCards}
+          emptyState={dashboardCatalog.emptyState}
+          notice={null}
+          onHeroPromptChange={setHeroPrompt}
           onSubmitHeroPrompt={handleSubmitHeroPrompt}
+          onSelectTab={(tab) =>
+            setPreferences((currentPreferences) =>
+              setDashboardActiveTab(currentPreferences, tab)
+            )}
+          onOpenProduct={(productId) =>
+            handleNavigate({
+              view: "editor",
+              productId,
+            })}
+          onToggleStar={(productId) =>
+            setPreferences((currentPreferences) =>
+              toggleDashboardProductStar(currentPreferences, productId)
+            )}
+          onCreateProduct={handleCreateProduct}
         />
       );
       break;

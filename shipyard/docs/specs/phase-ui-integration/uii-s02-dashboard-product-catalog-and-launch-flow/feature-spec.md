@@ -32,16 +32,16 @@ untrustworthy. Shipyard needs a live product catalog plus a clean bridge from
 - As a returning user, I want recent and starred products to survive reloads.
 
 ## Acceptance Criteria
-- [ ] AC-1: Dashboard cards are derived from live `targetManager`,
+- [x] AC-1: Dashboard cards are derived from live `targetManager`,
   `projectBoard`, and current-session state rather than mock data.
-- [ ] AC-2: Hero prompt submission uses a deterministic create/launch flow that
+- [x] AC-2: Hero prompt submission uses a deterministic create/launch flow that
   lands in the editor with the launch intent preserved as a draft or queued
   handoff, without relying on brittle timing.
-- [ ] AC-3: Opening a dashboard card resolves the correct active project or
+- [x] AC-3: Opening a dashboard card resolves the correct active project or
   target before the editor route renders live content.
-- [ ] AC-4: Recent and starred tabs work with truthful data and survive reloads
+- [x] AC-4: Recent and starred tabs work with truthful data and survive reloads
   through an explicit preference layer.
-- [ ] AC-5: Missing preview/status metadata degrades gracefully with placeholder
+- [x] AC-5: Missing preview/status metadata degrades gracefully with placeholder
   artwork and explanatory copy rather than silent blanks.
 
 ## Edge Cases
@@ -79,3 +79,44 @@ untrustworthy. Shipyard needs a live product catalog plus a clean bridge from
 ## Done Definition
 - The dashboard becomes a truthful entry surface for Shipyard with a clean,
   reload-safe path into the editor.
+
+## Implementation Evidence
+
+- `shipyard/ui/src/dashboard-catalog.ts`: projects live target, project, and
+  session truth into `DashboardCardViewModel[]`, including graceful placeholder
+  copy and tab-specific empty states.
+
+  ```ts
+  const visibleCards = options.preferences.activeTab === "recent"
+    ? cards.filter((card) => card.lastActivity !== null)
+    : options.preferences.activeTab === "starred"
+      ? cards.filter((card) => card.starred)
+      : cards;
+  ```
+
+- `shipyard/ui/src/App.tsx`: the dashboard route now uses explicit
+  `DashboardLaunchIntent` state plus `requestId`-matched completions to open
+  the correct editor target and preserve the hero prompt as an instruction
+  draft.
+
+  ```tsx
+  if (pendingDashboardLaunch.promptDraft) {
+    controller.onInstructionChange(pendingDashboardLaunch.promptDraft);
+  }
+
+  navigate({
+    view: "editor",
+    productId: completion.state.currentTarget.path,
+  });
+  ```
+
+- `shipyard/src/ui/contracts.ts` and `shipyard/src/ui/server.ts`: create/switch
+  websocket messages now accept optional `requestId` values and echo them back
+  on `target:switch_complete`.
+
+  ```ts
+  export const targetCreateRequestMessageSchema = z.object({
+    type: z.literal("target:create_request"),
+    requestId: z.string().trim().min(1).optional(),
+  });
+  ```

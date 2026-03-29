@@ -318,6 +318,7 @@ export const statusMessageSchema = z.object({
 export const targetSwitchRequestMessageSchema = z.object({
   type: z.literal("target:switch_request"),
   targetPath: nonEmptyTextSchema,
+  requestId: z.string().trim().min(1).optional(),
 });
 
 export const targetCreateRequestMessageSchema = z.object({
@@ -325,6 +326,7 @@ export const targetCreateRequestMessageSchema = z.object({
   name: nonEmptyTextSchema,
   description: nonEmptyTextSchema,
   scaffoldType: scaffoldTypeSchema.optional(),
+  requestId: z.string().trim().min(1).optional(),
 });
 
 export const projectActivateRequestMessageSchema = z.object({
@@ -454,6 +456,7 @@ export const targetSwitchCompleteMessageSchema = z.object({
   message: z.string().nullable(),
   state: targetManagerStateSchema,
   projectId: z.string().nullable().optional(),
+  requestId: z.string().trim().min(1).optional(),
 });
 
 export const targetEnrichmentProgressMessageSchema = z.object({
