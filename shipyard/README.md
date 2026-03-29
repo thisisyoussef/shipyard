@@ -260,10 +260,11 @@ target-manager flow:
 - if Railway is connected to the full repo, set the service `Root Directory`
   to `/shipyard`
 - point Railway config-as-code at `/shipyard/railway.json`
-- let Railway run the checked-in build command from that app root:
-  `pnpm install --frozen-lockfile && pnpm build`
-- run Shipyard in browser mode from that same app root:
-  `pnpm start -- --ui`
+- let Railway build from the checked-in `/shipyard/Dockerfile`, which installs
+  dependencies, compiles `dist/`, prunes to production dependencies, and keeps
+  the final image limited to runtime assets
+- run Shipyard in browser mode from that same app root with the compiled
+  entrypoint: `node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui`
 - set `SHIPYARD_TARGETS_DIR=/app/workspace`
 - prefer `SHIPYARD_UI_HOST=0.0.0.0`; when Railway-hosted env signals are
   present, Shipyard now also falls back to `0.0.0.0` automatically if that

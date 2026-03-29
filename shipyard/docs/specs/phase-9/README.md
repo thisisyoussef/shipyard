@@ -187,12 +187,14 @@ if (envTargetsDirectory) {
 }
 ```
 
-- Railway now runs the nested app from its own root instead of hopping one
-  directory too deep:
+- Railway now pins hosted deploys to the checked-in Dockerfile so the final
+  runtime image only carries compiled output, built-in skills, and production
+  dependencies:
 
 ```json
-"buildCommand": "pnpm install --frozen-lockfile && pnpm build",
-"startCommand": "pnpm start -- --ui"
+"builder": "DOCKERFILE",
+"buildCommand": null,
+"startCommand": "node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui"
 ```
 
 - Repo-driven pushes to `main` can now redeploy the same hosted service without
