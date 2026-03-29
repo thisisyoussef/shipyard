@@ -89,7 +89,8 @@ describe("railway config", () => {
     expect(workflow).toContain("RAILWAY_IMAGE_REF: ${{ steps.ghcr.outputs.image_ref }}");
     expect(workflow).toContain("ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}");
     expect(workflow).toContain("Missing ANTHROPIC_API_KEY GitHub secret");
-    expect(workflow).toContain("railway link \\");
+    expect(workflow).toContain("RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}");
+    expect(workflow).toContain("railway project link \\");
     expect(workflow).toContain("railway variable set ANTHROPIC_API_KEY --stdin");
     expect(workflow).toContain("SHIPYARD_GITHUB_TOKEN: ${{ secrets.SHIPYARD_GITHUB_TOKEN }}");
     expect(workflow).toContain("railway variable set GITHUB_TOKEN --stdin");
