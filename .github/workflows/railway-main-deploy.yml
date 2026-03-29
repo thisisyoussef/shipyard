@@ -82,16 +82,18 @@ jobs:
       - name: Verify Railway credentials
         run: |
           if [ -z "${RAILWAY_TOKEN}" ] && [ -z "${RAILWAY_API_TOKEN}" ]; then
-            echo "Missing Railway deploy token. Set RAILWAY_TOKEN or RAILWAY_API_TOKEN in GitHub secrets." >&2
+            echo "Missing Railway deploy token. Set RAILWAY_API_TOKEN in GitHub secrets, or provide RAILWAY_TOKEN only when you have a validated project-scoped token." >&2
             exit 1
           fi
 
       - name: Select Railway control token
         run: |
-          if [ -n "${RAILWAY_TOKEN}" ]; then
-            echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}" >> "${GITHUB_ENV}"
-          else
+          if [ -n "${RAILWAY_API_TOKEN}" ]; then
+            echo "RAILWAY_CONTROL_TOKEN_KIND=api" >> "${GITHUB_ENV}"
             echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}" >> "${GITHUB_ENV}"
+          else
+            echo "RAILWAY_CONTROL_TOKEN_KIND=project" >> "${GITHUB_ENV}"
+            echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}" >> "${GITHUB_ENV}"
           fi
 
       - name: Verify production credentials
@@ -106,9 +108,12 @@ jobs:
           fi
 
       - name: Link Railway production project
-        env:
-          RAILWAY_TOKEN: ${{ env.RAILWAY_CONTROL_TOKEN }}
         run: |
+          if [ "${RAILWAY_CONTROL_TOKEN_KIND}" = "api" ]; then
+            export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+          else
+            export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+          fi
           railway project link \
             --project "${RAILWAY_PROJECT_ID}" \
             --environment "${RAILWAY_ENVIRONMENT_ID}" \
@@ -116,9 +121,12 @@ jobs:
 
       - name: Sync Railway production variables
         working-directory: shipyard
-        env:
-          RAILWAY_TOKEN: ${{ env.RAILWAY_CONTROL_TOKEN }}
         run: |
+          if [ "${RAILWAY_CONTROL_TOKEN_KIND}" = "api" ]; then
+            export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+          else
+            export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+          fi
           printf '%s' "${OPENAI_API_KEY}" | railway variable set OPENAI_API_KEY --stdin \
             --skip-deploys \
             --environment "${RAILWAY_ENVIRONMENT_ID}" \
@@ -141,6 +149,7 @@ jobs:
             --service "${RAILWAY_SERVICE_ID}"
           railway variable set \
             PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+            RAILWAY_VOLUME_MOUNT_PATH=/app/workspace \
             SHIPYARD_TARGETS_DIR=/app/workspace \
             SHIPYARD_UI_HOST=0.0.0.0 \
             SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1 \
@@ -151,8 +160,11 @@ jobs:
             --service "${RAILWAY_SERVICE_ID}"
 
       - name: Deploy hosted image to Railway
-        env:
-          RAILWAY_TOKEN: ${{ env.RAILWAY_CONTROL_TOKEN }}
-          RAILWAY_IMAGE_REF: ${{ steps.ghcr.outputs.image_ref }}
         run: |
+          if [ "${RAILWAY_CONTROL_TOKEN_KIND}" = "api" ]; then
+            export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+          else
+            export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+          fi
+          export RAILWAY_IMAGE_REF="${{ steps.ghcr.outputs.image_ref }}"
           bash .github/scripts/railway-ci-deploy.sh
