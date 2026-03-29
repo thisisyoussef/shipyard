@@ -18,10 +18,13 @@
   - typed deploy tool input such as `platform`
   - structured deploy result contract
   - provider secret/env contract such as `VERCEL_TOKEN`
+  - optional deploy-policy override such as `SHIPYARD_VERCEL_PUBLIC_DEPLOYS=0`
 - Data flow summary: the model or a higher-level UI/backend action requests a
-  deploy, the deploy tool validates provider prerequisites, runs the Vercel
-  deploy command inside the target directory, parses the production URL, and
-  returns a structured result instead of free-form shell output.
+  deploy, the deploy tool validates provider prerequisites, creates or
+  recovers a deterministic target-local `.vercel/project.json` link, disables
+  Vercel Authentication by default unless explicitly overridden, runs the
+  Vercel deploy command inside the target directory, parses the production URL,
+  and returns a structured result instead of free-form shell output.
 
 ## Pack Cohesion and Sequencing (for phase packs or multi-story planning)
 - Higher-level pack objectives:
@@ -65,7 +68,8 @@
   - summary/log excerpt
   - any provider metadata needed by traces or later UI
 - Storage/index changes:
-  - none required in this story
+  - deterministic target-local `.vercel/project.json` link written on first
+    deploy when no Vercel project is linked yet
   - persisted latest-deploy metadata is deferred to `P9-S04`
 
 ## Dependency Plan
@@ -94,6 +98,9 @@
   - one credentialed manual Vercel deploy smoke once provider access exists
 - Edge-case coverage mapping:
   - missing `VERCEL_TOKEN`
+  - first deploy without a linked Vercel project
+  - linked project protected by Vercel Authentication
+  - explicit opt-out from Shipyard's public-by-default protection handling
   - missing CLI
   - unsupported platform
   - timeout

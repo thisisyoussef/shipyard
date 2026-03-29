@@ -88,27 +88,27 @@ current target and return a reliable shareable production URL.
 
 ### Code References
 
-- Shareable Vercel production-link resolution:
+- Deterministic Vercel project linking, public-by-default protection handling,
+  and shareable production-link resolution:
   - `shipyard/src/tools/deploy.ts`
-- Regression coverage for generated deployment URLs vs shareable aliases:
+- Regression coverage for first-deploy project setup, public/protected Vercel
+  behavior, and generated deployment URLs vs shareable aliases:
   - `shipyard/tests/tooling.test.ts`
 
 ### Representative Snippets
 
 ```ts
-const productionUrl = deploymentUrl
-  ? await resolveShareableVercelUrl(
-      deploymentUrl,
-      token,
-      context?.signal,
-      dependencies,
-      loggedProductionUrl,
-    )
-  : null;
+await ensureVercelProjectForDeploy(
+  targetDirectory,
+  token,
+  env,
+  dependencies,
+  context?.signal,
+);
 ```
 
 ```ts
-it("deploy_target resolves a stable production alias from deployment metadata", async () => {
+it("deploy_target disables Vercel Authentication for linked projects by default", async () => {
   // ...
 });
 ```
