@@ -295,11 +295,17 @@ function createPlanningTurnResult(
 function createTddTurnResult(
   options: Partial<TddTurnResult> & Pick<TddTurnResult, "finalText" | "status">,
 ): TddTurnResult {
+  const {
+    finalText,
+    status,
+    ...rest
+  } = options;
+
   return {
     command: "status",
-    status: options.status,
-    summary: options.finalText,
-    finalText: options.finalText,
+    status,
+    summary: finalText,
+    finalText,
     lane: null,
     langSmithTrace: null,
     runtimeAssist: {
@@ -308,7 +314,7 @@ function createTddTurnResult(
       activeProfileRoute: null,
       loadedSkills: [],
     },
-    ...options,
+    ...rest,
   };
 }
 

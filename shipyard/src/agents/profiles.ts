@@ -15,6 +15,7 @@ export const AGENT_ROLE_IDS = [
   "target-manager",
   "discovery",
   "pm",
+  "pr-ops",
   "test-author",
   "implementer",
   "reviewer",
@@ -82,6 +83,16 @@ const AGENT_PROFILES: AgentProfileRecord = {
     modelRoute: PLANNER_MODEL_ROUTE,
     temperature: 0.25,
     maxTokens: 5_200,
+  },
+  "pr-ops": {
+    id: "pr-ops",
+    name: "PR Ops",
+    role: "GitHub PR Operator",
+    personality:
+      "Procedural and branch-hygiene driven. Owns PR creation, merge sequencing, cleanup, and first-merge-wins recovery without improvising around source-control policy.",
+    modelRoute: CODE_PHASE_MODEL_ROUTE,
+    temperature: 0.1,
+    maxTokens: 4_800,
   },
   "test-author": {
     id: "test-author",
