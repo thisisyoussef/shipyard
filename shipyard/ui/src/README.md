@@ -46,9 +46,11 @@ Shipyard browser workbench.
 - `App.tsx` also branches between the live dashboard, full workbench shell,
   live board route, and dedicated `/human-feedback` surface while keeping the
   same hosted-access gate, socket lifecycle, and instruction submission path.
-- The board route consumes the runtime `taskBoard` snapshot, preserves the
-  selected story filter per product in browser storage, and renders explicit
-  missing-target, loading, stale, and empty states instead of mock fallbacks.
+- The board route is project-scoped at `#/board/<productId>`, consumes the
+  runtime `taskBoard` snapshot only after that product is resolved against live
+  session state, preserves the selected story filter per product in browser
+  storage, and renders explicit missing-target, loading, stale, and empty
+  states instead of mock fallbacks.
 - `App.tsx` sends `session:resume_request` messages so the browser can reopen a
   saved run without restarting the Shipyard process.
 - `socket-manager.ts` retries disconnected sessions and blocks sends while the

@@ -11,7 +11,7 @@ import { UltimateBadge } from "./UltimateBadge.js";
 export interface NavBarProps {
   currentView: Route["view"];
   editorRoute: Extract<Route, { view: "editor" }> | null;
-  boardDisabled?: boolean;
+  boardRoute: Extract<Route, { view: "board" }> | null;
   onNavigate: (route: Route) => void;
   ultimateState: UltimateUiStateViewModel;
   ultimateDisabled?: boolean;
@@ -42,7 +42,7 @@ function BrandMark() {
 export function NavBar({
   currentView,
   editorRoute,
-  boardDisabled = false,
+  boardRoute,
   onNavigate,
   ultimateState,
   ultimateDisabled = false,
@@ -53,7 +53,7 @@ export function NavBar({
   const navItems: Array<{ label: string; view: Route["view"]; disabled?: boolean }> = [
     { label: "Dashboard", view: "dashboard" },
     { label: "Editor", view: "editor", disabled: editorRoute === null },
-    { label: "Board", view: "board", disabled: boardDisabled },
+    { label: "Board", view: "board", disabled: boardRoute === null },
   ];
 
   return (
@@ -80,6 +80,13 @@ export function NavBar({
               if (item.view === "editor") {
                 if (editorRoute) {
                   onNavigate(editorRoute);
+                }
+                return;
+              }
+
+              if (item.view === "board") {
+                if (boardRoute) {
+                  onNavigate(boardRoute);
                 }
                 return;
               }

@@ -1,7 +1,7 @@
 export type Route =
   | { view: "dashboard" }
   | { view: "editor"; productId: string }
-  | { view: "board" }
+  | { view: "board"; productId: string }
   | { view: "human-feedback" };
 
 export function parseHash(hash: string): Route {
@@ -11,12 +11,13 @@ export function parseHash(hash: string): Route {
     return { view: "dashboard" };
   }
 
-  if (normalized === "board") {
-    return { view: "board" };
-  }
-
   if (normalized === "human-feedback") {
     return { view: "human-feedback" };
+  }
+
+  const boardMatch = normalized.match(/^board\/(.+)$/);
+  if (boardMatch && boardMatch[1] !== undefined) {
+    return { view: "board", productId: decodeURIComponent(boardMatch[1]) };
   }
 
   const editorMatch = normalized.match(/^editor\/(.+)$/);
@@ -34,7 +35,7 @@ export function buildHash(route: Route): string {
     case "editor":
       return `#/editor/${encodeURIComponent(route.productId)}`;
     case "board":
-      return "#/board";
+      return `#/board/${encodeURIComponent(route.productId)}`;
     case "human-feedback":
       return "#/human-feedback";
   }

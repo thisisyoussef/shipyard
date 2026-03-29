@@ -319,6 +319,13 @@ export function PreviewHarness() {
           view: "editor" as const,
           productId: "/projects/craft-vision",
         };
+  const boardRoute =
+    route.view === "board"
+      ? route
+      : {
+          view: "board" as const,
+          productId: "/projects/craft-vision",
+        };
 
   const handleNavigate = useCallback(
     (next: Route) => {
@@ -459,8 +466,8 @@ export function PreviewHarness() {
       <NavBar
         currentView={route.view}
         editorRoute={editorRoute}
+        boardRoute={boardRoute}
         onNavigate={handleNavigate}
-        boardDisabled={false}
         ultimateState={MOCK_ULTIMATE_STATE}
         ultimateDisabled={false}
         onUltimateClick={handleUltimateClick}
