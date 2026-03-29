@@ -126,3 +126,12 @@ run: |
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1
 ```
+
+- The hosted runtime now also keeps Playwright in dev dependency scope and
+  lazy-loads browser evaluation so the production image can exclude that
+  dependency entirely while still degrading verification cleanly:
+
+```ts
+const playwright = await import("playwright");
+return playwright.chromium;
+```

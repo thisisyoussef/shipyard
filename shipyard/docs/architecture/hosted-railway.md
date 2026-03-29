@@ -115,9 +115,9 @@ not confuse the Shipyard editor with the product being built.
   `anthropic`, turns fail clearly with missing-credential diagnostics instead
   of silently falling back to another provider.
 - If browser verification is requested but the Railway image does not include
-  the required Playwright or Chromium system libraries, Shipyard records an
-  explicit degraded verification result instead of treating that infrastructure
-  gap as proof that the target app is broken.
+  the lazily loaded Playwright runtime or the Chromium system libraries,
+  Shipyard records an explicit degraded verification result instead of treating
+  that infrastructure gap as proof that the target app is broken.
 - If a preview command such as `npm run dev` reaches a concrete ready state
   before timing out, Shipyard treats the verification command as successful and
   records the ready URL in trace metadata even though the process itself stays
@@ -165,12 +165,15 @@ not confuse the Shipyard editor with the product being built.
   service.
 - The Dockerfile now compiles Shipyard in a build stage, prunes dev
   dependencies, and copies only `package.json`, `node_modules`, `dist/`, and
-  built-in `skills/` into the final runtime image. Because the hosted runtime
-  already degrades browser evaluation when Chromium is unavailable, the build
-  stage also keeps `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` so browser binaries stay
-  out of the default production image. If you want full hosted browser
-  verification, replace that default with an image or install step that
-  intentionally provisions the browser binaries and Linux dependencies.
+  built-in `skills/` into the final runtime image. The Playwright packages now
+  live in dev dependencies and the browser evaluator lazy-loads them, so
+  `pnpm prune --prod` drops that entire runtime from the hosted image instead
+  of shipping it unused. Because the hosted runtime already degrades browser
+  evaluation when Chromium is unavailable, the build stage also keeps
+  `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` so browser binaries stay out of the
+  default production image. If you want full hosted browser verification,
+  replace that default with an image or install step that intentionally
+  provisions the Playwright runtime, browser binaries, and Linux dependencies.
 - For local operator convenience, keep the same hosted token in the ignored
   `shipyard/.env` file and optionally add `SHIPYARD_HOSTED_URL`; the repo-root
   helper `node scripts/print-hosted-access-url.mjs` prints a bootstrap URL
