@@ -5,6 +5,10 @@ import {
   createInitialPreviewState,
   createIdlePreviewState,
 } from "../preview/contracts.js";
+import type { SourceControlWorkbenchState } from "../source-control/contracts.js";
+import {
+  createDefaultSourceControlWorkbenchState,
+} from "../source-control/contracts.js";
 import type { RuntimeAssistSummary } from "../skills/contracts.js";
 import type { TddWorkbenchState } from "../tdd/contracts.js";
 import { createIdleTddWorkbenchState } from "../tdd/contracts.js";
@@ -132,6 +136,8 @@ export interface TddWorkbenchStateViewModel extends TddWorkbenchState {}
 
 export interface RuntimeAssistViewModel extends RuntimeAssistSummary {}
 
+export interface SourceControlViewModel extends SourceControlWorkbenchState {}
+
 export interface WorkbenchViewState {
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
@@ -153,6 +159,7 @@ export interface WorkbenchViewState {
   projectBoard: ProjectBoardViewModel | null;
   pipelineState: PipelineWorkbenchStateViewModel | null;
   tddState: TddWorkbenchStateViewModel;
+  sourceControl: SourceControlViewModel;
   runtimeAssist: RuntimeAssistViewModel;
 }
 
@@ -325,6 +332,20 @@ function createPipelineAgentStatus(
   }
 
   return pipelineState.summary || null;
+}
+
+function createSourceControlAgentStatus(
+  sourceControl: SourceControlViewModel | null,
+): string | null {
+  if (!sourceControl || !sourceControl.updatedAt) {
+    return null;
+  }
+
+  if (sourceControl.degraded || sourceControl.pendingConflictTicket) {
+    return sourceControl.summary;
+  }
+
+  return null;
 }
 
 function createTddAgentStatus(
@@ -693,6 +714,7 @@ export function ensureWorkbenchStateDefaults(
     projectBoard: state.projectBoard ?? initialState.projectBoard,
     pipelineState: state.pipelineState ?? initialState.pipelineState,
     tddState: state.tddState ?? initialState.tddState,
+    sourceControl: state.sourceControl ?? initialState.sourceControl,
     runtimeAssist: state.runtimeAssist ?? initialState.runtimeAssist,
   };
 }
@@ -721,6 +743,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     projectBoard: null,
     pipelineState: null,
     tddState: createIdleTddWorkbenchState(),
+    sourceControl: createDefaultSourceControlWorkbenchState(),
     runtimeAssist: createInitialRuntimeAssistState(),
   };
 }
@@ -885,6 +908,9 @@ export function applySessionSnapshot(
       ?? createPipelineAgentStatus(
         recoveredState.pipelineState ?? state.pipelineState ?? null,
       )
+      ?? createSourceControlAgentStatus(
+        recoveredState.sourceControl ?? state.sourceControl ?? null,
+      )
       ?? createTargetManagerAgentStatus(
         recoveredState.targetManager ?? state.targetManager,
       ) ?? nextAgentStatus,
@@ -897,6 +923,10 @@ export function applySessionSnapshot(
       recoveredState.tddState
       ?? state.tddState
       ?? createIdleTddWorkbenchState(),
+    sourceControl:
+      recoveredState.sourceControl
+      ?? state.sourceControl
+      ?? createDefaultSourceControlWorkbenchState(),
   };
 }
 

@@ -7,6 +7,7 @@ import "./lookup-official-docs.js";
 import "./read-file.js";
 import "./run-command.js";
 import "./search-files.js";
+import "./source-control.js";
 import "./target-manager/index.js";
 import "./write-file.js";
 
@@ -25,5 +26,6 @@ export { lookupOfficialDocsTool } from "./lookup-official-docs.js";
 export { ToolError, readFileTool } from "./read-file.js";
 export { runCommandTool } from "./run-command.js";
 export { searchFilesTool } from "./search-files.js";
+export { manageSourceControlDefinition } from "./source-control.js";
 export * from "./target-manager/index.js";
 export { writeFileTool } from "./write-file.js";

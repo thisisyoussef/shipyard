@@ -71,6 +71,7 @@ import { applySessionSwitchToRuntime } from "../engine/runtime-context.js";
 import { createPreviewSupervisor } from "../preview/supervisor.js";
 import type { PreviewSupervisor } from "../preview/supervisor.js";
 import { shouldUseStarterCanvasForScratchTarget } from "../preview/contracts.js";
+import { syncSessionSourceControlState } from "../source-control/runtime.js";
 import type {
   BackendToFrontendMessage,
   DeploySummary,
@@ -1026,6 +1027,8 @@ export async function startUiRuntimeServer(
     if (!seed) {
       await applySessionSwitchToRuntime(sessionState, runtimeState);
     }
+
+    await syncSessionSourceControlState(sessionState);
 
     const project = {
       projectId: createProjectId(sessionState),

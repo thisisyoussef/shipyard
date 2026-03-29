@@ -3,7 +3,7 @@
 - Pack: Runtime Factory Foundations
 - Estimate: 36-48 hours
 - Date: 2026-03-28
-- Status: In progress; P11-S01, P11-S02, P11-S03, P11-S04, and P11-S05 implemented, remaining runtime-only stories planned
+- Status: In progress; P11-S01, P11-S02, P11-S03, P11-S04, P11-S05, and P11-S06 implemented, remaining runtime-only stories planned
 
 ## Pack Objectives
 
@@ -150,3 +150,24 @@ That later pack can concentrate on board interaction design, transitions, visual
   restart-safe lane persistence, immutable test protection, reviewer quality
   reports, optional-check downgrade behavior, and `tdd` command routing through
   the main loop and browser runtimes.
+- `shipyard/src/source-control/contracts.ts`,
+  `shipyard/src/source-control/store.ts`,
+  `shipyard/src/source-control/runtime.ts`,
+  `shipyard/src/tools/source-control.ts`,
+  `shipyard/src/tools/index.ts`,
+  `shipyard/src/phases/code/index.ts`,
+  `shipyard/src/tools/target-manager/create-target.ts`,
+  `shipyard/src/engine/state.ts`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: implement the GitHub-first source-control
+  contract, hosted-safe auth precedence, explicit degraded-local fallback,
+  target-local persistence, branch-per-story provisioning, dedicated `pr-ops`
+  ownership, first-merge-wins stale-merge recovery, and workbench-visible
+  source-control summaries for downstream hosted and coordinator stories.
+- `shipyard/tests/source-control-runtime.test.ts`,
+  `shipyard/tests/ui-view-models.test.ts`, and
+  `shipyard/tests/loop-runtime.test.ts`: validate source-control capability
+  resolution, durable repository binding, stale/conflict ticket creation,
+  workbench projection, and the narrow test baseline fix needed to keep the
+  repo green while landing P11-S06.

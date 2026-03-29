@@ -3,6 +3,10 @@ import { z } from "zod";
 import { SCAFFOLD_TYPES } from "../tools/target-manager/scaffolds.js";
 import { pipelineWorkbenchStateSchema } from "../pipeline/contracts.js";
 import {
+  createDefaultSourceControlWorkbenchState,
+  sourceControlWorkbenchStateSchema,
+} from "../source-control/contracts.js";
+import {
   createIdleTddWorkbenchState,
   tddWorkbenchStateSchema,
 } from "../tdd/contracts.js";
@@ -290,6 +294,9 @@ export const workbenchStateSchema = z.object({
   projectBoard: projectBoardStateSchema.nullable().default(null),
   pipelineState: pipelineWorkbenchStateSchema.nullable().default(null),
   tddState: tddWorkbenchStateSchema.default(createIdleTddWorkbenchState()),
+  sourceControl: sourceControlWorkbenchStateSchema.default(
+    createDefaultSourceControlWorkbenchState(),
+  ),
   runtimeAssist: runtimeAssistStateSchema,
 });
 
@@ -513,6 +520,9 @@ export type DeploySummary = z.infer<typeof deploySummarySchema>;
 export type UploadReceiptsResponse = z.infer<typeof uploadReceiptsResponseSchema>;
 export type UploadDeleteResponse = z.infer<typeof uploadDeleteResponseSchema>;
 export type UploadErrorResponse = z.infer<typeof uploadErrorResponseSchema>;
+export type UiSourceControlWorkbenchState = z.infer<
+  typeof sourceControlWorkbenchStateSchema
+>;
 
 function hasMessageType(value: unknown): value is { type: string } {
   return (

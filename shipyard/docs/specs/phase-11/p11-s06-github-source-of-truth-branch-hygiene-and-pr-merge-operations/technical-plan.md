@@ -125,3 +125,60 @@ pnpm --dir shipyard typecheck
 pnpm --dir shipyard build
 git diff --check
 ```
+
+## Implemented Shape
+
+- `shipyard/src/source-control/contracts.ts`: defines the normalized
+  source-control contract, including auth capability modes, repository
+  binding, degraded fallback state, story branches, PR artifacts,
+  first-merge-wins decisions, conflict tickets, and compact workbench
+  projection helpers.
+- `shipyard/src/source-control/store.ts`: persists restart-safe runtime state to
+  `.shipyard/source-control/runtime.json` with atomic writes.
+- `shipyard/src/source-control/runtime.ts`: resolves auth precedence across
+  GitHub App, GitHub token, OAuth token, and local `gh` CLI; synthesizes repo
+  binding and degraded state; provisions story branches; opens PR records;
+  applies first-merge-wins semantics; and raises conflict tickets for stale
+  merges under the dedicated `pr-ops` owner.
+- `shipyard/src/tools/source-control.ts`,
+  `shipyard/src/tools/index.ts`, and
+  `shipyard/src/phases/code/index.ts`: expose the
+  `manage_source_control` tool to runtime turns so source-control actions run
+  through one typed interface.
+- `shipyard/src/agents/profiles.ts`: introduces the `pr-ops` profile so PR
+  creation, merge, cleanup, and conflict recovery are explicitly routed to one
+  role instead of being blurred into the implementer lane.
+- `shipyard/src/engine/state.ts`,
+  `shipyard/src/tools/target-manager/create-target.ts`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: create the target-local source-control
+  directory, seed state for new targets, sync session-level source-control
+  metadata, and publish compact auth/binding/branch/PR/degraded summaries into
+  the workbench snapshot for downstream hosted and coordinator stories.
+- `shipyard/tests/source-control-runtime.test.ts`: covers hosted-safe auth
+  precedence, explicit degraded-local fallback, durable repo binding,
+  first-merge-wins stale marking, `pr-ops` ownership, and conflict-ticket
+  creation.
+- `shipyard/tests/loop-runtime.test.ts`: includes the narrow duplicate-property
+  cleanup that restored the repo's green baseline while landing the story.
+
+## Validation Notes
+
+- Focused runtime validation passed:
+  - `pnpm --dir shipyard exec vitest run tests/source-control-runtime.test.ts --reporter=verbose`
+  - `pnpm --dir shipyard exec vitest run tests/source-control-runtime.test.ts tests/loop-runtime.test.ts --reporter=verbose`
+  - `pnpm --dir shipyard exec vitest run tests/ui-view-models.test.ts tests/source-control-runtime.test.ts --reporter=verbose`
+- Required repo-level validation passed:
+  - `pnpm --dir shipyard typecheck`
+  - `pnpm --dir shipyard build`
+  - `git diff --check`
+- The plain `pnpm --dir shipyard test` command was attempted first but hit the
+  repo's known idle Vitest worker hang after launching `vitest run`. The
+  authoritative full-suite proof for this story is the deterministic CI-style
+  command:
+  - `CI=1 pnpm --dir shipyard exec vitest run --pool forks --no-file-parallelism --maxWorkers 1 --reporter=verbose`
+  - Result: `Test Files 64 passed (64)`, `Tests 442 passed | 2 skipped (444)`
+- LangSmith finish-check evidence was captured in the isolated project
+  `shipyard-p11-s06-finishcheck`, including both a successful merge trace and
+  an expected blocked stale-merge trace with no unexpected error runs.

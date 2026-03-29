@@ -45,19 +45,34 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `prefers a hosted-safe auth adapter when local gh is unavailable`
-  - [ ] `falls back to explicit degraded local mode when github auth is absent`
-  - [ ] `marks later conflicting work stale after first merge wins`
+  - [x] `prefers a hosted-safe auth adapter when local gh is unavailable`
+  - [x] `falls back to explicit degraded local mode when github auth is absent`
+  - [x] `marks later conflicting work stale after first merge wins`
 - T002 tests:
-  - [ ] `persists repo binding and degraded-source state across restart`
+  - [x] `persists repo binding and degraded-source state across restart`
 - T003 tests:
-  - [ ] `routes merge work through a dedicated pr-ops role`
-  - [ ] `creates a conflict-resolution ticket instead of silently force merging`
+  - [x] `routes merge work through a dedicated pr-ops role`
+  - [x] `creates a conflict-resolution ticket instead of silently force merging`
 - T004 tests:
-  - [ ] `publishes source-control metadata for downstream board or coordinator consumers`
+  - [x] `publishes source-control metadata for downstream board or coordinator consumers`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Implementation Evidence
+
+| Task ID | Implementation Evidence |
+|---|---|
+| T001 | `shipyard/tests/source-control-runtime.test.ts` adds failing-first coverage for auth precedence, degraded fallback, stale-branch handling, `pr-ops` ownership, conflict tickets, and workbench projection. |
+| T002 | `shipyard/src/source-control/contracts.ts`, `shipyard/src/source-control/store.ts`, and `shipyard/src/source-control/runtime.ts` introduce the durable source-control vocabulary, target-local persistence, repo binding, degraded mode, and restart-safe sync helpers. |
+| T003 | `shipyard/src/agents/profiles.ts` adds the dedicated `pr-ops` role, while `shipyard/src/source-control/runtime.ts` routes PR creation, merge, and blocked stale-merge recovery through that owner. |
+| T004 | `shipyard/src/tools/source-control.ts`, `shipyard/src/tools/index.ts`, `shipyard/src/phases/code/index.ts`, `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`, `shipyard/src/ui/server.ts`, and `shipyard/src/tools/target-manager/create-target.ts` publish and project source-control state for downstream runtime consumers. |
+
+## Deferred / Follow-On Work
+
+- No story-local deferrals remain. Hosted workspace boot and remote GitHub
+  adapter flows are intentionally deferred to `P11-S07`, which consumes the
+  normalized source-control contract landed here.

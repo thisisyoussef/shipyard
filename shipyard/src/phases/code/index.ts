@@ -15,6 +15,7 @@ export const CODE_PHASE_TOOL_NAMES = [
   "bootstrap_target",
   "edit_block",
   "list_files",
+  "manage_source_control",
   "search_files",
   "run_command",
   "git_diff",
