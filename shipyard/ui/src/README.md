@@ -12,6 +12,11 @@ Shipyard browser workbench.
 - `dashboard-catalog.ts`, `dashboard-preferences.ts`, and
   `dashboard-launch.ts`: dashboard projection, local browser preferences, and
   request-correlated launch helpers
+- `board-view-model.ts`, `board-preferences.ts`, and
+  `dashboard-system-notice.ts`: board projection, board filter persistence, and
+  route-level reconnect/error notices
+- `target-selection.ts`: shared selected-target helpers used by dashboard,
+  editor-route, and board-route selectors
 - `ShipyardWorkbench.tsx`: composes the current split-pane shell, drawer, and
   target-manager chrome
 - `socket-manager.ts`: reconnecting WebSocket wrapper used by `App.tsx`
@@ -39,8 +44,11 @@ Shipyard browser workbench.
   starred preferences in browser storage, and stages hero-prompt launches into
   the editor with request correlation instead of timing-based follow behavior.
 - `App.tsx` also branches between the live dashboard, full workbench shell,
-  parked board route, and dedicated `/human-feedback` surface while keeping the
+  live board route, and dedicated `/human-feedback` surface while keeping the
   same hosted-access gate, socket lifecycle, and instruction submission path.
+- The board route consumes the runtime `taskBoard` snapshot, preserves the
+  selected story filter per product in browser storage, and renders explicit
+  missing-target, loading, stale, and empty states instead of mock fallbacks.
 - `App.tsx` sends `session:resume_request` messages so the browser can reopen a
   saved run without restarting the Shipyard process.
 - `socket-manager.ts` retries disconnected sessions and blocks sends while the
@@ -49,12 +57,16 @@ Shipyard browser workbench.
   transcript plus composer on the left, and file/output evidence on the right.
 - `HumanFeedbackPage.tsx` exposes a focused textarea-only surface for feeding
   the running ultimate loop from the human side while reusing the same
-  websocket `instruction` transport.
+  websocket `instruction` transport and surfacing explicit no-session and
+  reconnect guidance when feedback cannot be sent yet.
 - File attachments go through `/api/uploads`, then appear as bounded receipts in
   workbench state and the next-turn context preview.
 - `TargetSwitcher.tsx` and `TargetCreationDialog.tsx` drive target selection and
   scaffold creation without leaving the active session, and the dashboard now
   reuses the creation dialog for its new-product card.
+- `HostedAccessGate.tsx` now exposes explicit checking and unlocking states
+  instead of relying on button copy alone, while still keeping the shared token
+  out of stored artifacts.
 
 ## Diagram
 

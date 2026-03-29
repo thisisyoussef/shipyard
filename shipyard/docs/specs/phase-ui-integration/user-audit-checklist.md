@@ -48,16 +48,18 @@ for operator QA.
 ## Board
 
 - [ ] Board columns are rendered from backend data, not hardcoded UI state.
-- [ ] When a persisted plan exists, the board reflects plan tasks and statuses.
-- [ ] When no plan exists, the board falls back to a clear session-derived view
-      instead of showing stale mocks.
+- [ ] The board route explains missing-target, loading, stale-snapshot, and
+      empty-board states instead of showing parked or mock content.
+- [ ] Story filters restore per product after reload and fall back safely if a
+      stored story no longer exists in the latest board snapshot.
 - [ ] Story filters, blocked states, and active-task cues are accurate.
 - [ ] Empty or stale board states explain what the operator should do next.
 
 ## Resilience and Trust
 
-- [ ] Reconnect, unauthorized, preview-unavailable, and file-read-error states
-      are explicit and readable.
+- [ ] Dashboard, hosted access, `/human-feedback`, preview-unavailable, and
+      file-read-error states are explicit and readable during reconnects or
+      errors.
 - [ ] Preview harness at `/preview.html` still works with mock data after the
       pack lands.
 - [ ] `pnpm --dir shipyard test`, `pnpm --dir shipyard typecheck`,

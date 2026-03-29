@@ -1,5 +1,10 @@
 import type { ProjectBoardViewModel, TargetManagerViewModel } from "./view-models.js";
 import { parseHash, type Route } from "./router.js";
+import {
+  getActiveProject,
+  getSelectedTarget,
+  getSelectedTargetPath,
+} from "./target-selection.js";
 
 export type AppRoute = Route;
 
@@ -40,22 +45,13 @@ function findOpenProject(
   );
 }
 
-function getActiveProject(projectBoard: ProjectBoardViewModel | null) {
-  if (!projectBoard?.activeProjectId) {
-    return null;
-  }
-
-  return projectBoard.openProjects.find(
-    (project) => project.projectId === projectBoard.activeProjectId,
-  ) ?? null;
-}
-
 export function selectEditorRouteState(
   options: SelectEditorRouteStateOptions,
 ): EditorRouteState {
   const activeProject = getActiveProject(options.projectBoard);
+  const selectedTarget = getSelectedTarget(options.targetManager);
   const activeTargetPath = activeProject?.targetPath
-    ?? options.targetManager?.currentTarget.path
+    ?? selectedTarget?.path
     ?? null;
 
   if (
@@ -66,7 +62,7 @@ export function selectEditorRouteState(
       status: "active",
       productId: options.productId,
       productName:
-        activeProject?.targetName ?? options.targetManager?.currentTarget.name ?? null,
+        activeProject?.targetName ?? selectedTarget?.name ?? null,
       intent: { kind: "none" },
     };
   }
@@ -122,7 +118,7 @@ export function getPreferredEditorRoute(
     };
   }
 
-  const currentTargetPath = targetManager?.currentTarget.path;
+  const currentTargetPath = getSelectedTargetPath(targetManager);
 
   if (!currentTargetPath) {
     return null;

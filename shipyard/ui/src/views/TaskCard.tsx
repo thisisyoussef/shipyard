@@ -43,6 +43,7 @@ function getAgentDisplay(agentId: string | null): AgentDisplay {
 export function TaskCard({
   id,
   title,
+  description,
   agentId,
   dependencies,
   blocked,
@@ -76,6 +77,10 @@ export function TaskCard({
       <Badge tone={agent.tone}>
         {agent.symbol} {agent.label}
       </Badge>
+
+      {description.trim().length > 0 ? (
+        <p className="task-card-summary">{description}</p>
+      ) : null}
 
       {dependencies.length > 0 && (
         <p className="task-card-deps">

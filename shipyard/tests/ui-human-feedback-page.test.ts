@@ -146,4 +146,46 @@ describe("HumanFeedbackPage", () => {
     expect(markup).toContain("Shipyard accepted the note for the next simulator cycle.");
     expect(markup).toContain("http://127.0.0.1:4174");
   });
+
+  it("explains when the page cannot send feedback yet", () => {
+    const markup = renderToStaticMarkup(
+      createElement(HumanFeedbackPage, {
+        sessionState: null,
+        previewState: {
+          ...previewState,
+          url: null,
+          status: "unavailable",
+        },
+        turns: [],
+        connectionState: "disconnected",
+        agentStatus: "Waiting for Shipyard to reconnect.",
+        ultimateState: {
+          ...runningUltimateState,
+          active: false,
+          phase: "idle" as const,
+          currentBrief: null,
+          pendingFeedbackCount: 0,
+          turnCount: 0,
+          lastCycleSummary: null,
+        },
+        instruction: "",
+        submitLabel: "Queue feedback",
+        submitDisabled: false,
+        helpText: "Press Cmd/Ctrl+Enter to queue the note for the active ultimate loop.",
+        textareaRef: createRef<HTMLTextAreaElement>(),
+        notice: null,
+        onInstructionChange: () => undefined,
+        onInstructionKeyDown: () => undefined,
+        onSubmit: () => undefined,
+        onRefreshStatus: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain("No active Shipyard session yet");
+    expect(markup).toContain(
+      "Shipyard needs an active session before this page can send feedback.",
+    );
+    expect(markup).toContain("Waiting for an active target");
+    expect(markup).toContain('disabled=""');
+  });
 });

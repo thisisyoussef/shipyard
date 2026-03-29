@@ -3,7 +3,7 @@
 - Pack: UI Integration
 - Estimate: 20-28 hours
 - Date: 2026-03-28
-- Status: In Progress
+- Status: Completed
 - Depends on: Phase Pre-2 browser runtime, Phase UI Revamp visual system, and the shipped `codex/ui-redesign` component layer
 - Source context:
   - `docs/plans/2026-03-28-ui-redesign-design.md`
@@ -165,4 +165,22 @@ The board and ultimate work should align with those future packs by:
   `shipyard/tests/ui-view-models.test.ts`,
   `shipyard/tests/ui-human-feedback-page.test.ts`, and
   `shipyard/tests/ui-runtime.test.ts`.
-- `UII-S05` and `UII-S06` remain planned.
+- The live board outcome originally scoped for `UII-S05` shipped during
+  `UII-S06` by consuming the already-published runtime `taskBoard` projection,
+  so no separate board-story branch remains open.
+- `UII-S06` landed the cross-view resilience and release gate in
+  `shipyard/ui/src/App.tsx`,
+  `shipyard/ui/src/board-view-model.ts`,
+  `shipyard/ui/src/board-preferences.ts`,
+  `shipyard/ui/src/target-selection.ts`,
+  `shipyard/ui/src/dashboard-system-notice.ts`,
+  `shipyard/ui/src/views/BoardView.tsx`,
+  `shipyard/ui/src/views/KanbanView.tsx`,
+  `shipyard/ui/src/HostedAccessGate.tsx`,
+  `shipyard/ui/src/HumanFeedbackPage.tsx`,
+  `shipyard/ui/src/README.md`,
+  `shipyard/tests/ui-board-preferences.test.ts`,
+  `shipyard/tests/ui-board-view-model.test.ts`,
+  `shipyard/tests/ui-dashboard-system-notice.test.ts`,
+  `shipyard/tests/ui-access.test.ts`, and
+  `shipyard/tests/ui-human-feedback-page.test.ts`.
