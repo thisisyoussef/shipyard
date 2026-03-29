@@ -2,79 +2,125 @@
 
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-app_root="${repo_root}/shipyard"
+required_env_vars=(
+  RAILWAY_SERVICE_ID
+  RAILWAY_ENVIRONMENT_ID
+  RAILWAY_IMAGE_REF
+)
 
-max_attempts="${RAILWAY_DEPLOY_MAX_ATTEMPTS:-3}"
-base_retry_delay_seconds="${RAILWAY_DEPLOY_RETRY_DELAY_SECONDS:-15}"
-transient_failure_pattern='DEADLINE_EXCEEDED|failed to pull/unpack image|failed to resolve reference|i/o timeout|dial tcp'
-post_build_failure_pattern='Build time:|built in [0-9]'
-
-cd "${app_root}"
-
-run_deploy_attempt() {
-  local attempt="$1"
-  local log_file="$2"
-
-  echo "Starting Railway deploy attempt ${attempt}/${max_attempts}..."
-
-  set +e
-  railway up . \
-    --path-as-root \
-    --ci \
-    --verbose \
-    --project "${RAILWAY_PROJECT_ID}" \
-    --environment "${RAILWAY_ENVIRONMENT_ID}" \
-    --service "${RAILWAY_SERVICE_ID}" \
-    --message "GitHub Actions deploy ${GITHUB_SHA:-manual}" \
-    2>&1 | tee "${log_file}"
-  local exit_code=${PIPESTATUS[0]}
-  set -e
-
-  return "${exit_code}"
-}
-
-should_retry_failed_deploy() {
-  local log_file="$1"
-
-  if grep -Eiq "${transient_failure_pattern}" "${log_file}"; then
-    return 0
+for required_env_var in "${required_env_vars[@]}"; do
+  if [ -z "${!required_env_var:-}" ]; then
+    echo "Missing required environment variable: ${required_env_var}" >&2
+    exit 1
   fi
-
-  if grep -Eq "${post_build_failure_pattern}" "${log_file}"; then
-    return 0
-  fi
-
-  return 1
-}
-
-attempt=1
-while [ "${attempt}" -le "${max_attempts}" ]; do
-  log_file="$(mktemp)"
-
-  if run_deploy_attempt "${attempt}" "${log_file}"; then
-    echo "Railway deploy succeeded on attempt ${attempt}/${max_attempts}."
-    rm -f "${log_file}"
-    exit 0
-  else
-    exit_code=$?
-  fi
-
-  if [ "${attempt}" -ge "${max_attempts}" ]; then
-    echo "Railway deploy failed after ${attempt} attempt(s)." >&2
-    rm -f "${log_file}"
-    exit "${exit_code}"
-  fi
-
-  if ! should_retry_failed_deploy "${log_file}"; then
-    echo "Railway deploy failed before a retriable post-build handoff; not retrying." >&2
-    rm -f "${log_file}"
-    exit "${exit_code}"
-  fi
-
-  retry_delay_seconds=$((base_retry_delay_seconds * attempt))
-  echo "Railway deploy failed after a completed build or known transient handoff error. Retrying in ${retry_delay_seconds}s..." >&2
-  rm -f "${log_file}"
-  sleep "${retry_delay_seconds}"
-  attempt=$((attempt + 1))
 done
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required for Railway deploy polling." >&2
+  exit 1
+fi
+
+if ! command -v python >/dev/null 2>&1; then
+  echo "python is required for Railway environment config updates." >&2
+  exit 1
+fi
+
+deploy_wait_seconds="${RAILWAY_DEPLOY_WAIT_SECONDS:-600}"
+deploy_poll_seconds="${RAILWAY_DEPLOY_POLL_SECONDS:-10}"
+
+load_service_status() {
+  railway service status \
+    --json \
+    --service "${RAILWAY_SERVICE_ID}" \
+    --environment "${RAILWAY_ENVIRONMENT_ID}"
+}
+
+status_json="$(load_service_status)"
+previous_deployment_id="$(
+  printf '%s' "${status_json}" | jq -r '.deploymentId // empty'
+)"
+
+echo "Switching Railway service ${RAILWAY_SERVICE_ID} to image ${RAILWAY_IMAGE_REF}..."
+
+railway environment config \
+  --environment "${RAILWAY_ENVIRONMENT_ID}" \
+  --json |
+  python -c '
+import json
+import sys
+
+service_id = sys.argv[1]
+image_ref = sys.argv[2]
+
+config = json.load(sys.stdin)
+services = config.setdefault("services", {})
+service_config = services.setdefault(service_id, {})
+
+service_config["source"] = {
+    "image": image_ref,
+}
+
+deploy_config = service_config.setdefault("deploy", {})
+deploy_config["startCommand"] = "node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui"
+deploy_config["healthcheckPath"] = "/api/health"
+deploy_config["restartPolicyType"] = "ON_FAILURE"
+deploy_config["restartPolicyMaxRetries"] = 10
+
+json.dump(config, sys.stdout)
+' "${RAILWAY_SERVICE_ID}" "${RAILWAY_IMAGE_REF}" |
+  railway environment edit \
+    --environment "${RAILWAY_ENVIRONMENT_ID}" \
+    --message "GitHub Actions deploy ${GITHUB_SHA:-manual}" \
+    --json
+
+deadline_seconds=$((SECONDS + deploy_wait_seconds))
+
+while [ "${SECONDS}" -lt "${deadline_seconds}" ]; do
+  status_json="$(load_service_status)"
+  current_deployment_id="$(
+    printf '%s' "${status_json}" | jq -r '.deploymentId // empty'
+  )"
+  current_status="$(
+    printf '%s' "${status_json}" | jq -r '.status // empty'
+  )"
+
+  echo "Railway status: ${current_status:-unknown} (${current_deployment_id:-none})"
+
+  if [ -n "${current_deployment_id}" ] &&
+    [ "${current_deployment_id}" != "${previous_deployment_id}" ]; then
+    case "${current_status}" in
+      SUCCESS)
+        echo "Railway image deployment succeeded: ${current_deployment_id}"
+        exit 0
+        ;;
+      FAILED|CRASHED|REMOVED)
+        echo "Railway image deployment failed: ${current_deployment_id}" >&2
+        railway logs "${current_deployment_id}" \
+          --deployment \
+          --lines 200 \
+          --service "${RAILWAY_SERVICE_ID}" \
+          --environment "${RAILWAY_ENVIRONMENT_ID}" || true
+        exit 1
+        ;;
+    esac
+  fi
+
+  sleep "${deploy_poll_seconds}"
+done
+
+echo "Timed out waiting for Railway to report a fresh deployment for ${RAILWAY_IMAGE_REF}." >&2
+
+latest_status_json="$(load_service_status)"
+latest_deployment_id="$(
+  printf '%s' "${latest_status_json}" | jq -r '.deploymentId // empty'
+)"
+
+if [ -n "${latest_deployment_id}" ]; then
+  railway logs "${latest_deployment_id}" \
+    --deployment \
+    --lines 200 \
+    --service "${RAILWAY_SERVICE_ID}" \
+    --environment "${RAILWAY_ENVIRONMENT_ID}" || true
+fi
+
+exit 1

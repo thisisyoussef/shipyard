@@ -109,13 +109,17 @@ generated project files under a predictable server-side workspace path.
 "startCommand": "node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui"
 ```
 
-- Repo-controlled deploys keep the same contract by uploading the nested app as
-  the deployment root, while the checked-in wrapper retries transient post-build
-  Railway handoff failures:
+- Repo-controlled deploys now build the checked-in Dockerfile on GitHub, push
+  that image to GHCR, and switch the existing Railway service to the image
+  source in place so the hosted domain stays stable:
 
 ```yaml
 run: |
   bash .github/scripts/railway-ci-deploy.sh
+```
+
+```bash
+railway environment config --json | python -c '...' | railway environment edit --json
 ```
 
 - The hosted Railway workflow now keeps Playwright browser downloads out of the

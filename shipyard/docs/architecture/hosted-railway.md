@@ -136,8 +136,10 @@ not confuse the Shipyard editor with the product being built.
   runtime from `dist/bin/shipyard.js`.
 - If you prefer repo-controlled auto-deploy instead of Railway's native GitHub
   integration, add a root GitHub Actions workflow that runs on pushes to
-  `main`, changes into `shipyard/`, and deploys with
-  `railway up . --path-as-root --project <project-id> --environment <env-id> --service <service-id>`.
+  `main`, builds `shipyard/Dockerfile`, pushes the image to GHCR, links the
+  production Railway project, and updates the live service by fetching the
+  Railway environment config JSON, rewriting the service `source.image`, and
+  committing that config back through `railway environment edit`.
 - Repo-controlled auto-deploy should use a GitHub Actions secret for Railway
   authentication. Prefer `RAILWAY_TOKEN` with a Railway project token; keep
   `RAILWAY_API_TOKEN` as the fallback when you intentionally use a broader
@@ -157,12 +159,15 @@ not confuse the Shipyard editor with the product being built.
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1`,
   `SHIPYARD_MODEL_PROVIDER=anthropic`, and
   `SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6` into the production Railway
-  service before uploading new builds.
+  service before switching the live service to the freshly pushed GHCR image.
 - The repo-controlled deploy step now shells through
-  `.github/scripts/railway-ci-deploy.sh`, which runs `railway up` with verbose
-  logging and retries deploys that fail after a completed build or surface the
-  transient registry/container-pull errors that have been hitting the hosted
-  service.
+  `.github/scripts/railway-ci-deploy.sh`, which updates `source.image`,
+  re-applies the hosted start/health/restart contract through a full
+  environment-config JSON edit, and polls Railway until a new deployment
+  reaches `SUCCESS` or yields deploy logs for the new image-backed rollout.
+- This GHCR-backed deploy path keeps the existing Railway service and public
+  domain while bypassing the `railway up` repo-upload path that was repeatedly
+  failing during the post-build pull/unpack handoff.
 - The Dockerfile now compiles Shipyard in a build stage, prunes dev
   dependencies, and copies only `package.json`, `node_modules`, `dist/`, and
   built-in `skills/` into the final runtime image. The Playwright packages now
