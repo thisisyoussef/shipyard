@@ -129,6 +129,10 @@ import { buildTargetManagerState, IDLE_TARGET_ENRICHMENT_STATE } from "./target-
 import { createTargetTool } from "../tools/target-manager/create-target.js";
 import { enrichTargetTool } from "../tools/target-manager/enrich-target.js";
 import {
+  captureTargetReleaseArchive,
+  resolveTargetReleaseArchiveRoot,
+} from "../tools/target-manager/release-archive.js";
+import {
   deleteStoredUpload,
   MAX_UPLOAD_REQUEST_BYTES,
   readRequestBodyWithLimit,
@@ -184,6 +188,7 @@ export interface StartUiRuntimeServerOptions {
   executeUltimateMode?: (
     options: ExecuteUltimateModeOptions,
   ) => Promise<Awaited<ReturnType<typeof executeUltimateMode>>>;
+  targetReleaseArchiveRoot?: string;
 }
 
 export interface UiRuntimeServer {
@@ -231,6 +236,10 @@ interface BrowserProjectRuntime {
       }
     | null;
   pendingEnrichmentTasks: Set<Promise<void>>;
+  targetReleaseArchiveRoot: string;
+  releaseArchiveTail: Promise<void>;
+  pendingReleaseArchiveTasks: Set<Promise<void>>;
+  lastReleaseArchiveMarker: string | null;
 }
 
 export interface ExistingUiRuntimeInfo {
@@ -1070,6 +1079,13 @@ export async function startUiRuntimeServer(
       enrichmentRunSequence: 0,
       activeEnrichmentRun: null,
       pendingEnrichmentTasks: new Set<Promise<void>>(),
+      targetReleaseArchiveRoot: resolveTargetReleaseArchiveRoot(
+        sessionState.targetsDirectory,
+        options.targetReleaseArchiveRoot,
+      ),
+      releaseArchiveTail: Promise.resolve(),
+      pendingReleaseArchiveTasks: new Set<Promise<void>>(),
+      lastReleaseArchiveMarker: null,
     } satisfies BrowserProjectRuntime;
 
     project.sessionState.workbenchState.targetManager = project.targetManagerState;
@@ -1432,6 +1448,8 @@ export async function startUiRuntimeServer(
     project: BrowserProjectRuntime,
     previewState: PreviewState,
   ): Promise<void> => {
+    const previousPreviewState = project.sessionState.workbenchState.previewState;
+
     project.sessionState.workbenchState = applyBackendMessage(
       project.sessionState.workbenchState,
       {
@@ -1461,6 +1479,73 @@ export async function startUiRuntimeServer(
         type: "preview:state",
         preview: previewState,
       });
+    }
+
+    if (
+      !isClosing &&
+      project.sessionState.activePhase === "code" &&
+      previousPreviewState.status !== "running" &&
+      previewState.status === "running" &&
+      previewState.lastRestartReason?.includes("Refresh requested") === true
+    ) {
+      const archiveMarker = [
+        project.sessionState.targetDirectory,
+        project.sessionState.turnCount,
+        previewState.lastRestartReason,
+        previewState.url,
+      ].join("|");
+
+      if (project.lastReleaseArchiveMarker !== archiveMarker) {
+        project.lastReleaseArchiveMarker = archiveMarker;
+
+        const task = project.releaseArchiveTail
+          .catch(() => {})
+          .then(async () => {
+            try {
+              const archive = await captureTargetReleaseArchive({
+                archiveRoot: project.targetReleaseArchiveRoot,
+                targetDirectory: project.sessionState.targetDirectory,
+                targetsDirectory: project.sessionState.targetsDirectory,
+                sessionId: project.sessionState.sessionId,
+                turnCount: project.sessionState.turnCount,
+                previewState,
+                discovery: project.sessionState.discovery,
+                targetProfile: project.sessionState.targetProfile,
+              });
+
+              await project.traceLogger.log("target.release_archive.saved", {
+                sessionId: project.sessionState.sessionId,
+                targetDirectory: project.sessionState.targetDirectory,
+                archiveRoot: archive.archiveRoot,
+                archiveRepoPath: archive.archiveRepoPath,
+                tag: archive.tag,
+                reason: archive.reason,
+                description: archive.description,
+                tags: archive.tags,
+                commitSha: archive.commitSha,
+              });
+            } catch (error) {
+              if (project.lastReleaseArchiveMarker === archiveMarker) {
+                project.lastReleaseArchiveMarker = null;
+              }
+              await project.traceLogger.log("target.release_archive.error", {
+                sessionId: project.sessionState.sessionId,
+                targetDirectory: project.sessionState.targetDirectory,
+                archiveRoot: project.targetReleaseArchiveRoot,
+                reason: previewState.lastRestartReason,
+                message: error instanceof Error
+                  ? error.message
+                  : "Target release archive failed.",
+              });
+            }
+          });
+
+        project.releaseArchiveTail = task;
+        project.pendingReleaseArchiveTasks.add(task);
+        void task.finally(() => {
+          project.pendingReleaseArchiveTasks.delete(task);
+        });
+      }
     }
   };
 
@@ -3305,10 +3390,19 @@ export async function startUiRuntimeServer(
       const pendingEnrichmentTasks = [...projectRuntimes.values()].flatMap((project) =>
         [...project.pendingEnrichmentTasks]
       );
+      const pendingReleaseArchiveTasks = [...projectRuntimes.values()].flatMap((project) =>
+        [...project.pendingReleaseArchiveTasks]
+      );
 
-      if (pendingEnrichmentTasks.length > 0) {
+      if (
+        pendingEnrichmentTasks.length > 0 ||
+        pendingReleaseArchiveTasks.length > 0
+      ) {
         await Promise.race([
-          Promise.allSettled(pendingEnrichmentTasks),
+          Promise.allSettled([
+            ...pendingEnrichmentTasks,
+            ...pendingReleaseArchiveTasks,
+          ]),
           new Promise<void>((resolve) => {
             setTimeout(resolve, CLOSE_ENRICHMENT_DRAIN_TIMEOUT_MS);
           }),
