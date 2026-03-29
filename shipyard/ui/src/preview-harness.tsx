@@ -5,7 +5,11 @@
  * Open via /preview.html on the Vite dev server.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import type {
+  CodeBrowserReadResponse,
+  CodeBrowserTreeResponse,
+} from "../../src/ui/contracts.js";
 import { NavBar } from "./shell/index.js";
 import { UltimateBadge } from "./shell/index.js";
 import { DashboardView, EditorView, KanbanView } from "./views/index.js";
@@ -17,10 +21,18 @@ import {
 } from "./dashboard-preferences.js";
 import { useRouter } from "./use-router.js";
 import type { Route } from "./router.js";
+import type { CodeBrowserClient } from "./code-browser-client.js";
 import type {
+  ContextReceiptViewModel,
+  FileEventViewModel,
+  LatestDeployViewModel,
+  PendingUploadReceiptViewModel,
+  PreviewStateViewModel,
   ProjectBoardViewModel,
+  SessionRunSummaryViewModel,
   SessionStateViewModel,
   TargetManagerViewModel,
+  TurnViewModel,
 } from "./view-models.js";
 
 // ── Mock Data ──────────────────────────────────
@@ -146,6 +158,131 @@ const MOCK_SESSION_STATE: SessionStateViewModel = {
   tracePath: "/tmp/preview.ndjson",
 };
 
+const MOCK_TURNS: TurnViewModel[] = [
+  {
+    id: "preview-turn-1",
+    instruction: "Inspect the package scripts and confirm the preview entrypoint.",
+    status: "success",
+    startedAt: "2026-03-28T12:12:00.000Z",
+    summary: "Read the package manifest and confirmed the scripts.",
+    contextPreview: ["Preserve the current Vite setup."],
+    agentMessages: ["Read the package manifest and confirmed the scripts."],
+    langSmithTrace: null,
+    activity: [],
+  },
+];
+
+const MOCK_FILE_EVENTS: FileEventViewModel[] = [
+  {
+    id: "preview-file-1",
+    path: "package.json",
+    status: "diff",
+    title: "Diff preview",
+    summary: "Normalized the package scripts.",
+    turnId: "preview-turn-1",
+    diffLines: [
+      {
+        id: "preview-diff-1",
+        kind: "add",
+        text: "+\"test\": \"vitest run\"",
+      },
+    ],
+  },
+];
+
+const MOCK_PREVIEW_STATE: PreviewStateViewModel = {
+  status: "running",
+  summary: "Preview is running on loopback.",
+  url: "http://127.0.0.1:4173",
+  logTail: ["VITE ready"],
+  lastRestartReason: null,
+};
+
+const MOCK_LATEST_DEPLOY: LatestDeployViewModel = {
+  status: "success",
+  platform: "vercel",
+  available: true,
+  unavailableReason: null,
+  productionUrl: "https://craft-your-vision.vercel.app",
+  summary: "Production deploy completed on Vercel.",
+  logExcerpt: null,
+  command: "vercel deploy --prod --yes --token [redacted]",
+  requestedAt: "2026-03-28T12:14:00.000Z",
+  completedAt: "2026-03-28T12:16:00.000Z",
+};
+
+const MOCK_CONTEXT_HISTORY: ContextReceiptViewModel[] = [];
+const MOCK_PENDING_UPLOADS: PendingUploadReceiptViewModel[] = [];
+const MOCK_SESSION_HISTORY: SessionRunSummaryViewModel[] = [];
+
+const MOCK_CODE_TREE: CodeBrowserTreeResponse = {
+  projectId: "/projects/craft-vision",
+  root: {
+    path: ".",
+    name: "craft-vision",
+  },
+  nodes: [
+    {
+      name: "src",
+      type: "directory",
+      path: "src",
+      children: [
+        {
+          name: "App.tsx",
+          type: "file",
+          path: "src/App.tsx",
+        },
+      ],
+    },
+    {
+      name: "package.json",
+      type: "file",
+      path: "package.json",
+    },
+  ],
+};
+
+const MOCK_CODE_FILES = new Map<string, CodeBrowserReadResponse>([
+  [
+    "src/App.tsx",
+    {
+      projectId: "/projects/craft-vision",
+      path: "src/App.tsx",
+      sizeBytes: 118,
+      truncated: false,
+      binary: false,
+      contents: "export function App() {\n  return <main>Craft Your Vision</main>;\n}\n",
+    },
+  ],
+  [
+    "package.json",
+    {
+      projectId: "/projects/craft-vision",
+      path: "package.json",
+      sizeBytes: 96,
+      truncated: false,
+      binary: false,
+      contents: "{\n  \"name\": \"craft-your-vision\",\n  \"scripts\": {\n    \"dev\": \"vite\"\n  }\n}\n",
+    },
+  ],
+]);
+
+const MOCK_CODE_BROWSER_CLIENT: CodeBrowserClient = {
+  async loadTree() {
+    return MOCK_CODE_TREE;
+  },
+  async readFile(_projectId, filePath) {
+    return MOCK_CODE_FILES.get(filePath) ?? {
+      projectId: "/projects/craft-vision",
+      path: filePath,
+      sizeBytes: 0,
+      truncated: false,
+      binary: false,
+      contents: "",
+    };
+  },
+};
+
 // ── Component ──────────────────────────────────
 
 export function PreviewHarness() {
@@ -154,6 +291,11 @@ export function PreviewHarness() {
   const [preferences, setPreferences] = useState(() =>
     createInitialDashboardPreferences(),
   );
+  const [instructionDraft, setInstructionDraft] = useState("");
+  const [contextDraft, setContextDraft] = useState("");
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const instructionInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const contextInputRef = useRef<HTMLTextAreaElement | null>(null);
   const editorRoute =
     route.view === "editor"
       ? route
@@ -205,6 +347,48 @@ export function PreviewHarness() {
           productId={route.productId}
           productName="Craft Your Vision"
           scaffoldType="react-ts"
+          hostedEditorUrl="http://127.0.0.1:3210"
+          sessionState={MOCK_SESSION_STATE}
+          sessionHistory={MOCK_SESSION_HISTORY}
+          targetManager={MOCK_TARGET_MANAGER}
+          projectBoard={MOCK_PROJECT_BOARD}
+          turns={MOCK_TURNS}
+          fileEvents={MOCK_FILE_EVENTS}
+          previewState={MOCK_PREVIEW_STATE}
+          latestDeploy={MOCK_LATEST_DEPLOY}
+          contextHistory={MOCK_CONTEXT_HISTORY}
+          pendingUploads={MOCK_PENDING_UPLOADS}
+          connectionState="ready"
+          agentStatus="Ready for the next instruction."
+          instruction={instructionDraft}
+          contextDraft={contextDraft}
+          composerNotice={null}
+          composerAttachments={[]}
+          instructionInputRef={instructionInputRef}
+          contextInputRef={contextInputRef}
+          leftSidebarOpen={leftSidebarOpen}
+          rightSidebarOpen={false}
+          onInstructionChange={setInstructionDraft}
+          onContextChange={setContextDraft}
+          onInstructionKeyDown={() => undefined}
+          onContextKeyDown={() => undefined}
+          onClearContext={() => setContextDraft("")}
+          onAttachFiles={() => undefined}
+          onSubmitInstruction={(event) => {
+            event.preventDefault();
+          }}
+          onCancelInstruction={() => undefined}
+          onRemoveAttachment={() => undefined}
+          onRequestSessionResume={() => undefined}
+          onRequestTargetSwitch={() => undefined}
+          onRequestTargetCreate={() => undefined}
+          onActivateProject={() => undefined}
+          onRefreshStatus={() => undefined}
+          onCopyTracePath={() => undefined}
+          traceButtonLabel="Copy trace path"
+          onToggleLeftSidebar={() => setLeftSidebarOpen((current) => !current)}
+          onToggleRightSidebar={() => undefined}
+          codeBrowserClient={MOCK_CODE_BROWSER_CLIENT}
           onNavigate={handleNavigate}
         />
       );

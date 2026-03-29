@@ -134,4 +134,18 @@ The board and ultimate work should align with those future packs by:
   `shipyard/src/ui/server.ts`,
   `shipyard/tests/ui-dashboard-catalog.test.ts`, and
   `shipyard/tests/ui-dashboard-launch.test.ts`.
-- Remaining stories in this pack are still planned.
+- `UII-S03` landed the live editor runtime composition and safe code explorer in
+  `shipyard/ui/src/views/EditorView.tsx`,
+  `shipyard/ui/src/workbench-surfaces.tsx`,
+  `shipyard/ui/src/ShipyardWorkbench.tsx`,
+  `shipyard/ui/src/editor-preferences.ts`,
+  `shipyard/ui/src/code-browser-client.ts`,
+  `shipyard/ui/src/panels/CodeExplorerPanel.tsx`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/code-browser.ts`,
+  `shipyard/src/ui/server.ts`,
+  `shipyard/tests/ui-editor-view.test.ts`,
+  `shipyard/tests/ui-editor-preferences.test.ts`,
+  `shipyard/tests/ui-code-browser.test.ts`, and
+  `shipyard/tests/ui-runtime.test.ts`.
+- `UII-S04`, `UII-S05`, and `UII-S06` remain planned.

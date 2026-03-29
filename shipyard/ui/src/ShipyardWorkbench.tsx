@@ -6,23 +6,13 @@
  * Right: workspace (preview / files / live view — tabbed)
  */
 
-import type { FormEvent, KeyboardEvent, RefObject } from "react";
 import { useState } from "react";
 
 import {
-  ChatWorkspace,
-  ComposerPanel,
-  type ComposerAttachment,
-  ContextPanel,
   FilePanel,
-  RunHistoryPanel,
   OutputPanel,
-  SessionPanel,
 } from "./panels/index.js";
-import type { BadgeTone } from "./primitives.js";
-import { ProjectBoard } from "./ProjectBoard.js";
 import { TargetCreationDialog } from "./TargetCreationDialog.js";
-import { TargetHeader } from "./TargetHeader.js";
 import { TargetSwitcher } from "./TargetSwitcher.js";
 import {
   HeaderStrip,
@@ -30,72 +20,14 @@ import {
   ShellSidebar,
   ShipyardShell,
 } from "./shell/index.js";
-import type {
-  ContextReceiptViewModel,
-  FileEventViewModel,
-  LatestDeployViewModel,
-  PendingUploadReceiptViewModel,
-  ProjectBoardViewModel,
-  PreviewStateViewModel,
-  SessionRunSummaryViewModel,
-  SessionStateViewModel,
-  TargetManagerViewModel,
-  TurnViewModel,
-  WorkbenchConnectionState,
-} from "./view-models.js";
+import type { WorkbenchRuntimeProps } from "./workbench-surfaces.js";
+import {
+  WorkbenchConversationSurface,
+  WorkbenchDrawerContent,
+} from "./workbench-surfaces.js";
 
-/* ── Shared types ──────────────────────────── */
-
-interface ComposerNotice {
-  tone: BadgeTone;
-  title: string;
-  detail: string;
-}
-
-export interface ShipyardWorkbenchProps {
-  sessionState: SessionStateViewModel | null;
-  sessionHistory: SessionRunSummaryViewModel[];
-  targetManager: TargetManagerViewModel | null;
-  projectBoard: ProjectBoardViewModel | null;
-  turns: TurnViewModel[];
-  fileEvents: FileEventViewModel[];
-  previewState: PreviewStateViewModel;
-  latestDeploy: LatestDeployViewModel;
-  contextHistory: ContextReceiptViewModel[];
-  pendingUploads: PendingUploadReceiptViewModel[];
-  connectionState: WorkbenchConnectionState;
-  agentStatus: string;
-  instruction: string;
-  contextDraft: string;
-  composerNotice: ComposerNotice | null;
-  composerAttachments: ComposerAttachment[];
-  instructionInputRef: RefObject<HTMLTextAreaElement | null>;
-  contextInputRef: RefObject<HTMLTextAreaElement | null>;
-  onInstructionChange: (value: string) => void;
-  onContextChange: (value: string) => void;
-  onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  onContextKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  onClearContext: () => void;
-  onAttachFiles: (files: File[]) => void;
-  onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
-  onCancelInstruction: () => void;
-  onRemoveAttachment: (attachmentId: string) => void;
-  onRequestSessionResume: (sessionId: string) => void;
-  onRequestTargetSwitch: (targetPath: string) => void;
-  onRequestTargetCreate: (input: {
-    name: string;
-    description: string;
-    scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
-  }) => void;
-  onActivateProject: (projectId: string) => void;
-  onRefreshStatus: () => void;
-  onCopyTracePath: () => void;
-  traceButtonLabel: string;
-  leftSidebarOpen: boolean;
-  rightSidebarOpen: boolean;
+export interface ShipyardWorkbenchProps extends WorkbenchRuntimeProps {
   initialPrimaryView?: "chat" | "preview" | "live";
-  onToggleLeftSidebar: () => void;
-  onToggleRightSidebar: () => void;
 }
 
 /* ── Icon components ──────────────────────── */
@@ -164,43 +96,26 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
           />
         }
         leftPanel={
-          <div className="conversation-pane">
-            <ProjectBoard
-              projectBoard={props.projectBoard}
-              onActivateProject={props.onActivateProject}
-              onOpenTargets={() => setTargetSwitcherOpen(true)}
-            />
-
-            {/* Target context — compact */}
-            {props.targetManager ? (
-              <TargetHeader
-                activePhase={activePhase}
-                targetManager={props.targetManager}
-                latestDeploy={props.latestDeploy}
-                onOpenSwitcher={() => setTargetSwitcherOpen(true)}
-              />
-            ) : null}
-
-            {/* Scrollable conversation */}
-            <div className="conversation-scroll">
-              <ChatWorkspace turns={props.turns} />
-            </div>
-
-            {/* Composer pinned at bottom */}
-            <ComposerPanel
-              instruction={props.instruction}
-              onInstructionChange={props.onInstructionChange}
-              onSubmit={props.onSubmitInstruction}
-              onCancel={props.onCancelInstruction}
-              onKeyDown={props.onInstructionKeyDown}
-              textareaRef={props.instructionInputRef}
-              agentBusy={props.connectionState === "agent-busy"}
-              notice={props.composerNotice}
-              attachments={props.composerAttachments}
-              onAttachFiles={props.onAttachFiles}
-              onRemoveAttachment={props.onRemoveAttachment}
-            />
-          </div>
+          <WorkbenchConversationSurface
+            sessionState={props.sessionState}
+            targetManager={props.targetManager}
+            projectBoard={props.projectBoard}
+            turns={props.turns}
+            latestDeploy={props.latestDeploy}
+            connectionState={props.connectionState}
+            instruction={props.instruction}
+            composerNotice={props.composerNotice}
+            composerAttachments={props.composerAttachments}
+            instructionInputRef={props.instructionInputRef}
+            onInstructionChange={props.onInstructionChange}
+            onInstructionKeyDown={props.onInstructionKeyDown}
+            onAttachFiles={props.onAttachFiles}
+            onSubmitInstruction={props.onSubmitInstruction}
+            onCancelInstruction={props.onCancelInstruction}
+            onRemoveAttachment={props.onRemoveAttachment}
+            onActivateProject={props.onActivateProject}
+            onOpenTargets={() => setTargetSwitcherOpen(true)}
+          />
         }
         rightPanel={
           <div className="workspace-pane">
@@ -211,41 +126,33 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
           </div>
         }
         drawer={
-          <div className="drawer-content">
-            <SessionPanel session={props.sessionState} />
-            <RunHistoryPanel
-              runs={props.sessionHistory}
-              currentSessionId={props.sessionState?.sessionId ?? null}
-              onResumeSession={props.onRequestSessionResume}
-            />
-            <ContextPanel
-              history={props.contextHistory}
-              draft={props.contextDraft}
-              onDraftChange={props.onContextChange}
-              onKeyDown={props.onContextKeyDown}
-              onClear={props.onClearContext}
-              textareaRef={props.contextInputRef}
-            />
-          </div>
+          <WorkbenchDrawerContent
+            sessionState={props.sessionState}
+            sessionHistory={props.sessionHistory}
+            contextHistory={props.contextHistory}
+            contextDraft={props.contextDraft}
+            contextInputRef={props.contextInputRef}
+            onContextChange={props.onContextChange}
+            onContextKeyDown={props.onContextKeyDown}
+            onClearContext={props.onClearContext}
+            onRequestSessionResume={props.onRequestSessionResume}
+          />
         }
         drawerOpen={drawerOpen}
         onDrawerClose={() => setDrawerOpen(false)}
         // Legacy props for backward compat with tests
         leftSidebar={
           <ShellSidebar collapsed={!drawerOpen} railItems={leftRailItems}>
-            <SessionPanel session={props.sessionState} />
-            <RunHistoryPanel
-              runs={props.sessionHistory}
-              currentSessionId={props.sessionState?.sessionId ?? null}
-              onResumeSession={props.onRequestSessionResume}
-            />
-            <ContextPanel
-              history={props.contextHistory}
-              draft={props.contextDraft}
-              onDraftChange={props.onContextChange}
-              onKeyDown={props.onContextKeyDown}
-              onClear={props.onClearContext}
-              textareaRef={props.contextInputRef}
+            <WorkbenchDrawerContent
+              sessionState={props.sessionState}
+              sessionHistory={props.sessionHistory}
+              contextHistory={props.contextHistory}
+              contextDraft={props.contextDraft}
+              contextInputRef={props.contextInputRef}
+              onContextChange={props.onContextChange}
+              onContextKeyDown={props.onContextKeyDown}
+              onClearContext={props.onClearContext}
+              onRequestSessionResume={props.onRequestSessionResume}
             />
           </ShellSidebar>
         }
