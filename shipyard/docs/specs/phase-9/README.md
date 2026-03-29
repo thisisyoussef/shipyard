@@ -198,11 +198,16 @@ if (envTargetsDirectory) {
 ```
 
 - Repo-driven pushes to `main` can now redeploy the same hosted service without
-  a manual Railway upload:
+  a manual Railway upload by publishing the Dockerfile to GHCR and switching
+  the live service to that image source in place:
 
 ```yaml
 run: |
   bash .github/scripts/railway-ci-deploy.sh
+```
+
+```bash
+railway environment config --json | python -c '...' | railway environment edit --json
 ```
 
 - Hosted access-token rotations now ride the same deploy workflow and local

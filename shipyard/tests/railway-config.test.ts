@@ -82,8 +82,14 @@ describe("railway config", () => {
   it("syncs the production Anthropic defaults before deploying to Railway", async () => {
     const workflow = await readFile(railwayWorkflowPath, "utf8");
 
+    expect(workflow).toContain("packages: write");
+    expect(workflow).toContain("uses: docker/login-action@v3");
+    expect(workflow).toContain("uses: docker/build-push-action@v6");
+    expect(workflow).toContain('image_repo="ghcr.io/${GITHUB_REPOSITORY,,}"');
+    expect(workflow).toContain("RAILWAY_IMAGE_REF: ${{ steps.ghcr.outputs.image_ref }}");
     expect(workflow).toContain("ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}");
     expect(workflow).toContain("Missing ANTHROPIC_API_KEY GitHub secret");
+    expect(workflow).toContain("railway link \\");
     expect(workflow).toContain("railway variable set ANTHROPIC_API_KEY --stdin");
     expect(workflow).toContain("SHIPYARD_GITHUB_TOKEN: ${{ secrets.SHIPYARD_GITHUB_TOKEN }}");
     expect(workflow).toContain("railway variable set GITHUB_TOKEN --stdin");
@@ -97,15 +103,18 @@ describe("railway config", () => {
     expect(workflow).toContain("bash .github/scripts/railway-ci-deploy.sh");
   });
 
-  it("retries transient or post-build Railway deploy handoff failures", async () => {
+  it("switches the live Railway service to a GHCR image and waits for a fresh deployment result", async () => {
     const script = await readFile(railwayDeployScriptPath, "utf8");
 
-    expect(script).toContain('max_attempts="${RAILWAY_DEPLOY_MAX_ATTEMPTS:-3}"');
-    expect(script).toContain('base_retry_delay_seconds="${RAILWAY_DEPLOY_RETRY_DELAY_SECONDS:-15}"');
-    expect(script).toContain("failed to pull/unpack image");
-    expect(script).toContain("DEADLINE_EXCEEDED");
-    expect(script).toContain("built in [0-9]");
-    expect(script).toContain("--verbose");
-    expect(script).toContain("Railway deploy failed before a retriable post-build handoff; not retrying.");
+    expect(script).toContain('RAILWAY_IMAGE_REF');
+    expect(script).toContain('service_config["source"]');
+    expect(script).toContain('deploy_config["startCommand"]');
+    expect(script).toContain("railway environment config");
+    expect(script).toContain("python -c");
+    expect(script).toContain("railway environment edit");
+    expect(script).toContain("railway service status");
+    expect(script).toContain("Railway image deployment succeeded");
+    expect(script).toContain("railway logs");
+    expect(script).toContain("Timed out waiting for Railway to report a fresh deployment");
   });
 });
