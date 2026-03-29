@@ -10,6 +10,7 @@ import type {
   CodeBrowserReadResponse,
   CodeBrowserTreeResponse,
 } from "../../src/ui/contracts.js";
+import { HumanFeedbackPage } from "./HumanFeedbackPage.js";
 import { NavBar } from "./shell/index.js";
 import { DashboardView, EditorView, KanbanView } from "./views/index.js";
 import { buildDashboardCatalog } from "./dashboard-catalog.js";
@@ -22,6 +23,7 @@ import { useRouter } from "./use-router.js";
 import type { Route } from "./router.js";
 import type { CodeBrowserClient } from "./code-browser-client.js";
 import { resolveWorkbenchComposerBehavior } from "./ultimate-composer.js";
+import { resolvePreviewHarnessState } from "./preview-harness-state.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
@@ -296,9 +298,15 @@ const MOCK_CODE_BROWSER_CLIENT: CodeBrowserClient = {
 
 export function PreviewHarness() {
   const { route, navigate } = useRouter();
+  const previewState = resolvePreviewHarnessState(
+    typeof window === "undefined" ? "" : window.location.search,
+  );
   const [heroPrompt, setHeroPrompt] = useState("");
   const [preferences, setPreferences] = useState(() =>
-    createInitialDashboardPreferences(),
+    setDashboardActiveTab(
+      createInitialDashboardPreferences(),
+      previewState.dashboardTab,
+    ),
   );
   const [instructionDraft, setInstructionDraft] = useState("");
   const [contextDraft, setContextDraft] = useState("");
@@ -306,6 +314,7 @@ export function PreviewHarness() {
   const [ultimateArmed, setUltimateArmed] = useState(false);
   const instructionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const contextInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const humanFeedbackInputRef = useRef<HTMLTextAreaElement | null>(null);
   const editorRoute =
     route.view === "editor"
       ? route
@@ -407,6 +416,10 @@ export function PreviewHarness() {
           onToggleLeftSidebar={() => setLeftSidebarOpen((current) => !current)}
           onToggleRightSidebar={() => undefined}
           codeBrowserClient={MOCK_CODE_BROWSER_CLIENT}
+          initialLayout={{
+            activeTab: previewState.editorTab,
+            splitRatio: 40,
+          }}
           onNavigate={handleNavigate}
         />
       );
@@ -415,7 +428,24 @@ export function PreviewHarness() {
       view = <KanbanView />;
       break;
     case "human-feedback":
-      view = <div style={{ padding: "2rem", color: "var(--c-text-secondary, #888)" }}>Human Feedback view (not included in preview harness)</div>;
+      view = (
+        <HumanFeedbackPage
+          sessionState={MOCK_SESSION_STATE}
+          previewState={MOCK_PREVIEW_STATE}
+          turns={MOCK_TURNS}
+          connectionState="agent-busy"
+          agentStatus="Ultimate mode is active."
+          instruction={instructionDraft}
+          textareaRef={humanFeedbackInputRef}
+          notice={null}
+          onInstructionChange={setInstructionDraft}
+          onInstructionKeyDown={() => undefined}
+          onSubmit={(event) => {
+            event.preventDefault();
+          }}
+          onRefreshStatus={() => undefined}
+        />
+      );
       break;
     case "dashboard":
     default:
