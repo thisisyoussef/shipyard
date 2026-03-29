@@ -22,7 +22,10 @@ import {
 import { useRouter } from "./use-router.js";
 import type { Route } from "./router.js";
 import type { CodeBrowserClient } from "./code-browser-client.js";
-import { resolveWorkbenchComposerBehavior } from "./ultimate-composer.js";
+import {
+  resolveHumanFeedbackBehavior,
+  resolveWorkbenchComposerBehavior,
+} from "./ultimate-composer.js";
 import { resolvePreviewHarnessState } from "./preview-harness-state.js";
 import type {
   ContextReceiptViewModel,
@@ -359,6 +362,9 @@ export function PreviewHarness() {
     ultimateState: MOCK_ULTIMATE_STATE,
     armed: ultimateArmed,
   });
+  const humanFeedbackBehavior = resolveHumanFeedbackBehavior({
+    ultimateState: MOCK_ULTIMATE_STATE,
+  });
 
   // ── View dispatch ──────────────────────────────
 
@@ -435,7 +441,11 @@ export function PreviewHarness() {
           turns={MOCK_TURNS}
           connectionState="agent-busy"
           agentStatus="Ultimate mode is active."
+          ultimateState={MOCK_ULTIMATE_STATE}
           instruction={instructionDraft}
+          submitLabel={humanFeedbackBehavior.submitLabel}
+          submitDisabled={humanFeedbackBehavior.submitDisabled}
+          helpText={humanFeedbackBehavior.helpText}
           textareaRef={humanFeedbackInputRef}
           notice={null}
           onInstructionChange={setInstructionDraft}
