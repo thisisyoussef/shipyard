@@ -10,6 +10,7 @@ import {
   createDefaultSourceControlWorkbenchState,
   sourceControlWorkbenchStateSchema,
 } from "../source-control/contracts.js";
+import { boardProjectionSchema } from "../tasks/contracts.js";
 import {
   createIdleTddWorkbenchState,
   tddWorkbenchStateSchema,
@@ -344,6 +345,7 @@ export const workbenchStateSchema = z.object({
   hosting: hostingWorkbenchStateSchema.default(
     createDefaultHostingWorkbenchState(),
   ),
+  taskBoard: boardProjectionSchema.nullable().default(null),
   runtimeAssist: runtimeAssistStateSchema,
 });
 
@@ -509,6 +511,11 @@ export const projectsStateMessageSchema = z.object({
   state: projectBoardStateSchema,
 });
 
+export const tasksStateMessageSchema = z.object({
+  type: z.literal("tasks:state"),
+  state: boardProjectionSchema,
+});
+
 export const targetSwitchCompleteMessageSchema = z.object({
   type: z.literal("target:switch_complete"),
   success: z.boolean(),
@@ -541,6 +548,7 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   previewStateMessageSchema,
   targetStateMessageSchema,
   projectsStateMessageSchema,
+  tasksStateMessageSchema,
   targetSwitchCompleteMessageSchema,
   targetEnrichmentProgressMessageSchema,
   deployStateMessageSchema,
@@ -562,6 +570,7 @@ export type TargetEnrichmentState = z.infer<
   typeof targetEnrichmentStateSchema
 >;
 export type ProjectBoardState = z.infer<typeof projectBoardStateSchema>;
+export type TaskBoardState = z.infer<typeof boardProjectionSchema>;
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
 export type DeploySummary = z.infer<typeof deploySummarySchema>;
 export type CodeBrowserTreeResponse = z.infer<

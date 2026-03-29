@@ -20,6 +20,7 @@ import type {
   ProjectBoardState,
   UploadReceipt,
   SessionRunSummary,
+  TaskBoardState,
   TargetEnrichmentState,
   TargetManagerState,
   TargetSummary,
@@ -130,6 +131,8 @@ export type ProjectBoardProjectViewModel =
 
 export type ProjectBoardViewModel = ProjectBoardState;
 
+export type TaskBoardViewModel = TaskBoardState;
+
 export interface SessionRunSummaryViewModel extends SessionRunSummary {}
 
 export interface PipelineWorkbenchStateViewModel extends PipelineWorkbenchState {}
@@ -161,6 +164,7 @@ export interface WorkbenchViewState {
   previewState: PreviewStateViewModel;
   targetManager: TargetManagerViewModel | null;
   projectBoard: ProjectBoardViewModel | null;
+  taskBoard: TaskBoardViewModel | null;
   pipelineState: PipelineWorkbenchStateViewModel | null;
   tddState: TddWorkbenchStateViewModel;
   sourceControl: SourceControlViewModel;
@@ -717,6 +721,7 @@ export function ensureWorkbenchStateDefaults(
     previewState: state.previewState ?? initialState.previewState,
     targetManager: state.targetManager ?? initialState.targetManager,
     projectBoard: state.projectBoard ?? initialState.projectBoard,
+    taskBoard: state.taskBoard ?? initialState.taskBoard,
     pipelineState: state.pipelineState ?? initialState.pipelineState,
     tddState: state.tddState ?? initialState.tddState,
     sourceControl: state.sourceControl ?? initialState.sourceControl,
@@ -747,6 +752,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     ),
     targetManager: null,
     projectBoard: null,
+    taskBoard: null,
     pipelineState: null,
     tddState: createIdleTddWorkbenchState(),
     sourceControl: createDefaultSourceControlWorkbenchState(),
@@ -925,6 +931,7 @@ export function applySessionSnapshot(
     previewState,
     targetManager: recoveredState.targetManager ?? state.targetManager ?? null,
     projectBoard: recoveredState.projectBoard ?? state.projectBoard ?? null,
+    taskBoard: recoveredState.taskBoard ?? state.taskBoard ?? null,
     pipelineState: recoveredState.pipelineState ?? state.pipelineState ?? null,
     tddState:
       recoveredState.tddState
@@ -1303,6 +1310,12 @@ export function applyBackendMessage(
       return {
         ...state,
         projectBoard: message.state,
+      };
+
+    case "tasks:state":
+      return {
+        ...state,
+        taskBoard: message.state,
       };
   }
 }

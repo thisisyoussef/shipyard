@@ -126,3 +126,38 @@ pnpm --dir shipyard typecheck
 pnpm --dir shipyard build
 git diff --check
 ```
+
+## Implementation Notes
+
+- The shipped runtime uses one default task node per approved backlog story so
+  the graph can exist immediately from PM outputs, while still leaving room for
+  later coordinator stories to add deeper sub-task expansion without changing
+  the contract surface.
+- Source-control and hosted-runtime data stay as attached refs on nodes and
+  cards, not copied internal state, so later GitHub or Railway refreshes can
+  update freshness without forking the graph model.
+- The workbench integration is additive: `projectBoard` remains untouched, and
+  the new `taskBoard` plus `tasks:state` stream form the future UI boundary.
+
+## Implemented Modules
+
+- `shipyard/src/tasks/contracts.ts`
+- `shipyard/src/tasks/store.ts`
+- `shipyard/src/tasks/runtime.ts`
+- `shipyard/src/coordination/contracts.ts`
+- `shipyard/src/coordination/store.ts`
+- `shipyard/src/coordination/runtime.ts`
+- `shipyard/src/engine/state.ts`
+- `shipyard/src/ui/contracts.ts`
+- `shipyard/src/ui/workbench-state.ts`
+- `shipyard/src/ui/server.ts`
+
+## Validation Status
+
+- Focused RED/GREEN coverage added for task graph, coordination, and websocket
+  publication.
+- `pnpm --dir shipyard typecheck` passed.
+- `pnpm --dir shipyard build` passed.
+- `pnpm --dir shipyard test` still reproduces the repo’s known idle Vitest
+  hang, so the authoritative suite proof for this story is the deterministic
+  serialized CI-style Vitest run recorded in the final story notes.

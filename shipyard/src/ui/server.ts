@@ -77,10 +77,12 @@ import { createPreviewSupervisor } from "../preview/supervisor.js";
 import type { PreviewSupervisor } from "../preview/supervisor.js";
 import { shouldUseStarterCanvasForScratchTarget } from "../preview/contracts.js";
 import { syncSessionSourceControlState } from "../source-control/runtime.js";
+import { syncSessionTaskGraphState } from "../tasks/runtime.js";
 import type {
   BackendToFrontendMessage,
   DeploySummary,
   ProjectBoardState,
+  TaskBoardState,
   TargetEnrichmentState,
   TargetManagerState,
 } from "./contracts.js";
@@ -1029,6 +1031,28 @@ export async function startUiRuntimeServer(
 
   const getActiveProject = (): BrowserProjectRuntime => getProject(activeProjectId);
 
+  const createProjectedHostedRuntimeState = (
+    project: BrowserProjectRuntime,
+  ): PersistedHostedRuntimeState | null => {
+    if (!project.hostedRuntimeState) {
+      return null;
+    }
+
+    return {
+      ...project.hostedRuntimeState,
+      updatedAt:
+        project.sessionState.workbenchState.hosting.updatedAt
+        ?? project.hostedRuntimeState.updatedAt,
+      availability: {
+        ...project.hostedRuntimeState.availability,
+        privatePreviewUrl:
+          project.sessionState.workbenchState.hosting.privatePreviewUrl,
+        publicDeploymentUrl:
+          project.sessionState.workbenchState.hosting.publicDeploymentUrl,
+      },
+    };
+  };
+
   const createProjectRuntime = async (
     sessionState: SessionState,
     seed?: {
@@ -1104,6 +1128,9 @@ export async function startUiRuntimeServer(
           project.sessionState.workbenchState.latestDeploy.productionUrl,
       },
     );
+    await syncSessionTaskGraphState(project.sessionState, {
+      hostedRuntimeState: createProjectedHostedRuntimeState(project),
+    });
 
     return project;
   };
@@ -1429,6 +1456,9 @@ export async function startUiRuntimeServer(
   ): Promise<Extract<BackendToFrontendMessage, { type: "session:state" }>> => {
     await syncTargetManagerState(project);
     syncLatestDeploy(project);
+    await syncSessionTaskGraphState(project.sessionState, {
+      hostedRuntimeState: createProjectedHostedRuntimeState(project),
+    });
     createProjectBoardState();
     const sessionHistory = await listSessionRunSummaries(
       project.sessionState.targetDirectory,
@@ -1467,6 +1497,9 @@ export async function startUiRuntimeServer(
         },
       );
     }
+    await syncSessionTaskGraphState(project.sessionState, {
+      hostedRuntimeState: createProjectedHostedRuntimeState(project),
+    });
 
     await project.traceLogger.log("preview.state", {
       sessionId: project.sessionState.sessionId,
@@ -1479,6 +1512,13 @@ export async function startUiRuntimeServer(
         type: "preview:state",
         preview: previewState,
       });
+
+      if (project.sessionState.workbenchState.taskBoard) {
+        await broadcast({
+          type: "tasks:state",
+          state: project.sessionState.workbenchState.taskBoard,
+        });
+      }
     }
 
     if (
@@ -1568,7 +1608,15 @@ export async function startUiRuntimeServer(
     socket: WebSocket,
     project: BrowserProjectRuntime = getActiveProject(),
   ): Promise<void> => {
-    await sendToSocket(socket, await createSessionMessage(project));
+    const message = await createSessionMessage(project);
+    await sendToSocket(socket, message);
+
+    if (message.workbenchState.taskBoard) {
+      await sendToSocket(socket, {
+        type: "tasks:state",
+        state: message.workbenchState.taskBoard,
+      });
+    }
   };
 
   const broadcastSessionState = async (
@@ -1578,6 +1626,13 @@ export async function startUiRuntimeServer(
 
     if (project.projectId === activeProjectId) {
       await broadcast(message);
+
+      if (message.workbenchState.taskBoard) {
+        await broadcast({
+          type: "tasks:state",
+          state: message.workbenchState.taskBoard,
+        });
+      }
     }
 
     await saveSessionState(project.sessionState);

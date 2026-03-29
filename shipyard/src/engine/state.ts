@@ -210,6 +210,14 @@ export function getHostingDirectory(targetDirectory: string): string {
   return path.join(getShipyardDirectory(targetDirectory), "hosting");
 }
 
+export function getTaskGraphDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "tasks");
+}
+
+export function getCoordinationDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "coordination");
+}
+
 export function getUploadDirectory(
   targetDirectory: string,
   sessionId: string,
@@ -266,6 +274,8 @@ export async function ensureShipyardDirectories(
   await mkdir(getTddDirectory(targetDirectory), { recursive: true });
   await mkdir(getSourceControlDirectory(targetDirectory), { recursive: true });
   await mkdir(getHostingDirectory(targetDirectory), { recursive: true });
+  await mkdir(getTaskGraphDirectory(targetDirectory), { recursive: true });
+  await mkdir(getCoordinationDirectory(targetDirectory), { recursive: true });
   await mkdir(getArtifactDirectory(targetDirectory), { recursive: true });
   await mkdir(getArtifactRegistryDirectory(targetDirectory), { recursive: true });
 }
