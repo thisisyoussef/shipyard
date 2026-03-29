@@ -294,14 +294,23 @@
    — Reuse shell workspace-tab classes
    ═══════════════════════════════════════════════ */
 
-.editor-workspace-tabs {
+.editor-workspace-toolbar {
   display: flex;
-  gap: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
   width: 100%;
   padding: 0 var(--space-4);
   background: var(--surface-card);
   border-bottom: 1px solid var(--amber-5);
   flex-shrink: 0;
+}
+
+.editor-workspace-tabs {
+  display: flex;
+  gap: 0;
+  min-width: 0;
 }
 
 .editor-workspace-tab {
@@ -326,6 +335,17 @@
 .editor-workspace-tab[data-active="true"] {
   color: var(--amber-7);
   border-bottom-color: var(--amber-7);
+}
+
+.editor-workspace-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding: var(--space-2) 0;
+}
+
+.editor-workspace-link {
+  white-space: nowrap;
 }
 
 .editor-workspace-content {
@@ -678,5 +698,15 @@
   .editor-right {
     min-width: 0;
     flex: 1;
+  }
+
+  .editor-workspace-toolbar {
+    padding-top: var(--space-1);
+    padding-bottom: var(--space-1);
+  }
+
+  .editor-workspace-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
