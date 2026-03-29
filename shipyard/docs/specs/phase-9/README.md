@@ -224,20 +224,30 @@ printf '%s' "${SHIPYARD_ACCESS_TOKEN}" | railway variable set SHIPYARD_ACCESS_TO
 
 ```yaml
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+RAILWAY_VOLUME_MOUNT_PATH=/app/workspace
 SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1
 SHIPYARD_MODEL_PROVIDER=openai
 SHIPYARD_OPENAI_MODEL=gpt-5.4
 ```
 
-- Repo-controlled Railway deploys prefer the project-scoped token and only fall
-  back to the broader API token when the project token is absent:
+- Repo-controlled Railway deploys now prefer the broader API token for the
+  non-interactive link/config/deploy path and only fall back to
+  `RAILWAY_TOKEN` when a project-scoped token has been validated against the
+  same workflow:
 
 ```bash
-if [ -n "${RAILWAY_TOKEN}" ]; then
-  echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}" >> "${GITHUB_ENV}"
-else
+if [ -n "${RAILWAY_API_TOKEN}" ]; then
   echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}" >> "${GITHUB_ENV}"
+else
+  echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}" >> "${GITHUB_ENV}"
 fi
+```
+
+- The image-backed deploy wrapper also retries the known transient GHCR
+  pull/unpack handoff failures before failing the workflow:
+
+```bash
+transient_failure_pattern='DEADLINE_EXCEEDED|failed to pull/unpack image|failed to resolve reference|i/o timeout|dial tcp'
 ```
 
 - The hosted runtime now also keeps the Playwright packages in dev dependency

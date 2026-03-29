@@ -122,12 +122,33 @@ run: |
 railway environment config --json | python -c '...' | railway environment edit --json
 ```
 
+- The GitHub Actions deploy path now prefers `RAILWAY_API_TOKEN` for the
+  non-interactive Railway control steps and only falls back to
+  `RAILWAY_TOKEN` when a project-scoped token has been validated for the same
+  workflow:
+
+```bash
+if [ -n "${RAILWAY_API_TOKEN}" ]; then
+  echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}" >> "${GITHUB_ENV}"
+else
+  echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}" >> "${GITHUB_ENV}"
+fi
+```
+
+- The image-backed deploy wrapper now retries Railway's known transient GHCR
+  pull/unpack handoff failures before surfacing the rollout as a hard failure:
+
+```bash
+transient_failure_pattern='DEADLINE_EXCEEDED|failed to pull/unpack image|failed to resolve reference|i/o timeout|dial tcp'
+```
+
 - The hosted Railway workflow now keeps Playwright browser downloads out of the
   default production image and relies on the already-shipped degraded
   verification path unless operators explicitly provision those browsers:
 
 ```yaml
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+RAILWAY_VOLUME_MOUNT_PATH=/app/workspace
 SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1
 ```
 

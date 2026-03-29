@@ -86,17 +86,22 @@ describe("railway config", () => {
     expect(workflow).toContain("uses: docker/login-action@v3");
     expect(workflow).toContain("uses: docker/build-push-action@v6");
     expect(workflow).toContain('image_repo="ghcr.io/${GITHUB_REPOSITORY,,}"');
-    expect(workflow).toContain("RAILWAY_IMAGE_REF: ${{ steps.ghcr.outputs.image_ref }}");
+    expect(workflow).toContain('export RAILWAY_IMAGE_REF="${{ steps.ghcr.outputs.image_ref }}"');
     expect(workflow).toContain("OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}");
     expect(workflow).toContain("Missing OPENAI_API_KEY GitHub secret");
-    expect(workflow).toContain('if [ -n "${RAILWAY_TOKEN}" ]; then');
-    expect(workflow).toContain("RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}");
+    expect(workflow).toContain('if [ -n "${RAILWAY_API_TOKEN}" ]; then');
+    expect(workflow).toContain('echo "RAILWAY_CONTROL_TOKEN_KIND=api" >> "${GITHUB_ENV}"');
+    expect(workflow).toContain('echo "RAILWAY_CONTROL_TOKEN_KIND=project" >> "${GITHUB_ENV}"');
     expect(workflow).toContain("RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}");
+    expect(workflow).toContain("RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}");
+    expect(workflow).toContain('export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"');
+    expect(workflow).toContain('export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"');
     expect(workflow).toContain("railway project link \\");
     expect(workflow).toContain("railway variable set OPENAI_API_KEY --stdin");
     expect(workflow).toContain("SHIPYARD_GITHUB_TOKEN: ${{ secrets.SHIPYARD_GITHUB_TOKEN }}");
     expect(workflow).toContain("railway variable set GITHUB_TOKEN --stdin");
     expect(workflow).toContain("railway variable set VERCEL_TOKEN --stdin");
+    expect(workflow).toContain("RAILWAY_VOLUME_MOUNT_PATH=/app/workspace");
     expect(workflow).toContain("SHIPYARD_TARGETS_DIR=/app/workspace");
     expect(workflow).toContain("SHIPYARD_UI_HOST=0.0.0.0");
     expect(workflow).toContain("SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1");
@@ -110,6 +115,14 @@ describe("railway config", () => {
   it("switches the live Railway service to a GHCR image and waits for a fresh deployment result", async () => {
     const script = await readFile(railwayDeployScriptPath, "utf8");
 
+    expect(script).toContain('RAILWAY_DEPLOY_MAX_ATTEMPTS:-3');
+    expect(script).toContain('RAILWAY_DEPLOY_RETRY_DELAY_SECONDS:-15');
+    expect(script).toContain('RAILWAY_DEPLOY_LOG_FETCH_ATTEMPTS:-5');
+    expect(script).toContain('RAILWAY_DEPLOY_LOG_FETCH_DELAY_SECONDS:-3');
+    expect(script).toContain("failed to pull/unpack image");
+    expect(script).toContain("failed to resolve reference");
+    expect(script).toContain("dial tcp");
+    expect(script).toContain("Failed to create deployment\\.");
     expect(script).toContain('RAILWAY_IMAGE_REF');
     expect(script).toContain('service_config["source"]');
     expect(script).toContain('deploy_config["startCommand"]');
@@ -119,6 +132,9 @@ describe("railway config", () => {
     expect(script).toContain("railway service status");
     expect(script).toContain("Railway image deployment succeeded");
     expect(script).toContain("railway logs");
+    expect(script).toContain("--build");
+    expect(script).toContain('if should_retry_failure "${deploy_log_path}" "${build_log_path}"; then');
+    expect(script).toContain("Railway deploy hit a transient image handoff failure. Retrying in");
     expect(script).toContain("Timed out waiting for Railway to report a fresh deployment");
   });
 });

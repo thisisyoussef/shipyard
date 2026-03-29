@@ -150,9 +150,11 @@ not confuse the Shipyard editor with the product being built.
   Railway environment config JSON, rewriting the service `source.image`, and
   committing that config back through `railway environment edit`.
 - Repo-controlled auto-deploy should use a GitHub Actions secret for Railway
-  authentication. Prefer `RAILWAY_TOKEN` with a Railway project token; keep
-  `RAILWAY_API_TOKEN` as the fallback when you intentionally use a broader
-  account or workspace token.
+  authentication. Prefer `RAILWAY_API_TOKEN` for the non-interactive GitHub
+  Actions path because the Railway link, config-edit, and deploy polling steps
+  rely on account or workspace scope. Keep `RAILWAY_TOKEN` only as an explicit
+  fallback when you have already validated a project-scoped token against the
+  same workflow steps.
 - Repo-controlled auto-deploy does not require the Railway service itself to be
   GitHub-linked. Native Railway GitHub autodeploy remains optional and can be
   enabled later from the service settings if you want Railway to watch a branch
@@ -163,6 +165,8 @@ not confuse the Shipyard editor with the product being built.
   `VERCEL_TOKEN` when configured,
   `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` to keep browser binaries out of the
   default hosted image,
+  `RAILWAY_VOLUME_MOUNT_PATH=/app/workspace` to keep the hosted persistence
+  contract explicit for startup validation,
   `SHIPYARD_TARGETS_DIR=/app/workspace`,
   `SHIPYARD_UI_HOST=0.0.0.0`,
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1`,
@@ -172,8 +176,9 @@ not confuse the Shipyard editor with the product being built.
 - The repo-controlled deploy step now shells through
   `.github/scripts/railway-ci-deploy.sh`, which updates `source.image`,
   re-applies the hosted start/health/restart contract through a full
-  environment-config JSON edit, and polls Railway until a new deployment
-  reaches `SUCCESS` or yields deploy logs for the new image-backed rollout.
+  environment-config JSON edit, polls Railway until a new deployment
+  reaches `SUCCESS`, and retries the known transient GHCR pull/unpack
+  handoff failures before surfacing the final deploy/build logs.
 - This GHCR-backed deploy path keeps the existing Railway service and public
   domain while bypassing the `railway up` repo-upload path that was repeatedly
   failing during the post-build pull/unpack handoff.
