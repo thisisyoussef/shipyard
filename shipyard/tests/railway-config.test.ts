@@ -15,8 +15,14 @@ interface RailwayConfig {
   };
 }
 
+interface ShipyardPackageJson {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
 const testsDirectory = path.dirname(fileURLToPath(import.meta.url));
 const railwayConfigPath = path.resolve(testsDirectory, "../railway.json");
+const packageJsonPath = path.resolve(testsDirectory, "../package.json");
 const railwayWorkflowPath = path.resolve(
   testsDirectory,
   "../../.github/workflows/railway-main-deploy.yml",
@@ -26,6 +32,10 @@ const railwayDeployScriptPath = path.resolve(
   "../../.github/scripts/railway-ci-deploy.sh",
 );
 const railwayDockerfilePath = path.resolve(testsDirectory, "../Dockerfile");
+const browserEvaluatorPath = path.resolve(
+  testsDirectory,
+  "../src/agents/browser-evaluator.ts",
+);
 
 describe("railway config", () => {
   it("pins hosted Railway deploys to the checked-in Dockerfile runtime", async () => {
@@ -53,6 +63,20 @@ describe("railway config", () => {
     expect(dockerfile).toContain(
       'CMD ["node", "--env-file-if-exists=.env", "./dist/bin/shipyard.js", "--ui"]',
     );
+  });
+
+  it("keeps Playwright out of production dependencies and lazy-loads browser evaluation", async () => {
+    const packageJson = JSON.parse(
+      await readFile(packageJsonPath, "utf8"),
+    ) as ShipyardPackageJson;
+    const browserEvaluator = await readFile(browserEvaluatorPath, "utf8");
+
+    expect(packageJson.dependencies?.playwright).toBeUndefined();
+    expect(packageJson.dependencies?.["@playwright/browser-chromium"]).toBeUndefined();
+    expect(packageJson.devDependencies?.playwright).toBeDefined();
+    expect(packageJson.devDependencies?.["@playwright/browser-chromium"]).toBeDefined();
+    expect(browserEvaluator).toContain('const playwright = await import("playwright");');
+    expect(browserEvaluator).toContain("Browser runtime unavailable:");
   });
 
   it("syncs the production Anthropic defaults before deploying to Railway", async () => {

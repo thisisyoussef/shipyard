@@ -265,6 +265,10 @@ target-manager flow:
   the final image limited to runtime assets
 - run Shipyard in browser mode from that same app root with the compiled
   entrypoint: `node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui`
+- keep `playwright` and `@playwright/browser-chromium` in dev-only install
+  scope so the hosted production image can drop them during `pnpm prune --prod`;
+  browser evaluation now lazy-loads that runtime and degrades cleanly when it
+  is absent
 - set `SHIPYARD_TARGETS_DIR=/app/workspace`
 - prefer `SHIPYARD_UI_HOST=0.0.0.0`; when Railway-hosted env signals are
   present, Shipyard now also falls back to `0.0.0.0` automatically if that

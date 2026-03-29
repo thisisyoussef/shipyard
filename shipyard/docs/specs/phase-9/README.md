@@ -223,6 +223,15 @@ SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1
 SHIPYARD_MODEL_PROVIDER=anthropic
 ```
 
+- The hosted runtime now also keeps the Playwright packages in dev dependency
+  scope and lazy-loads browser evaluation, so the final production image can
+  drop that dependency entirely during `pnpm prune --prod`:
+
+```ts
+const playwright = await import("playwright");
+return playwright.chromium;
+```
+
 - Upload receipts become next-turn context instead of raw websocket blobs:
 
 ```ts
