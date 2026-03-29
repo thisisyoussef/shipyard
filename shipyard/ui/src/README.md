@@ -6,8 +6,12 @@ Shipyard browser workbench.
 ## Files
 
 - `main.tsx`: bootstraps React into the Vite root element
-- `App.tsx`: manages hosted-access bootstrap, upload flows, WebSocket lifecycle,
-  transport state, and workbench-state updates
+- `App.tsx`: thin route shell that composes dashboard/editor/board surfaces,
+  dashboard launch intent handling, and hosted-access gating on top of the
+  shared controller
+- `dashboard-catalog.ts`, `dashboard-preferences.ts`, and
+  `dashboard-launch.ts`: dashboard projection, local browser preferences, and
+  request-correlated launch helpers
 - `ShipyardWorkbench.tsx`: composes the current split-pane shell, drawer, and
   target-manager chrome
 - `socket-manager.ts`: reconnecting WebSocket wrapper used by `App.tsx`
@@ -31,9 +35,12 @@ Shipyard browser workbench.
 - `App.tsx` sanitizes bootstrap `access_token` query params, negotiates
   `/api/access`, and shows `HostedAccessGate` when the hosted runtime requires
   it.
-- `App.tsx` also branches between the full workbench shell and the dedicated
-  `/human-feedback` route while keeping the same hosted-access gate, socket
-  lifecycle, and instruction submission path.
+- The dashboard route now renders the live product catalog, persists recent and
+  starred preferences in browser storage, and stages hero-prompt launches into
+  the editor with request correlation instead of timing-based follow behavior.
+- `App.tsx` also branches between the live dashboard, full workbench shell,
+  parked board route, and dedicated `/human-feedback` surface while keeping the
+  same hosted-access gate, socket lifecycle, and instruction submission path.
 - `App.tsx` sends `session:resume_request` messages so the browser can reopen a
   saved run without restarting the Shipyard process.
 - `socket-manager.ts` retries disconnected sessions and blocks sends while the
@@ -46,7 +53,8 @@ Shipyard browser workbench.
 - File attachments go through `/api/uploads`, then appear as bounded receipts in
   workbench state and the next-turn context preview.
 - `TargetSwitcher.tsx` and `TargetCreationDialog.tsx` drive target selection and
-  scaffold creation without leaving the active session.
+  scaffold creation without leaving the active session, and the dashboard now
+  reuses the creation dialog for its new-product card.
 
 ## Diagram
 
@@ -54,6 +62,7 @@ Shipyard browser workbench.
 flowchart LR
   Main["main.tsx"]
   App["App.tsx"]
+  Dashboard["dashboard-*"]
   Socket["socket-manager.ts"]
   Vm["view-models.ts"]
   Workbench["ShipyardWorkbench.tsx"]
@@ -64,9 +73,11 @@ flowchart LR
   Backend["../../src/ui/*"]
 
   Main --> App
+  App --> Dashboard
   App --> Socket
   Socket <--> Backend
   App --> Vm
+  Dashboard --> App
   Vm --> Workbench
   Workbench --> Shell
   Workbench --> Panels

@@ -123,4 +123,15 @@ The board and ultimate work should align with those future packs by:
   `shipyard/ui/src/App.tsx`, `shipyard/ui/src/use-workbench-controller.ts`,
   `shipyard/ui/src/app-route.ts`, `shipyard/ui/src/shell/NavBar.tsx`, and
   `shipyard/tests/ui-route-state.test.ts`.
+- `UII-S02` landed the live dashboard catalog and launch flow in
+  `shipyard/ui/src/dashboard-catalog.ts`,
+  `shipyard/ui/src/dashboard-preferences.ts`,
+  `shipyard/ui/src/dashboard-launch.ts`,
+  `shipyard/ui/src/views/DashboardView.tsx`,
+  `shipyard/ui/src/views/ProductCard.tsx`,
+  `shipyard/ui/src/App.tsx`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/server.ts`,
+  `shipyard/tests/ui-dashboard-catalog.test.ts`, and
+  `shipyard/tests/ui-dashboard-launch.test.ts`.
 - Remaining stories in this pack are still planned.

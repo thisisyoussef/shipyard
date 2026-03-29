@@ -1,8 +1,24 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { HostedAccessGate } from "./HostedAccessGate.js";
 import { HumanFeedbackPage } from "./HumanFeedbackPage.js";
 import { ShipyardWorkbench } from "./ShipyardWorkbench.js";
+import {
+  buildDashboardCatalog,
+} from "./dashboard-catalog.js";
+import {
+  createDashboardHeroLaunch,
+  createDashboardManualLaunch,
+  matchesDashboardLaunchCompletion,
+  type DashboardLaunchIntent,
+} from "./dashboard-launch.js";
+import {
+  markDashboardProductOpened,
+  readDashboardPreferences,
+  setDashboardActiveTab,
+  toggleDashboardProductStar,
+  writeDashboardPreferences,
+} from "./dashboard-preferences.js";
 import {
   getPreferredEditorRoute,
   resolveAppRoute,
@@ -11,6 +27,7 @@ import {
 } from "./app-route.js";
 import type { Route } from "./router.js";
 import { NavBar } from "./shell/NavBar.js";
+import { TargetCreationDialog } from "./TargetCreationDialog.js";
 import {
   extractBootstrapAccessToken,
   resolveUiPage,
@@ -18,7 +35,10 @@ import {
   useWorkbenchController,
 } from "./use-workbench-controller.js";
 import { useRouter } from "./use-router.js";
-import { DashboardLandingView } from "./views/DashboardLandingView.js";
+import {
+  DashboardView,
+  type DashboardViewNotice,
+} from "./views/DashboardView.js";
 import { RoutePlaceholderView } from "./views/RoutePlaceholderView.js";
 
 export {
@@ -61,6 +81,18 @@ export function App() {
   const { navigate } = useRouter();
   const requestedEditorIntentRef = useRef<string | null>(null);
   const shouldFollowCreatedTargetRef = useRef(false);
+  const lastOpenedEditorProductRef = useRef<string | null>(null);
+  const handledTargetSwitchCompletionRef = useRef<number | null>(null);
+  const [dashboardPreferences, setDashboardPreferences] = useState(() =>
+    readDashboardPreferences(),
+  );
+  const [dashboardHeroPrompt, setDashboardHeroPrompt] = useState("");
+  const [dashboardNotice, setDashboardNotice] =
+    useState<DashboardViewNotice | null>(null);
+  const [dashboardCreateDialogOpen, setDashboardCreateDialogOpen] =
+    useState(false);
+  const [pendingDashboardLaunch, setPendingDashboardLaunch] =
+    useState<DashboardLaunchIntent | null>(null);
   const appRoute = resolveAppRoute(
     typeof window === "undefined" ? "/" : window.location.pathname,
     typeof window === "undefined" ? "" : window.location.hash,
@@ -86,6 +118,12 @@ export function App() {
     editorRouteState,
     hasLoadedWorkbenchState,
   );
+  const dashboardCatalog = buildDashboardCatalog({
+    targetManager: controller.viewState.targetManager,
+    projectBoard: controller.viewState.projectBoard,
+    sessionState: controller.viewState.sessionState,
+    preferences: dashboardPreferences,
+  });
 
   useEffect(() => {
     const intentKey = getEditorIntentKey(editorRouteState);
@@ -143,6 +181,89 @@ export function App() {
     navigate(preferredEditorRoute);
   }, [appRoute, navigate, preferredEditorRoute]);
 
+  useEffect(() => {
+    writeDashboardPreferences(dashboardPreferences);
+  }, [dashboardPreferences]);
+
+  useEffect(() => {
+    if (appRoute.view !== "editor" || editorRouteState?.status !== "active") {
+      lastOpenedEditorProductRef.current = null;
+      return;
+    }
+
+    if (lastOpenedEditorProductRef.current === editorRouteState.productId) {
+      return;
+    }
+
+    lastOpenedEditorProductRef.current = editorRouteState.productId;
+    setDashboardPreferences((currentPreferences) =>
+      markDashboardProductOpened(
+        currentPreferences,
+        editorRouteState.productId,
+        new Date().toISOString(),
+      )
+    );
+  }, [appRoute.view, editorRouteState]);
+
+  useEffect(() => {
+    const completion = controller.lastTargetSwitchCompletion;
+
+    if (!completion) {
+      return;
+    }
+
+    if (handledTargetSwitchCompletionRef.current === completion.sequence) {
+      return;
+    }
+
+    handledTargetSwitchCompletionRef.current = completion.sequence;
+
+    if (
+      !pendingDashboardLaunch ||
+      !matchesDashboardLaunchCompletion(pendingDashboardLaunch, completion)
+    ) {
+      return;
+    }
+
+    if (!completion.success) {
+      setPendingDashboardLaunch(null);
+      setDashboardNotice({
+        tone: "danger",
+        title: "Could not open the new product",
+        detail:
+          completion.message ??
+          "Shipyard could not create the requested product right now.",
+      });
+      return;
+    }
+
+    setDashboardPreferences((currentPreferences) =>
+      markDashboardProductOpened(
+        currentPreferences,
+        completion.state.currentTarget.path,
+        completion.receivedAt,
+      )
+    );
+
+    if (pendingDashboardLaunch.promptDraft) {
+      controller.onInstructionChange(pendingDashboardLaunch.promptDraft);
+    }
+
+    setDashboardHeroPrompt("");
+    setDashboardNotice(null);
+    setDashboardCreateDialogOpen(false);
+    setPendingDashboardLaunch(null);
+    navigate({
+      view: "editor",
+      productId: completion.state.currentTarget.path,
+    });
+  }, [
+    controller.lastTargetSwitchCompletion,
+    controller.onInstructionChange,
+    navigate,
+    pendingDashboardLaunch,
+  ]);
+
   function handleNavigateToEditor(targetPath: string): void {
     navigate({
       view: "editor",
@@ -168,6 +289,75 @@ export function App() {
   ): void {
     shouldFollowCreatedTargetRef.current = true;
     controller.onRequestTargetCreate(input);
+  }
+
+  function handleDashboardHeroSubmit(prompt: string): void {
+    const launchIntent = createDashboardHeroLaunch(prompt);
+    const sent = controller.onRequestTargetCreate(
+      {
+        name: launchIntent.request.name,
+        description: launchIntent.request.description,
+        scaffoldType: launchIntent.request.scaffoldType,
+      },
+      {
+        requestId: launchIntent.requestId,
+      },
+    );
+
+    if (!sent) {
+      setDashboardNotice({
+        tone: "danger",
+        title: "Launch unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before creating a product from the dashboard.",
+      });
+      return;
+    }
+
+    setPendingDashboardLaunch(launchIntent);
+    setDashboardNotice({
+      tone: "neutral",
+      title: `Creating ${launchIntent.createdName}`,
+      detail:
+        "Shipyard is scaffolding the product and will carry your brief into the editor composer.",
+    });
+  }
+
+  function handleDashboardManualCreate(input: {
+    name: string;
+    description: string;
+    scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
+  }): void {
+    const launchIntent = createDashboardManualLaunch(input);
+    const sent = controller.onRequestTargetCreate(
+      {
+        name: launchIntent.request.name,
+        description: launchIntent.request.description,
+        scaffoldType: launchIntent.request.scaffoldType,
+      },
+      {
+        requestId: launchIntent.requestId,
+      },
+    );
+
+    if (!sent) {
+      setDashboardNotice({
+        tone: "danger",
+        title: "Creation unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before scaffolding a new product.",
+      });
+      return;
+    }
+
+    setPendingDashboardLaunch(launchIntent);
+    setDashboardCreateDialogOpen(false);
+    setDashboardNotice({
+      tone: "neutral",
+      title: `Creating ${launchIntent.createdName}`,
+      detail:
+        "Shipyard will open the new product in the editor as soon as the scaffold is ready.",
+    });
   }
 
   function renderEditorContent(): ReactNode {
@@ -315,12 +505,44 @@ export function App() {
 
       <main className="app-route-content">
         {appRoute.view === "dashboard" ? (
-          <DashboardLandingView
-            targetManager={controller.viewState.targetManager}
-            projectBoard={controller.viewState.projectBoard}
-            editorRoute={preferredEditorRoute}
-            onNavigate={navigate}
-          />
+          <>
+            <DashboardView
+              heroPrompt={dashboardHeroPrompt}
+              heroBusy={pendingDashboardLaunch !== null}
+              activeTab={dashboardCatalog.activeTab}
+              cards={dashboardCatalog.visibleCards}
+              emptyState={dashboardCatalog.emptyState}
+              notice={dashboardNotice}
+              onHeroPromptChange={(value) => {
+                setDashboardHeroPrompt(value);
+                if (pendingDashboardLaunch === null && dashboardNotice) {
+                  setDashboardNotice(null);
+                }
+              }}
+              onSubmitHeroPrompt={handleDashboardHeroSubmit}
+              onSelectTab={(tab) =>
+                setDashboardPreferences((currentPreferences) =>
+                  setDashboardActiveTab(currentPreferences, tab)
+                )}
+              onOpenProduct={(productId) => {
+                setDashboardNotice(null);
+                handleNavigateToEditor(productId);
+              }}
+              onToggleStar={(productId) =>
+                setDashboardPreferences((currentPreferences) =>
+                  toggleDashboardProductStar(currentPreferences, productId)
+                )}
+              onCreateProduct={() => {
+                setDashboardNotice(null);
+                setDashboardCreateDialogOpen(true);
+              }}
+            />
+            <TargetCreationDialog
+              open={dashboardCreateDialogOpen}
+              onClose={() => setDashboardCreateDialogOpen(false)}
+              onCreateTarget={handleDashboardManualCreate}
+            />
+          </>
         ) : null}
 
         {appRoute.view === "editor" ? renderEditorContent() : null}

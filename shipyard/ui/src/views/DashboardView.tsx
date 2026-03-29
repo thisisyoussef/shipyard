@@ -4,65 +4,41 @@
  * UIR-T04 — Dashboard & Product Cards
  */
 
-import { useState, useCallback } from "react";
 import type { KeyboardEvent, FormEvent } from "react";
-import type { Route } from "../router.js";
-import type { TargetManagerViewModel } from "../view-models.js";
+import type { DashboardCardViewModel } from "../dashboard-catalog.js";
+import type { DashboardTabId } from "../dashboard-preferences.js";
+import type { BadgeTone } from "../primitives.js";
 import { ProductCard, NewProductCard } from "./ProductCard.js";
-import type { ProductCardData } from "./ProductCard.js";
 
 // ── Types ──────────────────────────────────────
 
-type TabId = "my-products" | "recent" | "starred";
+export interface DashboardViewNotice {
+  tone: BadgeTone;
+  title: string;
+  detail: string;
+}
 
 interface DashboardViewProps {
-  targetManager: TargetManagerViewModel | null;
-  onNavigate: (route: Route) => void;
-  onCreateProduct: (input: {
-    name: string;
-    description: string;
-    scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
-  }) => void;
+  heroPrompt: string;
+  heroBusy: boolean;
+  activeTab: DashboardTabId;
+  cards: DashboardCardViewModel[];
+  emptyState: {
+    title: string;
+    detail: string;
+  } | null;
+  notice: DashboardViewNotice | null;
+  onHeroPromptChange: (value: string) => void;
   onSubmitHeroPrompt: (prompt: string) => void;
-}
-
-// ── Helpers ────────────────────────────────────
-
-function mapTargetsToCards(
-  targetManager: TargetManagerViewModel | null,
-): ProductCardData[] {
-  if (!targetManager) return [];
-
-  return targetManager.availableTargets.map((target) => ({
-    id: target.path,
-    name: target.name,
-    path: target.path,
-    scaffoldType: target.framework ?? target.language ?? "unknown",
-    status: "ready" as const,
-    lastActivity: new Date().toISOString(),
-    starred: false,
-  }));
-}
-
-function filterCards(cards: ProductCardData[], tab: TabId): ProductCardData[] {
-  switch (tab) {
-    case "starred":
-      return cards.filter((c) => c.starred);
-    case "recent":
-      return [...cards].sort(
-        (a, b) =>
-          new Date(b.lastActivity).getTime() -
-          new Date(a.lastActivity).getTime(),
-      );
-    case "my-products":
-    default:
-      return cards;
-  }
+  onSelectTab: (tab: DashboardTabId) => void;
+  onOpenProduct: (productId: string) => void;
+  onToggleStar: (productId: string) => void;
+  onCreateProduct: () => void;
 }
 
 // ── Tabs ───────────────────────────────────────
 
-const TABS: { id: TabId; label: string }[] = [
+const TABS: { id: DashboardTabId; label: string }[] = [
   { id: "my-products", label: "My products" },
   { id: "recent", label: "Recent" },
   { id: "starred", label: "Starred" },
@@ -71,55 +47,34 @@ const TABS: { id: TabId; label: string }[] = [
 // ── Component ──────────────────────────────────
 
 export function DashboardView({
-  targetManager,
-  onNavigate,
-  onCreateProduct,
+  heroPrompt,
+  heroBusy,
+  activeTab,
+  cards,
+  emptyState,
+  notice,
+  onHeroPromptChange,
   onSubmitHeroPrompt,
+  onSelectTab,
+  onOpenProduct,
+  onToggleStar,
+  onCreateProduct,
 }: DashboardViewProps) {
-  const [heroPrompt, setHeroPrompt] = useState("");
-  const [activeTab, setActiveTab] = useState<TabId>("my-products");
+  function handleSubmit(event: FormEvent): void {
+    event.preventDefault();
+    const trimmed = heroPrompt.trim();
+    if (!trimmed || heroBusy) return;
+    onSubmitHeroPrompt(trimmed);
+  }
 
-  const allCards = mapTargetsToCards(targetManager);
-  const visibleCards = filterCards(allCards, activeTab);
-
-  const handleSubmit = useCallback(
-    (e: FormEvent) => {
-      e.preventDefault();
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
       const trimmed = heroPrompt.trim();
-      if (!trimmed) return;
+      if (!trimmed || heroBusy) return;
       onSubmitHeroPrompt(trimmed);
-      setHeroPrompt("");
-    },
-    [heroPrompt, onSubmitHeroPrompt],
-  );
-
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        const trimmed = heroPrompt.trim();
-        if (!trimmed) return;
-        onSubmitHeroPrompt(trimmed);
-        setHeroPrompt("");
-      }
-    },
-    [heroPrompt, onSubmitHeroPrompt],
-  );
-
-  const handleOpenProduct = useCallback(
-    (productId: string) => {
-      onNavigate({ view: "editor", productId });
-    },
-    [onNavigate],
-  );
-
-  const handleCreateNew = useCallback(() => {
-    onCreateProduct({
-      name: "New Project",
-      description: "",
-      scaffoldType: "empty",
-    });
-  }, [onCreateProduct]);
+    }
+  }
 
   return (
     <div className="dashboard">
@@ -133,20 +88,34 @@ export function DashboardView({
             className="dashboard-hero-input"
             placeholder="Describe what you want to build..."
             value={heroPrompt}
-            onChange={(e) => setHeroPrompt(e.target.value)}
+            onChange={(event) => onHeroPromptChange(event.target.value)}
             onKeyDown={handleKeyDown}
             rows={3}
+            disabled={heroBusy}
           />
           <button
             type="submit"
             className="dashboard-hero-submit"
-            disabled={heroPrompt.trim().length === 0}
+            disabled={heroPrompt.trim().length === 0 || heroBusy}
             aria-label="Submit prompt"
           >
             <span aria-hidden="true">&rarr;</span>
           </button>
         </form>
       </section>
+
+      {notice ? (
+        <div
+          className="surface-card dashboard-notice"
+          data-tone={notice.tone}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <strong>{notice.title}</strong>
+          <p>{notice.detail}</p>
+        </div>
+      ) : null}
 
       {/* Tab bar */}
       <nav className="dashboard-tabs" role="tablist" aria-label="Product filter">
@@ -158,7 +127,7 @@ export function DashboardView({
             className="dashboard-tab"
             aria-selected={activeTab === tab.id}
             data-active={activeTab === tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => onSelectTab(tab.id)}
           >
             {tab.label}
           </button>
@@ -166,25 +135,30 @@ export function DashboardView({
       </nav>
 
       {/* Product grid */}
-      {visibleCards.length === 0 && activeTab !== "my-products" ? (
+      {cards.length === 0 ? (
         <div className="dashboard-empty">
-          <p>No products match this filter.</p>
-        </div>
-      ) : visibleCards.length === 0 ? (
-        <div className="dashboard-empty">
-          <p>No products yet. Create one to get started.</p>
-          <NewProductCard onCreateNew={handleCreateNew} />
+          <h2>{emptyState?.title ?? "No products yet"}</h2>
+          <p>
+            {emptyState?.detail ??
+              "Create a product to give Shipyard a live workspace."}
+          </p>
+          {activeTab === "my-products" ? (
+            <NewProductCard onCreateNew={onCreateProduct} />
+          ) : null}
         </div>
       ) : (
         <div className="dashboard-grid">
-          {visibleCards.map((card) => (
+          {cards.map((card) => (
             <ProductCard
               key={card.id}
               product={card}
-              onOpen={handleOpenProduct}
+              onOpen={onOpenProduct}
+              onToggleStar={onToggleStar}
             />
           ))}
-          <NewProductCard onCreateNew={handleCreateNew} />
+          {activeTab === "my-products" ? (
+            <NewProductCard onCreateNew={onCreateProduct} />
+          ) : null}
         </div>
       )}
     </div>

@@ -55,6 +55,12 @@ export interface HostedAccessState {
   message: string | null;
 }
 
+export interface TargetSwitchCompletionViewModel
+  extends Extract<BackendToFrontendMessage, { type: "target:switch_complete" }> {
+  receivedAt: string;
+  sequence: number;
+}
+
 function createAttachmentDetail(receipt: UploadReceiptViewModel): string {
   return `${receipt.storedRelativePath} · ${receipt.previewSummary}`;
 }
@@ -182,9 +188,14 @@ export function useWorkbenchController() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(() =>
     readSidebarState("shipyard:sidebar-right", true),
   );
+  const [
+    lastTargetSwitchCompletion,
+    setLastTargetSwitchCompletion,
+  ] = useState<TargetSwitchCompletionViewModel | null>(null);
   const socketManagerRef = useRef<SocketManager | null>(null);
   const hasSessionRef = useRef(false);
   const lastSessionIdRef = useRef<string | null>(null);
+  const nextTargetSwitchCompletionSequenceRef = useRef(1);
   const instructionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const humanFeedbackInputRef = useRef<HTMLTextAreaElement | null>(null);
   const contextInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -253,6 +264,15 @@ export function useWorkbenchController() {
   const applyMessage = useEffectEvent((message: BackendToFrontendMessage) => {
     if (message.type === "session:state") {
       hasSessionRef.current = true;
+    }
+
+    if (message.type === "target:switch_complete") {
+      setLastTargetSwitchCompletion({
+        ...message,
+        receivedAt: new Date().toISOString(),
+        sequence: nextTargetSwitchCompletionSequenceRef.current,
+      });
+      nextTargetSwitchCompletionSequenceRef.current += 1;
     }
 
     startTransition(() => {
@@ -899,10 +919,16 @@ export function useWorkbenchController() {
     });
   }, [viewState.sessionState?.tracePath]);
 
-  const handleTargetSwitch = useCallback((targetPath: string): void => {
+  const handleTargetSwitch = useCallback((
+    targetPath: string,
+    options: {
+      requestId?: string;
+    } = {},
+  ): boolean => {
     const sent = sendMessage({
       type: "target:switch_request",
       targetPath,
+      requestId: options.requestId,
     });
 
     if (!sent) {
@@ -913,6 +939,8 @@ export function useWorkbenchController() {
           "The browser runtime is disconnected. Reconnect before switching targets.",
       });
     }
+
+    return sent;
   }, [queueComposerNotice, sendMessage]);
 
   const handleSessionResume = useCallback((sessionId: string): void => {
@@ -943,12 +971,15 @@ export function useWorkbenchController() {
     name: string;
     description: string;
     scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
-  }): void => {
+  }, options: {
+    requestId?: string;
+  } = {}): boolean => {
     const sent = sendMessage({
       type: "target:create_request",
       name: input.name,
       description: input.description,
       scaffoldType: input.scaffoldType,
+      requestId: options.requestId,
     });
 
     if (!sent) {
@@ -959,6 +990,8 @@ export function useWorkbenchController() {
           "The browser runtime is disconnected. Reconnect before creating a target.",
       });
     }
+
+    return sent;
   }, [queueComposerNotice, sendMessage]);
 
   const handleProjectActivate = useCallback((projectId: string): void => {
@@ -1055,6 +1088,7 @@ export function useWorkbenchController() {
     instruction,
     instructionInputRef,
     leftSidebarOpen,
+    lastTargetSwitchCompletion,
     onAccessTokenChange: handleAccessTokenChange,
     onAccessSubmit: handleHostedAccessSubmit,
     onActivateProject: handleProjectActivate,

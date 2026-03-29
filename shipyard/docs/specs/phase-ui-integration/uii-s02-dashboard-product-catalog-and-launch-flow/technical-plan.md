@@ -113,6 +113,48 @@
 - Observability checks: log or trace create/open request ids and resulting
   target/project activation so mismatches are debuggable.
 
+## Implementation Evidence
+
+- Code references:
+  - `shipyard/ui/src/dashboard-catalog.ts`: live dashboard projection and
+    truthful empty-state handling.
+  - `shipyard/ui/src/dashboard-preferences.ts`: browser-local recent/starred
+    persistence and tab selection state.
+  - `shipyard/ui/src/dashboard-launch.ts`: hero-prompt request generation and
+    launch-intent correlation helpers.
+  - `shipyard/ui/src/App.tsx`: dashboard route wiring, create-dialog reuse, and
+    request-correlated editor handoff.
+  - `shipyard/ui/src/views/DashboardView.tsx` and
+    `shipyard/ui/src/views/ProductCard.tsx`: presentational dashboard UI fed by
+    live catalog models instead of mock target mapping.
+  - `shipyard/src/ui/contracts.ts` and `shipyard/src/ui/server.ts`: optional
+    `requestId` support on create/switch traffic.
+  - `shipyard/tests/ui-dashboard-catalog.test.ts`,
+    `shipyard/tests/ui-dashboard-launch.test.ts`,
+    `shipyard/tests/ui-events.test.ts`, and `shipyard/tests/ui-runtime.test.ts`:
+    coverage for projection truth, preference persistence, request correlation,
+    and server echo behavior.
+- Representative snippets:
+
+```tsx
+const dashboardCatalog = buildDashboardCatalog({
+  targetManager: controller.viewState.targetManager,
+  projectBoard: controller.viewState.projectBoard,
+  sessionState: controller.viewState.sessionState,
+  preferences: dashboardPreferences,
+});
+```
+
+```ts
+await emitProjectMessage(project, {
+  type: "target:switch_complete",
+  success,
+  message,
+  state: nextTargetManagerState,
+  requestId,
+});
+```
+
 ## Validation Commands
 ```bash
 pnpm --dir shipyard test -- tests/ui-view-models.test.ts tests/ui-runtime.test.ts

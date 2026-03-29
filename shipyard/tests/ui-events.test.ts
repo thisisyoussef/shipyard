@@ -205,11 +205,13 @@ describe("ui event helpers", () => {
         JSON.stringify({
           type: "target:switch_request",
           targetPath: "/tmp/demo-target",
+          requestId: "request-switch-1",
         }),
       ),
     ).toEqual({
       type: "target:switch_request",
       targetPath: "/tmp/demo-target",
+      requestId: "request-switch-1",
     });
 
     expect(
@@ -219,6 +221,7 @@ describe("ui event helpers", () => {
           name: "alpha app",
           description: "Create a demo target.",
           scaffoldType: "react-ts",
+          requestId: "request-create-1",
         }),
       ),
     ).toEqual({
@@ -226,6 +229,7 @@ describe("ui event helpers", () => {
       name: "alpha app",
       description: "Create a demo target.",
       scaffoldType: "react-ts",
+      requestId: "request-create-1",
     });
 
     expect(
@@ -279,6 +283,38 @@ describe("ui event helpers", () => {
           status: "complete",
         },
       },
+    });
+
+    expect(
+      JSON.parse(
+        serializeBackendMessage({
+          type: "target:switch_complete",
+          success: true,
+          message: "Created and selected demo-target.",
+          requestId: "request-create-1",
+          projectId: "project-demo",
+          state: {
+            currentTarget: {
+              path: "/tmp/demo-target",
+              name: "demo-target",
+              description: "Demo target summary.",
+              language: "typescript",
+              framework: "React",
+              hasProfile: true,
+            },
+            availableTargets: [],
+            enrichmentStatus: {
+              status: "complete",
+              message: "Target profile saved.",
+            },
+          },
+        }),
+      ),
+    ).toMatchObject({
+      type: "target:switch_complete",
+      requestId: "request-create-1",
+      projectId: "project-demo",
+      success: true,
     });
   });
 });

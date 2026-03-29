@@ -22,20 +22,30 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] dashboard cards combine target and project truth correctly
-  - [ ] empty and filtered states show the right copy
-  - [ ] launch intent survives create/open flow
+  - [x] dashboard cards combine target and project truth correctly
+  - [x] empty and filtered states show the right copy
+  - [x] launch intent survives create/open flow
 - T002 tests:
-  - [ ] recent/starred preferences persist across reload
+  - [x] recent/starred preferences persist across reload
 - T003 tests:
-  - [ ] create completion resolves the intended editor route
+  - [x] create completion resolves the intended editor route
   - [ ] create failure clears pending launch intent
 - T004 tests:
-  - [ ] busy/ready/error states render truthfully on cards
+  - [x] busy/ready/error states render truthfully on cards
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Dashboard renders real products and statuses
-- [ ] Hero prompt and card open flows land in the right editor route
-- [ ] Recent/starred behavior survives reload without new dependencies
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Dashboard renders real products and statuses
+- [x] Hero prompt and card open flows land in the right editor route
+- [x] Recent/starred behavior survives reload without new dependencies
+
+## Implementation Evidence
+
+| Area | Evidence |
+|---|---|
+| Dashboard projection and filter truth | `shipyard/ui/src/dashboard-catalog.ts`, `shipyard/tests/ui-dashboard-catalog.test.ts` |
+| Recent/starred local persistence | `shipyard/ui/src/dashboard-preferences.ts`, `shipyard/tests/ui-dashboard-catalog.test.ts` |
+| Deterministic hero launch intent | `shipyard/ui/src/dashboard-launch.ts`, `shipyard/ui/src/App.tsx`, `shipyard/tests/ui-dashboard-launch.test.ts` |
+| Request-correlated backend completion | `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/server.ts`, `shipyard/tests/ui-events.test.ts`, `shipyard/tests/ui-runtime.test.ts` |
+| Live dashboard UI wiring | `shipyard/ui/src/views/DashboardView.tsx`, `shipyard/ui/src/views/ProductCard.tsx`, `shipyard/ui/src/preview-harness.tsx` |
