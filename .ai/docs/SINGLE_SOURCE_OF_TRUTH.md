@@ -1,8 +1,8 @@
 # Shipyard Workspace - Single Source of Truth
 
-**Last Updated**: 2026-03-27
+**Last Updated**: 2026-03-29
 **Current Phase**: Day 1 foundation
-**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, richer runtime artifacts, and the now-hardened continuation-aware operator workflow
+**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, richer runtime artifacts, the now-hardened continuation-aware operator workflow, and the evidence-backed Ship rebuild submission pack
 **Project Status**: Active
 **Canonical App Directory**: `shipyard/`
 **Canonical Harness Directory**: `.ai/`
@@ -13,16 +13,16 @@
 
 ### Active Task
 
-- **Title**: Use the shipped runtime-hardening follow-up pack as the baseline for the next runtime stories
-- **Status**: Implemented and validated
+- **Title**: Publish the Ship rebuild submission pack and align the durable docs with the current long-run runtime architecture
+- **Status**: Implemented and pending merge
 - **Owner**: Codex
 
 ### Next Immediate Actions
 
 1. Keep the harness aligned with the actual repo shape: `.ai/` beside `shipyard/`.
 2. Continue building the persistent CLI loop, typed tools, and tracing inside `shipyard/`.
-3. Advance the drafted Phase 7 and Phase 8 packs incrementally on the shipped planner, handoff, and spec-loading foundations while keeping tests, docs, and runtime artifacts in sync.
-4. Build future runtime work on the shipped follow-up baseline: history-safe tool turns, write-aware compaction, bootstrap-ready discovery, concise handoffs, continuation-first loop thresholds, and task-aware loop budgets are now the expected default.
+3. Treat `shipyard/docs/submissions/ship-rebuild/**` plus the appendix in `shipyard/CODEAGENT.md` as the canonical Ship rebuild deliverable set until a newer submission supersedes it.
+4. Build future runtime work on the shipped follow-up baseline: history-safe tool turns, write-aware compaction, bootstrap-ready discovery, concise handoffs, continuation-first loop thresholds, task-aware loop budgets, mission control, and release archiving are now the expected default.
 5. Use the drafted Phase 10 architecture pack to sequence the next larger runtime upgrades: durable threads, policy controls, layered memory, repo indexing, explicit routing/evals, background tasks, and readiness surfaces.
 
 ---
@@ -51,6 +51,11 @@
   shared turn engine, target-manager flow, continuation/handoff model,
   provider routing, and the current browser workbench instead of treating it as
   a one-off submission appendix.
+- **Submission baseline**: the Ship rebuild write-up now lives under
+  `shipyard/docs/submissions/ship-rebuild/` and is linked from
+  `.claude/CLAUDE.md`, `shipyard/docs/README.md`, and the appendix section of
+  `shipyard/CODEAGENT.md`. Update those entry points together when the
+  submission pack changes.
 - **Execution fingerprint baseline**: standard instruction turns now emit a
   shared per-turn execution fingerprint in CLI output, browser completion
   state, local JSONL traces, and LangSmith metadata so local vs hosted/runtime

@@ -10,6 +10,7 @@ Use `docs/specs/` for story packs and phased implementation plans.
 - [`demo/mvp-demo-script.md`](./demo/mvp-demo-script.md): short recorded walkthrough for the current target-selection, chat/live-run, and preview flow
 - [`architecture/README.md`](./architecture/README.md): system diagrams and runtime flow
 - [`architecture/hosted-railway.md`](./architecture/hosted-railway.md): hosted Railway runtime contract, persistence notes, access gate, upload intake, and deploy flow
+- [`submissions/ship-rebuild/README.md`](./submissions/ship-rebuild/README.md): Ship rebuild submission pack, comparative analysis, development log, cost analysis, and rebuild log
 - [`../src/README.md`](../src/README.md): source tree map and ownership guide
 - [`../ui/README.md`](../ui/README.md): React SPA source guide
 - [`../tests/README.md`](../tests/README.md): automated and manual test coverage

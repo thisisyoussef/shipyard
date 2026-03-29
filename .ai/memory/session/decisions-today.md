@@ -51,3 +51,11 @@
   coverage for that continuation path.
 - 2026-03-28: Added a dedicated Paper + Codex setup helper plus workflow references so visible UI stories can use the selected Paper frame as live design context while the Claude UI bridge flag stays off by default.
 - 2026-03-28: Dashboard hero launches now use a backend-backed `initialInstruction` handoff on `target:create_request`, so target creation, automatic enrichment, and the first queued turn stay correlated instead of relying on frontend draft injection after route navigation.
+- 2026-03-29: Added a checked-in Ship rebuild submission pack under
+  `shipyard/docs/submissions/ship-rebuild/` with the comparative analysis, AI
+  development log, AI cost analysis, and rebuild intervention log grounded in
+  the actual session/trace/archive evidence from the long-running remake.
+- 2026-03-29: Expanded `shipyard/CODEAGENT.md` to document the long-run
+  operations layer, release archiving, mission control, and the broader
+  multi-actor design beyond read-only helper subagents, then linked that
+  appendix from `.claude/CLAUDE.md` and `shipyard/docs/README.md`.

@@ -168,3 +168,20 @@ Record durable workspace decisions here.
   alongside the local README and architecture pages, and agents can use the
   file as a trustworthy code-centric onboarding map instead of falling back to
   stale phase language.
+
+- **ADR-ID**: ADR-0015
+- **Date**: 2026-03-29
+- **Context**: The Ship rebuild submission now requires a comparative analysis,
+  development log, cost analysis, and intervention log that are grounded in the
+  actual long-run rebuild evidence rather than reconstructed praise or memory.
+- **Decision**: Store the Ship rebuild submission pack under
+  `shipyard/docs/submissions/ship-rebuild/`, link it from
+  `.claude/CLAUDE.md`, `shipyard/docs/README.md`, and the appendix section of
+  `shipyard/CODEAGENT.md`, and treat those docs as the canonical submission
+  surface for this exercise.
+- **Alternatives Considered**: Keep the write-up in loose root notes; fold the
+  analysis into `CODEAGENT.md` only; wait until the very end of the rebuild to
+  draft the submission material from memory.
+- **Consequences**: Submission docs now have a stable home, entry points stay
+  discoverable for future agents, and comparative claims should cite trace,
+  session, archive, and log evidence instead of relying on retrospective recall.

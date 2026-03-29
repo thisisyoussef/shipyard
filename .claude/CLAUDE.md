@@ -18,6 +18,10 @@ For deeper context, also read:
 - `.ai/memory/project/anti-patterns.md` — known failures to avoid
 - `.ai/memory/session/active-context.md` — current task and goals
 
+When working on the Ship rebuild deliverables, also use:
+- `shipyard/docs/submissions/ship-rebuild/README.md`
+- `shipyard/CODEAGENT.md#ship-rebuild-submission-appendix`
+
 ## Workspace Layout
 
 ```
@@ -116,15 +120,26 @@ After completing work, update the memory update set:
 - **Skills reference**: `.ai/skills/` (code standards, TDD, frontend design, security, performance, refactoring)
 - **Software factory**: `.ai/skills/software-factory/` (generators for API, config, frontend, migration, tests)
 
+## Submission Docs
+
+- `shipyard/docs/submissions/ship-rebuild/README.md` — entry point for the Ship rebuild submission pack
+- `shipyard/docs/submissions/ship-rebuild/comparative-analysis.md` — required seven-section comparison against the original Ship app
+- `shipyard/docs/submissions/ship-rebuild/ai-development-log.md` — tools, workflow, effective prompts, strengths, and lessons
+- `shipyard/docs/submissions/ship-rebuild/ai-cost-analysis.md` — actual-cost gap note, reconstructed floor, and production projections
+- `shipyard/docs/submissions/ship-rebuild/ship-rebuild-log.md` — human intervention log with failure analysis
+- `shipyard/CODEAGENT.md#ship-rebuild-submission-appendix` — MVP/final appendix that ties the runtime contract to the submission material
+
 ## Shipyard App Architecture
 
 - **CLI entry**: `shipyard/src/bin/shipyard.ts`
 - **Engine loop**: `shipyard/src/engine/` (turn.ts, graph.ts, raw-loop.ts)
 - **Context**: `shipyard/src/context/` (discovery.ts, envelope.ts)
 - **Tools**: `shipyard/src/tools/` (typed registry with read, write, edit, list, search, command, git-diff)
-- **Agents**: `shipyard/src/agents/` (coordinator writes, explorer/verifier read-only)
+- **Agents**: `shipyard/src/agents/` (coordinator writes, explorer/planner/verifier/browser-evaluator/human-simulator read-only)
 - **Phases**: `shipyard/src/phases/` (phase contracts)
 - **Tracing**: `shipyard/src/tracing/` (JSONL local + LangSmith export)
+- **Mission control**: `shipyard/src/mission-control/` (runtime env hydration, stale-heartbeat recovery, session relaunch policy)
+- **Release archive**: `shipyard/src/tools/target-manager/release-archive.ts` (sidecar git snapshots of refreshed targets)
 - **UI backend**: `shipyard/src/ui/` (HTTP + WebSocket)
 - **UI frontend**: `shipyard/ui/` (React + Vite SPA)
 - **Tests**: `shipyard/tests/` (Vitest)
@@ -139,6 +154,10 @@ Shipyard uses anchor-based surgical editing:
 
 ### Multi-Agent Model
 
-- `coordinator`: owns planning and all writes
-- `explorer`: read-only search and context gathering
-- `verifier`: read-only checks, tests, lint runs
+- `coordinator`: owns planning, route selection, and all target writes
+- `explorer`: read-only codebase search and context gathering
+- `planner`: read-only execution-spec synthesis for broader work
+- `verifier`: read-only checks, tests, lint, and ordered command plans
+- `browser-evaluator`: read-only loopback preview inspection for UI work
+- `human-simulator`: read-only continuation feedback for `ultimate` mode
+- `mission-control`: process supervisor that restores saved sessions, rehydrates env, and re-arms long runs after runtime failure
