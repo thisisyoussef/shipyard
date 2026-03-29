@@ -21,6 +21,9 @@ Within those surfaces, Shipyard routes work through three turn types:
 - [`docs/README.md`](./docs/README.md): durable docs hub
 - [`docs/demo/mvp-demo-script.md`](./docs/demo/mvp-demo-script.md): short demo
   walkthrough for target-manager, chat, and file/output evidence flow
+- [`docs/demo/final-demo-script-ship-clone.md`](./docs/demo/final-demo-script-ship-clone.md):
+  first-take final demo walkthrough for the local Ship-clone rebuild target,
+  including the surgical-edit, diff, and trace flow
 - [`docs/architecture/README.md`](./docs/architecture/README.md): runtime,
   graph, and session-artifact diagrams
 - [`docs/architecture/hosted-railway.md`](./docs/architecture/hosted-railway.md):
