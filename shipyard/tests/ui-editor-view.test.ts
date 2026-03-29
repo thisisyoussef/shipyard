@@ -279,9 +279,19 @@ describe("EditorView", () => {
     expect(fileMarkup).toContain("Normalized the package scripts.");
   });
 
+  it("keeps the current preview link available from non-preview tabs", () => {
+    const markup = renderEditor({
+      initialActiveTab: "code",
+    });
+
+    expect(markup).toContain("Open preview");
+    expect(markup).toContain("http://127.0.0.1:4173");
+    expect(markup).not.toContain("Preview ready");
+  });
+
   it("shows a public deployment instead of a hosted loopback preview", () => {
     const markup = renderEditor({
-      initialActiveTab: "preview",
+      initialActiveTab: "code",
       hostedEditorUrl: "https://shipyard-production.up.railway.app",
       hosting: {
         ...createDefaultHostingWorkbenchState(),
@@ -295,10 +305,9 @@ describe("EditorView", () => {
       },
     });
 
-    expect(markup).toContain("Production deploy");
     expect(markup).toContain("Open app");
     expect(markup).toContain("https://shipyard-demo.vercel.app");
     expect(markup).not.toContain("http://127.0.0.1:4173");
-    expect(markup).not.toContain("Local preview");
+    expect(markup).not.toContain("Live preview");
   });
 });

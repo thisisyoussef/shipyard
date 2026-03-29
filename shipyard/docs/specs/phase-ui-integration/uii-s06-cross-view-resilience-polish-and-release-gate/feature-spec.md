@@ -139,6 +139,31 @@ validation, and docs sync.
   `shipyard/ui/src/App.tsx` so hosted sessions stop surfacing unreachable
   `127.0.0.1` preview URLs and instead prefer the latest public deployment or
   hosted-editor fallback.
+- Follow-up editor polish kept that same resolved preview/deploy destination
+  reachable even when operators are on the `Code` or `Files` tabs.
+  `shipyard/ui/src/views/EditorView.tsx`,
+  `shipyard/ui/src/views/editor.css`, and
+  `shipyard/tests/ui-editor-view.test.ts` now pin the current external link in
+  the workspace tab bar:
+
+  ```tsx
+  const workspacePreviewSurface = resolvePreviewSurface({
+    privatePreviewUrl: props.previewState.url,
+    publicDeploymentUrl: props.hosting.publicDeploymentUrl,
+    hosting: props.hosting,
+  });
+  ```
+
+  ```tsx
+  <a
+    className="target-inline-action editor-workspace-link"
+    href={workspacePreviewSurface.previewUrl}
+    target="_blank"
+    rel="noreferrer"
+  >
+    {workspaceExternalLabel}
+  </a>
+  ```
 - Post-ship hosted startup hardening extended the same resilience lane into
   `shipyard/src/ui/server.ts`, `shipyard/src/hosting/runtime.ts`,
   `shipyard/tests/ui-runtime.test.ts`,

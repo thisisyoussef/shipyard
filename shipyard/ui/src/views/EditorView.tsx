@@ -21,6 +21,7 @@ import {
   type EditorLayoutPreference,
   type EditorWorkspaceTab,
 } from "../editor-preferences.js";
+import { resolvePreviewSurface } from "../preview-surface.js";
 import {
   CodeExplorerPanel,
   FilePanel,
@@ -137,6 +138,21 @@ export function EditorView(props: EditorViewProps) {
     resolveInitialLayout(editorScopeKey, props.initialLayout),
   );
   const activeTab = layout.activeTab;
+  const workspacePreviewSurface = resolvePreviewSurface({
+    privatePreviewUrl: props.previewState.url,
+    publicDeploymentUrl: props.hosting.publicDeploymentUrl,
+    hosting: props.hosting,
+  });
+  const workspaceExternalLabel = workspacePreviewSurface.source === "public-deploy"
+    ? "Open app"
+    : workspacePreviewSurface.source === "private-preview"
+      ? "Open preview"
+      : null;
+  const workspaceExternalAriaLabel = workspacePreviewSurface.source === "public-deploy"
+    ? `Open live app at ${workspacePreviewSurface.previewUrl}`
+    : workspacePreviewSurface.source === "private-preview"
+      ? `Open preview at ${workspacePreviewSurface.previewUrl}`
+      : null;
 
   useEffect(() => {
     setLayout(resolveInitialLayout(editorScopeKey, props.initialLayout));
@@ -358,28 +374,46 @@ export function EditorView(props: EditorViewProps) {
           />
 
           <section className="editor-right" aria-label="Workspace">
-            <div className="editor-workspace-tabs" role="tablist" aria-label="Workspace tabs">
-              {TAB_ORDER.map((tab) => {
-                const tabId = `editor-tab-${tab}`;
-                const panelId = `editor-panel-${tab}`;
-                const selected = activeTab === tab;
+            <div className="editor-workspace-toolbar">
+              <div className="editor-workspace-tabs" role="tablist" aria-label="Workspace tabs">
+                {TAB_ORDER.map((tab) => {
+                  const tabId = `editor-tab-${tab}`;
+                  const panelId = `editor-panel-${tab}`;
+                  const selected = activeTab === tab;
 
-                return (
-                  <button
-                    key={tab}
-                    id={tabId}
-                    type="button"
-                    className="editor-workspace-tab"
-                    data-active={selected}
-                    role="tab"
-                    aria-selected={selected}
-                    aria-controls={panelId}
-                    onClick={() => setActiveTab(tab)}
+                  return (
+                    <button
+                      key={tab}
+                      id={tabId}
+                      type="button"
+                      className="editor-workspace-tab"
+                      data-active={selected}
+                      role="tab"
+                      aria-selected={selected}
+                      aria-controls={panelId}
+                      onClick={() => setActiveTab(tab)}
+                    >
+                      {createTabLabel(tab)}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {workspacePreviewSurface.previewUrl &&
+              workspaceExternalLabel &&
+              workspaceExternalAriaLabel ? (
+                <div className="editor-workspace-actions">
+                  <a
+                    className="target-inline-action editor-workspace-link"
+                    href={workspacePreviewSurface.previewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={workspaceExternalAriaLabel}
                   >
-                    {createTabLabel(tab)}
-                  </button>
-                );
-              })}
+                    {workspaceExternalLabel}
+                  </a>
+                </div>
+              ) : null}
             </div>
 
             <div

@@ -10,7 +10,8 @@
 - `src/dashboard-catalog.ts`, `src/dashboard-preferences.ts`, and
   `src/dashboard-launch.ts`: live dashboard catalog shaping, browser-local
   recent/starred memory, and request-correlated launch helpers
-- `src/ShipyardWorkbench.tsx`: current split-pane shell composition
+- `src/ShipyardWorkbench.tsx` and `src/views/EditorView.tsx`: split-pane shell
+  compositions for the browser workbench and the current editor route
 - `src/TargetHeader.tsx`, `src/TargetSwitcher.tsx`,
   `src/TargetCreationDialog.tsx`, `src/EnrichmentIndicator.tsx`,
   `src/HostedAccessGate.tsx`: target-manager, deploy-status, and hosted-access
@@ -40,8 +41,9 @@
 - Hosted editor sessions suppress unreachable loopback preview URLs and prefer
   the latest public deployment or hosted-editor fallback instead of blank
   localhost iframes.
-- The right pane focuses on file-level diff evidence and command output rather
-  than a dedicated preview/live-view tab set.
+- The right pane keeps preview, code, and file evidence in one tabbed
+  workspace, and the tab bar keeps the current external preview/app link one
+  click away.
 - The drawer holds session details, saved runs, and injected context history.
 - Hosted sessions can require a shared access token before the workbench unlocks.
 - Upload receipts flow through the same workbench state as turns and context
