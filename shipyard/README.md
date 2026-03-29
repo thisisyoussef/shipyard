@@ -275,9 +275,21 @@ target-manager flow:
 - keep the current hosted token in the ignored `shipyard/.env` file for local
   operator convenience; `node scripts/print-hosted-access-url.mjs` prints a
   bootstrap link from that file
+- prefer hosted-safe GitHub auth in Railway by setting one of:
+  `GITHUB_TOKEN`, `GITHUB_OAUTH_TOKEN`, or the GitHub App tuple
+  `GITHUB_APP_ID` / `GITHUB_APP_INSTALLATION_ID` /
+  `GITHUB_APP_PRIVATE_KEY`; local `gh` CLI auth is not treated as the hosted
+  source-of-truth path
 - set `VERCEL_TOKEN` to enable `deploy_target` and automatic public publishing
   after successful edited turns
 - use `/api/health` for the service health check
+- hosted runtime metadata persists under `.shipyard/hosting/runtime.json`
+  inside the persistent workspace so Railway restarts can restore hosted mode,
+  workspace binding, degraded-source state, and the last resumed session id
+- keep the three hosted surfaces distinct:
+  - the Shipyard service URL is the Railway-hosted operator runtime
+  - the private preview URL is the internal target-app preview, when present
+  - the public deployment URL is the external app URL produced by deploy flows
 
 If you use the repo-owned GitHub Actions deploy instead of Railway's native
 GitHub sync, the workflow already uploads `shipyard/` with `--path-as-root`

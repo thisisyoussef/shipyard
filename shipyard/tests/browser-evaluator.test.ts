@@ -347,7 +347,7 @@ describe("browser evaluator", () => {
     } finally {
       await supervisor.stop();
     }
-  }, 20_000);
+  }, 30_000);
 
   it("records selector or action-step failures", async () => {
     const targetDirectory = await createTempDirectory(

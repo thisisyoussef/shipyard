@@ -3,7 +3,10 @@
 This page documents the current hosted Shipyard contract on Railway. It covers
 the public browser runtime, the persistent workspace contract, the shared
 access-token gate, browser-side file upload intake, and the first Vercel deploy
-path from the workbench.
+path from the workbench. It also documents the hosted factory runtime profile
+added in Phase 11: target-local `.shipyard/hosting/` state, hosted-safe GitHub
+auth selection, explicit degraded hosted mode, and clear separation between the
+Shipyard service URL, private preview URLs, and public target-app deploy URLs.
 
 ## Service Contract
 
@@ -25,6 +28,9 @@ path from the workbench.
 | `ANTHROPIC_API_KEY` | Anthropic API key | Enables the shipped default Anthropic runtime in hosted production. |
 | `SHIPYARD_MODEL_PROVIDER` | `anthropic` | Pins hosted production to the Anthropic provider even if local defaults change later. |
 | `SHIPYARD_ANTHROPIC_MODEL` | `claude-opus-4-6` | Pins hosted production to Claude Opus 4.6 for the default route. |
+| `GITHUB_TOKEN` | optional hosted-safe GitHub token | Enables canonical GitHub repo binding, PR, and merge operations inside Railway without relying on `gh auth`. |
+| `GITHUB_APP_ID` / `GITHUB_APP_INSTALLATION_ID` / `GITHUB_APP_PRIVATE_KEY` | optional hosted-safe GitHub App credentials | Alternative hosted-safe adapter when you want app-based repo access instead of a long-lived token. |
+| `GITHUB_OAUTH_TOKEN` | optional hosted-safe OAuth token | Alternative hosted-safe adapter for delegated GitHub repo operations. |
 | `VERCEL_TOKEN` | Vercel token | Enables the `deploy_target` tool and automatic public publishing after successful edited turns. |
 
 ## Provider Environment
@@ -35,6 +41,9 @@ path from the workbench.
   attached. Shipyard uses that to validate the hosted persistence contract when
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1`.
 - Railway can also provide `RAILWAY_PUBLIC_DOMAIN` for the public service URL.
+- `SHIPYARD_HOSTED_URL` can override the derived public service URL when you
+  front the Railway service with a custom domain and want Shipyard to surface
+  that canonical URL in hosted runtime state.
 - The hosted runtime keeps local defaults when these provider variables are not
   present.
 
@@ -44,6 +53,9 @@ path from the workbench.
 - Runtime artifacts stay inside each target's `.shipyard/` directory so
   sessions, traces, uploads, and related state benefit from the same
   persistence contract.
+- Hosted runtime metadata now also persists under
+  `.shipyard/hosting/runtime.json` so Railway-specific availability, workspace
+  binding, and degraded-hosted recovery state survive restarts.
 - Browser uploads land in
   `.shipyard/uploads/<session-id>/...` and are converted into bounded
   next-turn context notes instead of being embedded directly into the websocket
@@ -53,6 +65,20 @@ path from the workbench.
 - Preview supervision still runs behind the scenes for runtime capabilities and
   tests, but the hosted operator surface no longer treats loopback URLs as
   shareable output.
+
+## Hosted Runtime Surfaces
+
+- **Shipyard service URL**: the Railway public domain or `SHIPYARD_HOSTED_URL`.
+  This is the editor and `/api/health` surface for Shipyard itself.
+- **Private preview URL**: any loopback or internal preview URL discovered by
+  the preview supervisor. This remains operator-only and is never treated as a
+  public share link.
+- **Public target deploy URL**: the target app URL returned by `deploy_target`
+  or automatic Vercel publishing. This is the shareable product URL.
+
+The hosted runtime publishes these surfaces separately in persisted workbench
+state and runtime health diagnostics so later coordinator or board consumers do
+not confuse the Shipyard editor with the product being built.
 
 ## Operator Flow
 
@@ -65,7 +91,10 @@ path from the workbench.
    inside the workspace and injects safe previews into the next turn.
 5. After a successful edited turn, Shipyard automatically publishes the current
    target to Vercel when `VERCEL_TOKEN` is configured.
-6. Open or copy the latest production URL from the target header and share the
+6. Use the hosted runtime status or target header to distinguish the active
+   Shipyard service URL, any private preview URL, and the latest public target
+   deployment URL.
+7. Open or copy the latest production URL from the target header and share the
    deployed target-app URL, not the Shipyard editor URL.
 
 ## Failure Behavior
@@ -78,6 +107,10 @@ path from the workbench.
   session details and websocket upgrades are rejected with `401`.
 - If `VERCEL_TOKEN` is missing, automatic publishing stays unavailable and the
   target header explains how to restore deploy capability.
+- If hosted GitHub auth is missing, not hosted-safe, or has insufficient
+  repository access, Shipyard enters an explicit degraded hosted mode. Planning,
+  TDD, and standard code turns remain usable, but canonical GitHub binding, PR,
+  and merge automation stay blocked until a hosted-safe adapter is restored.
 - If `ANTHROPIC_API_KEY` is missing while the hosted default route is
   `anthropic`, turns fail clearly with missing-credential diagnostics instead
   of silently falling back to another provider.
@@ -114,7 +147,11 @@ path from the workbench.
   enabled later from the service settings if you want Railway to watch a branch
   directly.
 - The checked-in GitHub Actions deploy workflow now syncs
-  `SHIPYARD_ACCESS_TOKEN`, `ANTHROPIC_API_KEY`,
+  `SHIPYARD_ACCESS_TOKEN`, `ANTHROPIC_API_KEY`, `GITHUB_TOKEN` when the
+  optional `SHIPYARD_GITHUB_TOKEN` secret is configured,
+  `VERCEL_TOKEN` when configured, `SHIPYARD_TARGETS_DIR=/app/workspace`,
+  `SHIPYARD_UI_HOST=0.0.0.0`,
+  `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1`,
   `SHIPYARD_MODEL_PROVIDER=anthropic`, and
   `SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6` into the production Railway
   service before uploading new builds.

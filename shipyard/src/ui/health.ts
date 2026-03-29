@@ -1,4 +1,5 @@
 import type { PreviewState } from "../artifacts/types.js";
+import type { HostingWorkbenchState } from "../hosting/contracts.js";
 import type { WorkbenchConnectionState } from "./workbench-state.js";
 
 export interface UiRuntimeMemoryUsage {
@@ -36,6 +37,7 @@ export interface UiRuntimeDiagnostics {
   deployInFlight: boolean;
   memoryUsage: UiRuntimeMemoryUsage;
   preview: UiRuntimePreviewDiagnostics;
+  hosting: HostingWorkbenchState;
   ultimate: UiRuntimeUltimateDiagnostics;
   lastActiveAt: string;
 }
