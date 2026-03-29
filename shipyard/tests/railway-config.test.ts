@@ -20,6 +20,10 @@ const railwayWorkflowPath = path.resolve(
   testsDirectory,
   "../../.github/workflows/railway-main-deploy.yml",
 );
+const railwayDeployScriptPath = path.resolve(
+  testsDirectory,
+  "../../.github/scripts/railway-ci-deploy.sh",
+);
 
 describe("railway config", () => {
   it("runs build and start commands from the shipyard app root", async () => {
@@ -48,5 +52,18 @@ describe("railway config", () => {
     expect(workflow).toContain("SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1");
     expect(workflow).toContain("SHIPYARD_MODEL_PROVIDER=anthropic");
     expect(workflow).toContain("SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6");
+    expect(workflow).toContain("bash .github/scripts/railway-ci-deploy.sh");
+  });
+
+  it("retries transient or post-build Railway deploy handoff failures", async () => {
+    const script = await readFile(railwayDeployScriptPath, "utf8");
+
+    expect(script).toContain('max_attempts="${RAILWAY_DEPLOY_MAX_ATTEMPTS:-3}"');
+    expect(script).toContain('base_retry_delay_seconds="${RAILWAY_DEPLOY_RETRY_DELAY_SECONDS:-15}"');
+    expect(script).toContain("failed to pull/unpack image");
+    expect(script).toContain("DEADLINE_EXCEEDED");
+    expect(script).toContain("built in [0-9]");
+    expect(script).toContain("--verbose");
+    expect(script).toContain("Railway deploy failed before a retriable post-build handoff; not retrying.");
   });
 });

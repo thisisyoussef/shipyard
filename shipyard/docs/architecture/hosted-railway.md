@@ -155,6 +155,11 @@ not confuse the Shipyard editor with the product being built.
   `SHIPYARD_MODEL_PROVIDER=anthropic`, and
   `SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6` into the production Railway
   service before uploading new builds.
+- The repo-controlled deploy step now shells through
+  `.github/scripts/railway-ci-deploy.sh`, which runs `railway up` with verbose
+  logging and retries deploys that fail after a completed build or surface the
+  transient registry/container-pull errors that have been hitting the hosted
+  service.
 - For local operator convenience, keep the same hosted token in the ignored
   `shipyard/.env` file and optionally add `SHIPYARD_HOSTED_URL`; the repo-root
   helper `node scripts/print-hosted-access-url.mjs` prints a bootstrap URL

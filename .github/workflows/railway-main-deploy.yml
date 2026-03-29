@@ -95,12 +95,5 @@ jobs:
             --service "${RAILWAY_SERVICE_ID}"
 
       - name: Deploy shipyard/ to Railway
-        working-directory: shipyard
         run: |
-          railway up . \
-            --path-as-root \
-            --ci \
-            --project "${RAILWAY_PROJECT_ID}" \
-            --environment "${RAILWAY_ENVIRONMENT_ID}" \
-            --service "${RAILWAY_SERVICE_ID}" \
-            --message "GitHub Actions deploy ${GITHUB_SHA}"
+          bash .github/scripts/railway-ci-deploy.sh
