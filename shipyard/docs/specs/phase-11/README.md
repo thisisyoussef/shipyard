@@ -3,7 +3,7 @@
 - Pack: Runtime Factory Foundations
 - Estimate: 36-48 hours
 - Date: 2026-03-28
-- Status: In progress; P11-S01, P11-S02, P11-S03, and P11-S04 implemented, remaining runtime-only stories planned
+- Status: In progress; P11-S01, P11-S02, P11-S03, P11-S04, and P11-S05 implemented, remaining runtime-only stories planned
 
 ## Pack Objectives
 
@@ -118,6 +118,15 @@ That later pack can concentrate on board interaction design, transitions, visual
   implement the discovery/research/PM phase factories, official-doc-first
   research with repo-local fallback, artifact normalization, deterministic
   backlog generation, and optional or alternate consumed-artifact resolution.
+- `shipyard/src/tdd/contracts.ts`, `shipyard/src/tdd/store.ts`,
+  `shipyard/src/tdd/turn.ts`, `shipyard/src/engine/turn.ts`,
+  `shipyard/src/engine/state.ts`, `shipyard/src/engine/loop.ts`,
+  `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/ui/server.ts`, and `shipyard/src/agents/profiles.ts`:
+  implement the runtime-native three-role TDD lane, `tdd start|continue|status`
+  routing, durable lane persistence, workbench-visible stage summaries, the
+  `test-author` profile, RED/GREEN guards, immutable test enforcement, and
+  structured handoff/escalation/quality artifacts.
 - `shipyard/skills/**`: provides the first built-in runtime skill manifests and
   prompt fragments used by code, target-manager, discovery, feature-spec, and
   technical-plan phases.
@@ -136,3 +145,8 @@ That later pack can concentrate on board interaction design, transitions, visual
   discovery/research/PM pipeline, approval-gated resume behavior, deterministic
   backlog ordering, official-doc ranking, and explicit repo-local fallback when
   external research is unavailable.
+- `shipyard/tests/tdd-runtime.test.ts` and `shipyard/tests/loop-runtime.test.ts`:
+  validate RED-before-implementer guards, already-green escalations,
+  restart-safe lane persistence, immutable test protection, reviewer quality
+  reports, optional-check downgrade behavior, and `tdd` command routing through
+  the main loop and browser runtimes.

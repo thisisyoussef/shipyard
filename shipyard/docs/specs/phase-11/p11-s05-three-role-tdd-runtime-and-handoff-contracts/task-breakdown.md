@@ -42,19 +42,34 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `requires a red check before implementation begins`
-  - [ ] `blocks implementer edits to test-author artifacts`
-  - [ ] `surfaces already-green test contracts as an escalation`
+  - [x] `requires a red check before implementation begins`
+  - [x] `blocks implementer edits to test-author artifacts`
+  - [x] `surfaces already-green test contracts as an escalation`
 - T002 tests:
-  - [ ] `persists tdd stage state and handoffs across restart`
+  - [x] `persists tdd stage state and handoffs across restart`
 - T003 tests:
-  - [ ] `records implementer escalations instead of mutating tests`
-  - [ ] `emits a reviewer quality report after green`
+  - [x] `records implementer escalations instead of mutating tests`
+  - [x] `emits a reviewer quality report after green`
 - T004 tests:
-  - [ ] `records property or mutation adapters as pass skip or blocked`
+  - [x] `records property or mutation adapters as pass skip or blocked`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Implementation Evidence
+
+| Task ID | Evidence |
+|---|---|
+| T001 | `shipyard/tests/tdd-runtime.test.ts` adds failing-then-passing coverage for RED guard enforcement, already-green escalation handling, restart-safe lane persistence, immutable test-artifact protection, reviewer quality report completion, and optional property or mutation downgrade behavior. |
+| T002 | `shipyard/src/tdd/contracts.ts`, `shipyard/src/tdd/store.ts`, `shipyard/src/artifacts/types.ts`, and `shipyard/src/engine/state.ts` add the durable lane schema, target-local persistence, TDD artifact contracts, and `activeTddLaneId` session persistence under `.shipyard/tdd`. |
+| T003 | `shipyard/src/tdd/turn.ts`, `shipyard/src/engine/turn.ts`, and `shipyard/src/agents/profiles.ts` implement `tdd start|continue|status`, stage-specific phase overrides, the `test-author` profile, focused RED/GREEN validation, immutable test enforcement, and reviewer completion semantics. |
+| T004 | `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`, `shipyard/src/engine/loop.ts`, and `shipyard/src/ui/server.ts` project compact `tddState` into session snapshots and route `tdd ...` commands through both CLI and browser runtimes so later coordinators and UI packs can consume the lane state directly. |
+
+## Deferred Tasks
+
+- A visual TDD board and richer reviewer/refactor sub-turn remain deferred to
+  later coordination or UI stories so P11-S05 can stay focused on durable lane
+  contracts and runtime safety.

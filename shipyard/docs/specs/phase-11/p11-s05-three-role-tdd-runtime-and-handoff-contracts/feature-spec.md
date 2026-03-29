@@ -37,18 +37,18 @@ handoffs, stage policies, RED/GREEN guards, and durable quality reports.
   implementation goes green.
 
 ## Acceptance Criteria
-- [ ] AC-1: Shipyard has a dedicated TDD runtime lane with explicit stages for
+- [x] AC-1: Shipyard has a dedicated TDD runtime lane with explicit stages for
   test author, implementer, and reviewer.
-- [ ] AC-2: The implementer stage cannot modify test-author artifacts silently;
+- [x] AC-2: The implementer stage cannot modify test-author artifacts silently;
   objections are recorded as escalations instead.
-- [ ] AC-3: RED/GREEN checks are first-class runtime events with durable
+- [x] AC-3: RED/GREEN checks are first-class runtime events with durable
   handoff artifacts and retry counters.
-- [ ] AC-4: The TDD lane can attach to approved specs and later emit structured
+- [x] AC-4: The TDD lane can attach to approved specs and later emit structured
   quality or review artifacts back into the registry.
-- [ ] AC-5: Optional property-test and mutation-test hooks can run when the
+- [x] AC-5: Optional property-test and mutation-test hooks can run when the
   story qualifies, but the lane degrades cleanly when those adapters are not
   configured.
-- [ ] AC-6: The operator can inspect stage outputs, escalations, and quality
+- [x] AC-6: The operator can inspect stage outputs, escalations, and quality
   findings without reconstructing them from chat history.
 
 ## Edge Cases
@@ -79,3 +79,67 @@ handoffs, stage policies, RED/GREEN guards, and durable quality reports.
 ## Done Definition
 - Shipyard can execute an explicit three-role TDD lane with durable handoffs
   and quality reports instead of relying on external workflow memory.
+
+## Implementation Evidence
+
+- `shipyard/src/tdd/contracts.ts`, `shipyard/src/tdd/store.ts`, and
+  `shipyard/src/artifacts/types.ts`: add the durable TDD lane vocabulary,
+  persisted lane schema, workbench projection state, and typed artifact
+  contracts for handoffs, escalations, quality findings, focused validation,
+  and optional checks.
+
+  ```ts
+  export const tddWorkbenchStateSchema = z.object({
+    activeLaneId: z.string().trim().min(1).nullable(),
+    status: z.union([tddLaneStatusSchema, z.literal("idle")]),
+    currentStage: tddStageSchema.nullable(),
+  });
+  ```
+
+- `shipyard/src/tdd/turn.ts`: implements `tdd start`, `tdd continue`, and
+  `tdd status`, resolves approved technical specs from the artifact registry,
+  forces RED before implementation, records immutable test-author files, saves
+  `tdd-handoff` / `tdd-escalation` / `tdd-quality-report` artifacts, and emits
+  optional property or mutation outcomes as explicit pass/skip/blocked records.
+
+  ```ts
+  const traced = await runWithLangSmithTrace({
+    name: "shipyard.tdd-turn",
+    runType: "chain",
+    tags: ["shipyard", "tdd-turn", command.type],
+  });
+  ```
+
+- `shipyard/src/engine/state.ts`, `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, `shipyard/src/engine/loop.ts`, and
+  `shipyard/src/ui/server.ts`: persist `activeTddLaneId`, project compact
+  `workbenchState.tddState`, surface TDD summaries in recovered sessions, and
+  route `tdd ...` instructions through both CLI and browser runtimes.
+
+- `shipyard/src/engine/turn.ts` and `shipyard/src/agents/profiles.ts`: add the
+  `phaseOverride` seam used by the TDD lane and the dedicated `test-author`
+  runtime profile so stage-specific turn execution can stay bounded without
+  mutating the general code phase contract.
+
+- `shipyard/tests/tdd-runtime.test.ts` and `shipyard/tests/loop-runtime.test.ts`:
+  verify RED-before-implementer behavior, already-green escalations,
+  restart-safe lane persistence, immutable test enforcement, reviewer quality
+  report emission, optional-check downgrade behavior, and `tdd` command routing
+  through the main loop.
+
+## LangSmith / Monitoring
+
+- Fresh deterministic finish-check traces on project
+  `shipyard-p11-s05-finishcheck`:
+  - start trace: `019d36f3-784f-7000-8000-0431f8edb0a8`
+  - implementer trace: `019d36f3-9580-7000-8000-06a072ebdf38`
+  - reviewer trace: `019d36f3-bcd3-7000-8000-06a03cb29fce`
+- The isolated finish-check executed a full `tdd start -> tdd continue ->
+  tdd continue` lane and confirmed:
+  - test-author recorded a red focused validation and immutable test path
+  - implementer advanced the lane to reviewer without mutating test artifacts
+  - reviewer completed the lane with a published quality report artifact
+- `langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
+  returned `[]` for the isolated finish-check project.
+- `langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3` returned
+  `null` for the isolated finish-check project.

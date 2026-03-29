@@ -35,6 +35,7 @@ export interface SessionState {
   activePhase: SessionPhase;
   targetProfile?: TargetProfile;
   activePlanId: string | null;
+  activeTddLaneId: string | null;
   activeTask: ActiveTaskContext | null;
   recentTouchedFiles: string[];
   workbenchState: WorkbenchViewState;
@@ -82,6 +83,7 @@ export interface SessionSnapshot {
   activePhase: SessionPhase;
   targetProfile?: TargetProfile;
   activePlanId: string | null;
+  activeTddLaneId: string | null;
   activeTask: ActiveTaskContext | null;
   recentTouchedFiles: string[];
   workbenchState: WorkbenchViewState;
@@ -136,6 +138,7 @@ export function createSessionState(
     activePhase,
     targetProfile: options.targetProfile,
     activePlanId: null,
+    activeTddLaneId: null,
     activeTask: null,
     recentTouchedFiles: [],
     workbenchState,
@@ -156,6 +159,7 @@ export function createSessionSnapshot(state: SessionState): SessionSnapshot {
     activePhase: state.activePhase,
     targetProfile: state.targetProfile,
     activePlanId: state.activePlanId,
+    activeTddLaneId: state.activeTddLaneId,
     activeTask: state.activeTask,
     recentTouchedFiles: [...state.recentTouchedFiles],
     workbenchState: compactWorkbenchStateForPersistence(state.workbenchState),
@@ -192,6 +196,10 @@ export function getPlanDirectory(targetDirectory: string): string {
 
 export function getPipelineDirectory(targetDirectory: string): string {
   return path.join(getShipyardDirectory(targetDirectory), "pipelines");
+}
+
+export function getTddDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "tdd");
 }
 
 export function getUploadDirectory(
@@ -247,6 +255,7 @@ export async function ensureShipyardDirectories(
   await mkdir(getTraceDirectory(targetDirectory), { recursive: true });
   await mkdir(getPlanDirectory(targetDirectory), { recursive: true });
   await mkdir(getPipelineDirectory(targetDirectory), { recursive: true });
+  await mkdir(getTddDirectory(targetDirectory), { recursive: true });
   await mkdir(getArtifactDirectory(targetDirectory), { recursive: true });
   await mkdir(getArtifactRegistryDirectory(targetDirectory), { recursive: true });
 }
@@ -330,6 +339,7 @@ export async function loadSessionState(
     activePhase,
     targetProfile: parsed.targetProfile,
     activePlanId: parsed.activePlanId ?? null,
+    activeTddLaneId: parsed.activeTddLaneId ?? null,
     activeTask: parsed.activeTask ?? null,
     recentTouchedFiles: Array.isArray(parsed.recentTouchedFiles)
       ? parsed.recentTouchedFiles.filter((filePath): filePath is string =>

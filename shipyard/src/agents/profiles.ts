@@ -15,6 +15,7 @@ export const AGENT_ROLE_IDS = [
   "target-manager",
   "discovery",
   "pm",
+  "test-author",
   "implementer",
   "reviewer",
   "qa",
@@ -81,6 +82,16 @@ const AGENT_PROFILES: AgentProfileRecord = {
     modelRoute: PLANNER_MODEL_ROUTE,
     temperature: 0.25,
     maxTokens: 5_200,
+  },
+  "test-author": {
+    id: "test-author",
+    name: "Test Author",
+    role: "TDD Test Author",
+    personality:
+      "Contract-first and disciplined. Writes the narrowest failing tests that prove the approved spec, avoids implementation leakage, and preserves RED intentionally.",
+    modelRoute: CODE_PHASE_MODEL_ROUTE,
+    temperature: 0.1,
+    maxTokens: 6_000,
   },
   implementer: {
     id: "implementer",

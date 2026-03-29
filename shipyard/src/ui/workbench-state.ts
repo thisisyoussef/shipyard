@@ -6,6 +6,8 @@ import {
   createIdlePreviewState,
 } from "../preview/contracts.js";
 import type { RuntimeAssistSummary } from "../skills/contracts.js";
+import type { TddWorkbenchState } from "../tdd/contracts.js";
+import { createIdleTddWorkbenchState } from "../tdd/contracts.js";
 import type {
   BackendToFrontendMessage,
   DeploySummary,
@@ -126,6 +128,8 @@ export interface SessionRunSummaryViewModel extends SessionRunSummary {}
 
 export interface PipelineWorkbenchStateViewModel extends PipelineWorkbenchState {}
 
+export interface TddWorkbenchStateViewModel extends TddWorkbenchState {}
+
 export interface RuntimeAssistViewModel extends RuntimeAssistSummary {}
 
 export interface WorkbenchViewState {
@@ -148,6 +152,7 @@ export interface WorkbenchViewState {
   targetManager: TargetManagerViewModel | null;
   projectBoard: ProjectBoardViewModel | null;
   pipelineState: PipelineWorkbenchStateViewModel | null;
+  tddState: TddWorkbenchStateViewModel;
   runtimeAssist: RuntimeAssistViewModel;
 }
 
@@ -322,6 +327,16 @@ function createPipelineAgentStatus(
   return pipelineState.summary || null;
 }
 
+function createTddAgentStatus(
+  tddState: TddWorkbenchStateViewModel | null,
+): string | null {
+  if (!tddState || tddState.status === "idle") {
+    return null;
+  }
+
+  return tddState.summary || null;
+}
+
 function ensureActiveTurn(
   state: WorkbenchViewState,
 ): WorkbenchViewState {
@@ -428,6 +443,7 @@ function hasRecoveredHistory(state: WorkbenchViewState): boolean {
     state.fileEvents.length > 0 ||
     state.contextHistory.length > 0 ||
     state.pendingUploads.length > 0 ||
+    state.tddState.status !== "idle" ||
     (
       state.pipelineState !== null &&
       state.pipelineState.status !== "idle"
@@ -676,6 +692,7 @@ export function ensureWorkbenchStateDefaults(
     targetManager: state.targetManager ?? initialState.targetManager,
     projectBoard: state.projectBoard ?? initialState.projectBoard,
     pipelineState: state.pipelineState ?? initialState.pipelineState,
+    tddState: state.tddState ?? initialState.tddState,
     runtimeAssist: state.runtimeAssist ?? initialState.runtimeAssist,
   };
 }
@@ -703,6 +720,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     targetManager: null,
     projectBoard: null,
     pipelineState: null,
+    tddState: createIdleTddWorkbenchState(),
     runtimeAssist: createInitialRuntimeAssistState(),
   };
 }
@@ -861,7 +879,10 @@ export function applySessionSnapshot(
     sessionHistory: message.sessionHistory,
     connectionState: nextConnectionState,
     agentStatus:
-      createPipelineAgentStatus(
+      createTddAgentStatus(
+        recoveredState.tddState ?? state.tddState ?? null,
+      )
+      ?? createPipelineAgentStatus(
         recoveredState.pipelineState ?? state.pipelineState ?? null,
       )
       ?? createTargetManagerAgentStatus(
@@ -872,6 +893,10 @@ export function applySessionSnapshot(
     targetManager: recoveredState.targetManager ?? state.targetManager ?? null,
     projectBoard: recoveredState.projectBoard ?? state.projectBoard ?? null,
     pipelineState: recoveredState.pipelineState ?? state.pipelineState ?? null,
+    tddState:
+      recoveredState.tddState
+      ?? state.tddState
+      ?? createIdleTddWorkbenchState(),
   };
 }
 

@@ -55,6 +55,12 @@ import {
   type ExecuteTaskRunnerTurnOptions,
   type TaskRunnerTurnResult,
 } from "../plans/task-runner.js";
+import {
+  executeTddTurn,
+  isTddInstruction,
+  type ExecuteTddTurnOptions,
+  type TddTurnResult,
+} from "../tdd/turn.js";
 import { abortTurn } from "./cancellation.js";
 import {
   ToolError,
@@ -86,6 +92,9 @@ export interface RunShipyardLoopOptions {
   executeTaskTurn?: (
     options: ExecuteTaskRunnerTurnOptions,
   ) => Promise<TaskRunnerTurnResult>;
+  executeTddTurn?: (
+    options: ExecuteTddTurnOptions,
+  ) => Promise<TddTurnResult>;
   executeUltimateMode?: (
     options: ExecuteUltimateModeOptions,
   ) => Promise<Awaited<ReturnType<typeof executeUltimateMode>>>;
@@ -136,6 +145,9 @@ function printHelp(): void {
   console.log("  pipeline skip [phase]   Skip the current or named phase");
   console.log("  pipeline rerun [phase]  Re-run the current or named phase");
   console.log("  pipeline back [phase]   Move back to an earlier phase and continue");
+  console.log("  tdd start <command>     Start the explicit TDD lane with a focused validation command");
+  console.log("  tdd continue            Advance the active TDD lane");
+  console.log("  tdd status              Show the active TDD lane summary");
   console.log("  next                  Run the next pending task from the active plan");
   console.log("  continue              Resume the in-progress task or fall back to the next pending task");
   console.log("  exit | quit           Save the session and quit");
@@ -274,6 +286,7 @@ export async function runShipyardLoop(
   const executePipelineTurnImpl =
     options.executePipelineTurn ?? executePipelineTurn;
   const executeTaskTurn = options.executeTaskTurn ?? executeTaskRunnerTurn;
+  const executeTddTurnImpl = options.executeTddTurn ?? executeTddTurn;
   const executeUltimateModeTurn = options.executeUltimateMode ?? executeUltimateMode;
   const runtimeState = createInstructionRuntimeState({
     projectRules: await loadProjectRules(state.targetDirectory),
@@ -513,6 +526,50 @@ export async function runShipyardLoop(
                   }
                 : null,
               langSmithTrace: pipelineResult.langSmithTrace,
+            });
+            continue;
+          }
+
+          if (isTddInstruction(line)) {
+            const turnController = new AbortController();
+            activeTurnController = turnController;
+            const tddResult = await executeTddTurnImpl({
+              sessionState: state,
+              runtimeState,
+              instruction: line,
+              reporter: createCliUltimateModeReporter(),
+              signal: turnController.signal,
+              runtimeSurface: "cli",
+            });
+            activeTurnController = null;
+
+            printDivider();
+            console.log(tddResult.finalText);
+            if (tddResult.langSmithTrace?.traceUrl) {
+              printDivider();
+              console.log(`LangSmith trace: ${tddResult.langSmithTrace.traceUrl}`);
+            }
+            await traceLogger.log("instruction.tdd", {
+              instruction: line,
+              command: tddResult.command,
+              status: tddResult.status,
+              summary: tddResult.summary,
+              lane: tddResult.lane
+                ? {
+                    laneId: tddResult.lane.laneId,
+                    status: tddResult.lane.status,
+                    currentStage: tddResult.lane.currentStage,
+                    selection: tddResult.lane.selection,
+                    focusedValidationCommand: tddResult.lane.focusedValidationCommand,
+                    stageAttempts: tddResult.lane.stageAttempts,
+                    latestHandoffArtifact: tddResult.lane.latestHandoffArtifact,
+                    latestEscalationArtifact: tddResult.lane.latestEscalationArtifact,
+                    latestQualityArtifact: tddResult.lane.latestQualityArtifact,
+                    optionalChecks: tddResult.lane.optionalChecks,
+                  }
+                : null,
+              runtimeAssist: tddResult.runtimeAssist,
+              langSmithTrace: tddResult.langSmithTrace,
             });
             continue;
           }

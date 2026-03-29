@@ -89,6 +89,7 @@ import {
   type RuntimeSkillRegistry,
 } from "../skills/registry.js";
 import type { RuntimeAssistSummary } from "../skills/contracts.js";
+import type { Phase } from "../phases/phase.js";
 
 export type InstructionRuntimeMode = "graph" | "fallback";
 
@@ -185,6 +186,7 @@ export interface ExecuteInstructionTurnOptions {
   reporter?: InstructionTurnReporter;
   signal?: AbortSignal;
   runtimeSurface?: RuntimeSurface;
+  phaseOverride?: Phase;
 }
 
 export interface InstructionTurnResult {
@@ -1063,9 +1065,11 @@ async function emitInstructionTurnOutcome(
 export async function executeInstructionTurn(
   options: ExecuteInstructionTurnOptions,
 ): Promise<InstructionTurnResult> {
-  const phase = options.sessionState.activePhase === "target-manager"
-    ? createTargetManagerPhase()
-    : createCodePhase();
+  const phase = options.phaseOverride ?? (
+    options.sessionState.activePhase === "target-manager"
+      ? createTargetManagerPhase()
+      : createCodePhase()
+  );
   const state = options.sessionState;
   const runtimeState = options.runtimeState;
   runtimeState.pendingTargetSelectionPath = null;
