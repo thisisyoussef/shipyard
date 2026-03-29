@@ -85,6 +85,7 @@ jobs:
             --environment "${RAILWAY_ENVIRONMENT_ID}" \
             --service "${RAILWAY_SERVICE_ID}"
           railway variable set \
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
             SHIPYARD_TARGETS_DIR=/app/workspace \
             SHIPYARD_UI_HOST=0.0.0.0 \
             SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1 \
