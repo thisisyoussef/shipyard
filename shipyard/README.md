@@ -294,7 +294,13 @@ target-manager flow:
   `GITHUB_APP_PRIVATE_KEY`; local `gh` CLI auth is not treated as the hosted
   source-of-truth path
 - set `VERCEL_TOKEN` to enable `deploy_target` and automatic public publishing
-  after successful edited turns
+  after successful edited turns; Shipyard now creates or recovers a
+  deterministic `.vercel/project.json` link for each target on first deploy
+  and disables Vercel Authentication by default so the resulting production
+  URL stays shareable
+- set `SHIPYARD_VERCEL_PUBLIC_DEPLOYS=0` only when you intentionally want to
+  preserve an existing protected Vercel project instead of Shipyard's
+  public-by-default deploy behavior
 - use `/api/health` for the service health check
 - hosted runtime metadata persists under `.shipyard/hosting/runtime.json`
   inside the persistent workspace so Railway restarts can restore hosted mode,

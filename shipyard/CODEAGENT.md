@@ -45,7 +45,8 @@ without becoming a bag of one-off agent loops.
 - Current shipped model default:
   - Anthropic via `claude-opus-4-6`
 - Current public deploy path:
-  - Vercel through `deploy_target`
+  - Vercel through `deploy_target`, with deterministic target-local Vercel
+    project links and public-by-default production URLs
 
 ## System Topology
 
@@ -387,9 +388,12 @@ The target-manager path has matured beyond simple directory selection.
 - `enrich_target` uses the target-enrichment route to produce a persisted target
   profile and discovery snapshot.
 - `deploy_target` currently targets Vercel and intentionally does not trust raw
-  `vercel deploy` stdout as the shareable app URL. It resolves a production URL
-  from labeled output or deployment metadata so the browser workbench can show
-  a real public link instead of a login-gated candidate.
+  `vercel deploy` stdout as the shareable app URL. It resolves or creates a
+  deterministic `.vercel/project.json` link for the target, disables Vercel
+  Authentication by default unless `SHIPYARD_VERCEL_PUBLIC_DEPLOYS=0`, and
+  then resolves a production URL from labeled output or deployment metadata so
+  the browser workbench can show a real public link instead of a login-gated
+  candidate.
 
 ### Release archiving and rollback
 
