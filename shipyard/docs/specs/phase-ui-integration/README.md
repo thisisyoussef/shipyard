@@ -173,6 +173,15 @@ The board and ultimate work should align with those future packs by:
   `shipyard/tests/ui-chat-workspace.test.ts`,
   `shipyard/tests/ui-editor-view.test.ts`, and
   `shipyard/tests/ui-workbench.test.ts`.
+- Post-pack hosted preview hardening taught the dashboard and editor to prefer
+  public deployment surfaces over unreachable loopback previews in hosted
+  sessions via `shipyard/ui/src/preview-surface.ts`,
+  `shipyard/ui/src/dashboard-catalog.ts`,
+  `shipyard/ui/src/panels/PreviewPanel.tsx`,
+  `shipyard/ui/src/views/EditorView.tsx`,
+  `shipyard/ui/src/App.tsx`,
+  `shipyard/tests/ui-dashboard-catalog.test.ts`, and
+  `shipyard/tests/ui-editor-view.test.ts`.
 - `UII-S04` landed the typed ultimate control plane and explicit composer
   semantics in `shipyard/src/ui/contracts.ts`,
   `shipyard/src/ui/workbench-state.ts`,

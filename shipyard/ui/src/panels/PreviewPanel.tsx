@@ -8,10 +8,12 @@
 
 import type { BadgeTone } from "../primitives.js";
 import { Badge, StatusDot } from "../primitives.js";
-import type { PreviewStateViewModel } from "../view-models.js";
+import { normalizePreviewUrl, resolvePreviewSurface } from "../preview-surface.js";
+import type { HostingViewModel, PreviewStateViewModel } from "../view-models.js";
 
 export interface PreviewPanelProps {
   preview: PreviewStateViewModel;
+  hosting: HostingViewModel;
   hostedEditorUrl: string;
 }
 
@@ -103,16 +105,74 @@ function shouldRenderPreviewFrame(
 
 export function PreviewPanel({
   preview,
+  hosting,
   hostedEditorUrl,
 }: PreviewPanelProps) {
-  const tone = getPreviewTone(preview.status);
-  const label = getPreviewLabel(preview.status);
+  const previewSurface = resolvePreviewSurface({
+    privatePreviewUrl: preview.url,
+    publicDeploymentUrl: hosting.publicDeploymentUrl,
+    hosting,
+  });
+  const editorUrl = normalizePreviewUrl(hostedEditorUrl);
+  const usingDeploymentSurface = previewSurface.source === "public-deploy";
+  const usingHostedEditorFallback =
+    previewSurface.source === "none" &&
+    hosting.active &&
+    editorUrl !== null;
+  const tone = usingDeploymentSurface
+    ? "success"
+    : usingHostedEditorFallback
+      ? "accent"
+      : getPreviewTone(preview.status);
+  const label = usingDeploymentSurface
+    ? "Live"
+    : usingHostedEditorFallback
+      ? "Hosted"
+      : getPreviewLabel(preview.status);
   const showPulse =
-    preview.status === "starting" || preview.status === "refreshing";
-  const showPreviewLink = preview.url !== null;
-  const showPreviewFrame = shouldRenderPreviewFrame(preview);
-  const editorUrl = hostedEditorUrl.trim();
-  const showEditorLink = !showPreviewLink && editorUrl.length > 0;
+    !usingDeploymentSurface &&
+    !usingHostedEditorFallback &&
+    (preview.status === "starting" || preview.status === "refreshing");
+  const showPreviewLink = previewSurface.previewUrl !== null;
+  const showPreviewFrame = showPreviewLink
+    ? usingDeploymentSurface || shouldRenderPreviewFrame(preview)
+    : false;
+  const showEditorLink = !showPreviewLink && editorUrl !== null;
+  const panelKicker = usingDeploymentSurface
+    ? "Production deploy"
+    : usingHostedEditorFallback
+      ? "Hosted runtime"
+      : "Local preview";
+  const panelTitle = usingDeploymentSurface
+    ? "Live app ready"
+    : usingHostedEditorFallback
+      ? "Preview stays inside Shipyard"
+      : getPreviewTitle(preview.status);
+  const summary = usingDeploymentSurface
+    ? "This hosted Shipyard session cannot expose its private loopback preview directly. Showing the latest public deployment instead."
+    : usingHostedEditorFallback
+      ? "This preview is running inside the hosted Shipyard container and is not reachable from this browser. Open the hosted editor or deploy the app to inspect it."
+      : preview.summary;
+  const noteLabel = usingDeploymentSurface
+    ? "Latest preview status"
+    : getReasonLabel(preview.status);
+  const showSummaryNote = !usingHostedEditorFallback && preview.lastRestartReason;
+  const frameTitle = usingDeploymentSurface ? "Live app" : "Local preview";
+  const externalUrl = previewSurface.previewUrl ?? editorUrl;
+  const externalLabel = usingDeploymentSurface
+    ? "Open app"
+    : showPreviewLink
+      ? "Open preview"
+      : showEditorLink
+        ? "Open editor"
+        : null;
+  const externalAriaLabel = usingDeploymentSurface
+    ? `Open live app at ${previewSurface.previewUrl}`
+    : showPreviewLink
+      ? `Open preview at ${previewSurface.previewUrl}`
+      : showEditorLink
+        ? `Open editor at ${editorUrl}`
+        : null;
 
   return (
     <section
@@ -122,9 +182,9 @@ export function PreviewPanel({
     >
       <div className="panel-header">
         <div>
-          <p className="panel-kicker">Local preview</p>
+          <p className="panel-kicker">{panelKicker}</p>
           <h2 id="preview-panel-title" className="panel-title">
-            {getPreviewTitle(preview.status)}
+            {panelTitle}
           </h2>
         </div>
         <Badge tone={tone}>
@@ -138,47 +198,34 @@ export function PreviewPanel({
           <div className="preview-frame-shell">
             <iframe
               className="preview-frame"
-              title="Local preview"
-              src={preview.url ?? undefined}
+              title={frameTitle}
+              src={previewSurface.previewUrl ?? undefined}
               loading="lazy"
             />
           </div>
         ) : (
           <div className="preview-empty-state">
-            <p className="preview-summary">{preview.summary}</p>
-            {preview.lastRestartReason ? (
+            <p className="preview-summary">{summary}</p>
+            {showSummaryNote ? (
               <p className="preview-note" data-tone={tone}>
-                <strong>{getReasonLabel(preview.status)}:</strong>{" "}
+                <strong>{noteLabel}:</strong>{" "}
                 {preview.lastRestartReason}
               </p>
             ) : null}
           </div>
         )}
 
-        {showPreviewLink ? (
+        {externalUrl && externalLabel && externalAriaLabel ? (
           <div className="preview-toolbar">
-            <code className="preview-url">{preview.url}</code>
+            <code className="preview-url">{externalUrl}</code>
             <a
               className="target-inline-action preview-open-link"
-              href={preview.url ?? undefined}
+              href={externalUrl}
               target="_blank"
               rel="noreferrer"
-              aria-label={`Open preview at ${preview.url}`}
+              aria-label={externalAriaLabel}
             >
-              Open preview
-            </a>
-          </div>
-        ) : showEditorLink ? (
-          <div className="preview-toolbar">
-            <code className="preview-url">{editorUrl}</code>
-            <a
-              className="target-inline-action preview-open-link"
-              href={editorUrl}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Open editor at ${editorUrl}`}
-            >
-              Open editor
+              {externalLabel}
             </a>
           </div>
         ) : null}

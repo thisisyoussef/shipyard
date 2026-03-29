@@ -1,4 +1,5 @@
 import type {
+  HostingViewModel,
   ProjectBoardProjectViewModel,
   ProjectBoardViewModel,
   SessionStateViewModel,
@@ -9,6 +10,7 @@ import type {
   DashboardTabId,
 } from "./dashboard-preferences.js";
 import { getSelectedTarget } from "./target-selection.js";
+import { resolvePreviewSurface as resolveAccessiblePreviewSurface } from "./preview-surface.js";
 
 export type DashboardCardStatus =
   | "ready"
@@ -50,6 +52,7 @@ interface DashboardCatalogOptions {
   projectBoard: ProjectBoardViewModel | null;
   sessionState: SessionStateViewModel | null;
   preferences: DashboardPreferences;
+  hosting: HostingViewModel | null;
 }
 
 interface CatalogSeed {
@@ -186,33 +189,22 @@ function createPreviewLabel(
   return card.statusLabel;
 }
 
-function normalizeUrl(url: string | null | undefined): string | undefined {
-  const trimmed = url?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
 function resolvePreviewSurface(
   project: ProjectBoardProjectViewModel | null,
+  hosting: HostingViewModel | null,
 ): Pick<DashboardCardViewModel, "previewUrl" | "previewLabel"> | null {
-  const privatePreviewUrl = normalizeUrl(project?.privatePreviewUrl);
+  const surface = resolveAccessiblePreviewSurface({
+    privatePreviewUrl: project?.privatePreviewUrl,
+    publicDeploymentUrl: project?.publicDeploymentUrl,
+    hosting,
+  });
 
-  if (privatePreviewUrl) {
-    return {
-      previewUrl: privatePreviewUrl,
-      previewLabel: "Live preview",
-    };
-  }
-
-  const publicDeploymentUrl = normalizeUrl(project?.publicDeploymentUrl);
-
-  if (publicDeploymentUrl) {
-    return {
-      previewUrl: publicDeploymentUrl,
-      previewLabel: "Production deploy",
-    };
-  }
-
-  return null;
+  return surface.previewUrl
+    ? {
+        previewUrl: surface.previewUrl,
+        previewLabel: surface.previewLabel ?? "Available",
+      }
+    : null;
 }
 
 function createEmptyState(
@@ -362,7 +354,7 @@ export function buildDashboardCatalog(
           : null,
       );
       const stackLabel = seed.framework ?? seed.language ?? "Unknown stack";
-      const previewSurface = resolvePreviewSurface(project);
+      const previewSurface = resolvePreviewSurface(project, options.hosting);
 
       const baseCard: DashboardCardViewModel = {
         id: seed.path,

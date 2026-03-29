@@ -35,12 +35,14 @@ import {
   type WorkbenchRuntimeProps,
 } from "../workbench-surfaces.js";
 import type { CodeBrowserClient } from "../code-browser-client.js";
+import type { HostingViewModel } from "../view-models.js";
 
 export interface EditorViewProps extends WorkbenchRuntimeProps {
   productId: string;
   productName: string;
   scaffoldType: string;
   hostedEditorUrl: string;
+  hosting: HostingViewModel;
   initialLayout?: EditorLayoutPreference;
   codeBrowserClient?: CodeBrowserClient;
   onNavigate: (route: Route) => void;
@@ -269,6 +271,7 @@ export function EditorView(props: EditorViewProps) {
       return (
         <PreviewPanel
           preview={props.previewState}
+          hosting={props.hosting}
           hostedEditorUrl={props.hostedEditorUrl}
         />
       );

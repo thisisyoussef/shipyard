@@ -131,6 +131,14 @@ validation, and docs sync.
   `shipyard/ui/src/panels/FormattedMessage.tsx` so the editor shell fills the
   full available viewport and assistant replies stay readable when they contain
   structured markdown-like content.
+- Post-ship hosted preview hardening extended the same resilience lane into
+  `shipyard/ui/src/preview-surface.ts`,
+  `shipyard/ui/src/dashboard-catalog.ts`,
+  `shipyard/ui/src/panels/PreviewPanel.tsx`,
+  `shipyard/ui/src/views/EditorView.tsx`, and
+  `shipyard/ui/src/App.tsx` so hosted sessions stop surfacing unreachable
+  `127.0.0.1` preview URLs and instead prefer the latest public deployment or
+  hosted-editor fallback.
 - AC-5 is covered by the required validation matrix for this story:
   `pnpm --dir shipyard test`, `pnpm --dir shipyard typecheck`,
   `pnpm --dir shipyard build`, and `git diff --check`, plus the preview-harness

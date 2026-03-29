@@ -173,6 +173,7 @@ export function App() {
     projectBoard: controller.viewState.projectBoard,
     sessionState: controller.viewState.sessionState,
     preferences: dashboardPreferences,
+    hosting: controller.viewState.hosting,
   });
   const effectiveDashboardNotice =
     dashboardNotice ??
@@ -505,6 +506,7 @@ export function App() {
         hostedEditorUrl={
           typeof window === "undefined" ? "" : window.location.origin
         }
+        hosting={controller.viewState.hosting}
         sessionState={controller.viewState.sessionState}
         sessionHistory={controller.viewState.sessionHistory}
         targetManager={controller.viewState.targetManager}

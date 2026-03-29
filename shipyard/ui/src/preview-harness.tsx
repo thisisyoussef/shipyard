@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
+import { createDefaultHostingWorkbenchState } from "../../src/hosting/contracts.js";
 import type {
   CodeBrowserReadResponse,
   CodeBrowserTreeResponse,
@@ -34,6 +35,8 @@ import type {
   TargetManagerViewModel,
   TurnViewModel,
 } from "./view-models.js";
+
+const MOCK_HOSTING = createDefaultHostingWorkbenchState();
 
 // ── Mock Data ──────────────────────────────────
 
@@ -361,6 +364,7 @@ export function PreviewHarness() {
     projectBoard: MOCK_PROJECT_BOARD,
     sessionState: MOCK_SESSION_STATE,
     preferences,
+    hosting: MOCK_HOSTING,
   });
 
   const handleUltimateClick = useCallback(() => {
@@ -385,6 +389,7 @@ export function PreviewHarness() {
           productName="Craft Your Vision"
           scaffoldType="react-ts"
           hostedEditorUrl="http://127.0.0.1:3210"
+          hosting={MOCK_HOSTING}
           sessionState={MOCK_SESSION_STATE}
           sessionHistory={MOCK_SESSION_HISTORY}
           targetManager={MOCK_TARGET_MANAGER}
