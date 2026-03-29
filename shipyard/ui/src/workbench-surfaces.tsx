@@ -11,6 +11,7 @@ import {
 import type { BadgeTone } from "./primitives.js";
 import { ProjectBoard } from "./ProjectBoard.js";
 import { TargetHeader } from "./TargetHeader.js";
+import type { WorkbenchComposerBehavior } from "./ultimate-composer.js";
 import type {
   ContextReceiptViewModel,
   FileEventViewModel,
@@ -22,6 +23,7 @@ import type {
   SessionStateViewModel,
   TargetManagerViewModel,
   TurnViewModel,
+  UltimateUiStateViewModel,
   WorkbenchConnectionState,
 } from "./view-models.js";
 
@@ -50,8 +52,10 @@ export interface WorkbenchRuntimeProps {
   pendingUploads: PendingUploadReceiptViewModel[];
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
+  ultimateState: UltimateUiStateViewModel;
   instruction: string;
   contextDraft: string;
+  composerBehavior: WorkbenchComposerBehavior;
   composerNotice: WorkbenchComposerNotice | null;
   composerAttachments: ComposerAttachment[];
   instructionInputRef: RefObject<HTMLTextAreaElement | null>;
@@ -62,6 +66,7 @@ export interface WorkbenchRuntimeProps {
   onContextKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onClearContext: () => void;
   onAttachFiles: (files: File[]) => void;
+  onToggleUltimateArmed: () => void;
   onSubmitInstruction: (event: FormEvent<HTMLFormElement>) => void;
   onCancelInstruction: () => void;
   onRemoveAttachment: (attachmentId: string) => void;
@@ -87,13 +92,16 @@ interface WorkbenchConversationSurfaceProps
     | "turns"
     | "latestDeploy"
     | "connectionState"
+    | "ultimateState"
     | "instruction"
+    | "composerBehavior"
     | "composerNotice"
     | "composerAttachments"
     | "instructionInputRef"
     | "onInstructionChange"
     | "onInstructionKeyDown"
     | "onAttachFiles"
+    | "onToggleUltimateArmed"
     | "onSubmitInstruction"
     | "onCancelInstruction"
     | "onRemoveAttachment"
@@ -140,9 +148,11 @@ export function WorkbenchConversationSurface(
         onKeyDown={props.onInstructionKeyDown}
         textareaRef={props.instructionInputRef}
         agentBusy={props.connectionState === "agent-busy"}
+        composerBehavior={props.composerBehavior}
         notice={props.composerNotice}
         attachments={props.composerAttachments}
         onAttachFiles={props.onAttachFiles}
+        onUltimateToggle={props.onToggleUltimateArmed}
         onRemoveAttachment={props.onRemoveAttachment}
       />
     </div>

@@ -312,25 +312,28 @@ export function EditorView(props: EditorViewProps) {
             style={{ flexBasis: `${String(layout.splitRatio)}%` }}
             aria-label="Conversation"
           >
-            <WorkbenchConversationSurface
-              sessionState={props.sessionState}
-              targetManager={props.targetManager}
-              projectBoard={props.projectBoard}
-              turns={props.turns}
-              latestDeploy={props.latestDeploy}
-              connectionState={props.connectionState}
-              instruction={props.instruction}
-              composerNotice={props.composerNotice}
-              composerAttachments={props.composerAttachments}
-              instructionInputRef={props.instructionInputRef}
-              onInstructionChange={props.onInstructionChange}
-              onInstructionKeyDown={props.onInstructionKeyDown}
-              onAttachFiles={props.onAttachFiles}
-              onSubmitInstruction={props.onSubmitInstruction}
-              onCancelInstruction={props.onCancelInstruction}
-              onRemoveAttachment={props.onRemoveAttachment}
-              onActivateProject={props.onActivateProject}
-              onOpenTargets={() => setTargetSwitcherOpen(true)}
+      <WorkbenchConversationSurface
+        sessionState={props.sessionState}
+        targetManager={props.targetManager}
+        projectBoard={props.projectBoard}
+        turns={props.turns}
+        latestDeploy={props.latestDeploy}
+        connectionState={props.connectionState}
+        ultimateState={props.ultimateState}
+        instruction={props.instruction}
+        composerBehavior={props.composerBehavior}
+        composerNotice={props.composerNotice}
+        composerAttachments={props.composerAttachments}
+        instructionInputRef={props.instructionInputRef}
+        onInstructionChange={props.onInstructionChange}
+        onInstructionKeyDown={props.onInstructionKeyDown}
+        onAttachFiles={props.onAttachFiles}
+        onToggleUltimateArmed={props.onToggleUltimateArmed}
+        onSubmitInstruction={props.onSubmitInstruction}
+        onCancelInstruction={props.onCancelInstruction}
+        onRemoveAttachment={props.onRemoveAttachment}
+        onActivateProject={props.onActivateProject}
+        onOpenTargets={() => setTargetSwitcherOpen(true)}
               emptyConversationContent={createEmptyConversationContent(
                 props.connectionState,
               )}

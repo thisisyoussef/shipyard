@@ -10,10 +10,12 @@ import {
   SectionHeader,
   SurfaceCard,
 } from "./primitives.js";
+import { formatUltimatePhaseLabel } from "./ultimate-composer.js";
 import type {
   PreviewStateViewModel,
   SessionStateViewModel,
   TurnViewModel,
+  UltimateUiStateViewModel,
   WorkbenchConnectionState,
 } from "./view-models.js";
 
@@ -29,7 +31,11 @@ export interface HumanFeedbackPageProps {
   turns: TurnViewModel[];
   connectionState: WorkbenchConnectionState;
   agentStatus: string;
+  ultimateState: UltimateUiStateViewModel;
   instruction: string;
+  submitLabel: string;
+  submitDisabled?: boolean;
+  helpText: string;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   notice: HumanFeedbackNotice | null;
   onInstructionChange: (value: string) => void;
@@ -101,13 +107,32 @@ function getPreviewLabel(previewState: PreviewStateViewModel): string {
   }
 }
 
+function getUltimateTone(
+  ultimateState: UltimateUiStateViewModel,
+): BadgeTone {
+  switch (ultimateState.phase) {
+    case "running":
+      return "accent";
+    case "stopping":
+      return "warning";
+    case "error":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
 export function HumanFeedbackPage({
   sessionState,
   previewState,
   turns,
   connectionState,
   agentStatus,
+  ultimateState,
   instruction,
+  submitLabel,
+  submitDisabled = false,
+  helpText,
   textareaRef,
   notice,
   onInstructionChange,
@@ -118,7 +143,8 @@ export function HumanFeedbackPage({
   const recentTurns = turns.slice(0, 4);
   const previewLabel = getPreviewLabel(previewState);
   const connectionLabel = getConnectionLabel(connectionState);
-  const canSubmit = Boolean(sessionState?.sessionId);
+  const canSubmit = Boolean(sessionState?.sessionId) && !submitDisabled;
+  const ultimatePhaseLabel = formatUltimatePhaseLabel(ultimateState.phase);
 
   return (
     <main className="human-feedback-page">
@@ -155,6 +181,9 @@ export function HumanFeedbackPage({
           <div className="human-feedback-meta">
             <Badge tone={getConnectionTone(connectionState)}>
               {connectionLabel}
+            </Badge>
+            <Badge tone={getUltimateTone(ultimateState)}>
+              Ultimate {ultimatePhaseLabel}
             </Badge>
             <Badge tone="accent">
               {sessionState?.targetLabel ?? "No active target"}
@@ -212,9 +241,7 @@ export function HumanFeedbackPage({
               </label>
 
               <p id="human-feedback-hint" className="human-feedback-help">
-                Press Cmd/Ctrl+Enter to queue the note. If ultimate mode is not
-                active, Shipyard will treat this like a normal browser
-                instruction instead.
+                {helpText}
               </p>
 
               <div className="human-feedback-actions">
@@ -229,7 +256,7 @@ export function HumanFeedbackPage({
                   className="primary-action"
                   disabled={!canSubmit}
                 >
-                  Queue feedback
+                  {submitLabel}
                 </button>
               </div>
             </form>
@@ -244,6 +271,10 @@ export function HumanFeedbackPage({
                   <dd>{connectionLabel}</dd>
                 </div>
                 <div>
+                  <dt>Ultimate</dt>
+                  <dd>{ultimatePhaseLabel}</dd>
+                </div>
+                <div>
                   <dt>Agent status</dt>
                   <dd>{agentStatus}</dd>
                 </div>
@@ -256,8 +287,20 @@ export function HumanFeedbackPage({
                   <dd>{previewLabel}</dd>
                 </div>
                 <div>
-                  <dt>Turns</dt>
-                  <dd>{String(sessionState?.turnCount ?? 0)}</dd>
+                  <dt>Loop turns</dt>
+                  <dd>{String(ultimateState.turnCount)}</dd>
+                </div>
+                <div>
+                  <dt>Queued feedback</dt>
+                  <dd>{String(ultimateState.pendingFeedbackCount)}</dd>
+                </div>
+                <div>
+                  <dt>Brief</dt>
+                  <dd>{ultimateState.currentBrief ?? "No active brief"}</dd>
+                </div>
+                <div>
+                  <dt>Last cycle</dt>
+                  <dd>{ultimateState.lastCycleSummary ?? "Waiting for the next loop update"}</dd>
                 </div>
               </dl>
             </SurfaceCard>

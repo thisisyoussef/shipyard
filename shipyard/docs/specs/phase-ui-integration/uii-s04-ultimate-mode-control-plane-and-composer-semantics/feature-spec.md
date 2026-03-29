@@ -33,18 +33,18 @@ mode without relying on command memorization.
   state instead of resetting the badge.
 
 ## Acceptance Criteria
-- [ ] AC-1: The UI/backend contract supports typed ultimate actions and state
+- [x] AC-1: The UI/backend contract supports typed ultimate actions and state
   projection without removing text-command fallback behavior.
-- [ ] AC-2: Backend state projection includes enough truth for the UI to render
+- [x] AC-2: Backend state projection includes enough truth for the UI to render
   an ultimate badge/toggle without guesswork, including active state, runtime
   phase, current brief, turn count, and queued feedback count.
-- [ ] AC-3: Composer semantics are explicit: when idle, an armed ultimate send
+- [x] AC-3: Composer semantics are explicit: when idle, an armed ultimate send
   starts the loop; when active, submit becomes queued feedback with visible
   confirmation; stop remains available from the badge and the normal cancel
   flow remains coherent.
-- [ ] AC-4: `/human-feedback` and typed `ultimate ...` commands continue working
+- [x] AC-4: `/human-feedback` and typed `ultimate ...` commands continue working
   against the same active loop.
-- [ ] AC-5: Reconnect/reload restores truthful ultimate state through session
+- [x] AC-5: Reconnect/reload restores truthful ultimate state through session
   snapshots or incremental state messages instead of defaulting to “off.”
 
 ## Edge Cases
@@ -80,3 +80,44 @@ mode without relying on command memorization.
 ## Done Definition
 - Ultimate mode becomes a typed, visible, reload-safe UI workflow while
   remaining compatible with the existing command path.
+
+## Implementation Evidence
+
+- AC-1 and AC-2 landed in `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and `shipyard/tests/ui-events.test.ts`.
+  Representative snippet:
+  ```ts
+  export const ultimateToggleMessageSchema = z.object({
+    type: z.literal("ultimate:toggle"),
+    enabled: z.boolean(),
+    brief: z.string().trim().min(1).optional(),
+    injectedContext: z.array(z.string().trim().min(1)).optional(),
+  });
+  ```
+- AC-2 and AC-5 landed in `shipyard/src/ui/server.ts`,
+  `shipyard/src/engine/ultimate-mode.ts`, `shipyard/src/ui/workbench-state.ts`,
+  and `shipyard/tests/ui-runtime.test.ts`. The browser runtime now persists and
+  rebroadcasts `workbenchState.ultimateState`, and cycle completion updates the
+  projected turn count, pending feedback count, and last cycle summary.
+- AC-3 landed in `shipyard/ui/src/ultimate-composer.ts`,
+  `shipyard/ui/src/use-workbench-controller.ts`,
+  `shipyard/ui/src/panels/ComposerPanel.tsx`,
+  `shipyard/ui/src/shell/UltimateToggle.tsx`, and
+  `shipyard/ui/src/panels/panels.css`. Representative snippet:
+  ```ts
+  if (input.armed) {
+    return {
+      mode: "ultimate-start",
+      submitLabel: "Start ultimate",
+      modeSummary:
+        "Next send will start ultimate mode with this brief and keep looping until you stop it.",
+    };
+  }
+  ```
+- AC-3 and AC-4 landed in `shipyard/ui/src/shell/NavBar.tsx`,
+  `shipyard/ui/src/shell/UltimateBadge.tsx`,
+  `shipyard/ui/src/HumanFeedbackPage.tsx`, and
+  `shipyard/ui/src/App.tsx`. The nav badge now renders real running/stopping
+  state, routes feedback/stop into typed messages, and the dedicated
+  `/human-feedback` page switches copy and submit behavior based on the same
+  runtime projection.
