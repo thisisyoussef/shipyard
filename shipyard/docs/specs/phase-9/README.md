@@ -229,6 +229,17 @@ SHIPYARD_MODEL_PROVIDER=openai
 SHIPYARD_OPENAI_MODEL=gpt-5.4
 ```
 
+- Repo-controlled Railway deploys prefer the project-scoped token and only fall
+  back to the broader API token when the project token is absent:
+
+```bash
+if [ -n "${RAILWAY_TOKEN}" ]; then
+  echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}" >> "${GITHUB_ENV}"
+else
+  echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}" >> "${GITHUB_ENV}"
+fi
+```
+
 - The hosted runtime now also keeps the Playwright packages in dev dependency
   scope and lazy-loads browser evaluation, so the final production image can
   drop that dependency entirely during `pnpm prune --prod`:

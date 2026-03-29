@@ -68,3 +68,7 @@
   `gpt-5.4` while leaving the checked-in local Shipyard default on Anthropic,
   and updated the hosted docs plus regression coverage so that split contract
   is explicit.
+- 2026-03-29: Restored the Railway deploy workflow's control-token preference
+  to `RAILWAY_TOKEN` first with `RAILWAY_API_TOKEN` as fallback, because the
+  broader token path was unauthorized for the production project and blocked
+  the OpenAI pin from reaching Railway.
