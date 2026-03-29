@@ -73,6 +73,7 @@ import {
   type PersistedHostedRuntimeState,
 } from "../hosting/contracts.js";
 import { syncHostedRuntimeState } from "../hosting/runtime.js";
+import { syncSessionOrchestrationState } from "../orchestration/runtime.js";
 import { createPreviewSupervisor } from "../preview/supervisor.js";
 import type { PreviewSupervisor } from "../preview/supervisor.js";
 import { shouldUseStarterCanvasForScratchTarget } from "../preview/contracts.js";
@@ -81,6 +82,7 @@ import { syncSessionTaskGraphState } from "../tasks/runtime.js";
 import type {
   BackendToFrontendMessage,
   DeploySummary,
+  OrchestrationState,
   ProjectBoardState,
   TaskBoardState,
   TargetEnrichmentState,
@@ -1175,6 +1177,9 @@ export async function startUiRuntimeServer(
     await syncSessionTaskGraphState(project.sessionState, {
       hostedRuntimeState: createProjectedHostedRuntimeState(project),
     });
+    await syncSessionOrchestrationState(project.sessionState, {
+      hostedRuntimeState: createProjectedHostedRuntimeState(project),
+    });
     project.sessionState.workbenchState.ultimateState = synchronizeUltimateUiState(
       project,
     );
@@ -1551,6 +1556,9 @@ export async function startUiRuntimeServer(
     await syncSessionTaskGraphState(project.sessionState, {
       hostedRuntimeState: createProjectedHostedRuntimeState(project),
     });
+    await syncSessionOrchestrationState(project.sessionState, {
+      hostedRuntimeState: createProjectedHostedRuntimeState(project),
+    });
     project.sessionState.workbenchState.ultimateState = synchronizeUltimateUiState(
       project,
     );
@@ -1595,12 +1603,38 @@ export async function startUiRuntimeServer(
     await syncSessionTaskGraphState(project.sessionState, {
       hostedRuntimeState: createProjectedHostedRuntimeState(project),
     });
+    await syncSessionOrchestrationState(project.sessionState, {
+      hostedRuntimeState: createProjectedHostedRuntimeState(project),
+    });
 
     await project.traceLogger.log("preview.state", {
       sessionId: project.sessionState.sessionId,
       preview: previewState,
     });
     await saveSessionState(project.sessionState);
+
+    if (
+      previewState.lastRestartReason?.includes("Refresh requested") === true &&
+      (
+        previewState.status === "refreshing" ||
+        previewState.status === "running"
+      )
+    ) {
+      const activeTurnId = project.sessionState.workbenchState.activeTurnId;
+      const startedAt = Date.now();
+
+      while (
+        activeTurnId &&
+        Date.now() - startedAt < 250 &&
+        !project.sessionState.workbenchState.fileEvents.some((event) =>
+          event.turnId === activeTurnId && event.status === "diff"
+        )
+      ) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 10);
+        });
+      }
+    }
 
     if (project.projectId === activeProjectId) {
       await broadcast({
@@ -1614,6 +1648,11 @@ export async function startUiRuntimeServer(
           state: project.sessionState.workbenchState.taskBoard,
         });
       }
+
+      await broadcast({
+        type: "orchestration:state",
+        state: project.sessionState.workbenchState.orchestration,
+      });
     }
 
     if (
@@ -1712,6 +1751,11 @@ export async function startUiRuntimeServer(
         state: message.workbenchState.taskBoard,
       });
     }
+
+    await sendToSocket(socket, {
+      type: "orchestration:state",
+      state: message.workbenchState.orchestration,
+    });
   };
 
   const broadcastSessionState = async (
@@ -1728,6 +1772,11 @@ export async function startUiRuntimeServer(
           state: message.workbenchState.taskBoard,
         });
       }
+
+      await broadcast({
+        type: "orchestration:state",
+        state: message.workbenchState.orchestration,
+      });
     }
 
     await saveSessionState(project.sessionState);

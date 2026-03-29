@@ -18,6 +18,11 @@ import {
   type InstructionTurnResult,
 } from "./turn.js";
 import {
+  advanceCoordinatorRun,
+  completeCoordinatorWorkerTurn,
+  type AdvanceCoordinatorRunResult,
+} from "../orchestration/runtime.js";
+import {
   runHumanSimulator,
   type HumanSimulatorDecision,
   type HumanSimulatorFeedback,
@@ -93,6 +98,21 @@ export interface ExecuteUltimateModeDependencies {
     input: HumanSimulatorInput,
     targetDirectory: string,
   ) => Promise<HumanSimulatorDecision>;
+  advanceCoordinator?: (
+    sessionState: SessionState,
+    options: {
+      brief: string;
+      pendingHumanFeedback?: UltimateModeFeedbackEntry[];
+    },
+  ) => Promise<AdvanceCoordinatorRunResult>;
+  completeCoordinatorWorker?: (
+    sessionState: SessionState,
+    options: {
+      runId: string;
+      workerId: string;
+      turnResult: Pick<InstructionTurnResult, "status" | "summary" | "finalText">;
+    },
+  ) => Promise<unknown>;
   executeTurn?: (
     options: ExecuteInstructionTurnOptions,
   ) => Promise<InstructionTurnResult>;
@@ -177,6 +197,32 @@ function createHumanSimulatorTurnReview(
     verificationReport: null,
     selectedTargetPath: turnResult.selectedTargetPath,
   };
+}
+
+async function pauseUltimateModeLoop(
+  signal: AbortSignal | undefined,
+  durationMs: number,
+): Promise<void> {
+  if (signal?.aborted) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const timeoutHandle = setTimeout(() => {
+      resolve();
+    }, durationMs);
+
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timeoutHandle);
+        resolve();
+      },
+      {
+        once: true,
+      },
+    );
+  });
 }
 
 function createUltimateModeInnerReporter(
@@ -449,6 +495,12 @@ export async function executeUltimateMode(
   const cycleRotationInterval = normalizeCycleRotationInterval(
     options.cycleRotationInterval,
   );
+  const advanceCoordinator =
+    options.dependencies?.advanceCoordinator
+    ?? advanceCoordinatorRun;
+  const completeCoordinatorWorker =
+    options.dependencies?.completeCoordinatorWorker
+    ?? completeCoordinatorWorkerTurn;
   const runHumanSimulatorTurn =
     options.dependencies?.runHumanSimulator
     ?? createDefaultHumanSimulatorRunner(runtimeState, signal);
@@ -458,6 +510,7 @@ export async function executeUltimateMode(
   const initialHumanContext = [...(options.injectedContext ?? [])];
   let latestTurn: InstructionTurnResult | null = null;
   let iteration = 0;
+  let lastCoordinatorPauseSummary: string | null = null;
 
   await reporter?.onTurnState?.({
     sessionState,
@@ -490,6 +543,103 @@ export async function executeUltimateMode(
           `Queued human feedback received. Folding ${String(pendingHumanFeedback.length)} item(s) into the next ultimate mode cycle.`,
         );
       }
+
+      const coordinatorCycle = await advanceCoordinator(sessionState, {
+        brief: controller.initialBrief,
+        pendingHumanFeedback,
+      });
+
+      if (coordinatorCycle.decision.kind === "dispatch") {
+        iteration += 1;
+        lastCoordinatorPauseSummary = null;
+        await reporter?.onThinking?.(
+          `Ultimate mode cycle ${String(iteration)}: coordinator -> Shipyard (${coordinatorCycle.decision.worker.roleId} on ${coordinatorCycle.decision.worker.taskId}): ${coordinatorCycle.decision.instruction}`,
+        );
+
+        const previousActiveTask = sessionState.activeTask;
+        sessionState.activeTask = coordinatorCycle.decision.activeTask;
+
+        const turnResult = await executeTurn({
+          sessionState,
+          runtimeState,
+          instruction: coordinatorCycle.decision.instruction,
+          reporter: innerReporter,
+          signal,
+          runtimeSurface: options.runtimeSurface,
+          phaseOverride: coordinatorCycle.decision.phaseOverride,
+        });
+
+        sessionState.activeTask = previousActiveTask;
+        latestTurn = turnResult;
+
+        await completeCoordinatorWorker(sessionState, {
+          runId: coordinatorCycle.decision.run.runId,
+          workerId: coordinatorCycle.decision.worker.id,
+          turnResult,
+        });
+
+        rememberRecentHistoryEntry(history, {
+          iteration,
+          simulatorSummary: coordinatorCycle.decision.summary,
+          simulatorInstruction: coordinatorCycle.decision.instruction,
+          appliedHumanFeedback: [...pendingHumanFeedback],
+          turn: createHumanSimulatorTurnReview(
+            coordinatorCycle.decision.instruction,
+            turnResult,
+          ),
+        });
+
+        if (turnResult.selectedTargetPath) {
+          await reporter?.onThinking?.(
+            `Ultimate mode observed a target switch request to ${turnResult.selectedTargetPath}. The loop is continuing on the current active target for now.`,
+          );
+        }
+
+        await reporter?.onThinking?.(
+          `Ultimate mode cycle ${String(iteration)} finished with ${turnResult.status}. ${turnResult.summary}`,
+        );
+
+        if (turnResult.status !== "cancelled") {
+          await maybeRotateUltimateModeTurn({
+            iteration,
+            interval: cycleRotationInterval,
+            reporter,
+            onCycleRotation: options.onCycleRotation,
+            simulatorDecision: {
+              summary: coordinatorCycle.decision.summary,
+              instruction: coordinatorCycle.decision.instruction,
+              focusAreas: [],
+            },
+            turnResult,
+          });
+        }
+
+        if (turnResult.status === "cancelled") {
+          const result = createCancelledResult(
+            iteration,
+            getTurnCancellationReason(signal, turnResult.summary)
+              ?? turnResult.summary,
+            history,
+            latestTurn,
+          );
+
+          await emitUltimateModeOutcome(reporter, sessionState, result);
+          return result;
+        }
+
+        continue;
+      }
+
+      if (coordinatorCycle.decision.kind !== "fallback") {
+        if (lastCoordinatorPauseSummary !== coordinatorCycle.decision.summary) {
+          lastCoordinatorPauseSummary = coordinatorCycle.decision.summary;
+          await reporter?.onThinking?.(coordinatorCycle.decision.summary);
+        }
+        await pauseUltimateModeLoop(signal, 250);
+        continue;
+      }
+
+      lastCoordinatorPauseSummary = null;
 
       const latestTurnReview = latestTurn === null
         ? null

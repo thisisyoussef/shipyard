@@ -257,6 +257,73 @@ describe("ui view models", () => {
     });
   });
 
+  it("applies orchestration state snapshots for future board consumers", () => {
+    let state = createInitialWorkbenchState();
+
+    state = applyBackendMessage(state, {
+      type: "orchestration:state",
+      state: {
+        active: true,
+        runId: "coord-001",
+        mode: "task-graph",
+        status: "running",
+        summary: "Coordinator is supervising two workers.",
+        maxWorkers: 2,
+        availableWorkers: 0,
+        activeWorkerCount: 2,
+        queuedWorkerCount: 1,
+        waitingForApproval: false,
+        readyTaskCount: 3,
+        blockedTaskCount: 1,
+        recoveryQueueCount: 1,
+        pendingInterventionCount: 0,
+        hostedCapacitySummary: "Persistent hosted runtime allows two worker slots.",
+        sourceControlSummary: "GitHub is bound to acme/factory-target.",
+        nextTaskIds: ["task-story-001", "task-story-002"],
+        activeWorkers: [
+          {
+            workerId: "worker-1",
+            storyId: "STORY-001",
+            taskId: "task-story-001",
+            title: "Story 1",
+            roleId: "implementer",
+            lane: "implement",
+            phaseName: "code",
+            status: "running",
+            summary: "Implementing Story 1.",
+            branchName: "feat/story-001",
+            conflictTicketId: null,
+            updatedAt: "2026-03-28T23:50:00.000Z",
+          },
+        ],
+        recoveryQueue: [
+          {
+            id: "recovery-1",
+            storyId: "STORY-002",
+            taskId: "task-story-002",
+            branchName: "feat/story-002",
+            conflictTicketId: "ticket-1",
+            ownerRoleId: "pr-ops",
+            status: "open",
+            summary: "Branch is stale after first-merge-wins.",
+            recoveryHint: "Rebase before merge.",
+            createdAt: "2026-03-28T23:49:00.000Z",
+            updatedAt: "2026-03-28T23:50:00.000Z",
+          },
+        ],
+        updatedAt: "2026-03-28T23:50:00.000Z",
+      },
+    });
+
+    expect(state.orchestration).toMatchObject({
+      active: true,
+      runId: "coord-001",
+      activeWorkerCount: 2,
+      recoveryQueueCount: 1,
+      nextTaskIds: ["task-story-001", "task-story-002"],
+    });
+  });
+
   it("applies additive ultimate-state updates without disturbing the current turn", () => {
     let state = queueInstructionTurn(
       createInitialWorkbenchState(),

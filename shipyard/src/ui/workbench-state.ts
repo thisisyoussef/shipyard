@@ -2,6 +2,8 @@ import type { PreviewState } from "../artifacts/types.js";
 import { formatTurnExecutionFingerprint } from "../engine/turn-fingerprint.js";
 import type { HostingWorkbenchState } from "../hosting/contracts.js";
 import { createDefaultHostingWorkbenchState } from "../hosting/contracts.js";
+import type { OrchestrationWorkbenchState } from "../orchestration/contracts.js";
+import { createIdleOrchestrationWorkbenchState } from "../orchestration/contracts.js";
 import type { PipelineWorkbenchState } from "../pipeline/contracts.js";
 import {
   createInitialPreviewState,
@@ -143,6 +145,8 @@ export interface TddWorkbenchStateViewModel extends TddWorkbenchState {}
 
 export interface RuntimeAssistViewModel extends RuntimeAssistSummary {}
 
+export interface OrchestrationViewModel extends OrchestrationWorkbenchState {}
+
 export interface SourceControlViewModel extends SourceControlWorkbenchState {}
 
 export interface HostingViewModel extends HostingWorkbenchState {}
@@ -170,6 +174,7 @@ export interface WorkbenchViewState {
   taskBoard: TaskBoardViewModel | null;
   pipelineState: PipelineWorkbenchStateViewModel | null;
   tddState: TddWorkbenchStateViewModel;
+  orchestration: OrchestrationViewModel;
   sourceControl: SourceControlViewModel;
   hosting: HostingViewModel;
   ultimateState: UltimateUiStateViewModel;
@@ -356,6 +361,24 @@ function createSourceControlAgentStatus(
 
   if (sourceControl.degraded || sourceControl.pendingConflictTicket) {
     return sourceControl.summary;
+  }
+
+  return null;
+}
+
+function createOrchestrationAgentStatus(
+  orchestration: OrchestrationViewModel | null,
+): string | null {
+  if (!orchestration || orchestration.mode === "idle") {
+    return null;
+  }
+
+  if (
+    orchestration.status === "waiting" ||
+    orchestration.status === "blocked" ||
+    orchestration.activeWorkerCount > 0
+  ) {
+    return orchestration.summary;
   }
 
   return null;
@@ -735,6 +758,7 @@ export function ensureWorkbenchStateDefaults(
     taskBoard: state.taskBoard ?? initialState.taskBoard,
     pipelineState: state.pipelineState ?? initialState.pipelineState,
     tddState: state.tddState ?? initialState.tddState,
+    orchestration: state.orchestration ?? initialState.orchestration,
     sourceControl: state.sourceControl ?? initialState.sourceControl,
     hosting: state.hosting ?? initialState.hosting,
     ultimateState: state.ultimateState ?? initialState.ultimateState,
@@ -767,6 +791,7 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     taskBoard: null,
     pipelineState: null,
     tddState: createIdleTddWorkbenchState(),
+    orchestration: createIdleOrchestrationWorkbenchState(),
     sourceControl: createDefaultSourceControlWorkbenchState(),
     hosting: createDefaultHostingWorkbenchState(),
     ultimateState: createIdleUltimateUiState(),
@@ -934,6 +959,9 @@ export function applySessionSnapshot(
       ?? createPipelineAgentStatus(
         recoveredState.pipelineState ?? state.pipelineState ?? null,
       )
+      ?? createOrchestrationAgentStatus(
+        recoveredState.orchestration ?? state.orchestration ?? null,
+      )
       ?? createSourceControlAgentStatus(
         recoveredState.sourceControl ?? state.sourceControl ?? null,
       )
@@ -950,6 +978,10 @@ export function applySessionSnapshot(
       recoveredState.tddState
       ?? state.tddState
       ?? createIdleTddWorkbenchState(),
+    orchestration:
+      recoveredState.orchestration
+      ?? state.orchestration
+      ?? createIdleOrchestrationWorkbenchState(),
     sourceControl:
       recoveredState.sourceControl
       ?? state.sourceControl
@@ -1335,6 +1367,12 @@ export function applyBackendMessage(
       return {
         ...state,
         taskBoard: message.state,
+      };
+
+    case "orchestration:state":
+      return {
+        ...state,
+        orchestration: message.state,
       };
   }
 }
