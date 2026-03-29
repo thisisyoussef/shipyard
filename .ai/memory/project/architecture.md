@@ -185,3 +185,22 @@ Record durable workspace decisions here.
 - **Consequences**: Submission docs now have a stable home, entry points stay
   discoverable for future agents, and comparative claims should cite trace,
   session, archive, and log evidence instead of relying on retrospective recall.
+
+- **ADR-ID**: ADR-0016
+- **Date**: 2026-03-29
+- **Context**: Operators now need a server-hosted path for truly long-running
+  `ultimate` missions that survives laptop shutdowns while preserving the
+  target-local `.shipyard/` state model.
+- **Decision**: Publish a server-first Linux mission hosting pack under
+  `shipyard/docs/ops/remote-linux-mission.md` and
+  `shipyard/docs/ops/templates/linux-mission/` that wraps the existing
+  mission-control stack with `systemd`, Caddy, a persistent workspace, and an
+  optional two-hour Vercel sync timer instead of inventing a second hosted
+  runtime architecture.
+- **Alternatives Considered**: Treat plain hosted `shipyard --ui` as the long-
+  run story; document only ad hoc VPS notes; make Railway the only recommended
+  path even for watchdog-backed missions.
+- **Consequences**: Remote ops now have a durable checked-in playbook, future
+  deployment changes should keep the Linux pack aligned with the mission-config
+  contract, and preview should remain an internal runtime surface while public
+  sharing continues to flow through deploy URLs.

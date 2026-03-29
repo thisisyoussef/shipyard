@@ -4,6 +4,10 @@ Shipyard's long-run mission-control stack keeps a browser-mode `ultimate`
 session alive across preview drops, runtime crashes, idle memory growth, and
 operator disconnects without requiring a human to sit on the workbench tab.
 
+For a concrete Linux VM deployment pack that runs this stack under `systemd`
+and fronts the workbench with Caddy, see
+[`../ops/remote-linux-mission.md`](../ops/remote-linux-mission.md).
+
 ## Layers
 
 1. `scripts/ultimate-mission-watchdog.ts` is the outer supervisor. It launches

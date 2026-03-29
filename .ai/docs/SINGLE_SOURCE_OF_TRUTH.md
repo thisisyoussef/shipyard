@@ -2,7 +2,7 @@
 
 **Last Updated**: 2026-03-29
 **Current Phase**: Day 1 foundation
-**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, richer runtime artifacts, the now-hardened continuation-aware operator workflow, and the evidence-backed Ship rebuild submission pack
+**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, richer runtime artifacts, the now-hardened continuation-aware operator workflow, the evidence-backed Ship rebuild submission pack, and the server-first Linux mission hosting path
 **Project Status**: Active
 **Canonical App Directory**: `shipyard/`
 **Canonical Harness Directory**: `.ai/`
@@ -13,7 +13,7 @@
 
 ### Active Task
 
-- **Title**: Publish the Ship rebuild submission pack and align the durable docs with the current long-run runtime architecture
+- **Title**: Publish the Linux remote-mission hosting pack and align the durable docs with the current long-run runtime architecture
 - **Status**: Implemented and pending merge
 - **Owner**: Codex
 
@@ -22,8 +22,9 @@
 1. Keep the harness aligned with the actual repo shape: `.ai/` beside `shipyard/`.
 2. Continue building the persistent CLI loop, typed tools, and tracing inside `shipyard/`.
 3. Treat `shipyard/docs/submissions/ship-rebuild/**` plus the appendix in `shipyard/CODEAGENT.md` as the canonical Ship rebuild deliverable set until a newer submission supersedes it.
-4. Build future runtime work on the shipped follow-up baseline: history-safe tool turns, write-aware compaction, bootstrap-ready discovery, concise handoffs, continuation-first loop thresholds, task-aware loop budgets, mission control, and release archiving are now the expected default.
-5. Use the drafted Phase 10 architecture pack to sequence the next larger runtime upgrades: durable threads, policy controls, layered memory, repo indexing, explicit routing/evals, background tasks, and readiness surfaces.
+4. Treat `shipyard/docs/ops/remote-linux-mission.md` plus `docs/ops/templates/linux-mission/**` as the canonical server-first operations pack for long-running remote missions.
+5. Build future runtime work on the shipped follow-up baseline: history-safe tool turns, write-aware compaction, bootstrap-ready discovery, concise handoffs, continuation-first loop thresholds, task-aware loop budgets, mission control, and release archiving are now the expected default.
+6. Use the drafted Phase 10 architecture pack to sequence the next larger runtime upgrades: durable threads, policy controls, layered memory, repo indexing, explicit routing/evals, background tasks, and readiness surfaces.
 
 ---
 
@@ -56,6 +57,11 @@
   `.claude/CLAUDE.md`, `shipyard/docs/README.md`, and the appendix section of
   `shipyard/CODEAGENT.md`. Update those entry points together when the
   submission pack changes.
+- **Remote mission baseline**: the server-first remote hosting pack now lives
+  under `shipyard/docs/ops/remote-linux-mission.md` with companion templates in
+  `shipyard/docs/ops/templates/linux-mission/`. Keep that pack aligned with
+  `docs/architecture/mission-control.md`, the hosted runtime contract, and the
+  current mission-config shape when long-run deployment or recovery changes.
 - **Execution fingerprint baseline**: standard instruction turns now emit a
   shared per-turn execution fingerprint in CLI output, browser completion
   state, local JSONL traces, and LangSmith metadata so local vs hosted/runtime

@@ -25,6 +25,9 @@ Within those surfaces, Shipyard routes work through three turn types:
   graph, and session-artifact diagrams
 - [`docs/architecture/hosted-railway.md`](./docs/architecture/hosted-railway.md):
   hosted Railway contract and deploy flow
+- [`docs/ops/remote-linux-mission.md`](./docs/ops/remote-linux-mission.md):
+  Linux VM deployment pack for long-running missions, remote workbench access,
+  and scheduled Vercel publishing
 - [`src/README.md`](./src/README.md): source tree guide
 - [`src/plans/README.md`](./src/plans/README.md): persisted planning/task-runner
   guide

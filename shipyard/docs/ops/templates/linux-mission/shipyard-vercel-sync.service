@@ -1,0 +1,15 @@
+[Unit]
+Description=Shipyard backup Vercel deploy sync
+After=network-online.target shipyard-mission.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=shipyard
+Group=shipyard
+WorkingDirectory=/srv/workspace/ship-promptpack-ultimate
+EnvironmentFile=/etc/shipyard/shipyard.env
+ExecStart=/usr/bin/env bash /srv/shipyard/shipyard/docs/ops/templates/linux-mission/vercel-sync.sh
+
+[Install]
+WantedBy=multi-user.target

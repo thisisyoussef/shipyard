@@ -20,6 +20,9 @@ Shipyard also supports three instruction paths over that shared runtime:
 The hosted Railway baseline for the browser runtime is documented in
 [`hosted-railway.md`](./hosted-railway.md).
 
+The server-first Linux VM deployment pack for long-running missions is
+documented in [`../ops/remote-linux-mission.md`](../ops/remote-linux-mission.md).
+
 ## System Map
 
 ```mermaid

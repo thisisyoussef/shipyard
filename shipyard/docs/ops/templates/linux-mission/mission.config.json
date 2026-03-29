@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "missionId": "__MISSION_ID__",
+  "shipyardDirectory": "/srv/shipyard/shipyard",
+  "targetDirectory": "/srv/workspace/ship-promptpack-ultimate",
+  "sessionId": "__SESSION_ID__",
+  "environment": {
+    "envFiles": [
+      "/etc/shipyard/shipyard.env"
+    ]
+  },
+  "ui": {
+    "host": "127.0.0.1",
+    "port": 3214,
+    "accessToken": "__ACCESS_TOKEN__",
+    "takePortOwnership": true,
+    "env": {
+      "SHIPYARD_HOSTED_URL": "__HOSTED_URL__",
+      "SHIPYARD_TARGETS_DIR": "/srv/workspace",
+      "SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE": "1",
+      "SHIPYARD_MODEL_PROVIDER": "anthropic",
+      "SHIPYARD_ANTHROPIC_MODEL": "claude-opus-4-6"
+    }
+  },
+  "ultimate": {
+    "briefPath": "./brief.md",
+    "stickyFeedbackPath": "./sticky-feedback.json",
+    "ensureCooldownMs": 30000
+  },
+  "supervision": {
+    "pollIntervalMs": 15000,
+    "backupIntervalMs": 60000,
+    "missingHealthGraceMs": 45000,
+    "minimumRestartGapMs": 20000,
+    "busyStallMs": 900000,
+    "softMemoryLimitMb": 1536,
+    "hardMemoryLimitMb": 2304,
+    "retainSessionBackups": 72,
+    "retainHandoffBackups": 36,
+    "sidecarMissingHealthGraceMs": 45000
+  }
+}
