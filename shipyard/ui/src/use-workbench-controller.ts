@@ -173,6 +173,17 @@ export function shouldCancelBusyInstructionOnSubmit(
   );
 }
 
+export function selectSessionScopedValue<T>(options: {
+  currentSessionId: string | null;
+  deferredSessionId: string | null;
+  liveValue: T;
+  deferredValue: T;
+}): T {
+  return options.currentSessionId === options.deferredSessionId
+    ? options.deferredValue
+    : options.liveValue;
+}
+
 export function useWorkbenchController() {
   const [viewState, setViewState] = useState(createInitialWorkbenchState);
   const [accessState, setAccessState] = useState<HostedAccessState>({
@@ -209,9 +220,30 @@ export function useWorkbenchController() {
   const instructionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const humanFeedbackInputRef = useRef<HTMLTextAreaElement | null>(null);
   const contextInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const currentSessionId = viewState.sessionState?.sessionId ?? null;
+  const deferredSessionId = useDeferredValue(currentSessionId);
   const deferredTurns = useDeferredValue(viewState.turns);
   const deferredFileEvents = useDeferredValue(viewState.fileEvents);
   const deferredContextHistory = useDeferredValue(viewState.contextHistory);
+  // Avoid flashing the previous project's activity while the deferred values catch up.
+  const displayedTurns = selectSessionScopedValue({
+    currentSessionId,
+    deferredSessionId,
+    liveValue: viewState.turns,
+    deferredValue: deferredTurns,
+  });
+  const displayedFileEvents = selectSessionScopedValue({
+    currentSessionId,
+    deferredSessionId,
+    liveValue: viewState.fileEvents,
+    deferredValue: deferredFileEvents,
+  });
+  const displayedContextHistory = selectSessionScopedValue({
+    currentSessionId,
+    deferredSessionId,
+    liveValue: viewState.contextHistory,
+    deferredValue: deferredContextHistory,
+  });
   const activePage = resolveUiPage(
     typeof window === "undefined" ? "/" : window.location.pathname,
   );
@@ -440,7 +472,7 @@ export function useWorkbenchController() {
   }, [hasUnlockedAccess]);
 
   useEffect(() => {
-    const nextSessionId = viewState.sessionState?.sessionId ?? null;
+    const nextSessionId = currentSessionId;
 
     if (nextSessionId === lastSessionIdRef.current) {
       return;
@@ -448,7 +480,14 @@ export function useWorkbenchController() {
 
     lastSessionIdRef.current = nextSessionId;
     setLocalUploads([]);
-  }, [viewState.sessionState?.sessionId]);
+
+    if (
+      composerNotice?.title === "Opening project" ||
+      composerNotice?.title === "Opening saved run"
+    ) {
+      setComposerNotice(null);
+    }
+  }, [composerNotice, currentSessionId]);
 
   const sendMessage = useCallback((message: FrontendToBackendMessage): boolean => {
     return socketManagerRef.current?.send(JSON.stringify(message)) ?? false;
@@ -1461,9 +1500,9 @@ export function useWorkbenchController() {
     composerBehavior: workbenchComposerBehavior,
     composerNotice,
     contextDraft,
-    deferredContextHistory,
-    deferredFileEvents,
-    deferredTurns,
+    displayedContextHistory,
+    displayedFileEvents,
+    displayedTurns,
     hasUnlockedAccess,
     humanFeedbackBehavior,
     humanFeedbackInstruction,

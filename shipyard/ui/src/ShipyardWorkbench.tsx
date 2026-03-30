@@ -59,6 +59,7 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
   const [targetCreationOpen, setTargetCreationOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  const sessionViewKey = props.sessionState?.sessionId ?? "no-session";
   const workspaceName = props.sessionState?.workspaceDirectory?.split("/").pop();
   const activePhase = props.sessionState?.activePhase ?? "target-manager";
   const targetName =
@@ -123,8 +124,14 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         rightPanel={
           <div className="workspace-pane">
             <div className="workspace-content">
-              <FilePanel fileEvents={props.fileEvents} />
-              <OutputPanel turns={props.turns} />
+              <FilePanel
+                key={`files-${sessionViewKey}`}
+                fileEvents={props.fileEvents}
+              />
+              <OutputPanel
+                key={`output-${sessionViewKey}`}
+                turns={props.turns}
+              />
             </div>
           </div>
         }
@@ -161,8 +168,14 @@ export function ShipyardWorkbench(props: ShipyardWorkbenchProps) {
         }
         rightSidebar={
           <ShellSidebar collapsed={true} railItems={[]}>
-            <FilePanel fileEvents={props.fileEvents} />
-            <OutputPanel turns={props.turns} />
+            <FilePanel
+              key={`drawer-files-${sessionViewKey}`}
+              fileEvents={props.fileEvents}
+            />
+            <OutputPanel
+              key={`drawer-output-${sessionViewKey}`}
+              turns={props.turns}
+            />
           </ShellSidebar>
         }
         footer={
