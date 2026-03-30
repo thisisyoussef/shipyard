@@ -54,6 +54,8 @@ current target and return a reliable shareable production URL.
 
 ## Edge Cases
 - The target directory is not actually deployable to Vercel.
+- The deploy root is missing a `package.json` but a nested web app exists.
+- The deploy root has no `package.json`, requiring a temporary staging deploy.
 - The deploy command emits multiple candidate URLs.
 - The provider CLI tries to prompt interactively despite the non-interactive
   contract.
@@ -90,7 +92,11 @@ current target and return a reliable shareable production URL.
 
 - Shareable Vercel production-link resolution:
   - `shipyard/src/tools/deploy.ts`
+- Deploy root resolution + staging fallback for missing `package.json`:
+  - `shipyard/src/tools/deploy.ts`
 - Regression coverage for generated deployment URLs vs shareable aliases:
+  - `shipyard/tests/tooling.test.ts`
+- Regression coverage for nested deploy roots and staging fallback:
   - `shipyard/tests/tooling.test.ts`
 
 ### Representative Snippets
@@ -109,6 +115,18 @@ const productionUrl = deploymentUrl
 
 ```ts
 it("deploy_target resolves a stable production alias from deployment metadata", async () => {
+  // ...
+});
+```
+
+```ts
+it("deploy_target prefers the nested web app when the root has no package.json", async () => {
+  // ...
+});
+```
+
+```ts
+it("deploy_target stages a temporary package.json when none exist", async () => {
   // ...
 });
 ```
