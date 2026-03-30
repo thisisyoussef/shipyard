@@ -43,6 +43,7 @@ import { TargetCreationDialog } from "./TargetCreationDialog.js";
 import {
   extractBootstrapAccessToken,
   resolveUiPage,
+  selectSessionScopedValue,
   shouldCancelBusyInstructionOnSubmit,
   useWorkbenchController,
 } from "./use-workbench-controller.js";
@@ -58,6 +59,7 @@ import { RoutePlaceholderView } from "./views/RoutePlaceholderView.js";
 export {
   extractBootstrapAccessToken,
   resolveUiPage,
+  selectSessionScopedValue,
   shouldCancelBusyInstructionOnSubmit,
 } from "./use-workbench-controller.js";
 
@@ -511,11 +513,11 @@ export function App() {
         sessionHistory={controller.viewState.sessionHistory}
         targetManager={controller.viewState.targetManager}
         projectBoard={controller.viewState.projectBoard}
-        turns={controller.deferredTurns}
-        fileEvents={controller.deferredFileEvents}
+        turns={controller.displayedTurns}
+        fileEvents={controller.displayedFileEvents}
         previewState={controller.viewState.previewState}
         latestDeploy={controller.viewState.latestDeploy}
-        contextHistory={controller.deferredContextHistory}
+        contextHistory={controller.displayedContextHistory}
         pendingUploads={controller.viewState.pendingUploads}
         connectionState={controller.viewState.connectionState}
         agentStatus={controller.viewState.agentStatus}
@@ -637,7 +639,7 @@ export function App() {
       <HumanFeedbackPage
         sessionState={controller.viewState.sessionState}
         previewState={controller.viewState.previewState}
-        turns={controller.deferredTurns}
+        turns={controller.displayedTurns}
         connectionState={controller.viewState.connectionState}
         agentStatus={controller.viewState.agentStatus}
         ultimateState={controller.viewState.ultimateState}

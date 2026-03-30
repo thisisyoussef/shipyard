@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   resolveUiPage,
+  selectSessionScopedValue,
   shouldCancelBusyInstructionOnSubmit,
 } from "../ui/src/App.js";
 import { HumanFeedbackPage } from "../ui/src/HumanFeedbackPage.js";
@@ -106,6 +107,26 @@ describe("resolveUiPage", () => {
     expect(shouldCancelBusyInstructionOnSubmit("workbench", "agent-busy", true)).toBe(false);
     expect(shouldCancelBusyInstructionOnSubmit("human-feedback", "agent-busy")).toBe(false);
     expect(shouldCancelBusyInstructionOnSubmit("human-feedback", "ready")).toBe(false);
+  });
+
+  it("falls back to the live session artifacts when deferred values still belong to the previous project", () => {
+    expect(
+      selectSessionScopedValue({
+        currentSessionId: "session-beta",
+        deferredSessionId: "session-alpha",
+        liveValue: ["beta turn"],
+        deferredValue: ["alpha turn"],
+      }),
+    ).toEqual(["beta turn"]);
+
+    expect(
+      selectSessionScopedValue({
+        currentSessionId: "session-alpha",
+        deferredSessionId: "session-alpha",
+        liveValue: ["alpha turn"],
+        deferredValue: ["alpha turn", "older alpha turn"],
+      }),
+    ).toEqual(["alpha turn", "older alpha turn"]);
   });
 });
 

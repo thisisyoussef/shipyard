@@ -120,6 +120,7 @@ export function WorkbenchConversationSurface(
 ) {
   const activePhase = props.sessionState?.activePhase ?? "target-manager";
   const chrome = props.chrome ?? "full";
+  const sessionViewKey = props.sessionState?.sessionId ?? "no-session";
 
   return (
     <div className="conversation-pane">
@@ -142,6 +143,7 @@ export function WorkbenchConversationSurface(
 
       <div className="conversation-scroll">
         <ChatWorkspace
+          key={`chat-${sessionViewKey}`}
           turns={props.turns}
           emptyContent={props.emptyConversationContent}
         />
