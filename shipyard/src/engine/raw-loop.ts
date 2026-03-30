@@ -223,6 +223,10 @@ function extractEditedPath(
     return null;
   }
 
+  if (toolName === "edit_block" && getOptionalBoolean(result.data, "changed") === false) {
+    return null;
+  }
+
   if (
     typeof input === "object" &&
     input !== null &&
@@ -283,6 +287,14 @@ function getOptionalNumber(value: unknown, key: string): number | null {
   return Number(value[key]);
 }
 
+function getOptionalBoolean(value: unknown, key: string): boolean | null {
+  if (!isPlainObject(value) || typeof value[key] !== "boolean") {
+    return null;
+  }
+
+  return Boolean(value[key]);
+}
+
 function createDigestPreview(value: string, limit = 120): string {
   const normalized = value
     .replace(/\r\n/g, "\n")
@@ -339,11 +351,12 @@ function extractTouchedFiles(
 
   const inputPath = extractInputPath(input);
 
-  if (
-    inputPath
-    && (toolName === "write_file" || toolName === "edit_block")
-  ) {
+  if (inputPath && toolName === "write_file") {
     return [inputPath];
+  }
+
+  if (inputPath && toolName === "edit_block") {
+    return getOptionalBoolean(result.data, "changed") === false ? [] : [inputPath];
   }
 
   return [];

@@ -23,6 +23,7 @@ import {
 } from "../context/envelope.js";
 import {
   isSingleTurnUiBuildInstruction,
+  looksLikeTargetedChangeInstruction,
   shouldCoordinatorUseDirectEditFastPath,
 } from "../agents/coordinator.js";
 import { createCodePhase } from "../phases/code/index.js";
@@ -507,6 +508,8 @@ function isEditBlockResult(value: unknown): value is EditBlockResult {
     value !== null &&
     "path" in value &&
     typeof value.path === "string" &&
+    "changed" in value &&
+    typeof value.changed === "boolean" &&
     "beforePreview" in value &&
     typeof value.beforePreview === "string" &&
     "afterPreview" in value &&
@@ -601,7 +604,11 @@ function createImmediateEditEvent(
   toolName: string,
   resultData: unknown,
 ): EditEvent | null {
-  if (toolName === "edit_block" && isEditBlockResult(resultData)) {
+  if (
+    toolName === "edit_block"
+    && isEditBlockResult(resultData)
+    && resultData.changed
+  ) {
     return {
       path: resultData.path,
       summary: `Applied targeted edit to ${resultData.path}`,
@@ -652,6 +659,14 @@ function createImmediateEditEvent(
   }
 
   return null;
+}
+
+function createMissingWriteFailureMessage(instruction: string): string {
+  return [
+    `Shipyard finished the targeted change request ${JSON.stringify(truncateText(instruction, 80))}`,
+    "without writing any files.",
+    "The model likely stopped after inspection, so the turn was marked as failed instead of claiming the change landed.",
+  ].join(" ");
 }
 
 function isTargetSelectionData(value: unknown): value is { path: string } {
@@ -1195,7 +1210,7 @@ export async function executeInstructionTurn(
       };
       const executionSpec = finalState.executionSpec ?? null;
       const planningMode = finalState.planningMode;
-      const finalText = finalState.finalResult
+      const runtimeFinalText = finalState.finalResult
         ?? "Shipyard finished without a final response.";
       rememberRecentFilePaths(state.recentTouchedFiles, taskPlan.targetFilePaths);
       rememberRecentFilePaths(
@@ -1214,7 +1229,18 @@ export async function executeInstructionTurn(
         );
       }
 
-      const finalStateStatus = finalState.status === "failed"
+      const missingWriteFailureMessage =
+        phase.name === "code" &&
+        looksLikeTargetedChangeInstruction(options.instruction) &&
+        finalState.status !== "failed" &&
+        finalState.status !== "cancelled" &&
+        finalState.touchedFiles.length === 0
+          ? createMissingWriteFailureMessage(options.instruction)
+          : null;
+      const finalText = missingWriteFailureMessage ?? runtimeFinalText;
+      const finalStateStatus = missingWriteFailureMessage
+        ? "failed"
+        : finalState.status === "failed"
         ? "failed"
         : finalState.status === "cancelled"
           ? "cancelled"
@@ -1345,7 +1371,10 @@ export async function executeInstructionTurn(
         };
       }
       if (finalStateStatus === "failed") {
-        const errorMessage = finalState.lastError ?? finalText;
+        const errorMessage =
+          missingWriteFailureMessage
+          ?? finalState.lastError
+          ?? finalText;
         const failedTurnText = `Turn ${String(state.turnCount)} stopped: ${errorMessage}`;
 
         rememberRecent(runtimeState.recentErrors, errorMessage);

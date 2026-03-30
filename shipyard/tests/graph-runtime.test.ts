@@ -917,6 +917,92 @@ describe("Phase 4 graph runtime contract", () => {
     expect(verifyUpdate.status).toBe("responding");
   });
 
+  it("uses the direct-edit fast path for short quoted copy swaps", async () => {
+    const directory = await createTempProject();
+    const appPath = path.join(directory, "src", "App.tsx");
+
+    await mkdir(path.dirname(appPath), { recursive: true });
+    await writeFile(
+      appPath,
+      [
+        "export function App() {",
+        "  return <h1>Ship</h1>;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const contextEnvelope = createContextEnvelope();
+    const instruction = 'Change "Ship" to "Ship Clone".';
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult(JSON.stringify({
+        status: "edit",
+        filePath: "src/App.tsx",
+        oldBlock: "return <h1>Ship</h1>;",
+        newBlock: "return <h1>Ship Clone</h1>;",
+        summary: 'Changed "Ship" to "Ship Clone".',
+      })),
+    ]);
+    const runVerifierSubagent = vi.fn();
+
+    contextEnvelope.task.currentInstruction = instruction;
+    contextEnvelope.stable.discovery = {
+      ...contextEnvelope.stable.discovery,
+      isGreenfield: true,
+      packageManager: null,
+      scripts: {},
+      topLevelFiles: ["package.json"],
+      topLevelDirectories: ["src"],
+      projectName: "tiny-ui-target",
+    };
+    contextEnvelope.stable.availableScripts = {};
+
+    const nodes = createAgentRuntimeNodes({
+      dependencies: {
+        createRawLoopOptions: () => ({
+          modelAdapter,
+          logger: {
+            log() {},
+          },
+        }),
+        runVerifierSubagent,
+      },
+    });
+    const state = createAgentGraphState({
+      sessionId: "session-123",
+      instruction,
+      contextEnvelope,
+      previewState: createPreviewState(),
+      targetDirectory: directory,
+      phaseConfig: createCodePhase(),
+    });
+    const triagedState = {
+      ...state,
+      ...(await nodes.triage(state)),
+    };
+    const plannedState = {
+      ...triagedState,
+      ...(await nodes.plan(triagedState)),
+    };
+    const actedState = {
+      ...plannedState,
+      ...(await nodes.act(plannedState)),
+    };
+    const verifyUpdate = await nodes.verify(actedState);
+
+    expect(modelAdapter.calls).toHaveLength(1);
+    expect(await readFile(appPath, "utf8")).toContain("Ship Clone");
+    expect(actedState.harnessRoute).toMatchObject({
+      actingMode: "direct-edit",
+    });
+    expect(runVerifierSubagent).not.toHaveBeenCalled();
+    expect(verifyUpdate.verificationReport).toMatchObject({
+      passed: true,
+    });
+    expect(verifyUpdate.status).toBe("responding");
+  });
+
   it("falls back to the raw loop when the direct-edit fast path declines the change", async () => {
     const directory = await createTempProject();
     const stylesPath = path.join(directory, "styles.css");

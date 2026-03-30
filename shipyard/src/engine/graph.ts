@@ -40,6 +40,7 @@ import {
   extractInstructionTargetFilePaths,
   isClearlyLightweightInstruction,
   isSingleTurnUiBuildInstruction,
+  looksLikeDirectEditInstruction,
   looksLikeUiRelevantFilePath,
   looksLikeUiRelevantInstruction,
   createVerificationPlan,
@@ -1000,6 +1001,7 @@ async function getScannedDirectEditCandidatePaths(
     !looksLikeUiRelevantInstruction(state.currentInstruction)
     && !DIRECT_EDIT_STYLE_SCOPE_PATTERN.test(state.currentInstruction)
     && !DIRECT_EDIT_COPY_SCOPE_PATTERN.test(state.currentInstruction)
+    && !looksLikeDirectEditInstruction(state.currentInstruction)
   ) {
     return [];
   }
@@ -1367,6 +1369,10 @@ async function maybeRunDirectEditFastPath(
         },
       });
     } catch {
+      return null;
+    }
+
+    if (!editResult.changed) {
       return null;
     }
 
