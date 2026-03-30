@@ -26,6 +26,8 @@ jobs:
       RAILWAY_PROJECT_ID: 56dd4ac3-b6b0-4ce1-a5a3-f881edccb2db
       RAILWAY_ENVIRONMENT_ID: e2c39753-7fc8-486e-b1e6-d4d190220b51
       RAILWAY_SERVICE_ID: ef598033-aca2-450f-8bae-5cec3de9247d
+      SHIPYARD_HOSTED_URL: https://shipyard-production-7d07.up.railway.app
+      SHIPYARD_HOSTED_DEFAULT_TARGET_PATH: /app/workspace/ship-promptpack-live
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -154,6 +156,7 @@ jobs:
           railway variable set \
             PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
             RAILWAY_VOLUME_MOUNT_PATH=/app/workspace \
+            SHIPYARD_HOSTED_DEFAULT_TARGET_PATH=/app/workspace/ship-promptpack-live \
             SHIPYARD_HOSTED_URL=https://shipyard-production-7d07.up.railway.app \
             SHIPYARD_TARGETS_DIR=/app/workspace \
             SHIPYARD_UI_HOST=0.0.0.0 \
@@ -175,3 +178,6 @@ jobs:
           fi
           export RAILWAY_IMAGE_REF="${{ steps.ghcr.outputs.image_ref }}"
           bash .github/scripts/railway-ci-deploy.sh
+
+      - name: Verify hosted runtime target
+        run: node ./scripts/verify-hosted-deploy.mjs

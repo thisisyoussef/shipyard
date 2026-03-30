@@ -248,7 +248,10 @@ export function resolveAutomaticTargetEnrichmentCapability(
 ```
 
 - Operational follow-up: [`../../src/engine/model-routing.ts`](../../src/engine/model-routing.ts),
+  [`../../src/bin/shipyard.ts`](../../src/bin/shipyard.ts),
   [`../../../.github/workflows/railway-main-deploy.yml`](../../../.github/workflows/railway-main-deploy.yml),
+  [`../../../scripts/verify-hosted-deploy.mjs`](../../../scripts/verify-hosted-deploy.mjs),
+  [`../../../scripts/print-hosted-access-url.mjs`](../../../scripts/print-hosted-access-url.mjs),
   [`../../README.md`](../../README.md),
   [`../../docs/architecture/README.md`](../../docs/architecture/README.md),
   [`../../docs/architecture/hosted-railway.md`](../../docs/architecture/hosted-railway.md),
@@ -261,7 +264,9 @@ export function resolveAutomaticTargetEnrichmentCapability(
   preserve Anthropic as the checked-in local default provider, update the
   operator-facing runtime contract, and make the GitHub Actions Railway deploy
   sync the production OpenAI credentials plus `gpt-5.4` routing before each
-  release.
+  release, boot hosted production directly into the canonical
+  `ship-promptpack-live` target, and fail `main` deploys when the hosted
+  runtime does not report that target cleanly after rollout.
 
 - `P10-S04`: [`../../src/engine/openai.ts`](../../src/engine/openai.ts),
   [`../../src/engine/model-routing.ts`](../../src/engine/model-routing.ts),

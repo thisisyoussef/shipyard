@@ -198,6 +198,24 @@ Record durable workspace decisions here.
 - **Alternatives Considered**: Keep the write-up in loose root notes; fold the
   analysis into `CODEAGENT.md` only; wait until the very end of the rebuild to
   draft the submission material from memory.
+- **ADR-ID**: ADR-0016
+- **Date**: 2026-03-29
+- **Context**: Railway production was correctly redeploying the hosted
+  Shipyard service itself, but fresh boots could still surface the wrong target
+  until an operator switched back to the live Ship promptpack workspace by
+  hand.
+- **Decision**: Add a hosted-only bootstrap target override
+  (`SHIPYARD_HOSTED_DEFAULT_TARGET_PATH`) in `shipyard/src/bin/shipyard.ts`,
+  set it to `/app/workspace/ship-promptpack-live` in the `main` Railway
+  workflow, and add `scripts/verify-hosted-deploy.mjs` so the deploy pipeline
+  fails if `/api/health` does not come back on that canonical target cleanly.
+- **Alternatives Considered**: Rely on operators to switch targets after every
+  boot; only detect drift manually from the hosted editor; keep verifying the
+  service URL alone without asserting the active target.
+- **Consequences**: Hosted prod now has a single declared canonical target, the
+  access helper can deep-link straight into that editor route, and future
+  Railway target changes must update runtime env, deploy verification, and
+  operator docs together.
 - **Consequences**: Submission docs now have a stable home, entry points stay
   discoverable for future agents, and comparative claims should cite trace,
   session, archive, and log evidence instead of relying on retrospective recall.

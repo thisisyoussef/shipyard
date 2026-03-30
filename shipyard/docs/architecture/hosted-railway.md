@@ -22,6 +22,7 @@ Shipyard service URL, private preview URLs, and public target-app deploy URLs.
 | Variable | Value | Purpose |
 | --- | --- | --- |
 | `SHIPYARD_TARGETS_DIR` | `/app/workspace` | Moves hosted targets and `.shipyard/` runtime state into one predictable server-side workspace. |
+| `SHIPYARD_HOSTED_DEFAULT_TARGET_PATH` | `/app/workspace/ship-promptpack-live` for the current production service | Optional hosted-only bootstrap target. When set and no explicit `--target` was passed, Shipyard starts directly on this target instead of opening the target-manager lane first. |
 | `SHIPYARD_UI_HOST` | `0.0.0.0` | Recommended explicit override. When Railway-hosted env signals are present, Shipyard now also falls back to `0.0.0.0` automatically so a missing bind var does not leave the service on loopback only. |
 | `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE` | `1` | Fails startup loudly when the hosted service is expected to use a durable mounted workspace but Railway has not attached the volume yet. |
 | `SHIPYARD_ACCESS_TOKEN` | shared secret | Protects `/api/access`, the SPA shell, and `/ws` with a lightweight hosted gate. |
@@ -87,7 +88,8 @@ not confuse the Shipyard editor with the product being built.
 2. If `SHIPYARD_ACCESS_TOKEN` is set, unlock the session through the hosted
    access gate. The bootstrap query parameter flow removes `access_token` from
    the visible URL after the cookie is set.
-3. Select or create a target inside `/app/workspace`.
+3. If `SHIPYARD_HOSTED_DEFAULT_TARGET_PATH` is set, Shipyard opens directly on
+   that target. Otherwise, select or create a target inside `/app/workspace`.
 4. Optionally attach reference files from the browser; Shipyard stores them
    inside the workspace and injects safe previews into the next turn.
 5. After a successful edited turn, including successful edited `ultimate`
@@ -168,6 +170,8 @@ not confuse the Shipyard editor with the product being built.
   default hosted image,
   `RAILWAY_VOLUME_MOUNT_PATH=/app/workspace` to keep the hosted persistence
   contract explicit for startup validation,
+  `SHIPYARD_HOSTED_DEFAULT_TARGET_PATH=/app/workspace/ship-promptpack-live`
+  so the service boots directly into the canonical Ship promptpack target,
   `SHIPYARD_HOSTED_URL` when production uses a pinned public Railway domain,
   `SHIPYARD_TARGETS_DIR=/app/workspace`,
   `SHIPYARD_UI_HOST=0.0.0.0`,
@@ -181,6 +185,10 @@ not confuse the Shipyard editor with the product being built.
   environment-config JSON edit, polls Railway until a new deployment
   reaches `SUCCESS`, and retries the known transient GHCR pull/unpack
   handoff failures before surfacing the final deploy/build logs.
+- After Railway reports a successful deployment, the GitHub Actions workflow
+  runs `node scripts/verify-hosted-deploy.mjs` against `/api/health` with the
+  shared access token and fails the release if the hosted runtime did not come
+  back on the canonical target cleanly.
 - This GHCR-backed deploy path keeps the existing Railway service and public
   domain while bypassing the `railway up` repo-upload path that was repeatedly
   failing during the post-build pull/unpack handoff.
@@ -196,9 +204,11 @@ not confuse the Shipyard editor with the product being built.
   replace that default with an image or install step that intentionally
   provisions the Playwright runtime, browser binaries, and Linux dependencies.
 - For local operator convenience, keep the same hosted token in the ignored
-  `shipyard/.env` file and optionally add `SHIPYARD_HOSTED_URL`; the repo-root
-  helper `node scripts/print-hosted-access-url.mjs` prints a bootstrap URL
-  without committing the secret into tracked docs or source.
+  `shipyard/.env` file and optionally add `SHIPYARD_HOSTED_URL` plus
+  `SHIPYARD_HOSTED_DEFAULT_TARGET_PATH`; the repo-root helper
+  `node scripts/print-hosted-access-url.mjs` prints a bootstrap URL that opens
+  directly into the hosted editor for that canonical target without committing
+  the secret into tracked docs or source.
 - Point Railway's config-as-code path at `/shipyard/railway.json` when the
   provider is watching the full repo, or keep `railway.json` at the uploaded
   app root when deploying only the `shipyard/` directory.
