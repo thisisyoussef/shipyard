@@ -134,6 +134,7 @@ export function App() {
         productId: appRoute.productId,
         projectBoard: controller.viewState.projectBoard,
         targetManager: controller.viewState.targetManager,
+        sessionState: controller.viewState.sessionState,
       })
     : null;
   const boardRouteState = appRoute.view === "board"
@@ -141,6 +142,7 @@ export function App() {
         productId: appRoute.productId,
         projectBoard: controller.viewState.projectBoard,
         targetManager: controller.viewState.targetManager,
+        sessionState: controller.viewState.sessionState,
       })
     : null;
   const hasLoadedWorkbenchState =
