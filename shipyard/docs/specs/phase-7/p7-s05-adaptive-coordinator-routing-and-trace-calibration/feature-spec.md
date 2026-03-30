@@ -58,6 +58,7 @@ Even with richer planner, evaluator, browser QA, and handoff contracts, Shipyard
 ### Code References
 - `shipyard/src/agents/coordinator.ts`
 - `shipyard/src/engine/graph.ts`
+- `shipyard/src/engine/raw-loop.ts`
 - `shipyard/src/engine/turn.ts`
 - `shipyard/tests/graph-runtime.test.ts`
 - `shipyard/tests/turn-runtime.test.ts`
@@ -94,4 +95,21 @@ if (
 ) {
   // run browser evaluator only for broad or explicitly requested UI verification
 }
+```
+
+```ts
+if (toolName === "edit_block" && getOptionalBoolean(result.data, "changed") === false) {
+  return null;
+}
+```
+
+```ts
+const missingWriteFailureMessage =
+  phase.name === "code" &&
+  looksLikeTargetedChangeInstruction(options.instruction) &&
+  finalState.status !== "failed" &&
+  finalState.status !== "cancelled" &&
+  finalState.touchedFiles.length === 0
+    ? createMissingWriteFailureMessage(options.instruction)
+    : null;
 ```

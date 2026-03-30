@@ -124,6 +124,7 @@ const directEditScopeKeywordPatterns = [
   /\bclass(?:name)?\b/i,
   /\bplaceholder\b/i,
 ] as const;
+const quotedLiteralEditPattern = /(["'`])[^"'`\n]{1,120}\1/g;
 const explicitBrowserEvaluationPatterns = [
   /\bverify\b/i,
   /\bevaluate\b/i,
@@ -413,10 +414,26 @@ function countInstructionWords(instruction: string): number {
     .length;
 }
 
-function looksLikeTargetedChangeInstruction(instruction: string): boolean {
+function hasQuotedLiteralEditTarget(instruction: string): boolean {
+  return (instruction.match(quotedLiteralEditPattern) ?? []).length > 0;
+}
+
+export function looksLikeTargetedChangeInstruction(instruction: string): boolean {
   return targetedChangeVerbPattern.test(instruction)
-    && targetedScopeKeywordPatterns.some((pattern) => pattern.test(instruction))
-    && countInstructionWords(instruction) <= targetedInstructionWordCeiling;
+    && countInstructionWords(instruction) <= targetedInstructionWordCeiling
+    && (
+      targetedScopeKeywordPatterns.some((pattern) => pattern.test(instruction))
+      || hasQuotedLiteralEditTarget(instruction)
+    );
+}
+
+export function looksLikeDirectEditInstruction(instruction: string): boolean {
+  return targetedChangeVerbPattern.test(instruction)
+    && countInstructionWords(instruction) <= targetedInstructionWordCeiling
+    && (
+      directEditScopeKeywordPatterns.some((pattern) => pattern.test(instruction))
+      || hasQuotedLiteralEditTarget(instruction)
+    );
 }
 
 function requestsExplicitBrowserEvaluation(instruction: string): boolean {
@@ -575,9 +592,7 @@ export function shouldCoordinatorUseDirectEditFastPath(options: {
     return false;
   }
 
-  return targetedChangeVerbPattern.test(options.instruction)
-    && directEditScopeKeywordPatterns.some((pattern) => pattern.test(options.instruction))
-    && countInstructionWords(options.instruction) <= targetedInstructionWordCeiling;
+  return looksLikeDirectEditInstruction(options.instruction);
 }
 export function isSingleTurnUiBuildInstruction(instruction: string): boolean {
   const normalizedInstruction = instruction.trim().toLowerCase();
