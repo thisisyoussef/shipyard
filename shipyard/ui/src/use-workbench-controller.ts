@@ -722,6 +722,16 @@ export function useWorkbenchController() {
   ]);
 
   const handleToggleUltimateArmed = useCallback((): void => {
+    if (viewState.ultimateState.phase === "paused") {
+      queueComposerNotice({
+        tone: "warning",
+        title: "Ultimate mode is paused",
+        detail:
+          "Resume the paused loop or clear it from the header before arming a brand-new ultimate run.",
+      });
+      return;
+    }
+
     if (viewState.ultimateState.phase === "stopping") {
       queueComposerNotice({
         tone: "warning",
@@ -764,6 +774,7 @@ export function useWorkbenchController() {
   const handlePrimeUltimateStart = useCallback((): void => {
     if (
       viewState.ultimateState.active ||
+      viewState.ultimateState.phase === "paused" ||
       viewState.ultimateState.phase === "stopping"
     ) {
       return;
@@ -850,10 +861,62 @@ export function useWorkbenchController() {
 
     queueComposerNotice({
       tone: "neutral",
-      title: "Stopping ultimate mode",
+      title:
+        viewState.ultimateState.phase === "paused"
+          ? "Clearing paused loop"
+          : "Stopping ultimate mode",
       detail:
-        "Shipyard is finishing the current cycle and will return to idle as soon as it can stop cleanly.",
+        viewState.ultimateState.phase === "paused"
+          ? "Shipyard cleared the paused standing brief. The editor is ready for normal instructions or a brand-new ultimate run."
+          : "Shipyard is finishing the current cycle and will return to idle as soon as it can stop cleanly.",
     });
+  }, [queueComposerNotice, sendMessage, viewState.ultimateState.phase]);
+
+  const handlePauseUltimateMode = useCallback((): void => {
+    const sent = sendMessage({
+      type: "ultimate:pause",
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Pause unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before pausing ultimate mode.",
+      });
+      return;
+    }
+
+    queueComposerNotice({
+      tone: "neutral",
+      title: "Pausing ultimate mode",
+      detail:
+        "Shipyard is finishing the current cycle, then the composer will switch back to normal instructions for a quick manual edit.",
+    });
+  }, [queueComposerNotice, sendMessage]);
+
+  const handleResumeUltimateMode = useCallback((): void => {
+    const sent = sendMessage({
+      type: "ultimate:resume",
+    });
+
+    if (!sent) {
+      queueComposerNotice({
+        tone: "danger",
+        title: "Resume unavailable",
+        detail:
+          "The browser runtime is disconnected. Reconnect before resuming ultimate mode.",
+      });
+      return;
+    }
+
+    queueComposerNotice({
+      tone: "success",
+      title: "Resuming ultimate mode",
+      detail:
+        "Shipyard is restarting the paused standing brief now.",
+    });
+    focusInstructionInput();
   }, [queueComposerNotice, sendMessage]);
 
   const submitInstruction = useCallback(() => {
@@ -1428,6 +1491,8 @@ export function useWorkbenchController() {
     onRequestSessionResume: handleSessionResume,
     onRequestTargetCreate: handleTargetCreate,
     onRequestTargetSwitch: handleTargetSwitch,
+    onPauseUltimateMode: handlePauseUltimateMode,
+    onResumeUltimateMode: handleResumeUltimateMode,
     onSendUltimateFeedback: handleSendUltimateFeedback,
     onStopUltimateMode: handleStopUltimateMode,
     onSubmitHumanFeedback: handleHumanFeedbackSubmit,

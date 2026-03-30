@@ -17,6 +17,8 @@ export interface NavBarProps {
   ultimateDisabled?: boolean;
   onUltimateClick: () => void;
   onSendUltimateFeedback: (text: string) => void;
+  onPauseUltimate: () => void;
+  onResumeUltimate: () => void;
   onStopUltimate: () => void;
 }
 
@@ -48,6 +50,8 @@ export function NavBar({
   ultimateDisabled = false,
   onUltimateClick,
   onSendUltimateFeedback,
+  onPauseUltimate,
+  onResumeUltimate,
   onStopUltimate,
 }: NavBarProps) {
   const navItems: Array<{ label: string; view: Route["view"]; disabled?: boolean }> = [
@@ -111,6 +115,8 @@ export function NavBar({
           currentBrief={ultimateState.currentBrief}
           lastCycleSummary={ultimateState.lastCycleSummary}
           onSendFeedback={onSendUltimateFeedback}
+          onPause={onPauseUltimate}
+          onResume={onResumeUltimate}
           onStop={onStopUltimate}
         />
       ) : (

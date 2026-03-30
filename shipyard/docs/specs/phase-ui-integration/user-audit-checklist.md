@@ -40,9 +40,16 @@ for operator QA.
       existing command flow.
 - [ ] Sending feedback while ultimate mode is active queues it for the next
       loop and surfaces confirmation.
+- [ ] Pausing ultimate mode returns the composer to normal instructions so a
+      small manual edit can run immediately without losing the standing brief.
+- [ ] While ultimate mode is paused, resume and clear actions stay available,
+      but starting a brand-new loop or sending loop feedback is rejected
+      clearly.
 - [ ] Stop behavior is clear from both the badge and cancel flow.
 - [ ] Reconnect/reload while ultimate mode is active restores a truthful badge
       state instead of resetting to “off.”
+- [ ] Reconnect/reload while ultimate mode is paused restores the paused badge
+      state and preserved brief instead of silently clearing the loop.
 - [ ] The human-feedback page still reaches the active ultimate loop.
 
 ## Board

@@ -237,6 +237,7 @@ interface BrowserProjectRuntime {
   activeInstruction: Promise<void> | null;
   activeInstructionController: AbortController | null;
   activeUltimateController: UltimateModeController | null;
+  pendingUltimateTransition: "pause" | "stop" | null;
   activeDeploy: Promise<void> | null;
   activeDeployController: AbortController | null;
   deployInFlight: boolean;
@@ -292,8 +293,17 @@ function createRuntimeDiagnostics(
   const memoryUsage = process.memoryUsage();
   const previewState = project.sessionState.workbenchState.previewState;
   const ultimateController = project.activeUltimateController;
+  const ultimateState =
+    project.sessionState.workbenchState.ultimateState ??
+    createIdleUltimateUiState();
   const pendingHumanFeedback =
-    ultimateController?.getPendingHumanFeedback().length ?? 0;
+    ultimateController?.getPendingHumanFeedback().length
+    ?? ultimateState.pendingFeedbackCount;
+  const ultimateStatusText = ultimateController
+    ? formatUltimateModeStatus(ultimateController)
+    : ultimateState.phase === "paused"
+      ? `Ultimate mode is paused.\nPaused brief: ${ultimateState.currentBrief ?? "unknown"}`
+      : formatUltimateModeStatus(null);
 
   return {
     pid: process.pid,
@@ -321,10 +331,10 @@ function createRuntimeDiagnostics(
     hosting: project.sessionState.workbenchState.hosting,
     ultimate: {
       active: ultimateController !== null,
-      brief: ultimateController?.initialBrief ?? null,
-      startedAt: ultimateController?.startedAt ?? null,
+      brief: ultimateController?.initialBrief ?? ultimateState.currentBrief ?? null,
+      startedAt: ultimateController?.startedAt ?? ultimateState.startedAt ?? null,
       pendingHumanFeedback,
-      statusText: formatUltimateModeStatus(ultimateController),
+      statusText: ultimateStatusText,
     },
     lastActiveAt: project.sessionState.lastActiveAt,
   };
@@ -762,6 +772,20 @@ function createRunningUltimateUiState(
   };
 }
 
+function createPausedUltimateUiState(
+  currentState: UltimateUiState,
+): UltimateUiState {
+  return {
+    active: false,
+    phase: "paused",
+    currentBrief: currentState.currentBrief,
+    turnCount: currentState.turnCount,
+    pendingFeedbackCount: 0,
+    startedAt: currentState.startedAt,
+    lastCycleSummary: currentState.lastCycleSummary,
+  };
+}
+
 function createErroredUltimateUiState(
   currentState: UltimateUiState,
   summary: string,
@@ -1165,6 +1189,7 @@ export async function startUiRuntimeServer(
       activeInstruction: null,
       activeInstructionController: null,
       activeUltimateController: null,
+      pendingUltimateTransition: null,
       activeDeploy: null,
       activeDeployController: null,
       deployInFlight: false,
@@ -1404,7 +1429,7 @@ export async function startUiRuntimeServer(
     const controller = project.activeUltimateController;
 
     if (controller === null) {
-      return currentState.phase === "error"
+      return currentState.phase === "error" || currentState.phase === "paused"
         ? currentState
         : createIdleUltimateUiState();
     }
@@ -2740,9 +2765,12 @@ export async function startUiRuntimeServer(
       flushPendingTurnState,
       consumeTurnProducedEdits,
     } = createBrowserInstructionReporter(project);
+    const initialUltimateState =
+      project.sessionState.workbenchState.ultimateState
+      ?? createIdleUltimateUiState();
     await publishUltimateUiState(
       project,
-      createRunningUltimateUiState(controller, createIdleUltimateUiState()),
+      createRunningUltimateUiState(controller, initialUltimateState),
     );
 
     const ultimateResult = await executeUltimateModeTurn({
@@ -2806,16 +2834,22 @@ export async function startUiRuntimeServer(
       },
     });
 
+    const requestedTransition = project.pendingUltimateTransition;
     project.activeUltimateController = null;
     await publishUltimateUiState(
       project,
-      ultimateResult.status === "error"
+      requestedTransition === "pause" && ultimateResult.status !== "error"
+        ? createPausedUltimateUiState(
+            project.sessionState.workbenchState.ultimateState,
+          )
+        : ultimateResult.status === "error"
         ? createErroredUltimateUiState(
             project.sessionState.workbenchState.ultimateState,
             ultimateResult.summary,
           )
         : createIdleUltimateUiState(),
     );
+    project.pendingUltimateTransition = null;
     await project.traceLogger.log("instruction.ultimate", {
       instruction: options.instruction,
       brief: options.brief,
@@ -2839,6 +2873,45 @@ export async function startUiRuntimeServer(
     });
     await saveSessionState(project.sessionState);
     await flushPendingTurnState();
+  };
+
+  const startBrowserUltimateModeForProject = async (
+    project: BrowserProjectRuntime,
+    options: {
+      instruction: string;
+      brief: string;
+      injectedContext: string[] | undefined;
+    },
+  ): Promise<void> => {
+    const handoff = await prepareInstructionHandoffForProject(project, {
+      instructionLabel: options.instruction,
+      injectedContext: options.injectedContext,
+      traceInstruction: options.instruction,
+    });
+    const turnController = new AbortController();
+
+    project.pendingUltimateTransition = null;
+    project.activeUltimateController = createUltimateModeController(options.brief);
+    project.activeInstructionController = turnController;
+    project.activeInstruction = runBrowserUltimateMode(
+      project,
+      {
+        instruction: options.instruction,
+        brief: options.brief,
+        injectedContext: handoff.injectedContext,
+        signal: turnController.signal,
+      },
+    );
+
+    try {
+      await project.activeInstruction;
+    } finally {
+      project.activeInstruction = null;
+      project.activeInstructionController = null;
+      project.activeUltimateController = null;
+      project.pendingUltimateTransition = null;
+      await broadcastProjectsState();
+    }
   };
 
   const runBrowserInstruction = async (
@@ -3267,20 +3340,46 @@ export async function startUiRuntimeServer(
     await saveSessionState(project.sessionState);
   };
 
-  const requestUltimateStopForProject = async (
+  const requestUltimateTransitionForProject = async (
     project: BrowserProjectRuntime,
+    mode: "pause" | "stop",
   ): Promise<void> => {
     if (project.activeUltimateController === null) {
+      if (mode === "stop" && project.sessionState.workbenchState.ultimateState.phase === "paused") {
+        project.sessionState.workbenchState = {
+          ...project.sessionState.workbenchState,
+          latestError: null,
+          agentStatus: "Cleared the paused ultimate loop.",
+        };
+        await publishUltimateUiState(project, createIdleUltimateUiState());
+        await emitProjectMessage(
+          project,
+          {
+            type: "agent:thinking",
+            message: "Paused ultimate loop cleared.",
+          },
+          {
+            syncProjects: false,
+          },
+        );
+        await saveSessionState(project.sessionState);
+        return;
+      }
+
       project.sessionState.workbenchState = {
         ...project.sessionState.workbenchState,
         latestError: null,
-        agentStatus: "Ultimate mode is not active.",
+        agentStatus:
+          mode === "pause"
+            ? "Ultimate mode is not active, so there is nothing to pause."
+            : "Ultimate mode is not active.",
       };
       await broadcastSessionState(project);
       return;
     }
 
     if (project.activeInstructionController?.signal.aborted) {
+      project.pendingUltimateTransition = mode;
       await publishUltimateUiState(
         project,
         createRunningUltimateUiState(
@@ -3295,6 +3394,7 @@ export async function startUiRuntimeServer(
     }
 
     if (project.activeInstructionController !== null) {
+      project.pendingUltimateTransition = mode;
       await publishUltimateUiState(
         project,
         createRunningUltimateUiState(
@@ -3310,7 +3410,9 @@ export async function startUiRuntimeServer(
         {
           type: "agent:thinking",
           message:
-            "Human interrupt received. Stopping ultimate mode after the current cycle shuts down cleanly.",
+            mode === "pause"
+              ? "Human interrupt received. Pausing ultimate mode after the current cycle shuts down cleanly."
+              : "Human interrupt received. Stopping ultimate mode after the current cycle shuts down cleanly.",
         },
         {
           syncProjects: false,
@@ -3322,28 +3424,78 @@ export async function startUiRuntimeServer(
       });
       abortTurn(
         project.activeInstructionController,
-        "Human stopped ultimate mode.",
+        mode === "pause"
+          ? "Human paused ultimate mode."
+          : "Human stopped ultimate mode.",
       );
       return;
     }
 
     project.activeUltimateController = null;
+    project.pendingUltimateTransition = null;
     await publishUltimateUiState(
       project,
-      createIdleUltimateUiState(),
+      mode === "pause"
+        ? createPausedUltimateUiState(
+            project.sessionState.workbenchState.ultimateState,
+          )
+        : createIdleUltimateUiState(),
     );
     await emitProjectMessage(
       project,
       {
         type: "agent:thinking",
         message:
-          "Ultimate mode stopped.",
+          mode === "pause"
+            ? "Ultimate mode paused. You can run manual instructions and resume the loop later."
+            : "Ultimate mode stopped.",
       },
       {
         syncProjects: false,
       },
     );
     await saveSessionState(project.sessionState);
+  };
+
+  const requestUltimatePauseForProject = async (
+    project: BrowserProjectRuntime,
+  ): Promise<void> => {
+    await requestUltimateTransitionForProject(project, "pause");
+  };
+
+  const requestUltimateResumeForProject = async (
+    project: BrowserProjectRuntime,
+    injectedContext: string[] | undefined,
+  ): Promise<void> => {
+    if (project.deployInFlight) {
+      throw new Error("A deploy is already in progress for this session.");
+    }
+
+    if (project.activeInstruction !== null) {
+      throw new Error(
+        project.activeUltimateController !== null
+          ? "Ultimate mode is already active."
+          : "Finish the current browser instruction before resuming ultimate mode.",
+      );
+    }
+
+    const pausedState = project.sessionState.workbenchState.ultimateState;
+
+    if (pausedState.phase !== "paused" || !pausedState.currentBrief) {
+      throw new Error("Ultimate mode is not paused.");
+    }
+
+    await startBrowserUltimateModeForProject(project, {
+      instruction: `ultimate resume ${pausedState.currentBrief}`,
+      brief: pausedState.currentBrief,
+      injectedContext,
+    });
+  };
+
+  const requestUltimateStopForProject = async (
+    project: BrowserProjectRuntime,
+  ): Promise<void> => {
+    await requestUltimateTransitionForProject(project, "stop");
   };
 
   socketServer.on("connection", (socket) => {
@@ -3519,6 +3671,18 @@ export async function startUiRuntimeServer(
                 break;
               }
 
+              if (
+                activeProject.sessionState.workbenchState.ultimateState.phase === "paused"
+              ) {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    "Ultimate mode is paused. Resume it or clear the paused loop before starting a new one.",
+                  ),
+                );
+                break;
+              }
+
               const brief = message.brief;
 
               if (!brief) {
@@ -3531,39 +3695,11 @@ export async function startUiRuntimeServer(
                 break;
               }
 
-              const instruction = `ultimate start ${brief}`;
-              const handoff = await prepareInstructionHandoffForProject(
-                activeProject,
-                {
-                  instructionLabel: instruction,
-                  injectedContext: message.injectedContext,
-                  traceInstruction: instruction,
-                },
-              );
-              const turnController = new AbortController();
-
-              activeProject.activeUltimateController = createUltimateModeController(
+              await startBrowserUltimateModeForProject(activeProject, {
+                instruction: `ultimate start ${brief}`,
                 brief,
-              );
-              activeProject.activeInstructionController = turnController;
-              activeProject.activeInstruction = runBrowserUltimateMode(
-                activeProject,
-                {
-                  instruction,
-                  brief,
-                  injectedContext: handoff.injectedContext,
-                  signal: turnController.signal,
-                },
-              );
-
-              try {
-                await activeProject.activeInstruction;
-              } finally {
-                activeProject.activeInstruction = null;
-                activeProject.activeInstructionController = null;
-                activeProject.activeUltimateController = null;
-                await broadcastProjectsState();
-              }
+                injectedContext: message.injectedContext,
+              });
               break;
             }
             case "ultimate:feedback": {
@@ -3600,6 +3736,40 @@ export async function startUiRuntimeServer(
                 message.text,
                 message.injectedContext,
               );
+              break;
+            }
+            case "ultimate:pause": {
+              const activeProject = getActiveProject();
+
+              if (activeProject.deployInFlight) {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage("A deploy is already in progress for this session."),
+                );
+                break;
+              }
+
+              await requestUltimatePauseForProject(activeProject);
+              break;
+            }
+            case "ultimate:resume": {
+              const activeProject = getActiveProject();
+
+              try {
+                await requestUltimateResumeForProject(
+                  activeProject,
+                  message.injectedContext,
+                );
+              } catch (error) {
+                await sendToSocket(
+                  socket,
+                  createErrorMessage(
+                    error instanceof Error
+                      ? error.message
+                      : "Ultimate mode could not resume.",
+                  ),
+                );
+              }
               break;
             }
             case "session:resume_request": {

@@ -674,6 +674,8 @@ export function App() {
           controller.onActivateUltimate();
         }}
         onSendUltimateFeedback={controller.onSendUltimateFeedback}
+        onPauseUltimate={controller.onPauseUltimateMode}
+        onResumeUltimate={controller.onResumeUltimateMode}
         onStopUltimate={controller.onStopUltimateMode}
       />
 

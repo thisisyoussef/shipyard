@@ -30,8 +30,10 @@
 - T003 tests:
   - [x] feedback queues on the active loop
   - [x] stop requests surface a truthful stopping state
+  - [x] pause requests preserve the standing brief and restore a paused snapshot
 - T004 tests:
   - [x] human-feedback page still reaches the active loop
+  - [x] paused mode returns the composer to normal instructions for quick edits
 
 ## Implementation Evidence
 
@@ -51,6 +53,15 @@
   `shipyard/ui/src/shell/UltimateBadge.tsx`,
   `shipyard/ui/src/shell/UltimateToggle.tsx`, and
   `shipyard/ui/src/HumanFeedbackPage.tsx`
+- Representative snippet:
+  ```ts
+  if (input.ultimateState.phase === "paused") {
+    return {
+      mode: "ultimate-paused",
+      submitLabel: "Run instruction",
+    };
+  }
+  ```
 - T005: this story pack plus `shipyard/docs/specs/phase-ui-integration/README.md`
 
 ## Completion Criteria

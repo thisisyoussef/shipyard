@@ -25,6 +25,16 @@ const runningUltimateState = {
   lastCycleSummary: "Cycle 3 tightened the hero spacing.",
 };
 
+const pausedUltimateState = {
+  active: false,
+  phase: "paused" as const,
+  currentBrief: "Keep improving the dashboard forever.",
+  turnCount: 3,
+  pendingFeedbackCount: 0,
+  startedAt: "2026-03-29T00:00:00.000Z",
+  lastCycleSummary: "Cycle 3 tightened the hero spacing.",
+};
+
 describe("ultimate composer behavior", () => {
   it("arms the next workbench send as an ultimate start when the toggle is active", () => {
     expect(
@@ -78,6 +88,22 @@ describe("ultimate composer behavior", () => {
     });
   });
 
+  it("returns the composer to normal instructions while a paused loop is resumable", () => {
+    expect(
+      resolveWorkbenchComposerBehavior({
+        connectionState: "ready",
+        ultimateState: pausedUltimateState,
+        armed: false,
+      }),
+    ).toMatchObject({
+      mode: "ultimate-paused",
+      submitLabel: "Run instruction",
+      togglePressed: false,
+      toggleDisabled: true,
+      modeSummary: expect.stringContaining("Ultimate mode is paused"),
+    });
+  });
+
   it("switches the dedicated human-feedback page copy when the loop is active", () => {
     expect(
       resolveHumanFeedbackBehavior({
@@ -98,6 +124,17 @@ describe("ultimate composer behavior", () => {
       submitLabel: "Queue feedback",
       helpText: expect.stringContaining(
         "active ultimate loop",
+      ),
+    });
+
+    expect(
+      resolveHumanFeedbackBehavior({
+        ultimateState: pausedUltimateState,
+      }),
+    ).toMatchObject({
+      submitLabel: "Run instruction",
+      helpText: expect.stringContaining(
+        "Ultimate mode is paused",
       ),
     });
   });

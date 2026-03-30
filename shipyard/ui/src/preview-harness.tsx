@@ -489,6 +489,14 @@ export function PreviewHarness() {
           // eslint-disable-next-line no-console
           console.log("[PreviewHarness] ultimateFeedback", text);
         }}
+        onPauseUltimate={() => {
+          // eslint-disable-next-line no-console
+          console.log("[PreviewHarness] ultimate pause");
+        }}
+        onResumeUltimate={() => {
+          // eslint-disable-next-line no-console
+          console.log("[PreviewHarness] ultimate resume");
+        }}
         onStopUltimate={() => {
           // eslint-disable-next-line no-console
           console.log("[PreviewHarness] ultimate stop");
