@@ -29,6 +29,8 @@ mode without relying on command memorization.
   is idle, running, or stopping.
 - As an operator, I want to send follow-up feedback to the active loop without
   guessing whether my message became a normal instruction or queued feedback.
+- As an operator, I want to pause ultimate mode, make a quick manual edit from
+  the same composer, and then resume the saved standing brief.
 - As a returning user, I want reload or reconnect to show the real ultimate
   state instead of resetting the badge.
 
@@ -46,10 +48,16 @@ mode without relying on command memorization.
   against the same active loop.
 - [x] AC-5: Reconnect/reload restores truthful ultimate state through session
   snapshots or incremental state messages instead of defaulting to “off.”
+- [x] AC-6: Pausing ultimate mode keeps the standing brief visible, returns the
+  composer to normal instructions for quick edits, blocks loop-only actions
+  until resume, and lets resume/clear survive reconnect.
 
 ## Edge Cases
 - Empty/null inputs: blank ultimate feedback should not enqueue.
 - Boundary values: stop requested while a cycle is still shutting down.
+- Boundary values: pause requested while a cycle is still shutting down.
+- Paused-mode behavior: starting a brand-new loop or sending loop feedback while
+  paused should fail clearly instead of mutating the saved brief.
 - Invalid/malformed data: typed ultimate messages with invalid payloads fail
   clearly and do not disturb normal instruction flow.
 - External-service failures: runtime errors inside the loop surface to the badge
@@ -63,8 +71,8 @@ mode without relying on command memorization.
 - Performance: state broadcasts should stay lightweight even during long loops.
 
 ## UI Requirements
-- Required states: idle, armed, active, stopping, feedback queued, runtime
-  error, reconnecting while active.
+- Required states: idle, armed, active, paused, stopping, feedback queued,
+  runtime error, reconnecting while active, reconnecting while paused.
 - Accessibility contract: toggle, badge, feedback input, and stop control are
   keyboard and screen-reader friendly.
 - Design token contract: active-state treatment uses existing gold/amber system
@@ -94,11 +102,23 @@ mode without relying on command memorization.
     injectedContext: z.array(z.string().trim().min(1)).optional(),
   });
   ```
+- AC-1 and AC-6 now also land additive pause/resume contracts in
+  `shipyard/src/ui/contracts.ts` so the browser can pause a long-running loop
+  without dropping back to command-only control. Representative snippet:
+  ```ts
+  export const ultimatePauseMessageSchema = z.object({
+    type: z.literal("ultimate:pause"),
+  });
+  ```
 - AC-2 and AC-5 landed in `shipyard/src/ui/server.ts`,
   `shipyard/src/engine/ultimate-mode.ts`, `shipyard/src/ui/workbench-state.ts`,
   and `shipyard/tests/ui-runtime.test.ts`. The browser runtime now persists and
   rebroadcasts `workbenchState.ultimateState`, and cycle completion updates the
   projected turn count, pending feedback count, and last cycle summary.
+- AC-5 and AC-6 now preserve paused snapshots in
+  `shipyard/src/ui/server.ts` and verify reconnect truth in
+  `shipyard/tests/ui-runtime.test.ts`, so a paused loop reconnects with the
+  saved brief instead of silently resetting to idle.
 - AC-3 landed in `shipyard/ui/src/ultimate-composer.ts`,
   `shipyard/ui/src/use-workbench-controller.ts`,
   `shipyard/ui/src/panels/ComposerPanel.tsx`,
@@ -121,6 +141,21 @@ mode without relying on command memorization.
   state, routes feedback/stop into typed messages, and the dedicated
   `/human-feedback` page switches copy and submit behavior based on the same
   runtime projection.
+- AC-3 and AC-6 now also land in `shipyard/ui/src/ultimate-composer.ts`,
+  `shipyard/ui/src/use-workbench-controller.ts`,
+  `shipyard/ui/src/shell/UltimateBadge.tsx`, and
+  `shipyard/tests/ui-ultimate-composer.test.ts`. Paused mode returns the
+  composer to normal instructions, exposes resume/clear controls from the badge,
+  and prevents operators from arming a second loop on top of a preserved brief.
+  Representative snippet:
+  ```ts
+  if (input.ultimateState.phase === "paused") {
+    return {
+      mode: "ultimate-paused",
+      submitLabel: "Run instruction",
+    };
+  }
+  ```
 - Post-ship interrupt hardening landed in `shipyard/src/engine/ultimate-mode.ts`,
   `shipyard/ui/src/use-workbench-controller.ts`,
   `shipyard/ui/src/panels/ComposerPanel.tsx`, and

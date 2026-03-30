@@ -15,6 +15,8 @@ export interface UltimateBadgeProps {
   currentBrief: string | null;
   lastCycleSummary: string | null;
   onSendFeedback: (text: string) => void;
+  onPause: () => void;
+  onResume: () => void;
   onStop: () => void;
 }
 
@@ -25,6 +27,8 @@ export function UltimateBadge({
   currentBrief,
   lastCycleSummary,
   onSendFeedback,
+  onPause,
+  onResume,
   onStop,
 }: UltimateBadgeProps) {
   const [open, setOpen] = useState(false);
@@ -32,7 +36,9 @@ export function UltimateBadge({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const phaseLabel = formatUltimatePhaseLabel(phase);
   const canSendFeedback = phase === "running";
-  const canStop = phase === "running";
+  const canPause = phase === "running";
+  const canResume = phase === "paused";
+  const canStop = phase === "running" || phase === "paused";
 
   /* Close dropdown on outside click */
   useEffect(() => {
@@ -148,15 +154,34 @@ export function UltimateBadge({
             </button>
           </div>
 
-          {/* Stop */}
-          <button
-            type="button"
-            className="ultimate-dropdown-stop"
-            onClick={onStop}
-            disabled={!canStop}
-          >
-            {canStop ? "Stop Ultimate Mode" : "Ultimate loop is not running"}
-          </button>
+          <div className="ultimate-dropdown-actions">
+            <button
+              type="button"
+              className="ultimate-dropdown-stop"
+              onClick={canResume ? onResume : onPause}
+              disabled={!canPause && !canResume}
+            >
+              {canResume
+                ? "Resume ultimate mode"
+                : canPause
+                  ? "Pause for manual edits"
+                  : phase === "stopping"
+                    ? "Stopping..."
+                    : "Pause unavailable"}
+            </button>
+            <button
+              type="button"
+              className="ultimate-dropdown-stop"
+              onClick={onStop}
+              disabled={!canStop}
+            >
+              {phase === "paused"
+                ? "Clear paused loop"
+                : canStop
+                  ? "Stop ultimate mode"
+                  : "Ultimate loop is not running"}
+            </button>
+          </div>
         </div>
       )}
     </div>

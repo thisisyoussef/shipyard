@@ -82,6 +82,7 @@ const enrichmentStatusSchema = z.enum([
 const deployStatusSchema = z.enum(["idle", "deploying", "success", "error"]);
 const ultimateUiPhaseSchema = z.enum([
   "idle",
+  "paused",
   "running",
   "stopping",
   "error",
@@ -466,6 +467,15 @@ export const ultimateFeedbackMessageSchema = z.object({
   injectedContext: z.array(nonEmptyTextSchema).optional(),
 });
 
+export const ultimatePauseMessageSchema = z.object({
+  type: z.literal("ultimate:pause"),
+});
+
+export const ultimateResumeMessageSchema = z.object({
+  type: z.literal("ultimate:resume"),
+  injectedContext: z.array(nonEmptyTextSchema).optional(),
+});
+
 export const sessionResumeRequestMessageSchema = z.object({
   type: z.literal("session:resume_request"),
   sessionId: nonEmptyTextSchema,
@@ -477,6 +487,8 @@ export const frontendToBackendMessageSchema = z.discriminatedUnion("type", [
   statusMessageSchema,
   ultimateToggleMessageSchema,
   ultimateFeedbackMessageSchema,
+  ultimatePauseMessageSchema,
+  ultimateResumeMessageSchema,
   sessionResumeRequestMessageSchema,
   targetSwitchRequestMessageSchema,
   targetCreateRequestMessageSchema,
@@ -697,6 +709,8 @@ export function parseFrontendMessage(
     "status",
     "ultimate:toggle",
     "ultimate:feedback",
+    "ultimate:pause",
+    "ultimate:resume",
     "session:resume_request",
     "target:switch_request",
     "target:create_request",
@@ -713,12 +727,12 @@ export function parseFrontendMessage(
     }
 
     throw new Error(
-      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, ultimate:toggle, ultimate:feedback, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.`,
+      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, ultimate:toggle, ultimate:feedback, ultimate:pause, ultimate:resume, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.`,
     );
   }
 
   throw new Error(
-    "Invalid client message: expected instruction, cancel, status, ultimate:toggle, ultimate:feedback, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.",
+    "Invalid client message: expected instruction, cancel, status, ultimate:toggle, ultimate:feedback, ultimate:pause, ultimate:resume, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.",
   );
 }
 

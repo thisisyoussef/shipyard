@@ -3879,12 +3879,13 @@ describe("ui runtime contract", () => {
       const secondSocket = new WebSocket(runtime.socketUrl);
 
       try {
-        await waitForSocketOpen(socket);
-        await waitForSocketMessage(
+        const initialSessionStatePromise = waitForSocketMessage(
           socket,
           (message) => message.type === "session:state",
           messageTimeoutMs,
         );
+        await waitForSocketOpen(socket);
+        await initialSessionStatePromise;
 
         socket.send(
           JSON.stringify({
@@ -4023,6 +4024,356 @@ describe("ui runtime contract", () => {
       } finally {
         socket.close();
         secondSocket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 30_000);
+
+  it("pauses ultimate mode for a manual quick edit and resumes the saved brief", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-runtime-ultimate-pause-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-ultimate-pause-session",
+      targetDirectory,
+      discovery,
+    });
+    const messageTimeoutMs = 20_000;
+    const observedBriefs: string[] = [];
+    let ultimateInvocationCount = 0;
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult("Quick edit complete."),
+    ]);
+
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            modelAdapter,
+            logger: {
+              log() {},
+            },
+          };
+        },
+      },
+      executeUltimateMode: async (options) => {
+        if (!options.controller) {
+          throw new Error("Expected an ultimate mode controller.");
+        }
+
+        ultimateInvocationCount += 1;
+        observedBriefs.push(options.brief);
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "agent-busy",
+        });
+        await options.reporter?.onThinking?.(
+          `Ultimate invocation ${String(ultimateInvocationCount)} running.`,
+        );
+
+        const abortTimeoutAt = Date.now() + 5_000;
+        while (!options.signal?.aborted) {
+          if (Date.now() >= abortTimeoutAt) {
+            throw new Error("Timed out waiting for the ultimate interrupt.");
+          }
+
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
+        }
+
+        const summary = ultimateInvocationCount === 1
+          ? "Ultimate mode paused."
+          : "Human stopped ultimate mode.";
+        await options.reporter?.onDone?.({
+          status: "cancelled",
+          summary,
+          langSmithTrace: null,
+          executionFingerprint: null,
+        });
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "ready",
+        });
+
+        return {
+          status: "cancelled",
+          summary,
+          finalText: summary,
+          iterations: ultimateInvocationCount,
+          history: [],
+          lastTurn: null,
+        };
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      let secondSocket: WebSocket | null = null;
+
+      try {
+        await waitForSocketOpen(socket);
+        await waitForSocketMessage(
+          socket,
+          (message) => message.type === "session:state",
+          messageTimeoutMs,
+        );
+
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:toggle",
+            enabled: true,
+            brief: "Keep improving the dashboard forever.",
+          }),
+        );
+
+        await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.active &&
+            message.state.phase === "running",
+          messageTimeoutMs,
+        );
+
+        const pauseStoppingStatePromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.phase === "stopping",
+          messageTimeoutMs,
+        );
+        const pauseSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "ultimate:state" &&
+                message.state.phase === "paused" &&
+                message.state.active === false,
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "session:state" &&
+                message.connectionState === "ready",
+            ),
+          messageTimeoutMs,
+        );
+        socket.send(JSON.stringify({ type: "ultimate:pause" }));
+
+        const pauseStoppingState = await pauseStoppingStatePromise;
+        expect(pauseStoppingState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "stopping",
+          },
+        });
+
+        const pauseSequence = await pauseSequencePromise;
+
+        const pausedState = pauseSequence.find(
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.phase === "paused",
+        );
+        expect(pausedState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: false,
+            phase: "paused",
+            currentBrief: "Keep improving the dashboard forever.",
+            pendingFeedbackCount: 0,
+          },
+        });
+
+        secondSocket = new WebSocket(runtime.socketUrl);
+        const recoveredPausedSnapshotPromise = waitForSocketMessage(
+          secondSocket,
+          (message) =>
+            message.type === "session:state" &&
+            message.workbenchState.ultimateState.phase === "paused",
+          messageTimeoutMs,
+        );
+        await waitForSocketOpen(secondSocket);
+        const recoveredPausedSnapshot = await recoveredPausedSnapshotPromise;
+        expect(recoveredPausedSnapshot).toMatchObject({
+          type: "session:state",
+          connectionState: "ready",
+          workbenchState: {
+            ultimateState: {
+              active: false,
+              phase: "paused",
+              currentBrief: "Keep improving the dashboard forever.",
+            },
+          },
+        });
+
+        const pausedFeedbackErrorPromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "agent:error" &&
+            message.message === "Ultimate mode is not active.",
+          messageTimeoutMs,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:feedback",
+            text: "Keep nudging the hero while paused.",
+          }),
+        );
+        await pausedFeedbackErrorPromise;
+
+        const pausedStartErrorPromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "agent:error" &&
+            message.message.includes("Ultimate mode is paused."),
+          messageTimeoutMs,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:toggle",
+            enabled: true,
+            brief: "Start a different loop while paused.",
+          }),
+        );
+        await pausedStartErrorPromise;
+
+        const quickEditSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "agent:done" &&
+                message.status === "success" &&
+                message.summary.includes("completed"),
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "session:state" &&
+                message.connectionState === "ready",
+            ),
+          messageTimeoutMs,
+        );
+
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "change the background color to green",
+          }),
+        );
+
+        const quickEditSequence = await quickEditSequencePromise;
+        const quickEditDone = quickEditSequence.find(
+          (message) =>
+            message.type === "agent:done" && message.status === "success",
+        );
+        expect(quickEditDone).toMatchObject({
+          type: "agent:done",
+          status: "success",
+          summary: expect.stringContaining("completed"),
+        });
+        const quickEditReadyState = quickEditSequence.find(
+          (message) =>
+            message.type === "session:state" &&
+            message.connectionState === "ready",
+        );
+        expect(quickEditReadyState).toMatchObject({
+          type: "session:state",
+          workbenchState: {
+            ultimateState: {
+              phase: "paused",
+              currentBrief: "Keep improving the dashboard forever.",
+            },
+          },
+        });
+
+        const resumedSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "ultimate:state" &&
+                message.state.active &&
+                message.state.phase === "running" &&
+                message.state.currentBrief === "Keep improving the dashboard forever.",
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "session:state" &&
+                message.connectionState === "agent-busy" &&
+                message.workbenchState.ultimateState.phase === "running",
+            ),
+          messageTimeoutMs,
+        );
+        socket.send(JSON.stringify({ type: "ultimate:resume" }));
+        const resumedSequence = await resumedSequencePromise;
+        const resumedState = resumedSequence.find(
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.active &&
+            message.state.phase === "running" &&
+            message.state.currentBrief === "Keep improving the dashboard forever.",
+        );
+        expect(resumedState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "running",
+            currentBrief: "Keep improving the dashboard forever.",
+          },
+        });
+
+        const stopSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "ultimate:state" &&
+                message.state.phase === "idle" &&
+                message.state.active === false,
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "agent:done" &&
+                message.status === "cancelled",
+            ),
+          messageTimeoutMs,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:toggle",
+            enabled: false,
+          }),
+        );
+
+        const stopSequence = await stopSequencePromise;
+        const finalState = stopSequence.find(
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.phase === "idle",
+        );
+        expect(finalState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: false,
+            phase: "idle",
+          },
+        });
+
+        expect(observedBriefs).toEqual([
+          "Keep improving the dashboard forever.",
+          "Keep improving the dashboard forever.",
+        ]);
+      } finally {
+        socket.close();
+        secondSocket?.close();
       }
     } finally {
       await runtime.close();
@@ -4221,6 +4572,8 @@ describe("ui runtime contract", () => {
         }
         expect(invalidMessageError.message).toContain("ultimate:toggle");
         expect(invalidMessageError.message).toContain("ultimate:feedback");
+        expect(invalidMessageError.message).toContain("ultimate:pause");
+        expect(invalidMessageError.message).toContain("ultimate:resume");
       } finally {
         socket.close();
       }

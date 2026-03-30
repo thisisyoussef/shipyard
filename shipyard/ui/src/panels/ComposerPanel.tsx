@@ -202,6 +202,8 @@ export function ComposerPanel({
                 ? "Loop feedback"
                 : composerBehavior.mode === "ultimate-start"
                   ? "Loop brief"
+                  : composerBehavior.mode === "ultimate-paused"
+                    ? "Loop paused"
                   : composerBehavior.mode === "ultimate-stopping"
                     ? "Loop stopping"
                     : "Standard turn"}

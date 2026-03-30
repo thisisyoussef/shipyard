@@ -7,6 +7,7 @@ export type WorkbenchComposerMode =
   | "instruction"
   | "ultimate-start"
   | "ultimate-feedback"
+  | "ultimate-paused"
   | "ultimate-stopping"
   | "cancel";
 
@@ -44,6 +45,8 @@ export function formatUltimatePhaseLabel(
   phase: UltimateUiStateViewModel["phase"],
 ): string {
   switch (phase) {
+    case "paused":
+      return "Paused";
     case "running":
       return "Running";
     case "stopping":
@@ -60,6 +63,22 @@ export function resolveWorkbenchComposerBehavior(input: {
   ultimateState: UltimateUiStateViewModel;
   armed: boolean;
 }): WorkbenchComposerBehavior {
+  if (input.ultimateState.phase === "paused") {
+    return {
+      mode: "ultimate-paused",
+      submitLabel: "Run instruction",
+      placeholder:
+        "Ultimate mode is paused. Send a quick manual instruction, then resume the standing brief from the header.",
+      keyboardHint: "Cmd+Enter to run a manual turn",
+      modeSummary:
+        "Ultimate mode is paused. Next send runs a normal Shipyard instruction until you resume the loop.",
+      showCancelAction: false,
+      submitDisabled: false,
+      togglePressed: false,
+      toggleDisabled: true,
+    };
+  }
+
   if (input.ultimateState.phase === "stopping") {
     return {
       mode: "ultimate-stopping",
@@ -148,6 +167,15 @@ export function resolveWorkbenchComposerBehavior(input: {
 export function resolveHumanFeedbackBehavior(input: {
   ultimateState: UltimateUiStateViewModel;
 }): HumanFeedbackBehavior {
+  if (input.ultimateState.phase === "paused") {
+    return {
+      submitLabel: "Run instruction",
+      helpText:
+        "Ultimate mode is paused. Press Cmd/Ctrl+Enter to run a normal browser instruction, or resume the loop from the full workbench when you're ready.",
+      submitDisabled: false,
+    };
+  }
+
   if (input.ultimateState.phase === "stopping") {
     return {
       submitLabel: "Stopping...",
