@@ -77,3 +77,8 @@
   (`ef598033-aca2-450f-8bae-5cec3de9247d`), and public domain
   (`shipyard-production-7d07.up.railway.app`), then repointed the repo-owned
   deploy workflow and hosted-access helper to that clean surface.
+- 2026-03-29: Pinned Railway production to boot directly into
+  `/app/workspace/ship-promptpack-live` via
+  `SHIPYARD_HOSTED_DEFAULT_TARGET_PATH`, added a repo-owned
+  `scripts/verify-hosted-deploy.mjs` health check after each `main` deploy, and
+  updated the hosted-access helper to open the editor directly on that target.

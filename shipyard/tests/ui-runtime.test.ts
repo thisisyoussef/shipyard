@@ -16,6 +16,7 @@ import type { InstructionTurnResult } from "../src/engine/turn.js";
 import {
   formatUiStartupLines,
   parseArgs,
+  resolveHostedDefaultTargetPath,
   resolveTargetsDirectory,
 } from "../src/bin/shipyard.js";
 import { createUnavailablePreviewCapability } from "../src/preview/contracts.js";
@@ -423,6 +424,22 @@ describe("ui runtime contract", () => {
     );
 
     expect(resolvedTargetsDirectory).toBe(path.resolve(process.cwd(), "."));
+  });
+
+  it("resolves a hosted default target relative to the hosted workspace", () => {
+    process.env.SHIPYARD_HOSTED_DEFAULT_TARGET_PATH = "ship-promptpack-live";
+
+    expect(resolveHostedDefaultTargetPath("/app/workspace")).toBe(
+      "/app/workspace/ship-promptpack-live",
+    );
+  });
+
+  it("preserves an absolute hosted default target path", () => {
+    process.env.SHIPYARD_HOSTED_DEFAULT_TARGET_PATH = "/app/workspace/ship-promptpack-live";
+
+    expect(resolveHostedDefaultTargetPath("/app/workspace")).toBe(
+      "/app/workspace/ship-promptpack-live",
+    );
   });
 
   it("resolves UI host and port from provider-friendly env fallbacks", () => {

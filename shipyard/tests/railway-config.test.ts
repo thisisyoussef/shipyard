@@ -31,6 +31,14 @@ const railwayDeployScriptPath = path.resolve(
   testsDirectory,
   "../../.github/scripts/railway-ci-deploy.sh",
 );
+const hostedDeployVerifierPath = path.resolve(
+  testsDirectory,
+  "../../scripts/verify-hosted-deploy.mjs",
+);
+const hostedAccessHelperPath = path.resolve(
+  testsDirectory,
+  "../../scripts/print-hosted-access-url.mjs",
+);
 const railwayDockerfilePath = path.resolve(testsDirectory, "../Dockerfile");
 const browserEvaluatorPath = path.resolve(
   testsDirectory,
@@ -104,6 +112,9 @@ describe("railway config", () => {
     expect(workflow).toContain("railway variable set GITHUB_TOKEN --stdin");
     expect(workflow).toContain("railway variable set VERCEL_TOKEN --stdin");
     expect(workflow).toContain("RAILWAY_VOLUME_MOUNT_PATH=/app/workspace");
+    expect(workflow).toContain("SHIPYARD_HOSTED_URL: https://shipyard-production-7d07.up.railway.app");
+    expect(workflow).toContain("SHIPYARD_HOSTED_DEFAULT_TARGET_PATH: /app/workspace/ship-promptpack-live");
+    expect(workflow).toContain("SHIPYARD_HOSTED_DEFAULT_TARGET_PATH=/app/workspace/ship-promptpack-live");
     expect(workflow).toContain("SHIPYARD_TARGETS_DIR=/app/workspace");
     expect(workflow).toContain("SHIPYARD_UI_HOST=0.0.0.0");
     expect(workflow).toContain("SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1");
@@ -112,6 +123,7 @@ describe("railway config", () => {
     expect(workflow).toContain("SHIPYARD_OPENAI_MODEL=gpt-5.4");
     expect(workflow).not.toContain("SHIPYARD_MODEL_PROVIDER=anthropic");
     expect(workflow).toContain("bash .github/scripts/railway-ci-deploy.sh");
+    expect(workflow).toContain("node ./scripts/verify-hosted-deploy.mjs");
   });
 
   it("switches the live Railway service to a GHCR image and waits for a fresh deployment result", async () => {
@@ -138,5 +150,19 @@ describe("railway config", () => {
     expect(script).toContain('if should_retry_failure "${deploy_log_path}" "${build_log_path}"; then');
     expect(script).toContain("Railway deploy hit a transient image handoff failure. Retrying in");
     expect(script).toContain("Timed out waiting for Railway to report a fresh deployment");
+  });
+
+  it("verifies hosted deploys against the canonical production target and helper URL", async () => {
+    const verifier = await readFile(hostedDeployVerifierPath, "utf8");
+    const helper = await readFile(hostedAccessHelperPath, "utf8");
+
+    expect(verifier).toContain('"/api/access"');
+    expect(verifier).toContain('"/api/health"');
+    expect(verifier).toContain('JSON.stringify({ token: accessToken })');
+    expect(verifier).toContain('cookie: accessCookie');
+    expect(verifier).toContain('SHIPYARD_HOSTED_DEFAULT_TARGET_PATH');
+    expect(verifier).toContain("Timed out waiting for hosted Shipyard to report the canonical target.");
+    expect(helper).toContain('const DEFAULT_HOSTED_TARGET_PATH = "/app/workspace/ship-promptpack-live";');
+    expect(helper).toContain('url.hash = `#/editor/${encodeURIComponent(hostedTargetPath)}`;');
   });
 });

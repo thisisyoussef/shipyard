@@ -43,6 +43,9 @@ Capture repeatable patterns that match how this workspace actually works.
   app root. App-level `railway.json` commands run from that directory, so they
   should use plain `pnpm build` / `pnpm start -- --ui` instead of recursing
   back into `--dir shipyard`.
+- Hosted Railway production should declare its canonical workspace target with
+  `SHIPYARD_HOSTED_DEFAULT_TARGET_PATH`, and repo-owned `main` deploys should
+  verify `/api/health` against that same target before the workflow goes green.
 - Shared runtime code should depend on Shipyard-owned turn/tool contracts, while
   provider adapters project `ToolDefinition[]` into provider-specific wire
   formats inside adapter modules.
