@@ -1,10 +1,16 @@
 import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
 import {
   access,
+  cp,
+  mkdtemp,
   mkdir,
   readFile,
+  readdir,
+  rm,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -35,6 +41,17 @@ const VERCEL_PROJECT_LINK_IGNORE_PATTERN = ".vercel";
 const DEFAULT_PUBLIC_DEPLOYS_ENABLED = true;
 const PUBLIC_DEPLOY_OVERRIDE_HINT =
   "Set SHIPYARD_VERCEL_PUBLIC_DEPLOYS=0 to preserve the existing Vercel Authentication settings.";
+const MAX_PACKAGE_JSON_SCAN_DEPTH = 3;
+const DEPLOY_COPY_EXCLUSIONS = new Set([
+  ".git",
+  ".shipyard",
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  "out",
+  ".vercel",
+]);
 
 export interface DeployInput {
   platform: "vercel";
@@ -1018,6 +1035,191 @@ function isErrnoError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }
 
+async function pathExists(candidatePath: string): Promise<boolean> {
+  try {
+    await access(candidatePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function collectPackageJsonCandidates(
+  root: string,
+  depth: number,
+  results: string[],
+): Promise<void> {
+  if (depth < 0) {
+    return;
+  }
+
+  let entries: Dirent[] = [];
+
+  try {
+    entries = await readdir(root, {
+      withFileTypes: true,
+      encoding: "utf8",
+    }) as Dirent[];
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    const entryName = String(entry.name);
+
+    if (entry.isFile() && entryName === "package.json") {
+      results.push(root);
+      continue;
+    }
+
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    if (DEPLOY_COPY_EXCLUSIONS.has(entryName)) {
+      continue;
+    }
+
+    await collectPackageJsonCandidates(
+      path.join(root, entryName),
+      depth - 1,
+      results,
+    );
+  }
+}
+
+function scorePackageJsonCandidate(candidate: string): number {
+  const normalized = candidate.replace(/\\/gu, "/");
+
+  if (normalized.endsWith("/apps/web")) {
+    return 5;
+  }
+  if (normalized.endsWith("/app")) {
+    return 4;
+  }
+  if (normalized.endsWith("/web")) {
+    return 4;
+  }
+  if (normalized.endsWith("/frontend")) {
+    return 3;
+  }
+  if (normalized.endsWith("/client")) {
+    return 3;
+  }
+  if (normalized.endsWith("/site")) {
+    return 2;
+  }
+
+  return 1;
+}
+
+function pickBestCandidate(candidates: string[]): string | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const scored = candidates.map((candidate) => ({
+    candidate,
+    score: scorePackageJsonCandidate(candidate),
+  }));
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+
+    return a.candidate.length - b.candidate.length;
+  });
+
+  const [top, second] = scored;
+
+  if (!top) {
+    return null;
+  }
+
+  if (second && second.score === top.score && second.candidate.length === top.candidate.length) {
+    return null;
+  }
+
+  return top.candidate;
+}
+
+async function stageDeployDirectory(
+  source: string,
+): Promise<{ deployDirectory: string; cleanup: () => Promise<void> }> {
+  const stagingRoot = await mkdtemp(
+    path.join(tmpdir(), "shipyard-vercel-deploy-"),
+  );
+  await cp(source, stagingRoot, {
+    recursive: true,
+    filter: (entryPath) => {
+      const relative = path.relative(source, entryPath);
+      const firstSegment = relative.split(path.sep)[0] ?? relative;
+
+      if (!firstSegment) {
+        return true;
+      }
+
+      return !DEPLOY_COPY_EXCLUSIONS.has(firstSegment);
+    },
+  });
+
+  const packageJsonPath = path.join(stagingRoot, "package.json");
+
+  if (!(await pathExists(packageJsonPath))) {
+    await writeFile(
+      packageJsonPath,
+      JSON.stringify(
+        {
+          name: "shipyard-deploy",
+          private: true,
+          scripts: {
+            build: "echo \"No build step\"",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+  }
+
+  return {
+    deployDirectory: stagingRoot,
+    cleanup: async () => {
+      await rm(stagingRoot, { recursive: true, force: true });
+    },
+  };
+}
+
+async function resolveDeployDirectory(
+  targetDirectory: string,
+): Promise<{ deployDirectory: string; cleanup?: () => Promise<void> }> {
+  const rootPackagePath = path.join(targetDirectory, "package.json");
+
+  if (await pathExists(rootPackagePath)) {
+    return {
+      deployDirectory: targetDirectory,
+    };
+  }
+
+  const candidates: string[] = [];
+  await collectPackageJsonCandidates(
+    targetDirectory,
+    MAX_PACKAGE_JSON_SCAN_DEPTH,
+    candidates,
+  );
+
+  const bestCandidate = pickBestCandidate(candidates);
+
+  if (bestCandidate) {
+    return {
+      deployDirectory: bestCandidate,
+    };
+  }
+
+  return await stageDeployDirectory(targetDirectory);
+}
+
 export async function deployTargetTool(
   input: DeployInput,
   targetDirectory: string,
@@ -1044,6 +1246,7 @@ export async function deployTargetTool(
   const binaryPath = await resolveVercelBinaryPath(dependencies.vercelBinaryPath);
   const displayCommand = createDisplayCommand();
   const runProcess = dependencies.executeProcess ?? executeProcess;
+  const resolvedDeployDirectory = await resolveDeployDirectory(targetDirectory);
 
   try {
     await ensureVercelProjectForDeploy(
@@ -1055,7 +1258,7 @@ export async function deployTargetTool(
     );
 
     const result = await runProcess({
-      cwd: targetDirectory,
+      cwd: resolvedDeployDirectory.deployDirectory,
       command: binaryPath,
       args: ["deploy", "--prod", "--yes", "--token", token],
       timeoutMs: DEPLOY_TIMEOUT_MS,
@@ -1129,6 +1332,10 @@ export async function deployTargetTool(
       : "Vercel deploy failed.";
 
     return createToolErrorResult(new ToolError(message));
+  } finally {
+    if (resolvedDeployDirectory.cleanup) {
+      await resolvedDeployDirectory.cleanup();
+    }
   }
 }
 

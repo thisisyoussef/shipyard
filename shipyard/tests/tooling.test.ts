@@ -810,6 +810,100 @@ describe("search and command tools", () => {
     expect(result.output).toContain("Production URL: https://shipyard-demo.vercel.app");
   });
 
+  it("deploy_target prefers the nested web app when the root has no package.json", async () => {
+    const directory = await createTempProject();
+    const webDirectory = path.join(directory, "apps", "web");
+    await mkdir(webDirectory, { recursive: true });
+    await writeFile(
+      path.join(webDirectory, "package.json"),
+      JSON.stringify({ name: "web-app" }, null, 2),
+      "utf8",
+    );
+    let usedCwd = "";
+
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess(input) {
+          usedCwd = input.cwd ?? "";
+          return {
+            command: "vercel deploy --prod --yes --token [redacted]",
+            cwd: input.cwd ?? "",
+            stdout: "https://shipyard-demo.vercel.app\n",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false,
+            signal: null,
+            timeoutMs: 600_000,
+            combinedOutput: "https://shipyard-demo.vercel.app\n",
+            truncated: false,
+          };
+        },
+      },
+    );
+
+    expect(usedCwd).toBe(webDirectory);
+    expect(result.success).toBe(true);
+  });
+
+  it("deploy_target stages a temporary package.json when none exist", async () => {
+    const directory = await createTempProject();
+    await writeFile(
+      path.join(directory, "index.html"),
+      "<!doctype html><html><body>hello</body></html>",
+      "utf8",
+    );
+    let stagedDirectory = "";
+
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess(input) {
+          stagedDirectory = input.cwd ?? "";
+          const packageJson = await readFile(
+            path.join(stagedDirectory, "package.json"),
+            "utf8",
+          );
+          expect(packageJson).toContain("\"shipyard-deploy\"");
+          return {
+            command: "vercel deploy --prod --yes --token [redacted]",
+            cwd: input.cwd ?? "",
+            stdout: "https://shipyard-demo.vercel.app\n",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false,
+            signal: null,
+            timeoutMs: 600_000,
+            combinedOutput: "https://shipyard-demo.vercel.app\n",
+            truncated: false,
+          };
+        },
+      },
+    );
+
+    expect(stagedDirectory).not.toBe(directory);
+    expect(result.success).toBe(true);
+    await expect(readFile(path.join(stagedDirectory, "package.json"), "utf8")).rejects.toThrow();
+  });
+
   it("deploy_target prefers a shareable production alias from Vercel CLI output", async () => {
     const directory = await createTempProject();
     const result = await deployTargetTool(
