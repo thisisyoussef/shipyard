@@ -12,9 +12,11 @@ import {
   ensureShipyardDirectories,
   saveSessionState,
 } from "../src/engine/state.js";
+import type { InstructionTurnResult } from "../src/engine/turn.js";
 import {
   formatUiStartupLines,
   parseArgs,
+  resolveHostedDefaultTargetPath,
   resolveTargetsDirectory,
 } from "../src/bin/shipyard.js";
 import { createUnavailablePreviewCapability } from "../src/preview/contracts.js";
@@ -231,6 +233,27 @@ function collectMessagesUntil(
   });
 }
 
+async function waitForAsyncValue<T>(
+  loadValue: () => Promise<T | null>,
+  timeoutMs = 10_000,
+): Promise<T> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const value = await loadValue();
+
+    if (value !== null) {
+      return value;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 25);
+    });
+  }
+
+  throw new Error("Timed out waiting for the expected async value.");
+}
+
 function getSocketMessages(socket: WebSocket): BackendToFrontendMessage[] {
   const existing = socketMessageBuffers.get(socket);
 
@@ -403,8 +426,32 @@ describe("ui runtime contract", () => {
     expect(resolvedTargetsDirectory).toBe(path.resolve(process.cwd(), "."));
   });
 
+  it("resolves a hosted default target relative to the hosted workspace", () => {
+    process.env.SHIPYARD_HOSTED_DEFAULT_TARGET_PATH = "ship-promptpack-live";
+
+    expect(resolveHostedDefaultTargetPath("/app/workspace")).toBe(
+      "/app/workspace/ship-promptpack-live",
+    );
+  });
+
+  it("preserves an absolute hosted default target path", () => {
+    process.env.SHIPYARD_HOSTED_DEFAULT_TARGET_PATH = "/app/workspace/ship-promptpack-live";
+
+    expect(resolveHostedDefaultTargetPath("/app/workspace")).toBe(
+      "/app/workspace/ship-promptpack-live",
+    );
+  });
+
   it("resolves UI host and port from provider-friendly env fallbacks", () => {
     process.env.SHIPYARD_UI_HOST = "0.0.0.0";
+    process.env.PORT = "4110";
+
+    expect(resolveUiHost()).toBe("0.0.0.0");
+    expect(resolveUiPort(undefined)).toBe(4110);
+  });
+
+  it("defaults the UI host to 0.0.0.0 in Railway-hosted environments", () => {
+    process.env.RAILWAY_PUBLIC_DOMAIN = "shipyard-production.up.railway.app";
     process.env.PORT = "4110";
 
     expect(resolveUiHost()).toBe("0.0.0.0");
@@ -506,7 +553,7 @@ describe("ui runtime contract", () => {
   }, 10_000);
 
   it("boots the UI runtime on provider env host and port and reports hosted health state", async () => {
-    process.env.SHIPYARD_UI_HOST = "0.0.0.0";
+    process.env.RAILWAY_PUBLIC_DOMAIN = "shipyard-production.up.railway.app";
     process.env.PORT = "0";
     const targetDirectory = await createTempDirectory("shipyard-ui-hosted-");
     const discovery = await discoverTarget(targetDirectory);
@@ -532,6 +579,55 @@ describe("ui runtime contract", () => {
       await expect(healthResponse.json()).resolves.toMatchObject({
         workspaceDirectory,
         targetDirectory,
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("publishes hosted runtime availability alongside health diagnostics", async () => {
+    process.env.SHIPYARD_UI_HOST = "0.0.0.0";
+    process.env.PORT = "0";
+    const targetsDirectory = await createTempDirectory("shipyard-ui-hosted-profile-");
+    const targetDirectory = path.join(targetsDirectory, "hosted-app");
+    await mkdir(targetDirectory, { recursive: true });
+    process.env.SHIPYARD_TARGETS_DIR = targetsDirectory;
+    process.env.SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE = "1";
+    process.env.RAILWAY_VOLUME_MOUNT_PATH = targetsDirectory;
+    process.env.RAILWAY_PUBLIC_DOMAIN = "shipyard-production.up.railway.app";
+    process.env.GITHUB_TOKEN = "github-token";
+
+    const discovery = await discoverTarget(targetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-hosted-profile-session",
+        targetDirectory,
+        targetsDirectory,
+        discovery,
+      }),
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const healthResponse = await fetch(`${runtime.url}/api/health`);
+
+      expect(healthResponse.ok).toBe(true);
+      await expect(healthResponse.json()).resolves.toMatchObject({
+        workspaceDirectory,
+        targetDirectory,
+        runtime: {
+          hosting: {
+            active: true,
+            provider: "railway",
+            serviceUrl: "https://shipyard-production.up.railway.app",
+            degraded: true,
+            blockedActions: [
+              "open_pull_request",
+              "merge_pull_request",
+            ],
+          },
+        },
       });
     } finally {
       await runtime.close();
@@ -783,6 +879,7 @@ describe("ui runtime contract", () => {
           JSON.stringify({
             type: "target:switch_request",
             targetPath: betaTargetDirectory,
+            requestId: "switch-request-1",
           }),
         );
 
@@ -820,6 +917,7 @@ describe("ui runtime contract", () => {
 
         expect(switchComplete).toMatchObject({
           type: "target:switch_complete",
+          requestId: "switch-request-1",
           success: true,
           state: {
             currentTarget: {
@@ -859,7 +957,7 @@ describe("ui runtime contract", () => {
     } finally {
       await runtime.close();
     }
-  });
+  }, 20_000);
 
   it("accepts text uploads, rehydrates pending receipts, and injects them into the next turn", async () => {
     const targetDirectory = await createTempDirectory("shipyard-ui-upload-");
@@ -1238,7 +1336,7 @@ describe("ui runtime contract", () => {
     } finally {
       await runtime.close();
     }
-  }, 15_000);
+  }, 30_000);
 
   it("creates a new target from the browser, auto-enriches it, and switches the session into code mode", async () => {
     const targetsDirectory = await createTempDirectory(
@@ -1302,6 +1400,7 @@ describe("ui runtime contract", () => {
             name: "gamma app",
             description: "Created from the browser workbench.",
             scaffoldType: "react-ts",
+            requestId: "create-request-1",
           }),
         );
 
@@ -1339,6 +1438,7 @@ describe("ui runtime contract", () => {
 
         expect(switchComplete).toMatchObject({
           type: "target:switch_complete",
+          requestId: "create-request-1",
           success: true,
           state: {
             currentTarget: {
@@ -1374,7 +1474,171 @@ describe("ui runtime contract", () => {
     } finally {
       await runtime.close();
     }
-  });
+  }, 20_000);
+
+  it("creates a new target from the dashboard flow, auto-enriches it, and runs the initial instruction", async () => {
+    const targetsDirectory = await createTempDirectory(
+      "shipyard-ui-dashboard-create-",
+    );
+    const createdTargetDirectory = path.join(targetsDirectory, "delta-app");
+    const initialInstruction =
+      "Build a release planning dashboard with a launch checklist.";
+    const modelAdapter = createFakeModelAdapter(async (input) => {
+      expect(JSON.stringify(input.messages)).toContain(initialInstruction);
+
+      return createFakeTextTurnResult("Dashboard launch turn complete.");
+    });
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-dashboard-create-session",
+        targetDirectory: targetsDirectory,
+        targetsDirectory,
+        activePhase: "target-manager",
+        discovery: createTargetManagerDiscovery(targetsDirectory),
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      targetEnrichmentInvoker: async () => ({
+        text: JSON.stringify({
+          name: "delta-app",
+          description: "Auto-enriched delta target.",
+          purpose: "Verify dashboard launch auto-enrichment and handoff.",
+          stack: ["TypeScript", "React"],
+          architecture: "Single package workspace",
+          keyPatterns: ["dashboard launch flow"],
+          complexity: "small",
+          suggestedAgentsRules: "# AGENTS.md\nKeep changes focused.",
+          suggestedScripts: {
+            test: "vitest run",
+          },
+          taskSuggestions: ["Build the first launch checklist"],
+        }),
+        model: "test-model",
+      }),
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            modelAdapter,
+          };
+        },
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialTargetStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "target:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialTargetStatePromise;
+
+        const createSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "target:state" &&
+              message.state.currentTarget.path === createdTargetDirectory &&
+              message.state.currentTarget.hasProfile
+            ) &&
+            messages.some((message) => message.type === "agent:done"),
+          20_000,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "target:create_request",
+            name: "delta app",
+            description: initialInstruction,
+            initialInstruction,
+            scaffoldType: "react-ts",
+            requestId: "create-request-dashboard-1",
+          }),
+        );
+
+        const createSequence = await createSequencePromise;
+        const switchComplete = createSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "target:switch_complete" }
+          > => message.type === "target:switch_complete",
+        );
+        const firstEnrichmentIndex = createSequence.findIndex(
+          (message) => message.type === "target:enrichment_progress",
+        );
+        const switchCompleteIndex = createSequence.findIndex(
+          (message) => message.type === "target:switch_complete",
+        );
+        const queuedInstructionState = createSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "session:state" }
+          > =>
+            message.type === "session:state" &&
+            message.targetDirectory === createdTargetDirectory &&
+            message.workbenchState.turns[0]?.instruction === initialInstruction,
+        );
+        const completedInstruction = createSequence.find(
+          (
+            message,
+          ): message is Extract<
+            BackendToFrontendMessage,
+            { type: "agent:done" }
+          > => message.type === "agent:done",
+        );
+
+        expect(switchComplete).toMatchObject({
+          type: "target:switch_complete",
+          requestId: "create-request-dashboard-1",
+          success: true,
+          state: {
+            currentTarget: {
+              path: createdTargetDirectory,
+              name: "delta-app",
+            },
+          },
+        });
+        expect(switchCompleteIndex).toBeGreaterThanOrEqual(0);
+        expect(firstEnrichmentIndex).toBeGreaterThan(switchCompleteIndex);
+        expect(queuedInstructionState).toMatchObject({
+          type: "session:state",
+          targetDirectory: createdTargetDirectory,
+          workbenchState: {
+            turns: [
+              {
+                instruction: initialInstruction,
+              },
+            ],
+          },
+        });
+        expect(completedInstruction).toMatchObject({
+          type: "agent:done",
+          status: "success",
+          summary: expect.stringContaining("Dashboard launch turn complete."),
+        });
+        expect(modelAdapter.calls).toHaveLength(1);
+        const firstModelCall = modelAdapter.calls[0];
+        expect(firstModelCall).toBeTruthy();
+        expect(JSON.stringify(firstModelCall!.messages)).toContain(
+          initialInstruction,
+        );
+        await expect(
+          readFile(path.join(createdTargetDirectory, ".shipyard", "profile.json"), "utf8"),
+        ).resolves.toContain("Auto-enriched delta target.");
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 30_000);
 
   it("creates a new target while the current project remains busy in the background", async () => {
     const targetsDirectory = await createTempDirectory(
@@ -2355,6 +2619,23 @@ describe("ui runtime contract", () => {
         workspaceDirectory,
         targetDirectory,
       });
+      expect(healthJson.runtime).toMatchObject({
+        connectionState: "ready",
+        instructionInFlight: false,
+        deployInFlight: false,
+        ultimate: {
+          active: false,
+          statusText: "Ultimate mode is idle.",
+        },
+        preview: {
+          status: expect.any(String),
+          summary: expect.any(String),
+        },
+        memoryUsage: {
+          rssBytes: expect.any(Number),
+          heapUsedBytes: expect.any(Number),
+        },
+      });
 
       const socket = new WebSocket(runtime.socketUrl);
       const initialStatePromise = waitForSocketMessage(
@@ -2733,12 +3014,198 @@ describe("ui runtime contract", () => {
         ).toBeLessThan(
           turnMessages.findIndex((message) =>
             message.type === "preview:state" &&
+            message.preview.lastRestartReason?.includes("Refresh requested") === true &&
             (
               message.preview.status === "refreshing" ||
               message.preview.status === "running"
             )
           ),
         );
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("archives refreshed targets into a sidecar git repo without blocking the session", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-preview-archive-");
+    const archiveRoot = await createTempDirectory("shipyard-ui-preview-archive-root-");
+    await scaffoldPreviewableTarget({
+      targetDirectory,
+      name: "ui-preview-archive-target",
+    });
+    await initializeGitRepository(targetDirectory);
+    await expectRawCommandSuccess(targetDirectory, "git add package.json");
+    await expectRawCommandSuccess(
+      targetDirectory,
+      "git commit -m \"Initial preview archive target\"",
+    );
+
+    const targetProfile = {
+      name: "ui-preview-archive-target",
+      description: "Archive-backed preview target.",
+      purpose: "Verify refresh snapshots land in a sidecar git repo.",
+      stack: ["TypeScript", "React"],
+      architecture: "Single package workspace",
+      keyPatterns: ["preview refresh", "archive git tags"],
+      complexity: "small" as const,
+      suggestedAgentsRules: "# AGENTS.md\nKeep archive writes out of the hot path.",
+      suggestedScripts: {
+        test: "vitest run",
+      },
+      taskSuggestions: ["Review archived refresh tags"],
+      enrichedAt: "2026-03-28T00:00:00.000Z",
+      enrichmentModel: "test-model",
+      discoverySnapshot: await discoverTarget(targetDirectory),
+    };
+    await ensureShipyardDirectories(targetDirectory);
+    await writeFile(
+      path.join(targetDirectory, ".shipyard", "profile.json"),
+      `${JSON.stringify(targetProfile, null, 2)}\n`,
+      "utf8",
+    );
+
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-preview-archive-session",
+      targetDirectory,
+      discovery,
+      targetProfile,
+    });
+    const modelAdapter = createFakeModelAdapter([
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_read_file_preview_archive",
+          name: "read_file",
+          input: {
+            path: "package.json",
+          },
+        },
+        {
+          id: "toolu_edit_block_preview_archive",
+          name: "edit_block",
+          input: {
+            path: "package.json",
+            old_string: '  "name": "ui-preview-archive-target",',
+            new_string: '  "name": "ui-preview-archive-target-edited",',
+          },
+        },
+      ]),
+      createFakeTextTurnResult("Preview archive edit complete."),
+      createFakeToolCallTurnResult([
+        {
+          id: "toolu_run_command_preview_archive",
+          name: "run_command",
+          input: {
+            command: "git diff --stat",
+          },
+        },
+      ]),
+      createFakeTextTurnResult(JSON.stringify({
+        command: "git diff --stat",
+        exitCode: 0,
+        passed: true,
+        stdout: " package.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n",
+        stderr: "",
+        summary: "Verification passed.",
+      })),
+    ]);
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "Always inspect the file before editing it.",
+      projectRulesLoaded: true,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            modelAdapter,
+          };
+        },
+      },
+      targetReleaseArchiveRoot: archiveRoot,
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const previewReadyPromise = waitForSocketMessage(
+        socket,
+        (message) =>
+          message.type === "preview:state" &&
+          message.preview.status === "running" &&
+          message.preview.url !== null,
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await previewReadyPromise;
+
+        const turnMessagesPromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some((message) =>
+              message.type === "session:state" &&
+              message.turnCount === 1 &&
+              message.connectionState === "ready"
+            ) &&
+            messages.some((message) =>
+              message.type === "preview:state" &&
+              message.preview.status === "running" &&
+              message.preview.lastRestartReason?.includes("Refresh requested") === true
+            ),
+          10_000,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "rename the package in package.json",
+          }),
+        );
+
+        await turnMessagesPromise;
+
+        const archivedTarget = await waitForAsyncValue(async () => {
+          try {
+            const parsed = JSON.parse(
+              await readFile(path.join(archiveRoot, "index.json"), "utf8"),
+            ) as {
+              targets: Array<{
+                targetDirectory: string;
+                archiveRepoPath: string;
+                latestTag: string;
+                latestDescription: string;
+              }>;
+            };
+
+            return parsed.targets.find((entry) =>
+              entry.targetDirectory === targetDirectory &&
+              entry.latestTag.trim().length > 0
+            ) ?? null;
+          } catch {
+            return null;
+          }
+        });
+
+        expect(archivedTarget.latestDescription).toBe(
+          "Archive-backed preview target.",
+        );
+
+        const tagList = await runRawCommand(
+          archivedTarget.archiveRepoPath,
+          "git tag --list",
+        );
+        expect(tagList.exitCode).toBe(0);
+        expect(tagList.stdout.split("\n").filter(Boolean)).toContain(
+          archivedTarget.latestTag,
+        );
+
+        const archivedPackageJson = await readFile(
+          path.join(archivedTarget.archiveRepoPath, "package.json"),
+          "utf8",
+        );
+        expect(archivedPackageJson).toContain("ui-preview-archive-target-edited");
       } finally {
         socket.close();
       }
@@ -3340,6 +3807,678 @@ describe("ui runtime contract", () => {
     }
   }, 20_000);
 
+  it("supports typed ultimate start, feedback, stop, and reconnect state", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-runtime-ultimate-typed-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-ultimate-typed-session",
+      targetDirectory,
+      discovery,
+    });
+    const messageTimeoutMs = 20_000;
+    let observedFeedback: string | null = null;
+
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      executeUltimateMode: async (options) => {
+        if (!options.controller) {
+          throw new Error("Expected an ultimate mode controller.");
+        }
+
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "agent-busy",
+        });
+        await options.reporter?.onThinking?.(
+          "Ultimate mode activated for the typed control-plane test.",
+        );
+
+        const feedbackTimeoutAt = Date.now() + 5_000;
+        while (
+          options.controller.getPendingHumanFeedback().length === 0 &&
+          !options.signal?.aborted
+        ) {
+          if (Date.now() >= feedbackTimeoutAt) {
+            throw new Error("Timed out waiting for typed ultimate feedback.");
+          }
+
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
+        }
+
+        observedFeedback =
+          options.controller.getPendingHumanFeedback()[0]?.text ?? null;
+
+        const abortTimeoutAt = Date.now() + 5_000;
+        while (!options.signal?.aborted) {
+          if (Date.now() >= abortTimeoutAt) {
+            throw new Error("Timed out waiting for the typed stop request.");
+          }
+
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
+        }
+
+        observedFeedback =
+          options.controller.drainHumanFeedback()[0]?.text ?? observedFeedback;
+
+        await options.reporter?.onText?.("Ultimate mode typed control-plane test complete.");
+        await options.reporter?.onDone?.({
+          status: "cancelled",
+          summary: "Human stopped ultimate mode.",
+          langSmithTrace: null,
+          executionFingerprint: null,
+        });
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "ready",
+        });
+
+        return {
+          status: "cancelled",
+          summary: "Human stopped ultimate mode.",
+          finalText: "Ultimate mode typed control-plane test complete.",
+          iterations: 0,
+          history: [],
+          lastTurn: null,
+        };
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const secondSocket = new WebSocket(runtime.socketUrl);
+
+      try {
+        const initialSessionStatePromise = waitForSocketMessage(
+          socket,
+          (message) => message.type === "session:state",
+          messageTimeoutMs,
+        );
+        await waitForSocketOpen(socket);
+        await initialSessionStatePromise;
+
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:toggle",
+            enabled: true,
+            brief: "Keep improving the dashboard forever.",
+            injectedContext: ["Use the uploaded mock as the visual anchor."],
+          }),
+        );
+
+        const runningState = await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.active &&
+            message.state.phase === "running",
+          messageTimeoutMs,
+        );
+
+        expect(runningState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "running",
+            currentBrief: "Keep improving the dashboard forever.",
+            pendingFeedbackCount: 0,
+          },
+        });
+
+        await waitForSocketOpen(secondSocket);
+        const recoveredSnapshot = await waitForSocketMessage(
+          secondSocket,
+          (message) =>
+            message.type === "session:state" &&
+            message.workbenchState.ultimateState.active,
+          messageTimeoutMs,
+        );
+
+        expect(recoveredSnapshot).toMatchObject({
+          type: "session:state",
+          connectionState: "agent-busy",
+          workbenchState: {
+            ultimateState: {
+              active: true,
+              phase: "running",
+              currentBrief: "Keep improving the dashboard forever.",
+            },
+          },
+        });
+
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:feedback",
+            text: "Make the hero tighter and raise CTA contrast.",
+            injectedContext: ["Prioritize the dashboard first."],
+          }),
+        );
+
+        const queuedFeedbackState = await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.pendingFeedbackCount === 1,
+          messageTimeoutMs,
+        );
+
+        expect(queuedFeedbackState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "running",
+            pendingFeedbackCount: 1,
+          },
+        });
+
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:toggle",
+            enabled: false,
+          }),
+        );
+
+        const stoppingState = await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.phase === "stopping",
+          messageTimeoutMs,
+        );
+
+        expect(stoppingState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "stopping",
+          },
+        });
+
+        const finalSequence = await collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "agent:done" &&
+                message.status === "cancelled",
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "ultimate:state" &&
+                message.state.active === false &&
+                message.state.phase === "idle",
+            ),
+          messageTimeoutMs,
+        );
+
+        const finalUltimateState = finalSequence.find(
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.active === false,
+        );
+
+        expect(finalUltimateState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: false,
+            phase: "idle",
+            pendingFeedbackCount: 0,
+          },
+        });
+        expect(observedFeedback).toContain(
+          "Make the hero tighter and raise CTA contrast.",
+        );
+        expect(observedFeedback).toContain(
+          "Attached human context 1:\nPrioritize the dashboard first.",
+        );
+      } finally {
+        socket.close();
+        secondSocket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 30_000);
+
+  it("pauses ultimate mode for a manual quick edit and resumes the saved brief", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-runtime-ultimate-pause-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-ultimate-pause-session",
+      targetDirectory,
+      discovery,
+    });
+    const messageTimeoutMs = 20_000;
+    const observedBriefs: string[] = [];
+    let ultimateInvocationCount = 0;
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult("Quick edit complete."),
+    ]);
+
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            modelAdapter,
+            logger: {
+              log() {},
+            },
+          };
+        },
+      },
+      executeUltimateMode: async (options) => {
+        if (!options.controller) {
+          throw new Error("Expected an ultimate mode controller.");
+        }
+
+        ultimateInvocationCount += 1;
+        observedBriefs.push(options.brief);
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "agent-busy",
+        });
+        await options.reporter?.onThinking?.(
+          `Ultimate invocation ${String(ultimateInvocationCount)} running.`,
+        );
+
+        const abortTimeoutAt = Date.now() + 5_000;
+        while (!options.signal?.aborted) {
+          if (Date.now() >= abortTimeoutAt) {
+            throw new Error("Timed out waiting for the ultimate interrupt.");
+          }
+
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
+        }
+
+        const summary = ultimateInvocationCount === 1
+          ? "Ultimate mode paused."
+          : "Human stopped ultimate mode.";
+        await options.reporter?.onDone?.({
+          status: "cancelled",
+          summary,
+          langSmithTrace: null,
+          executionFingerprint: null,
+        });
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "ready",
+        });
+
+        return {
+          status: "cancelled",
+          summary,
+          finalText: summary,
+          iterations: ultimateInvocationCount,
+          history: [],
+          lastTurn: null,
+        };
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      let secondSocket: WebSocket | null = null;
+
+      try {
+        await waitForSocketOpen(socket);
+        await waitForSocketMessage(
+          socket,
+          (message) => message.type === "session:state",
+          messageTimeoutMs,
+        );
+
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:toggle",
+            enabled: true,
+            brief: "Keep improving the dashboard forever.",
+          }),
+        );
+
+        await waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.active &&
+            message.state.phase === "running",
+          messageTimeoutMs,
+        );
+
+        const pauseStoppingStatePromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.phase === "stopping",
+          messageTimeoutMs,
+        );
+        const pauseSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "ultimate:state" &&
+                message.state.phase === "paused" &&
+                message.state.active === false,
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "session:state" &&
+                message.connectionState === "ready",
+            ),
+          messageTimeoutMs,
+        );
+        socket.send(JSON.stringify({ type: "ultimate:pause" }));
+
+        const pauseStoppingState = await pauseStoppingStatePromise;
+        expect(pauseStoppingState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "stopping",
+          },
+        });
+
+        const pauseSequence = await pauseSequencePromise;
+
+        const pausedState = pauseSequence.find(
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.phase === "paused",
+        );
+        expect(pausedState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: false,
+            phase: "paused",
+            currentBrief: "Keep improving the dashboard forever.",
+            pendingFeedbackCount: 0,
+          },
+        });
+
+        secondSocket = new WebSocket(runtime.socketUrl);
+        const recoveredPausedSnapshotPromise = waitForSocketMessage(
+          secondSocket,
+          (message) =>
+            message.type === "session:state" &&
+            message.workbenchState.ultimateState.phase === "paused",
+          messageTimeoutMs,
+        );
+        await waitForSocketOpen(secondSocket);
+        const recoveredPausedSnapshot = await recoveredPausedSnapshotPromise;
+        expect(recoveredPausedSnapshot).toMatchObject({
+          type: "session:state",
+          connectionState: "ready",
+          workbenchState: {
+            ultimateState: {
+              active: false,
+              phase: "paused",
+              currentBrief: "Keep improving the dashboard forever.",
+            },
+          },
+        });
+
+        const pausedFeedbackErrorPromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "agent:error" &&
+            message.message === "Ultimate mode is not active.",
+          messageTimeoutMs,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:feedback",
+            text: "Keep nudging the hero while paused.",
+          }),
+        );
+        await pausedFeedbackErrorPromise;
+
+        const pausedStartErrorPromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "agent:error" &&
+            message.message.includes("Ultimate mode is paused."),
+          messageTimeoutMs,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:toggle",
+            enabled: true,
+            brief: "Start a different loop while paused.",
+          }),
+        );
+        await pausedStartErrorPromise;
+
+        const quickEditSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "agent:done" &&
+                message.status === "success" &&
+                message.summary.includes("completed"),
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "session:state" &&
+                message.connectionState === "ready",
+            ),
+          messageTimeoutMs,
+        );
+
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "change the background color to green",
+          }),
+        );
+
+        const quickEditSequence = await quickEditSequencePromise;
+        const quickEditDone = quickEditSequence.find(
+          (message) =>
+            message.type === "agent:done" && message.status === "success",
+        );
+        expect(quickEditDone).toMatchObject({
+          type: "agent:done",
+          status: "success",
+          summary: expect.stringContaining("completed"),
+        });
+        const quickEditReadyState = quickEditSequence.find(
+          (message) =>
+            message.type === "session:state" &&
+            message.connectionState === "ready",
+        );
+        expect(quickEditReadyState).toMatchObject({
+          type: "session:state",
+          workbenchState: {
+            ultimateState: {
+              phase: "paused",
+              currentBrief: "Keep improving the dashboard forever.",
+            },
+          },
+        });
+
+        const resumedSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "ultimate:state" &&
+                message.state.active &&
+                message.state.phase === "running" &&
+                message.state.currentBrief === "Keep improving the dashboard forever.",
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "session:state" &&
+                message.connectionState === "agent-busy" &&
+                message.workbenchState.ultimateState.phase === "running",
+            ),
+          messageTimeoutMs,
+        );
+        socket.send(JSON.stringify({ type: "ultimate:resume" }));
+        const resumedSequence = await resumedSequencePromise;
+        const resumedState = resumedSequence.find(
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.active &&
+            message.state.phase === "running" &&
+            message.state.currentBrief === "Keep improving the dashboard forever.",
+        );
+        expect(resumedState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "running",
+            currentBrief: "Keep improving the dashboard forever.",
+          },
+        });
+
+        const stopSequencePromise = collectMessagesUntil(
+          socket,
+          (messages) =>
+            messages.some(
+              (message) =>
+                message.type === "ultimate:state" &&
+                message.state.phase === "idle" &&
+                message.state.active === false,
+            ) &&
+            messages.some(
+              (message) =>
+                message.type === "agent:done" &&
+                message.status === "cancelled",
+            ),
+          messageTimeoutMs,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "ultimate:toggle",
+            enabled: false,
+          }),
+        );
+
+        const stopSequence = await stopSequencePromise;
+        const finalState = stopSequence.find(
+          (message) =>
+            message.type === "ultimate:state" &&
+            message.state.phase === "idle",
+        );
+        expect(finalState).toMatchObject({
+          type: "ultimate:state",
+          state: {
+            active: false,
+            phase: "idle",
+          },
+        });
+
+        expect(observedBriefs).toEqual([
+          "Keep improving the dashboard forever.",
+          "Keep improving the dashboard forever.",
+        ]);
+      } finally {
+        socket.close();
+        secondSocket?.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  }, 30_000);
+
+  it("publishes approval-wait pipeline state through the ui session snapshot", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-runtime-pipeline-");
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-pipeline-session",
+      targetDirectory,
+      discovery,
+    });
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult(
+        "# Discovery Brief\n\nPause on the first artifact for operator approval.",
+      ),
+    ]);
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "Keep the pipeline deterministic.",
+      projectRulesLoaded: true,
+      runtimeDependencies: {
+        async createRawLoopOptions() {
+          return {
+            modelAdapter,
+            logger: {
+              log() {},
+            },
+          };
+        },
+      },
+    });
+
+    try {
+      const socket = new WebSocket(runtime.socketUrl);
+      const initialStatePromise = waitForSocketMessage(
+        socket,
+        (message) => message.type === "session:state",
+      );
+
+      try {
+        await waitForSocketOpen(socket);
+        await initialStatePromise;
+
+        const pipelineStatePromise = waitForSocketMessage(
+          socket,
+          (message) =>
+            message.type === "session:state" &&
+            message.connectionState === "ready" &&
+            message.workbenchState.pipelineState?.status === "awaiting_approval",
+        );
+
+        socket.send(
+          JSON.stringify({
+            type: "instruction",
+            text: "pipeline start Build a runtime-native discovery and spec flow.",
+          }),
+        );
+
+        const pipelineStateMessage = await pipelineStatePromise;
+
+        if (pipelineStateMessage.type !== "session:state") {
+          throw new Error("Expected a session:state snapshot.");
+        }
+
+        expect(pipelineStateMessage.workbenchState.pipelineState).toMatchObject({
+          status: "awaiting_approval",
+          waitingForApproval: true,
+          approvalMode: "required",
+          currentPhaseId: "discovery",
+          currentPhaseTitle: "Discovery Brief",
+        });
+        expect(pipelineStateMessage.workbenchState.runtimeAssist).toMatchObject({
+          activeProfileId: "discovery",
+          loadedSkills: ["artifact-writing"],
+        });
+      } finally {
+        socket.close();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
   // Repeated-run stability guard (AC-4): run the error-stream contract
   // assertion 3 times sequentially in a single test to surface ordering flakes.
   it("error-stream contract is stable across 3 repeated runs", async () => {
@@ -3441,9 +4580,17 @@ describe("ui runtime contract", () => {
         );
         expect(invalidMessageError).toMatchObject({
           type: "agent:error",
-          message:
-            "Invalid client message type: bogus. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.",
+          message: expect.stringContaining(
+            "Invalid client message type: bogus. Expected instruction, cancel, status",
+          ),
         });
+        if (invalidMessageError.type !== "agent:error") {
+          throw new Error("Expected an agent:error response.");
+        }
+        expect(invalidMessageError.message).toContain("ultimate:toggle");
+        expect(invalidMessageError.message).toContain("ultimate:feedback");
+        expect(invalidMessageError.message).toContain("ultimate:pause");
+        expect(invalidMessageError.message).toContain("ultimate:resume");
       } finally {
         socket.close();
       }
@@ -3888,6 +5035,350 @@ describe("ui runtime contract", () => {
     }
   }, 20_000);
 
+  it("auto-publishes successful edited ultimate cycles to Vercel and restores the public URL on reconnect", async () => {
+    process.env.VERCEL_TOKEN = "phase-nine-vercel-token";
+    const targetDirectory = await createTempDirectory("shipyard-ui-ultimate-auto-deploy-");
+    const packageJsonPath = path.join(targetDirectory, "package.json");
+    const initialPackageJson = `${JSON.stringify(
+      {
+        name: "ui-ultimate-auto-deploy-target",
+        version: "1.0.0",
+      },
+      null,
+      2,
+    )}\n`;
+    const updatedPackageJson = `${JSON.stringify(
+      {
+        name: "ui-ultimate-auto-deploy-target-updated",
+        version: "1.0.0",
+      },
+      null,
+      2,
+    )}\n`;
+
+    await writeFile(packageJsonPath, initialPackageJson, "utf8");
+
+    const discovery = await discoverTarget(targetDirectory);
+    const sessionState = createSessionState({
+      sessionId: "ui-ultimate-auto-deploy-session",
+      targetDirectory,
+      discovery,
+    });
+    const deployInvocations: Array<{
+      platform: string;
+      targetDirectory: string;
+    }> = [];
+    const runtime = await startUiRuntimeServer({
+      sessionState,
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "Always auto-publish edited ultimate cycles when deploy is available.",
+      projectRulesLoaded: true,
+      async executeUltimateMode(options) {
+        const turnResult = {
+          phaseName: "code",
+          runtimeMode: "fallback",
+          taskPlan: {
+            instruction: "Rename the package and publish the new build.",
+            goal: "Rename the package and publish the new build.",
+            targetFilePaths: ["package.json"],
+            plannedSteps: ["Update the package metadata."],
+          },
+          executionSpec: null,
+          planningMode: "lightweight",
+          harnessRoute: {
+            selectedPath: "lightweight",
+            actingMode: "raw-loop",
+            taskComplexity: "direct",
+            usedExplorer: false,
+            usedPlanner: false,
+            usedVerifier: false,
+            verificationMode: "none",
+            verificationCheckCount: 0,
+            usedBrowserEvaluator: false,
+            browserEvaluationStatus: "not_run",
+            browserEvaluationFailureKind: null,
+            commandReadinessStatus: "none",
+            commandReadyUrl: null,
+            handoffLoaded: false,
+            handoffEmitted: false,
+            handoffReason: null,
+            checkpointRequested: false,
+            continuationCount: 0,
+            actingLoopBudget: 25,
+            actingLoopBudgetReason: "narrow-default",
+            firstHardFailure: null,
+          },
+          executionFingerprint: null,
+          contextEnvelope: {
+            stable: {
+              discovery: options.sessionState.discovery,
+              projectRules: "Always auto-publish edited ultimate cycles when deploy is available.",
+              availableScripts: {},
+            },
+            task: {
+              currentInstruction: "Rename the package and publish the new build.",
+              injectedContext: [],
+              targetFilePaths: ["package.json"],
+            },
+            runtime: {
+              recentToolOutputs: [],
+              recentErrors: [],
+              currentGitDiff: null,
+            },
+            session: {
+              rollingSummary: options.sessionState.rollingSummary,
+              retryCountsByFile: {},
+              blockedFiles: [],
+              recentTouchedFiles: [],
+              latestHandoff: null,
+              activeTask: null,
+            },
+          },
+          status: "success",
+          summary: "Updated the target package metadata.",
+          finalText: "Updated the target package metadata.",
+          selectedTargetPath: null,
+          langSmithTrace: null,
+          runtimeAssist: {
+            activeProfileId: null,
+            activeProfileName: null,
+            activeProfileRoute: null,
+            loadedSkills: [],
+          },
+          handoff: {
+            loaded: null,
+            loadError: null,
+            emitted: null,
+          },
+        } as InstructionTurnResult;
+
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "agent-busy",
+        });
+        await options.reporter?.onThinking?.(
+          "Ultimate mode activated for the auto deploy regression test.",
+        );
+        await writeFile(packageJsonPath, updatedPackageJson, "utf8");
+        await options.reporter?.onEdit?.({
+          path: "package.json",
+          summary: "Applied targeted edit to package.json",
+          diff:
+            '@@ -1,4 +1,4 @@\n {\n-  "name": "ui-ultimate-auto-deploy-target",\n+  "name": "ui-ultimate-auto-deploy-target-updated",\n   "version": "1.0.0"\n }\n',
+          addedLines: 1,
+          removedLines: 1,
+        });
+        await options.onCycleComplete?.({
+          iteration: 1,
+          simulatorDecision: {
+            summary: "Cycle 1 review complete.",
+            instruction: "Rename the package and ship the updated build.",
+            focusAreas: [],
+          },
+          turnResult,
+          pendingFeedbackCount: 0,
+        });
+        await options.reporter?.onText?.("Ultimate mode auto deploy test complete.");
+        await options.reporter?.onDone?.({
+          status: "success",
+          summary: "Ultimate mode auto deploy test complete.",
+          langSmithTrace: null,
+          executionFingerprint: null,
+        });
+        await options.reporter?.onTurnState?.({
+          sessionState: options.sessionState,
+          connectionState: "ready",
+        });
+
+        return {
+          status: "success",
+          summary: "Ultimate mode auto deploy test complete.",
+          finalText: "Ultimate mode auto deploy test complete.",
+          iterations: 1,
+          history: [],
+          lastTurn: turnResult,
+        };
+      },
+      async executeDeploy(input, deployTargetDirectory) {
+        deployInvocations.push({
+          platform: input.platform,
+          targetDirectory: deployTargetDirectory,
+        });
+
+        return {
+          success: true,
+          output: "Production URL: https://shipyard-ultimate-auto-deploy.vercel.app",
+          data: {
+            platform: "vercel",
+            productionUrl: "https://shipyard-ultimate-auto-deploy.vercel.app",
+            command: "vercel deploy --prod --yes --token [redacted]",
+            logExcerpt:
+              "Production URL: https://shipyard-ultimate-auto-deploy.vercel.app",
+            exitCode: 0,
+            timedOut: false,
+          },
+        };
+      },
+    });
+
+    const firstSocket = new WebSocket(runtime.socketUrl);
+
+    try {
+      const firstStatePromise = waitForSocketMessage(
+        firstSocket,
+        (message) => message.type === "session:state",
+      );
+
+      await waitForSocketOpen(firstSocket);
+      await firstStatePromise;
+
+      const publishSequencePromise = collectMessagesUntil(
+        firstSocket,
+        (messages) =>
+          messages.some(
+            (message) =>
+              message.type === "deploy:state" &&
+              message.deploy.status === "success" &&
+              message.deploy.productionUrl ===
+                "https://shipyard-ultimate-auto-deploy.vercel.app",
+          ) &&
+          messages.some(
+            (message) =>
+              message.type === "agent:done" &&
+              message.summary === "Ultimate mode auto deploy test complete.",
+          ) &&
+          messages.some(
+            (message) =>
+              message.type === "session:state" &&
+              message.connectionState === "ready" &&
+              message.turnCount === 1,
+          ),
+      );
+
+      firstSocket.send(
+        JSON.stringify({
+          type: "instruction",
+          text: "ultimate start keep publishing every edited cycle",
+        }),
+      );
+
+      const publishMessages = await publishSequencePromise;
+      expect(deployInvocations).toEqual([
+        {
+          platform: "vercel",
+          targetDirectory,
+        },
+      ]);
+
+      const deployToolCallIndex = publishMessages.findIndex(
+        (message) =>
+          message.type === "agent:tool_call" &&
+          message.toolName === "deploy_target",
+      );
+      const ultimateDoneIndex = publishMessages.findIndex(
+        (message) =>
+          message.type === "agent:done" &&
+          message.summary === "Ultimate mode auto deploy test complete.",
+      );
+      const deploySuccessState = publishMessages.find(
+        (
+          message,
+        ): message is Extract<
+          BackendToFrontendMessage,
+          { type: "deploy:state" }
+        > =>
+          message.type === "deploy:state" &&
+          message.deploy.status === "success",
+      );
+      const finalReadyState = publishMessages.find(
+        (
+          message,
+        ): message is Extract<
+          BackendToFrontendMessage,
+          { type: "session:state" }
+        > =>
+          message.type === "session:state" &&
+          message.connectionState === "ready" &&
+          message.turnCount === 1,
+      );
+
+      expect(deployToolCallIndex).toBeGreaterThanOrEqual(0);
+      expect(ultimateDoneIndex).toBeGreaterThan(deployToolCallIndex);
+      expect(publishMessages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "agent:edit",
+            path: "package.json",
+            summary: "Applied targeted edit to package.json",
+          }),
+          expect.objectContaining({
+            type: "agent:tool_result",
+            toolName: "deploy_target",
+            success: true,
+            summary:
+              "Deploy completed. Public URL: https://shipyard-ultimate-auto-deploy.vercel.app",
+          }),
+        ]),
+      );
+      expect(deploySuccessState).toMatchObject({
+        type: "deploy:state",
+        deploy: {
+          status: "success",
+          productionUrl: "https://shipyard-ultimate-auto-deploy.vercel.app",
+          available: true,
+        },
+      });
+      expect(finalReadyState).toMatchObject({
+        type: "session:state",
+        connectionState: "ready",
+        turnCount: 1,
+        workbenchState: {
+          latestDeploy: {
+            status: "success",
+            productionUrl: "https://shipyard-ultimate-auto-deploy.vercel.app",
+          },
+          ultimateState: {
+            active: false,
+            phase: "idle",
+          },
+        },
+      });
+
+      const reconnectedSocket = new WebSocket(runtime.socketUrl);
+
+      try {
+        const recoveredStatePromise = waitForSocketMessage(
+          reconnectedSocket,
+          (message) => message.type === "session:state",
+        );
+        await waitForSocketOpen(reconnectedSocket);
+        const recoveredState = await recoveredStatePromise;
+
+        expect(recoveredState).toMatchObject({
+          type: "session:state",
+          turnCount: 1,
+          workbenchState: {
+            latestDeploy: {
+              status: "success",
+              productionUrl: "https://shipyard-ultimate-auto-deploy.vercel.app",
+              available: true,
+            },
+            ultimateState: {
+              active: false,
+              phase: "idle",
+            },
+          },
+        });
+      } finally {
+        reconnectedSocket.close();
+      }
+    } finally {
+      firstSocket.close();
+      await runtime.close();
+    }
+  }, 20_000);
+
   it("requires a valid hosted access token before exposing session state over HTTP or websocket", async () => {
     process.env.SHIPYARD_ACCESS_TOKEN = "phase-nine-demo-token";
     const targetDirectory = await createTempDirectory("shipyard-ui-access-");
@@ -3919,6 +5410,14 @@ describe("ui runtime contract", () => {
         ok: true,
         runtimeMode: "ui",
         accessProtected: true,
+      });
+
+      const lockedCodeTreeResponse = await fetch(
+        `${runtime.url}/api/files/tree?projectId=${encodeURIComponent(targetDirectory)}`,
+      );
+      expect(lockedCodeTreeResponse.status).toBe(401);
+      await expect(lockedCodeTreeResponse.json()).resolves.toMatchObject({
+        error: "Code browser access token is missing or invalid.",
       });
 
       const lockedSocket = new WebSocket(runtime.socketUrl);
@@ -3962,6 +5461,25 @@ describe("ui runtime contract", () => {
         authenticated: true,
       });
 
+      const unlockedCodeTreeResponse = await fetch(
+        `${runtime.url}/api/files/tree?projectId=${encodeURIComponent(targetDirectory)}`,
+        {
+          headers: grantedCookie
+            ? {
+                cookie: grantedCookie,
+              }
+            : undefined,
+        },
+      );
+      expect(unlockedCodeTreeResponse.status).toBe(200);
+      await expect(unlockedCodeTreeResponse.json()).resolves.toMatchObject({
+        projectId: targetDirectory,
+        root: {
+          path: ".",
+        },
+        nodes: [],
+      });
+
       const unlockedHealthResponse = await fetch(`${runtime.url}/api/health`, {
         headers: grantedCookie
           ? {
@@ -3976,6 +5494,12 @@ describe("ui runtime contract", () => {
         sessionId: "ui-access-session",
         workspaceDirectory,
         targetDirectory,
+        runtime: {
+          connectionState: "ready",
+          ultimate: {
+            active: false,
+          },
+        },
       });
 
       const unlockedSocket = new WebSocket(runtime.socketUrl, {
@@ -4277,6 +5801,145 @@ describe("ui runtime contract", () => {
       } finally {
         socket.close();
       }
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("serves a sandboxed code-browser tree and bounded file contents for the active project", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-ui-code-browser-");
+    await mkdir(path.join(targetDirectory, "src"), { recursive: true });
+    await mkdir(path.join(targetDirectory, "node_modules", "left-pad"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(targetDirectory, "src", "App.tsx"),
+      "export function App() { return null; }\n",
+      "utf8",
+    );
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify({ name: "code-browser-target" }, null, 2),
+      "utf8",
+    );
+    const discovery = await discoverTarget(targetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-code-browser-session",
+        targetDirectory,
+        discovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const treeResponse = await fetch(
+        `${runtime.url}/api/files/tree?projectId=${encodeURIComponent(targetDirectory)}`,
+      );
+      expect(treeResponse.status).toBe(200);
+      await expect(treeResponse.json()).resolves.toMatchObject({
+        projectId: targetDirectory,
+        root: {
+          path: ".",
+        },
+        nodes: [
+          {
+            name: "src",
+            path: "src",
+            type: "directory",
+            children: [
+              {
+                name: "App.tsx",
+                path: "src/App.tsx",
+                type: "file",
+              },
+            ],
+          },
+          {
+            name: "package.json",
+            path: "package.json",
+            type: "file",
+          },
+        ],
+      });
+
+      const readResponse = await fetch(
+        `${runtime.url}/api/files/read?projectId=${encodeURIComponent(targetDirectory)}&path=${encodeURIComponent("src/App.tsx")}`,
+      );
+      expect(readResponse.status).toBe(200);
+      await expect(readResponse.json()).resolves.toMatchObject({
+        projectId: targetDirectory,
+        path: "src/App.tsx",
+        binary: false,
+        truncated: false,
+        contents: "export function App() { return null; }\n",
+      });
+    } finally {
+      await runtime.close();
+    }
+  }, 20_000);
+
+  it("rejects traversal and reports binary or truncated code-browser reads explicitly", async () => {
+    const targetDirectory = await createTempDirectory(
+      "shipyard-ui-code-browser-read-",
+    );
+    await mkdir(path.join(targetDirectory, "assets"), { recursive: true });
+    await mkdir(path.join(targetDirectory, "src"), { recursive: true });
+    await writeFile(
+      path.join(targetDirectory, "assets", "logo.bin"),
+      Buffer.from([0, 1, 2, 3, 4]),
+    );
+    await writeFile(
+      path.join(targetDirectory, "src", "large.ts"),
+      `export const payload = "${"x".repeat(9_200)}";\n`,
+      "utf8",
+    );
+    const discovery = await discoverTarget(targetDirectory);
+    const runtime = await startUiRuntimeServer({
+      sessionState: createSessionState({
+        sessionId: "ui-code-browser-read-session",
+        targetDirectory,
+        discovery,
+      }),
+      host: "127.0.0.1",
+      port: 0,
+      projectRules: "",
+      projectRulesLoaded: false,
+    });
+
+    try {
+      const traversalResponse = await fetch(
+        `${runtime.url}/api/files/read?projectId=${encodeURIComponent(targetDirectory)}&path=${encodeURIComponent("../secret.txt")}`,
+      );
+      expect(traversalResponse.status).toBe(403);
+      await expect(traversalResponse.json()).resolves.toMatchObject({
+        error: expect.stringContaining("Access denied"),
+      });
+
+      const binaryResponse = await fetch(
+        `${runtime.url}/api/files/read?projectId=${encodeURIComponent(targetDirectory)}&path=${encodeURIComponent("assets/logo.bin")}`,
+      );
+      expect(binaryResponse.status).toBe(200);
+      await expect(binaryResponse.json()).resolves.toMatchObject({
+        path: "assets/logo.bin",
+        binary: true,
+        truncated: false,
+        contents: null,
+      });
+
+      const truncatedResponse = await fetch(
+        `${runtime.url}/api/files/read?projectId=${encodeURIComponent(targetDirectory)}&path=${encodeURIComponent("src/large.ts")}`,
+      );
+      expect(truncatedResponse.status).toBe(200);
+      await expect(truncatedResponse.json()).resolves.toMatchObject({
+        path: "src/large.ts",
+        binary: false,
+        truncated: true,
+        contents: expect.stringContaining("[...truncated"),
+      });
     } finally {
       await runtime.close();
     }

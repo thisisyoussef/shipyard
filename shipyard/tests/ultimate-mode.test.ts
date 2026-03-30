@@ -4,8 +4,15 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ArtifactContent, ArtifactRecord } from "../src/artifacts/types.js";
+import { saveArtifact } from "../src/artifacts/registry/index.js";
 import { abortTurn } from "../src/engine/cancellation.js";
 import { createSessionState } from "../src/engine/state.js";
+import {
+  createDefaultHostedRuntimeState,
+} from "../src/hosting/contracts.js";
+import { saveHostedRuntimeState } from "../src/hosting/store.js";
+import { buildBacklogArtifact } from "../src/pipeline/planning-artifacts.js";
 import {
   createInstructionRuntimeState,
   type DoneEvent,
@@ -44,6 +51,125 @@ function createDiscoveryReport() {
       "No preview is configured for this test target.",
     ),
   };
+}
+
+async function seedApprovedPlanningArtifacts(
+  targetDirectory: string,
+  now: string,
+  stories: Array<{
+    id: string;
+    epicId: string | null;
+    title: string;
+    dependencies?: string[];
+    priority?: number;
+  }>,
+): Promise<void> {
+  const storyArtifact = await saveArtifact(targetDirectory, {
+    type: "user-story-artifact",
+    id: "ultimate-mode-stories",
+    status: "approved",
+    producedBy: "pm",
+    producedAt: now,
+    approvedAt: now,
+    approvedBy: "user",
+    contentKind: "json",
+    content: {
+      title: "User stories",
+      summary: "Approved stories for ultimate mode.",
+      stories: stories.map((story, index) => ({
+        id: story.id,
+        epicId: story.epicId,
+        title: story.title,
+        userStory: `As an operator, I want ${story.title.toLowerCase()}, so the coordinator can progress.`,
+        acceptanceCriteria: [`Ship ${story.title}.`],
+        edgeCases: [],
+        dependencies: story.dependencies ?? [],
+        estimatedComplexity: "Medium",
+        priority: story.priority ?? (index + 1),
+      })),
+    },
+  });
+
+  const specArtifact = await saveArtifact(targetDirectory, {
+    type: "technical-spec-artifact",
+    id: "ultimate-mode-specs",
+    status: "approved",
+    producedBy: "pm",
+    producedAt: now,
+    approvedAt: now,
+    approvedBy: "user",
+    contentKind: "json",
+    content: {
+      title: "Technical specs",
+      summary: "Approved specs for ultimate mode.",
+      specs: stories.map((story, index) => ({
+        id: `SPEC-${String(index + 1).padStart(3, "0")}`,
+        storyId: story.id,
+        title: `${story.title} spec`,
+        overview: `Implement ${story.title.toLowerCase()}.`,
+        dataModel: [],
+        apiContract: [],
+        componentStructure: [],
+        stateManagement: "Coordinator runtime state.",
+        errorHandling: [],
+        testExpectations: ["Add focused tests."],
+        implementationOrder: ["contracts", "runtime"],
+        designReferences: [],
+      })),
+    },
+  });
+
+  await saveArtifact(targetDirectory, {
+    type: "backlog-artifact",
+    id: "ultimate-mode-backlog",
+    status: "approved",
+    producedBy: "pm",
+    producedAt: now,
+    approvedAt: now,
+    approvedBy: "user",
+    contentKind: "json",
+    content: buildBacklogArtifact([
+      storyArtifact as ArtifactRecord<ArtifactContent>,
+      specArtifact as ArtifactRecord<ArtifactContent>,
+    ]) as unknown as ArtifactContent,
+  });
+}
+
+async function savePersistentHostedRuntime(
+  targetDirectory: string,
+  targetsDirectory: string,
+  now: string,
+): Promise<void> {
+  const state = createDefaultHostedRuntimeState(now, {
+    targetDirectory,
+    workspaceRoot: targetsDirectory,
+  });
+  state.updatedAt = now;
+  state.profile = {
+    ...state.profile,
+    provider: "railway",
+    active: true,
+    mode: "persistent",
+    volumeMountPath: targetsDirectory,
+    persistentRequired: true,
+    mountHealthy: true,
+  };
+  state.workspaceBinding = {
+    ...state.workspaceBinding,
+    relativeTargetPath: path.basename(targetDirectory),
+    repositorySlug: "acme/factory-target",
+    repositoryStatus: "bound",
+    restoreStatus: "restored",
+    summary: "Persistent Railway workspace is ready.",
+  };
+  state.degraded = {
+    active: false,
+    reason: null,
+    blockedActions: [],
+    summary: "Hosted runtime is healthy.",
+  };
+
+  await saveHostedRuntimeState(targetDirectory, state);
 }
 
 function createTurnResult(
@@ -122,6 +248,12 @@ function createTurnResult(
       actingLoopBudgetReason: "narrow-default",
       firstHardFailure: null,
     },
+    runtimeAssist: {
+      activeProfileId: null,
+      activeProfileName: null,
+      activeProfileRoute: null,
+      loadedSkills: [],
+    },
     handoff: {
       loaded: null,
       loadError: null,
@@ -195,6 +327,7 @@ describe("ultimate mode", () => {
     const turnStates: TurnStateEvent[] = [];
     const doneEvents: DoneEvent[] = [];
     const thinkingMessages: string[] = [];
+    const textMessages: string[] = [];
 
     const executeTurn = vi.fn(
       async (options): Promise<InstructionTurnResult> => {
@@ -249,6 +382,9 @@ describe("ultimate mode", () => {
         onThinking(message) {
           thinkingMessages.push(message);
         },
+        onText(message) {
+          textMessages.push(message);
+        },
       },
       dependencies: {
         async runHumanSimulator(input) {
@@ -294,6 +430,9 @@ describe("ultimate mode", () => {
       status: "cancelled",
       summary: expect.stringContaining("Ultimate mode stopped by human interrupt"),
     });
+    expect(textMessages).toEqual([
+      expect.stringContaining("Ultimate mode stopped by human interrupt after 2 cycles."),
+    ]);
     expect(thinkingMessages).toContain(
       "Ultimate mode activated. Shipyard and the human simulator will keep handing work back and forth until you interrupt them.",
     );
@@ -365,5 +504,218 @@ describe("ultimate mode", () => {
         }),
       }),
     );
+  });
+
+  it("prefers coordinator-scheduled work over the human simulator when an approved task graph exists", async () => {
+    const targetsDirectory = await createTempDirectory("shipyard-ultimate-coordinator-");
+    const targetDirectory = path.join(targetsDirectory, "demo-app");
+    const now = "2026-03-28T23:40:00.000Z";
+
+    await seedApprovedPlanningArtifacts(targetDirectory, now, [
+      {
+        id: "STORY-301",
+        epicId: "EPIC-301",
+        title: "Coordinator dispatch story",
+      },
+    ]);
+
+    const sessionState = createSessionState({
+      sessionId: "ultimate-mode-coordinator-session",
+      targetDirectory,
+      targetsDirectory,
+      discovery: createDiscoveryReport(),
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "Prefer the coordinator when approved tasks exist.",
+    });
+    const runHumanSimulator = vi.fn();
+    const seenRoleIds: Array<string | null | undefined> = [];
+    const seenTaskIds: Array<string | null> = [];
+
+    const result = await executeUltimateMode({
+      sessionState,
+      runtimeState,
+      brief: "Implement the approved story.",
+      dependencies: {
+        async runHumanSimulator(input) {
+          runHumanSimulator(input);
+          return {
+            summary: "Fallback review.",
+            instruction: "Fallback instruction.",
+            focusAreas: [],
+          };
+        },
+        async executeTurn(options) {
+          seenRoleIds.push(options.phaseOverride?.agentProfileId);
+          seenTaskIds.push(options.sessionState.activeTask?.taskId ?? null);
+
+          return createTurnResult({
+            status: "cancelled",
+            summary: "Human stopped ultimate mode.",
+            finalText: "Turn cancelled.",
+            taskPlan: {
+              instruction: options.instruction,
+              goal: options.instruction,
+              targetFilePaths: [],
+              plannedSteps: [],
+            },
+          });
+        },
+      },
+    });
+
+    expect(result.status).toBe("cancelled");
+    expect(runHumanSimulator).not.toHaveBeenCalled();
+    expect(seenRoleIds).toEqual(["implementer"]);
+    expect(seenTaskIds).toEqual(["task-story-301"]);
+  });
+
+  it("reports coordinator-dispatched cycles through the onCycleComplete callback", async () => {
+    const targetsDirectory = await createTempDirectory("shipyard-ultimate-cycle-complete-");
+    const targetDirectory = path.join(targetsDirectory, "demo-app");
+    const now = "2026-03-29T01:15:00.000Z";
+
+    await seedApprovedPlanningArtifacts(targetDirectory, now, [
+      {
+        id: "STORY-511",
+        epicId: "EPIC-511",
+        title: "Coordinator cycle complete story",
+      },
+    ]);
+
+    const sessionState = createSessionState({
+      sessionId: "ultimate-mode-cycle-complete-session",
+      targetDirectory,
+      targetsDirectory,
+      discovery: createDiscoveryReport(),
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "Keep UI projections in sync for every ultimate cycle.",
+    });
+    const onCycleComplete = vi.fn();
+
+    const result = await executeUltimateMode({
+      sessionState,
+      runtimeState,
+      brief: "Implement the approved story and surface the cycle callback.",
+      onCycleComplete,
+      dependencies: {
+        async runHumanSimulator() {
+          return {
+            summary: "Fallback review.",
+            instruction: "Fallback instruction.",
+            focusAreas: [],
+          };
+        },
+        async executeTurn(options) {
+          return createTurnResult({
+            status: "cancelled",
+            summary: "Human stopped ultimate mode.",
+            finalText: "Turn cancelled.",
+            taskPlan: {
+              instruction: options.instruction,
+              goal: options.instruction,
+              targetFilePaths: [],
+              plannedSteps: [],
+            },
+          });
+        },
+      },
+    });
+
+    expect(result.status).toBe("cancelled");
+    expect(onCycleComplete).toHaveBeenCalledTimes(1);
+    expect(onCycleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        iteration: 1,
+        simulatorDecision: expect.objectContaining({
+          summary: expect.any(String),
+          instruction: expect.any(String),
+          focusAreas: [],
+        }),
+        turnResult: expect.objectContaining({
+          status: "cancelled",
+          summary: "Human stopped ultimate mode.",
+        }),
+        pendingFeedbackCount: 0,
+      }),
+    );
+  });
+
+  it("keeps failed coordinator workers isolated while still-ready work continues", async () => {
+    const targetsDirectory = await createTempDirectory("shipyard-ultimate-workers-");
+    const targetDirectory = path.join(targetsDirectory, "demo-app");
+    const now = "2026-03-28T23:45:00.000Z";
+
+    await seedApprovedPlanningArtifacts(targetDirectory, now, [
+      {
+        id: "STORY-401",
+        epicId: "EPIC-401",
+        title: "First independent task",
+        priority: 1,
+      },
+      {
+        id: "STORY-402",
+        epicId: "EPIC-401",
+        title: "Second independent task",
+        priority: 2,
+      },
+    ]);
+    await savePersistentHostedRuntime(targetDirectory, targetsDirectory, now);
+
+    const sessionState = createSessionState({
+      sessionId: "ultimate-mode-workers-session",
+      targetDirectory,
+      targetsDirectory,
+      discovery: createDiscoveryReport(),
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "Keep failed workers isolated from the rest of the queue.",
+    });
+    const seenTaskIds: string[] = [];
+    let callCount = 0;
+
+    const result = await executeUltimateMode({
+      sessionState,
+      runtimeState,
+      brief: "Coordinate multiple ready stories.",
+      dependencies: {
+        async runHumanSimulator() {
+          return {
+            summary: "Fallback review.",
+            instruction: "Fallback instruction.",
+            focusAreas: [],
+          };
+        },
+        async executeTurn(options) {
+          callCount += 1;
+          seenTaskIds.push(options.sessionState.activeTask?.taskId ?? "missing-task");
+
+          return createTurnResult({
+            status: callCount === 1 ? "error" : "cancelled",
+            summary:
+              callCount === 1
+                ? "First worker failed."
+                : "Human stopped ultimate mode.",
+            finalText:
+              callCount === 1
+                ? "First worker failed."
+                : "Turn cancelled.",
+            taskPlan: {
+              instruction: options.instruction,
+              goal: options.instruction,
+              targetFilePaths: [],
+              plannedSteps: [],
+            },
+          });
+        },
+      },
+    });
+
+    expect(result.status).toBe("cancelled");
+    expect(seenTaskIds).toEqual([
+      "task-story-401",
+      "task-story-402",
+    ]);
   });
 });

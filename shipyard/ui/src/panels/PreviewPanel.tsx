@@ -1,20 +1,19 @@
 /**
  * PreviewPanel — Local preview status and inline result surface.
  *
- * Shows preview lifecycle, direct navigation link, embedded result, and recent
- * preview logs without introducing a second UI system.
+ * Shows the live preview itself plus the smallest navigation affordance needed
+ * to open it outside Shipyard. Editor-specific deploy and log chrome lives
+ * elsewhere; this panel stays focused on the workspace canvas.
  */
 
 import type { BadgeTone } from "../primitives.js";
 import { Badge, StatusDot } from "../primitives.js";
-import type {
-  LatestDeployViewModel,
-  PreviewStateViewModel,
-} from "../view-models.js";
+import { normalizePreviewUrl, resolvePreviewSurface } from "../preview-surface.js";
+import type { HostingViewModel, PreviewStateViewModel } from "../view-models.js";
 
 export interface PreviewPanelProps {
   preview: PreviewStateViewModel;
-  deploy: LatestDeployViewModel;
+  hosting: HostingViewModel;
   hostedEditorUrl: string;
 }
 
@@ -104,69 +103,76 @@ function shouldRenderPreviewFrame(
   );
 }
 
-function getDeployTone(deploy: LatestDeployViewModel): BadgeTone {
-  if (deploy.status === "success") {
-    return "success";
-  }
-
-  if (deploy.status === "deploying") {
-    return "accent";
-  }
-
-  if (deploy.status === "error") {
-    return "danger";
-  }
-
-  return deploy.available ? "neutral" : "warning";
-}
-
-function getDeployLabel(deploy: LatestDeployViewModel): string {
-  if (deploy.status === "success") {
-    return "Success";
-  }
-
-  if (deploy.status === "deploying") {
-    return "Deploying";
-  }
-
-  if (deploy.status === "error") {
-    return "Error";
-  }
-
-  return deploy.available ? "Ready" : "Unavailable";
-}
-
-function getProductionUrlLabel(deploy: LatestDeployViewModel): string {
-  if (deploy.status === "success") {
-    return "Deployed target-app URL";
-  }
-
-  if (deploy.status === "deploying") {
-    return "Current production URL";
-  }
-
-  if (deploy.status === "error" && deploy.productionUrl) {
-    return "Last successful production URL";
-  }
-
-  return "Target-app URL";
-}
-
 export function PreviewPanel({
   preview,
-  deploy,
+  hosting,
   hostedEditorUrl,
 }: PreviewPanelProps) {
-  const tone = getPreviewTone(preview.status);
-  const label = getPreviewLabel(preview.status);
-  const deployTone = getDeployTone(deploy);
-  const deployLabel = getDeployLabel(deploy);
+  const previewSurface = resolvePreviewSurface({
+    privatePreviewUrl: preview.url,
+    publicDeploymentUrl: hosting.publicDeploymentUrl,
+    hosting,
+  });
+  const editorUrl = normalizePreviewUrl(hostedEditorUrl);
+  const usingDeploymentSurface = previewSurface.source === "public-deploy";
+  const usingHostedEditorFallback =
+    previewSurface.source === "none" &&
+    hosting.active &&
+    editorUrl !== null;
+  const tone = usingDeploymentSurface
+    ? "success"
+    : usingHostedEditorFallback
+      ? "accent"
+      : getPreviewTone(preview.status);
+  const label = usingDeploymentSurface
+    ? "Live"
+    : usingHostedEditorFallback
+      ? "Hosted"
+      : getPreviewLabel(preview.status);
   const showPulse =
-    preview.status === "starting" || preview.status === "refreshing";
-  const showDeployPulse = deploy.status === "deploying";
-  const showPreviewLink = preview.url !== null;
-  const showPreviewFrame = shouldRenderPreviewFrame(preview);
-  const showProductionLink = deploy.productionUrl !== null;
+    !usingDeploymentSurface &&
+    !usingHostedEditorFallback &&
+    (preview.status === "starting" || preview.status === "refreshing");
+  const showPreviewLink = previewSurface.previewUrl !== null;
+  const showPreviewFrame = showPreviewLink
+    ? usingDeploymentSurface || shouldRenderPreviewFrame(preview)
+    : false;
+  const showEditorLink = !showPreviewLink && editorUrl !== null;
+  const panelKicker = usingDeploymentSurface
+    ? "Production deploy"
+    : usingHostedEditorFallback
+      ? "Hosted runtime"
+      : "Local preview";
+  const panelTitle = usingDeploymentSurface
+    ? "Live app ready"
+    : usingHostedEditorFallback
+      ? "Preview stays inside Shipyard"
+      : getPreviewTitle(preview.status);
+  const summary = usingDeploymentSurface
+    ? "This hosted Shipyard session cannot expose its private loopback preview directly. Showing the latest public deployment instead."
+    : usingHostedEditorFallback
+      ? "This preview is running inside the hosted Shipyard container and is not reachable from this browser. Open the hosted editor or deploy the app to inspect it."
+      : preview.summary;
+  const noteLabel = usingDeploymentSurface
+    ? "Latest preview status"
+    : getReasonLabel(preview.status);
+  const showSummaryNote = !usingHostedEditorFallback && preview.lastRestartReason;
+  const frameTitle = usingDeploymentSurface ? "Live app" : "Local preview";
+  const externalUrl = previewSurface.previewUrl ?? editorUrl;
+  const externalLabel = usingDeploymentSurface
+    ? "Open app"
+    : showPreviewLink
+      ? "Open preview"
+      : showEditorLink
+        ? "Open editor"
+        : null;
+  const externalAriaLabel = usingDeploymentSurface
+    ? `Open live app at ${previewSurface.previewUrl}`
+    : showPreviewLink
+      ? `Open preview at ${previewSurface.previewUrl}`
+      : showEditorLink
+        ? `Open editor at ${editorUrl}`
+        : null;
 
   return (
     <section
@@ -176,9 +182,9 @@ export function PreviewPanel({
     >
       <div className="panel-header">
         <div>
-          <p className="panel-kicker">Local preview</p>
+          <p className="panel-kicker">{panelKicker}</p>
           <h2 id="preview-panel-title" className="panel-title">
-            {getPreviewTitle(preview.status)}
+            {panelTitle}
           </h2>
         </div>
         <Badge tone={tone}>
@@ -188,103 +194,40 @@ export function PreviewPanel({
       </div>
 
       <div className="panel-preview">
-        {/* Preview iframe — hero element, takes up most of the space */}
         {showPreviewFrame ? (
           <div className="preview-frame-shell">
             <iframe
               className="preview-frame"
-              title="Local preview"
-              src={preview.url ?? undefined}
+              title={frameTitle}
+              src={previewSurface.previewUrl ?? undefined}
               loading="lazy"
             />
           </div>
         ) : (
           <div className="preview-empty-state">
-            <p className="preview-summary">{preview.summary}</p>
-            {preview.lastRestartReason ? (
+            <p className="preview-summary">{summary}</p>
+            {showSummaryNote ? (
               <p className="preview-note" data-tone={tone}>
-                <strong>{getReasonLabel(preview.status)}:</strong>{" "}
+                <strong>{noteLabel}:</strong>{" "}
                 {preview.lastRestartReason}
               </p>
             ) : null}
           </div>
         )}
 
-        {/* Preview toolbar — compact bar below the iframe */}
-        {showPreviewLink ? (
+        {externalUrl && externalLabel && externalAriaLabel ? (
           <div className="preview-toolbar">
-            <code className="preview-url">{preview.url}</code>
+            <code className="preview-url">{externalUrl}</code>
             <a
               className="target-inline-action preview-open-link"
-              href={preview.url ?? undefined}
+              href={externalUrl}
               target="_blank"
               rel="noreferrer"
-              aria-label={`Open preview at ${preview.url}`}
+              aria-label={externalAriaLabel}
             >
-              Open preview
+              {externalLabel}
             </a>
           </div>
-        ) : null}
-
-        {/* Deploy status — collapsible section below preview */}
-        <details className="preview-deploy-section">
-          <summary className="preview-deploy-summary">
-            <span className="preview-deploy-label">Deploy</span>
-            <Badge tone={deployTone}>
-              <StatusDot tone={deployTone} pulse={showDeployPulse} />
-              {deployLabel}
-            </Badge>
-          </summary>
-
-          <div className="preview-deploy-body">
-            <p className="preview-summary">{deploy.summary}</p>
-
-            {showProductionLink ? (
-              <div className="preview-link-row">
-                <div className="preview-link-copy">
-                  <span className="preview-link-label">
-                    {getProductionUrlLabel(deploy)}
-                  </span>
-                  <code className="preview-url">{deploy.productionUrl}</code>
-                </div>
-                <a
-                  className="target-inline-action preview-open-link"
-                  href={deploy.productionUrl ?? undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={`Open deployed app at ${deploy.productionUrl}`}
-                >
-                  Open deployed app
-                </a>
-              </div>
-            ) : (
-              <p className="preview-note" data-tone={deployTone}>
-                Deploy to publish a public URL you can share outside Shipyard.
-              </p>
-            )}
-
-            {deploy.unavailableReason ? (
-              <p className="preview-note" data-tone={deployTone}>
-                <strong>Prerequisites:</strong> {deploy.unavailableReason}
-              </p>
-            ) : null}
-
-            {deploy.status === "error" && deploy.logExcerpt ? (
-              <details className="preview-log-shell">
-                <summary>Provider output</summary>
-                <pre className="preview-log-output">{deploy.logExcerpt}</pre>
-              </details>
-            ) : null}
-          </div>
-        </details>
-
-        {preview.logTail.length > 0 ? (
-          <details className="preview-log-shell">
-            <summary>Recent preview logs</summary>
-            <pre className="preview-log-output">
-              {preview.logTail.join("\n")}
-            </pre>
-          </details>
         ) : null}
       </div>
     </section>

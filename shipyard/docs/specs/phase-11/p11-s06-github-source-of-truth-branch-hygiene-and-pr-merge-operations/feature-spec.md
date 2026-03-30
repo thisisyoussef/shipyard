@@ -48,25 +48,25 @@ managed.
   what can continue locally.
 
 ## Acceptance Criteria
-- [ ] AC-1: Shipyard defines a normalized `SourceControlCapability` contract
+- [x] AC-1: Shipyard defines a normalized `SourceControlCapability` contract
   that supports at least local `gh` CLI auth, hosted-safe auth such as OAuth,
   GitHub App, or service-token modes, and an explicit degraded-local fallback.
-- [ ] AC-2: New factory-managed projects prefer GitHub repo creation or attach
+- [x] AC-2: New factory-managed projects prefer GitHub repo creation or attach
   flow at project start and persist canonical repo plus default-branch binding
   when available.
-- [ ] AC-3: If GitHub auth or binding is unavailable, Shipyard still creates or
+- [x] AC-3: If GitHub auth or binding is unavailable, Shipyard still creates or
   resumes a managed local repo state, marks GitHub automation as degraded, and
   preserves a later rebind path.
-- [ ] AC-4: Story execution follows branch-per-story or bug-per-story hygiene,
+- [x] AC-4: Story execution follows branch-per-story or bug-per-story hygiene,
   including naming, sync-from-default-branch, validation-before-merge, and
   branch cleanup semantics.
-- [ ] AC-5: Shipyard exposes a dedicated GitHub-ops or PR-merge role that owns
+- [x] AC-5: Shipyard exposes a dedicated GitHub-ops or PR-merge role that owns
   PR creation, update, review guidance, merge execution, and post-merge branch
   cleanup.
-- [ ] AC-6: The merge policy is explicit: first merge to the canonical default
+- [x] AC-6: The merge policy is explicit: first merge to the canonical default
   branch wins, and later conflicting work is surfaced as stale and routed into
   a visible recovery flow.
-- [ ] AC-7: Source-control auth mode, repo binding, branch state, PR state, and
+- [x] AC-7: Source-control auth mode, repo binding, branch state, PR state, and
   degraded-source status persist as durable runtime metadata for later hosted,
   task-graph, and coordinator stories.
 
@@ -99,3 +99,83 @@ managed.
 - Shipyard has one coherent GitHub-first source-control contract that works in
   local and deployed runtimes, and it can degrade gracefully without making the
   project unmanageable.
+
+## Implementation Evidence
+
+- `shipyard/src/source-control/contracts.ts`, `shipyard/src/source-control/store.ts`,
+  and `shipyard/src/source-control/runtime.ts`: add the durable
+  `SourceControlCapability`, `RepositoryBinding`, `StoryBranch`,
+  `PullRequestArtifact`, `MergeDecision`, `ConflictResolutionTicket`, and
+  workbench projection contracts; persist them under
+  `.shipyard/source-control/runtime.json`; and implement GitHub-token /
+  GitHub-app / OAuth / `gh` CLI capability resolution, explicit degraded-local
+  fallback, branch-per-story naming, PR lifecycle updates, default-branch
+  revision tracking, and first-merge-wins stale/conflict recovery.
+
+  ```ts
+  export const sourceControlAuthModeSchema = z.enum([
+    "github-app",
+    "github-token",
+    "oauth-token",
+    "github-cli",
+    "degraded-local",
+  ]);
+  ```
+
+- `shipyard/src/tools/source-control.ts`, `shipyard/src/tools/index.ts`, and
+  `shipyard/src/phases/code/index.ts`: register the new
+  `manage_source_control` tool so runtime turns can query and mutate the
+  canonical source-control contract instead of treating GitHub as an
+  out-of-band operator habit.
+
+- `shipyard/src/agents/profiles.ts`: adds the dedicated `pr-ops` profile so PR
+  creation, merge execution, cleanup, and stale-merge recovery are explicitly
+  owned by one runtime role.
+
+- `shipyard/src/engine/state.ts`,
+  `shipyard/src/tools/target-manager/create-target.ts`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: create the target-local
+  `.shipyard/source-control/` directory, seed source-control state when new
+  targets are created, and publish compact auth / binding / branch / PR /
+  degraded summaries into `workbenchState.sourceControl` for later hosted,
+  board, and coordinator consumers.
+
+- `shipyard/tests/source-control-runtime.test.ts`: adds focused coverage for
+  hosted-safe auth precedence, explicit degraded local fallback, durable repo
+  binding persistence, first-merge-wins stale-branch marking, dedicated
+  `pr-ops` ownership, conflict-ticket creation, and session/workbench
+  projection.
+
+- `shipyard/tests/loop-runtime.test.ts`: includes the narrow duplicate-property
+  cleanup needed to restore the repo's TypeScript green baseline while this
+  story was in flight.
+
+## LangSmith / Monitoring
+
+- Fresh deterministic finish-check traces on project
+  `shipyard-p11-s06-finishcheck`:
+  - happy-path merge trace:
+    `019d3703-2225-7000-8000-05a9facbb402`
+  - stale-merge blocked trace:
+    `019d3703-3aaa-7000-8000-02ad171adf25`
+- Commands reviewed:
+  - traced runtime script via
+    `pnpm --dir shipyard exec node --import tsx -`
+  - `pnpm --dir shipyard exec langsmith trace list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --limit 5 --full`
+  - `pnpm --dir shipyard exec langsmith trace get <trace-id> --project "$LANGSMITH_PROJECT" --full`
+  - `pnpm --dir shipyard exec langsmith run list --project "$LANGSMITH_PROJECT" --trace-ids <trace-ids> --full`
+  - `pnpm --dir shipyard exec langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
+  - `pnpm --dir shipyard exec langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3`
+- The reviewed traces confirmed:
+  - the happy-path scenario resolved `github-token` auth, bound
+    `acme/shipyard-target`, completed a merge, and marked the competing PR
+    stale with one generated conflict ticket
+  - the blocked scenario recorded an expected `blocked` merge decision, kept
+    the merge path under `pr-ops`, and surfaced a concrete conflict-ticket id
+    instead of a silent force-merge
+- `langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
+  returned `[]` for the isolated finish-check project.
+- `langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3` returned
+  `null` for the isolated finish-check project.

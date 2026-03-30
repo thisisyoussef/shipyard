@@ -139,3 +139,26 @@ Capture failures so they are not repeated.
 - **Prevention rule**: Resolve a shareable alias/domain from labeled CLI output
   or deployment metadata before persisting `productionUrl`, and cover the case
   with focused deploy-tool regressions.
+
+- **Problem**: Writing submission retrospectives from memory instead of runtime
+  evidence
+- **Example**: Summarizing a long Ship rebuild from recollection while ignoring
+  session files, JSONL traces, watchdog logs, deploy logs, or release-archive
+  metadata that still exist on disk
+- **Why it failed**: The analysis drifts toward vague praise or vague blame and
+  misses the actual interventions, restart storms, and product gaps the run
+  exposed.
+- **Prevention rule**: Ground comparative analysis and rebuild logs in the
+  recoverable artifacts first, then use narrative only to connect the evidence.
+
+- **Problem**: Treating a plain hosted `shipyard --ui` process as sufficient
+  for a never-ending remote mission
+- **Example**: Putting the workbench on a server without the watchdog,
+  mission-control bundle, persistent workspace, or scheduled deploy backup and
+  then expecting it to survive stalls, memory pressure, or process exits
+- **Why it failed**: The browser runtime alone is not the long-run recovery
+  layer, so remote missions lose the automatic rearm, backup restore, and
+  restart policy that the laptop setup eventually needed.
+- **Prevention rule**: For serious remote autonomy, wrap the hosted workbench
+  in the mission-control stack, keep the target on persistent disk, and expose
+  public app state through deploy URLs rather than raw preview ports.

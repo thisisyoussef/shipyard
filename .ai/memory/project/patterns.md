@@ -43,12 +43,22 @@ Capture repeatable patterns that match how this workspace actually works.
   app root. App-level `railway.json` commands run from that directory, so they
   should use plain `pnpm build` / `pnpm start -- --ui` instead of recursing
   back into `--dir shipyard`.
+- Hosted Railway production should declare its canonical workspace target with
+  `SHIPYARD_HOSTED_DEFAULT_TARGET_PATH`, and repo-owned `main` deploys should
+  verify `/api/health` against that same target before the workflow goes green.
 - Shared runtime code should depend on Shipyard-owned turn/tool contracts, while
   provider adapters project `ToolDefinition[]` into provider-specific wire
   formats inside adapter modules.
-- The shipped default route is currently Anthropic on `claude-opus-4-6`. When
-  that default changes, update the runtime default, operator docs/examples, and
-  the Railway production secret/model pin together in the same story.
+- Dashboard hero creates should piggyback on the existing
+  `target:create_request` websocket contract with explicit `requestId`
+  correlation and an optional `initialInstruction`, so the backend can
+  activate the new target, kick off automatic enrichment, and start the first
+  browser turn through the same instruction path used everywhere else.
+- The checked-in local default route is currently Anthropic on
+  `claude-opus-4-6`, while Railway hosted production is pinned to OpenAI on
+  `gpt-5.4`. When either contract changes, update the runtime docs/examples,
+  hosted deploy workflow, and provider secret/model pin together in the same
+  story.
 - `deploy_target` should treat raw Vercel CLI `stdout` as the deployment
   identifier, not automatically as the user-facing link. Resolve
   `productionUrl` from a labeled production alias in CLI output or from Vercel
@@ -102,13 +112,28 @@ Capture repeatable patterns that match how this workspace actually works.
   Shipyard's shared runtime. Prefer stable subsystem boundaries, turn routing,
   artifact layout, and extension rules over historical submission-template
   framing.
+- Ship rebuild submission material now lives under
+  `shipyard/docs/submissions/ship-rebuild/` and should be linked from the main
+  operator entry points instead of living as ad hoc notes or external-only
+  documents.
+- Comparative write-ups about Shipyard behavior should be grounded in local
+  artifacts such as session files, JSONL traces, watchdog/deploy logs, and
+  release-archive metadata whenever those artifacts exist.
+- Remote mission operations docs now live under `shipyard/docs/ops/`, with
+  ready-to-copy templates in `shipyard/docs/ops/templates/linux-mission/`.
+- The durable remote-hosting pattern is: persistent server workspace,
+  mission-config bundle beside the target, `systemd` owning the watchdog,
+  Caddy owning public HTTPS for the workbench, and Vercel owning the public app
+  URL. Do not collapse those roles into one raw preview surface.
 
 ## UI Workflow Pattern
 
 - Visible UI stories default to `node scripts/generate-design-brief.mjs --story <story-id>` before TDD.
+- When Paper Desktop is available and the operator wants live design iteration, run `node scripts/setup-paper-codex.mjs` once per machine and prefer `node scripts/generate-design-brief.mjs --story <story-id> --provider codex` with the relevant Paper frame selected.
 - The design brief bridge is Claude-first and falls back to Codex only when Claude is unavailable or errors.
 - When Refero is configured, the UI workflow uses it during brainstorming/reference research before drafting the brief.
 - The design brief bridge includes `.ai/agents/claude.md` and `.claude/CLAUDE.md` context so Claude follows the same imperative design skill chain Codex uses.
 - Later UI phases can be scripted with `node scripts/run-ui-phase-bridge.mjs --phase <ui|qa|critic|polish> --story <story-id>`.
 - `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES=1` makes those later scripted UI phase bridges Claude-first; leaving it unset keeps them Codex-first.
+- The Paper + Codex workflow should keep `SHIPYARD_ENABLE_CLAUDE_UI_PHASE_BRIDGES` unset unless the story explicitly wants a Claude experiment.
 - Scripted UI phase bridges write artifacts under `.ai/state/ui-phase-bridge/<story-id>/`.

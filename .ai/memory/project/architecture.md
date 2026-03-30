@@ -151,6 +151,22 @@ Record durable workspace decisions here.
   secret to stay configured, and future provider flips must treat runtime,
   docs, and Railway sync as one contract.
 
+- **ADR-ID**: ADR-0015
+- **Date**: 2026-03-29
+- **Context**: Operators want the Railway-hosted production runtime on OpenAI,
+  but the checked-in local Shipyard default remains Anthropic for direct runs
+  and local smoke flows.
+- **Decision**: Keep Anthropic as the checked-in local default route, but pin
+  the Railway production workflow to OpenAI `gpt-5.4` by syncing
+  `OPENAI_API_KEY`, `SHIPYARD_MODEL_PROVIDER=openai`, and
+  `SHIPYARD_OPENAI_MODEL=gpt-5.4` into the Railway service on each deploy.
+- **Alternatives Considered**: Flip the global runtime default back to OpenAI;
+  leave Railway production on Anthropic and treat operator intent as mistaken.
+- **Consequences**: Local documentation must distinguish local defaults from
+  hosted production routing, the Railway secret baseline now requires
+  `OPENAI_API_KEY`, and future provider work must audit both the local default
+  contract and the hosted production override.
+
 - **ADR-ID**: ADR-0014
 - **Date**: 2026-03-27
 - **Context**: `shipyard/CODEAGENT.md` had fallen behind the shipped runtime
@@ -168,3 +184,57 @@ Record durable workspace decisions here.
   alongside the local README and architecture pages, and agents can use the
   file as a trustworthy code-centric onboarding map instead of falling back to
   stale phase language.
+
+- **ADR-ID**: ADR-0015
+- **Date**: 2026-03-29
+- **Context**: The Ship rebuild submission now requires a comparative analysis,
+  development log, cost analysis, and intervention log that are grounded in the
+  actual long-run rebuild evidence rather than reconstructed praise or memory.
+- **Decision**: Store the Ship rebuild submission pack under
+  `shipyard/docs/submissions/ship-rebuild/`, link it from
+  `.claude/CLAUDE.md`, `shipyard/docs/README.md`, and the appendix section of
+  `shipyard/CODEAGENT.md`, and treat those docs as the canonical submission
+  surface for this exercise.
+- **Alternatives Considered**: Keep the write-up in loose root notes; fold the
+  analysis into `CODEAGENT.md` only; wait until the very end of the rebuild to
+  draft the submission material from memory.
+- **ADR-ID**: ADR-0016
+- **Date**: 2026-03-29
+- **Context**: Railway production was correctly redeploying the hosted
+  Shipyard service itself, but fresh boots could still surface the wrong target
+  until an operator switched back to the live Ship promptpack workspace by
+  hand.
+- **Decision**: Add a hosted-only bootstrap target override
+  (`SHIPYARD_HOSTED_DEFAULT_TARGET_PATH`) in `shipyard/src/bin/shipyard.ts`,
+  set it to `/app/workspace/ship-promptpack-live` in the `main` Railway
+  workflow, and add `scripts/verify-hosted-deploy.mjs` so the deploy pipeline
+  fails if `/api/health` does not come back on that canonical target cleanly.
+- **Alternatives Considered**: Rely on operators to switch targets after every
+  boot; only detect drift manually from the hosted editor; keep verifying the
+  service URL alone without asserting the active target.
+- **Consequences**: Hosted prod now has a single declared canonical target, the
+  access helper can deep-link straight into that editor route, and future
+  Railway target changes must update runtime env, deploy verification, and
+  operator docs together.
+- **Consequences**: Submission docs now have a stable home, entry points stay
+  discoverable for future agents, and comparative claims should cite trace,
+  session, archive, and log evidence instead of relying on retrospective recall.
+
+- **ADR-ID**: ADR-0016
+- **Date**: 2026-03-29
+- **Context**: Operators now need a server-hosted path for truly long-running
+  `ultimate` missions that survives laptop shutdowns while preserving the
+  target-local `.shipyard/` state model.
+- **Decision**: Publish a server-first Linux mission hosting pack under
+  `shipyard/docs/ops/remote-linux-mission.md` and
+  `shipyard/docs/ops/templates/linux-mission/` that wraps the existing
+  mission-control stack with `systemd`, Caddy, a persistent workspace, and an
+  optional two-hour Vercel sync timer instead of inventing a second hosted
+  runtime architecture.
+- **Alternatives Considered**: Treat plain hosted `shipyard --ui` as the long-
+  run story; document only ad hoc VPS notes; make Railway the only recommended
+  path even for watchdog-backed missions.
+- **Consequences**: Remote ops now have a durable checked-in playbook, future
+  deployment changes should keep the Linux pack aligned with the mission-config
+  contract, and preview should remain an internal runtime surface while public
+  sharing continues to flow through deploy URLs.

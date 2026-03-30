@@ -46,22 +46,22 @@ the target app URL.
   GitHub auth is unavailable, with blocked actions called out clearly.
 
 ## Acceptance Criteria
-- [ ] AC-1: Shipyard defines a Railway-hosted factory runtime contract that
+- [x] AC-1: Shipyard defines a Railway-hosted factory runtime contract that
   builds on the Phase 9 hosted baseline and keeps all factory artifacts and
   runtime state under the persistent workspace path.
-- [ ] AC-2: Railway-hosted Shipyard can use a deployed-safe GitHub auth adapter
+- [x] AC-2: Railway-hosted Shipyard can use a deployed-safe GitHub auth adapter
   such as OAuth, GitHub App, or service token instead of relying on local `gh`.
-- [ ] AC-3: Hosted projects can clone, pull, resume, and sync canonical GitHub
+- [x] AC-3: Hosted projects can clone, pull, resume, and sync canonical GitHub
   bindings inside the Railway workspace when auth is available.
-- [ ] AC-4: If GitHub auth or binding is unavailable in hosted mode, Shipyard
+- [x] AC-4: If GitHub auth or binding is unavailable in hosted mode, Shipyard
   still creates or resumes a managed local workspace, records degraded-source
   status, and keeps non-merge phases usable.
-- [ ] AC-5: Hosted runtime status clearly distinguishes the Shipyard service
+- [x] AC-5: Hosted runtime status clearly distinguishes the Shipyard service
   URL, any private preview URL, and the target app's public deployment URL.
-- [ ] AC-6: Railway-specific env vars, volume requirements, health checks, and
+- [x] AC-6: Railway-specific env vars, volume requirements, health checks, and
   secret requirements are explicit for model provider, GitHub capability,
   deploy tokens, and persistent workspace state.
-- [ ] AC-7: Local and hosted runtimes share the same artifact, source-control,
+- [x] AC-7: Local and hosted runtimes share the same artifact, source-control,
   and coordinator contracts so later stories do not fork behavior by platform.
 
 ## Edge Cases
@@ -96,3 +96,76 @@ the target app URL.
 - Shipyard has one credible Railway-hosted factory runtime contract that can
   manage GitHub-backed or degraded-local projects without relying on local shell
   auth assumptions.
+
+## Implementation Evidence
+
+- `shipyard/src/hosting/contracts.ts`: defines the hosted runtime profile,
+  persistent workspace binding, degraded hosted fallback, hosted availability
+  state, and compact workbench projection used by the Railway-backed runtime.
+
+  ```ts
+  export const hostedRuntimeModeSchema = z.enum([
+    "local",
+    "railway-hosted",
+    "degraded-hosted",
+  ]);
+  ```
+
+- `shipyard/src/hosting/store.ts`: persists hosted runtime metadata to
+  `.shipyard/hosting/runtime.json` with atomic writes so Railway restarts can
+  resume the same mounted workspace, hosted status, and last resumed session.
+
+- `shipyard/src/hosting/runtime.ts`: resolves Railway-hosted mode from the
+  mounted-workspace and public-domain contract, normalizes hosted-safe GitHub
+  adapter availability through the `P11-S06` source-control runtime, restores
+  existing session or repo binding state, records degraded hosted mode when
+  auth or binding is missing, and keeps planning/TDD/code turns available even
+  when PR-specific actions are blocked.
+
+- `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/ui/health.ts`, and
+  `shipyard/src/ui/server.ts`: thread hosted runtime state into the browser
+  workbench and health diagnostics so the service URL, private preview URL, and
+  public deployment URL are surfaced separately for later board/coordinator
+  consumers.
+
+- `.github/workflows/railway-main-deploy.yml` and
+  `shipyard/docs/architecture/hosted-railway.md`: document and enforce the
+  Railway env and secret contract for persistent workspaces, hosted-safe GitHub
+  auth, Vercel deploy tokens, and `/api/health`.
+
+- `shipyard/tests/hosting-runtime.test.ts`,
+  `shipyard/tests/ui-runtime.test.ts`, and
+  `shipyard/tests/railway-config.test.ts`: add focused coverage for hosted
+  profile resolution, degraded hosted fallback, restart-safe restore, hosted
+  availability projection, and Railway workflow env sync.
+
+## LangSmith / Monitoring
+
+- Fresh deterministic finish-check traces on project
+  `shipyard-p11-s07-finishcheck`:
+  - hosted happy-path trace:
+    `019d371a-2953-7000-8000-05a556e123ca`
+  - degraded hosted trace:
+    `019d371a-5358-7000-8000-05f6096dd268`
+- Commands reviewed:
+  - traced runtime script via
+    `pnpm --dir shipyard exec node --import tsx -`
+  - `pnpm --dir shipyard exec langsmith trace list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --limit 5 --full`
+  - `pnpm --dir shipyard exec langsmith run list --project "$LANGSMITH_PROJECT" --trace-ids <trace-ids> --full`
+  - `pnpm --dir shipyard exec langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
+  - `pnpm --dir shipyard exec langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3`
+- The reviewed traces confirmed:
+  - the hosted happy path restored a persisted Railway workspace, resolved the
+    `github-token` hosted-safe adapter, reused the canonical
+    `acme/shipyard-target` binding, and published separate Shipyard service,
+    private preview, and public deployment URLs
+  - the degraded hosted path still restored the persistent workspace, marked
+    auth as `degraded-local`, and blocked only
+    `attach_repository`, `open_pull_request`, and `merge_pull_request` while
+    leaving planning, TDD, and standard code turns available
+- `langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
+  returned `[]` for the isolated finish-check project.
+- `langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3` returned
+  `null` for the isolated finish-check project.

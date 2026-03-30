@@ -11,9 +11,12 @@
   - new TDD helpers under `shipyard/src/tdd/`
   - `shipyard/src/agents/`
   - `shipyard/src/engine/turn.ts`
-  - `shipyard/src/phases/phase.ts`
   - `shipyard/src/artifacts/types.ts`
+  - `shipyard/src/engine/state.ts`
+  - `shipyard/src/engine/loop.ts`
   - `shipyard/src/ui/contracts.ts`
+  - `shipyard/src/ui/workbench-state.ts`
+  - `shipyard/src/ui/server.ts`
 - Public interfaces/contracts:
   - `TddLaneState`
   - `TddStage`
@@ -25,6 +28,21 @@
   stage writes code and emits stage results, optional property or mutation hooks
   run when configured, and the reviewer stage emits a quality artifact before
   the task is considered implementation-complete.
+
+## Implemented Shape
+- `executeTddTurn()` is a sibling runtime lane rather than a planner hint. It
+  parses `tdd start|continue|status`, resolves an approved technical spec from
+  the artifact registry, and keeps the active lane durable under `.shipyard/tdd`.
+- The test-author and implementer stages reuse the existing instruction-turn
+  executor through `phaseOverride`, which lets the TDD lane apply bounded
+  profile-specific prompts and tool surfaces without forking a second graph
+  runtime.
+- The reviewer stage is deterministic for this story: once the focused
+  validation is green, Shipyard emits a `tdd-quality-report` artifact directly
+  from the lane state instead of opening another write-capable model turn.
+- TDD lane state is projected into `workbenchState.tddState` so operators can
+  inspect stage, summary, attempts, optional checks, and latest artifacts from
+  recovered sessions without replaying chat history.
 
 ## Pack Cohesion and Sequencing
 - Higher-level pack objectives:
@@ -102,3 +120,16 @@ pnpm --dir shipyard typecheck
 pnpm --dir shipyard build
 git diff --check
 ```
+
+## Validation Notes
+
+- `pnpm --dir shipyard test` was attempted first but hit the repository's known
+  idle Vitest worker hang after starting `vitest run`.
+- The full suite was then completed deterministically with:
+
+  ```bash
+  CI=1 pnpm --dir shipyard exec vitest run --pool forks --no-file-parallelism --maxWorkers 1 --reporter=verbose
+  ```
+
+  That run passed and is the full-suite validation source of truth for this
+  story.

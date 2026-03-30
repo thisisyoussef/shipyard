@@ -20,6 +20,10 @@ import type {
   ExecuteTaskRunnerTurnOptions,
   TaskRunnerTurnResult,
 } from "../src/plans/task-runner.js";
+import type {
+  ExecuteTddTurnOptions,
+  TddTurnResult,
+} from "../src/tdd/turn.js";
 
 const createdDirectories: string[] = [];
 
@@ -119,6 +123,12 @@ function createTurnResult(
       actingLoopBudget: 25,
       actingLoopBudgetReason: "narrow-default",
       firstHardFailure: null,
+    },
+    runtimeAssist: {
+      activeProfileId: null,
+      activeProfileName: null,
+      activeProfileRoute: null,
+      loadedSkills: [],
     },
     handoff: {
       loaded: null,
@@ -279,6 +289,32 @@ function createPlanningTurnResult(
     summary: options.finalText,
     langSmithTrace: null,
     ...options,
+  };
+}
+
+function createTddTurnResult(
+  options: Partial<TddTurnResult> & Pick<TddTurnResult, "finalText" | "status">,
+): TddTurnResult {
+  const {
+    finalText,
+    status,
+    ...rest
+  } = options;
+
+  return {
+    command: "status",
+    status,
+    summary: finalText,
+    finalText,
+    lane: null,
+    langSmithTrace: null,
+    runtimeAssist: {
+      activeProfileId: null,
+      activeProfileName: null,
+      activeProfileRoute: null,
+      loadedSkills: [],
+    },
+    ...rest,
   };
 }
 
@@ -686,6 +722,104 @@ describe("terminal loop interrupts", () => {
     expect(executeTaskTurn.mock.calls[1]?.[0].instruction).toBe("continue");
     expect(logSpy.mock.calls.flat()).toContain("Handled next");
     expect(logSpy.mock.calls.flat()).toContain("Handled continue");
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("routes tdd-prefixed instructions through the tdd executor", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-loop-tdd-");
+    const sessionState = createSessionState({
+      sessionId: "loop-tdd-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: true,
+        language: null,
+        framework: null,
+        packageManager: null,
+        scripts: {},
+        hasReadme: false,
+        hasAgentsMd: false,
+        topLevelFiles: [],
+        topLevelDirectories: [],
+        projectName: null,
+        previewCapability: createUnavailablePreviewCapability(
+          "No supported local preview signal was detected for this target.",
+        ),
+      },
+    });
+    const fakeReadline = new FakeReadline();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const executeTurn = vi.fn(async (): Promise<InstructionTurnResult> => {
+      throw new Error("Normal instruction executor should not run for tdd commands.");
+    });
+    const executeTddTurn = vi.fn(
+      async (
+        options: ExecuteTddTurnOptions,
+      ): Promise<TddTurnResult> => {
+        options.sessionState.turnCount += 1;
+
+        return createTddTurnResult({
+          command: "status",
+          status: "success",
+          finalText: `Handled ${options.instruction}`,
+          lane: {
+            version: 1,
+            laneId: "tdd-lane-1",
+            status: "running",
+            currentStage: "implementer",
+            createdAt: "2026-03-28T18:00:00.000Z",
+            updatedAt: "2026-03-28T18:00:00.000Z",
+            startedBy: "operator",
+            focusedValidationCommand: "vitest run tests/example.test.ts",
+            selection: {
+              artifact: {
+                type: "technical-spec-artifact",
+                id: "phase-11-tech-spec",
+                version: 1,
+              },
+              storyId: "STORY-001",
+              specId: "SPEC-001",
+            },
+            requestPropertyCheck: false,
+            requestMutationCheck: false,
+            immutableTestPaths: ["tests/example.test.ts"],
+            implementationPaths: ["src/example.ts"],
+            stageAttempts: {
+              testAuthor: 1,
+              implementer: 0,
+              reviewer: 0,
+            },
+            focusedValidation: null,
+            optionalChecks: [],
+            latestHandoffArtifact: null,
+            latestEscalationArtifact: null,
+            latestQualityArtifact: null,
+            lastSummary: "Implementer stage ready.",
+            auditTrail: [],
+          },
+        });
+      },
+    );
+
+    const loopPromise = runShipyardLoop({
+      sessionState,
+      executeTurn,
+      executeTddTurn,
+      createReadlineInterface: () =>
+        fakeReadline as unknown as ReturnType<typeof import("node:readline").createInterface>,
+    });
+
+    fakeReadline.pushLine("tdd status");
+    await vi.waitFor(() => {
+      expect(executeTddTurn).toHaveBeenCalledTimes(1);
+    });
+
+    fakeReadline.pushLine("exit");
+    await loopPromise;
+
+    expect(executeTurn).not.toHaveBeenCalled();
+    expect(executeTddTurn.mock.calls[0]?.[0].instruction).toBe("tdd status");
+    expect(logSpy.mock.calls.flat()).toContain("Handled tdd status");
     expect(errorSpy).not.toHaveBeenCalled();
   });
 });

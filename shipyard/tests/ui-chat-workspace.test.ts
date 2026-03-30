@@ -51,4 +51,37 @@ describe("ChatWorkspace", () => {
     expect(markup).toContain("Open trace");
     expect(markup).toContain('href="https://smith.langchain.com/runs/run-123"');
   });
+
+  it("formats assistant replies with headings, lists, emphasis, and code", () => {
+    const markdownTurns: TurnViewModel[] = [
+      {
+        ...turns[0]!,
+        id: "turn-markdown",
+        agentMessages: [
+          [
+            "## What shipped",
+            "",
+            "- **AI Opponent** uses minimax",
+            "- `Undo Move` is wired",
+            "",
+            "Shipyard kept the deploy flow **green**.",
+          ].join("\n"),
+        ],
+      },
+    ];
+
+    const markup = renderToStaticMarkup(
+      createElement(ChatWorkspace, {
+        turns: markdownTurns,
+        emptyContent: null,
+      }),
+    );
+
+    expect(markup).toContain("<h3");
+    expect(markup).toContain("What shipped");
+    expect(markup).toContain('<ul class="chat-rich-list">');
+    expect(markup).toContain("<strong>AI Opponent</strong>");
+    expect(markup).toContain('<code class="chat-rich-inline-code">Undo Move</code>');
+    expect(markup).toContain("<strong>green</strong>");
+  });
 });

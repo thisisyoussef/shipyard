@@ -107,6 +107,8 @@ export interface HeaderStripProps {
   leftSidebarOpen: boolean;
   /** Whether right sidebar is expanded */
   rightSidebarOpen: boolean;
+  /** Whether to render the right sidebar toggle */
+  showRightToggle?: boolean;
   /** Callback when trace path copy is clicked */
   onCopyTracePath: () => void;
   /** Callback when refresh is clicked */
@@ -163,6 +165,7 @@ export function HeaderStrip({
   brandElement,
   leftSidebarOpen,
   rightSidebarOpen,
+  showRightToggle = true,
   onCopyTracePath,
   onRefresh,
   onToggleLeftSidebar,
@@ -257,18 +260,20 @@ export function HeaderStrip({
           <SidebarLeftIcon />
         </button>
 
-        <button
-          type="button"
-          className="header-icon-btn"
-          title={rightSidebarOpen ? "Hide activity" : "Show activity"}
-          aria-label="Toggle activity panel"
-          aria-expanded={rightSidebarOpen}
-          aria-controls="sidebar-right"
-          data-active={rightSidebarOpen}
-          onClick={onToggleRightSidebar}
-        >
-          <SidebarRightIcon />
-        </button>
+        {showRightToggle ? (
+          <button
+            type="button"
+            className="header-icon-btn"
+            title={rightSidebarOpen ? "Hide activity" : "Show activity"}
+            aria-label="Toggle activity panel"
+            aria-expanded={rightSidebarOpen}
+            aria-controls="sidebar-right"
+            data-active={rightSidebarOpen}
+            onClick={onToggleRightSidebar}
+          >
+            <SidebarRightIcon />
+          </button>
+        ) : null}
       </div>
     </div>
   );

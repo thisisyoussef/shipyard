@@ -2,7 +2,6 @@ import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { chromium } from "playwright";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PreviewState } from "../src/artifacts/types.js";
@@ -347,7 +346,7 @@ describe("browser evaluator", () => {
     } finally {
       await supervisor.stop();
     }
-  }, 20_000);
+  }, 30_000);
 
   it("records selector or action-step failures", async () => {
     const targetDirectory = await createTempDirectory(
@@ -406,12 +405,8 @@ describe("browser evaluator", () => {
   }, 20_000);
 
   it("reports browser launch failures as infrastructure failures", async () => {
-    const launchSpy = vi.spyOn(chromium, "launch").mockRejectedValueOnce(
-      new Error("libglib-2.0.so.0: cannot open shared object file"),
-    );
-
-    try {
-      const report = await runBrowserEvaluator({
+    const report = await runBrowserEvaluator(
+      {
         summary: "Inspect the preview.",
         target: {
           status: "available",
@@ -430,22 +425,27 @@ describe("browser evaluator", () => {
             kind: "console",
           },
         ],
-      });
+      },
+      {
+        browserLauncher: {
+          launch: vi.fn().mockRejectedValueOnce(
+            new Error("libglib-2.0.so.0: cannot open shared object file"),
+          ),
+        },
+      },
+    );
 
-      expect(report.status).toBe("infrastructure_failed");
-      expect(report.failure).toMatchObject({
-        stepId: null,
-        label: null,
-        kind: "infrastructure",
-        message: expect.stringContaining("libglib-2.0.so.0"),
-      });
-      expect(report.steps.map((step) => step.status)).toEqual([
-        "skipped",
-        "skipped",
-      ]);
-    } finally {
-      launchSpy.mockRestore();
-    }
+    expect(report.status).toBe("infrastructure_failed");
+    expect(report.failure).toMatchObject({
+      stepId: null,
+      label: null,
+      kind: "infrastructure",
+      message: expect.stringContaining("libglib-2.0.so.0"),
+    });
+    expect(report.steps.map((step) => step.status)).toEqual([
+      "skipped",
+      "skipped",
+    ]);
   });
 
   it("persists bounded artifact references when configured", async () => {

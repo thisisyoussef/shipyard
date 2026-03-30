@@ -5,6 +5,99 @@ export interface TaskPlan {
   plannedSteps: string[];
 }
 
+export type ArtifactStatus =
+  | "draft"
+  | "approved"
+  | "rejected"
+  | "generated"
+  | "superseded";
+
+export type ArtifactContentKind = "markdown" | "json";
+
+export type ArtifactSource = "registry" | "legacy-plan" | "legacy-handoff";
+
+export interface ArtifactMetadata {
+  id: string;
+  type: string;
+  parentId: string | null;
+  version: number;
+  status: ArtifactStatus;
+  producedBy: string;
+  producedAt: string;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  tags: string[];
+  dependsOn: string[];
+}
+
+export interface ArtifactLocator {
+  type: string;
+  id: string;
+  version: number;
+}
+
+export type ArtifactJsonPrimitive = string | number | boolean | null;
+export type ArtifactJsonValue =
+  | ArtifactJsonPrimitive
+  | ArtifactJsonValue[]
+  | { [key: string]: ArtifactJsonValue };
+export type ArtifactContent = string | ArtifactJsonValue;
+
+export interface ArtifactRecord<TContent = ArtifactContent> {
+  metadata: ArtifactMetadata;
+  title: string | null;
+  summary: string;
+  contentKind: ArtifactContentKind;
+  contentPath: string;
+  metadataPath: string;
+  source: ArtifactSource;
+  sourceFingerprint: string | null;
+  content?: TContent;
+}
+
+export interface ArtifactQuery {
+  type?: string | string[];
+  ids?: string | string[];
+  status?: ArtifactStatus | ArtifactStatus[];
+  tags?: string[];
+  parentId?: string;
+  dependsOn?: string[];
+  producedBy?: string | string[];
+  latestOnly?: boolean;
+  includeContent?: boolean;
+  limit?: number;
+}
+
+export interface ArtifactQueryResult {
+  records: ArtifactRecord[];
+  total: number;
+  errors: string[];
+  projectedLegacyCount: number;
+}
+
+export interface LoadArtifactResult {
+  record: ArtifactRecord | null;
+  error: string | null;
+}
+
+export interface SaveArtifactOptions {
+  type: string;
+  id: string;
+  parentId?: string | null;
+  status: ArtifactStatus;
+  producedBy: string;
+  producedAt?: string;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  tags?: string[];
+  dependsOn?: string[];
+  title?: string | null;
+  summary?: string | null;
+  contentKind: ArtifactContentKind;
+  content: ArtifactContent;
+  version?: number;
+}
+
 export interface ExecutionSpec {
   instruction: string;
   goal: string;
@@ -395,6 +488,215 @@ export interface DiscoveryReport {
   topLevelDirectories: string[];
   projectName: string | null;
   previewCapability: PreviewCapabilityReport;
+}
+
+export type ResearchSourceTier =
+  | "official-docs"
+  | "primary-source"
+  | "repo-local"
+  | "secondary-source";
+
+export type ResearchLookupStatus =
+  | "external"
+  | "repo-local-fallback"
+  | "no-results";
+
+export interface ResearchSourcePreference {
+  sourceId: string;
+  label: string;
+  tier: ResearchSourceTier;
+  domains: string[];
+  rationale: string;
+}
+
+export interface ResearchSourceRecord {
+  sourceId: string;
+  title: string;
+  url: string;
+  domain: string;
+  label: string;
+  tier: ResearchSourceTier;
+  rank: number;
+  snippet: string;
+}
+
+export interface ResearchTakeaway {
+  title: string;
+  summary: string;
+  sourceIds: string[];
+}
+
+export interface ResearchLookupRequest {
+  query: string;
+  targetDirectory: string;
+  discovery: DiscoveryReport;
+  preferredSources: ResearchSourcePreference[];
+  maxSources: number;
+}
+
+export interface ResearchLookupResult {
+  title?: string;
+  query: string;
+  lookupStatus: ResearchLookupStatus;
+  summary: string;
+  sources: ResearchSourceRecord[];
+  takeaways: ResearchTakeaway[];
+}
+
+export interface EpicRecord {
+  id: string;
+  title: string;
+  valueStatement: string;
+  scope: string;
+  acceptanceCriteria: string[];
+  dependencies: string[];
+  estimatedComplexity: string;
+}
+
+export interface EpicArtifact {
+  title: string;
+  summary: string;
+  epics: EpicRecord[];
+}
+
+export interface UserStoryRecord {
+  id: string;
+  epicId: string | null;
+  title: string;
+  userStory: string;
+  acceptanceCriteria: string[];
+  edgeCases: string[];
+  dependencies: string[];
+  estimatedComplexity: string;
+  priority: number;
+}
+
+export interface UserStoryArtifact {
+  title: string;
+  summary: string;
+  stories: UserStoryRecord[];
+}
+
+export interface TechnicalSpecRecord {
+  id: string;
+  storyId: string;
+  title: string;
+  overview: string;
+  dataModel: string[];
+  apiContract: string[];
+  componentStructure: string[];
+  stateManagement: string;
+  errorHandling: string[];
+  testExpectations: string[];
+  implementationOrder: string[];
+  designReferences: string[];
+}
+
+export interface TechnicalSpecArtifact {
+  title: string;
+  summary: string;
+  specs: TechnicalSpecRecord[];
+}
+
+export type BacklogEntryStatus = "ready" | "blocked" | "done";
+
+export interface BacklogEntry {
+  storyId: string;
+  title: string;
+  epicId: string | null;
+  priority: number;
+  rank: number;
+  status: BacklogEntryStatus;
+  dependencies: string[];
+  specId: string | null;
+}
+
+export interface BacklogArtifact {
+  title: string;
+  summary: string;
+  orderedStoryIds: string[];
+  entries: BacklogEntry[];
+}
+
+export type TddStage = "test-author" | "implementer" | "reviewer";
+
+export type TddLaneStatus =
+  | "running"
+  | "blocked"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type TddValidationExpectedOutcome = "red" | "green";
+
+export type TddValidationObservedOutcome =
+  | "red"
+  | "green"
+  | "already-green"
+  | "blocked";
+
+export type TddOptionalCheckKind = "property" | "mutation";
+
+export type TddOptionalCheckStatus = "passed" | "skipped" | "blocked";
+
+export interface TddValidationRecord {
+  command: string;
+  expectedOutcome: TddValidationExpectedOutcome;
+  observedOutcome: TddValidationObservedOutcome;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  signal: string | null;
+  summary: string;
+}
+
+export interface TddOptionalCheckRecord {
+  kind: TddOptionalCheckKind;
+  command: string | null;
+  status: TddOptionalCheckStatus;
+  exitCode: number | null;
+  summary: string;
+}
+
+export interface TddHandoffArtifact {
+  laneId: string;
+  stage: TddStage;
+  stageAttempt: number;
+  summary: string;
+  finalText: string;
+  immutableTestPaths: string[];
+  editedPaths: string[];
+  validation: TddValidationRecord | null;
+  nextStage: TddStage | null;
+  optionalChecks: TddOptionalCheckRecord[];
+}
+
+export interface TddEscalationArtifact {
+  laneId: string;
+  stage: TddStage;
+  reason: string;
+  summary: string;
+  immutableTestPaths: string[];
+  offendingPaths: string[];
+  validation: TddValidationRecord | null;
+}
+
+export interface TddQualityFinding {
+  severity: "info" | "warning";
+  message: string;
+}
+
+export interface TddQualityReportArtifact {
+  laneId: string;
+  stage: "reviewer";
+  summary: string;
+  focusedValidation: TddValidationRecord | null;
+  optionalChecks: TddOptionalCheckRecord[];
+  immutableTestPaths: string[];
+  implementationPaths: string[];
+  missingTestRecommendations: string[];
+  findings: TddQualityFinding[];
 }
 
 export interface TargetProfile {

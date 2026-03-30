@@ -3,7 +3,7 @@
 - Pack: Runtime Factory Foundations
 - Estimate: 36-48 hours
 - Date: 2026-03-28
-- Status: Planned; runtime-only pack drafted, implementation not started
+- Status: Complete; P11-S01 through P11-S09 implemented
 
 ## Pack Objectives
 
@@ -80,4 +80,152 @@ That later pack can concentrate on board interaction design, transitions, visual
 
 ## Implementation Evidence
 
-- N/A - planning pack only. No implementation has landed yet.
+- `shipyard/docs/specs/phase-11/p11-s01-versioned-artifact-registry-and-query-surface/feature-spec.md`:
+  records the first shipped Phase 11 foundation story, including checked
+  acceptance criteria and code-level evidence.
+- `shipyard/docs/specs/phase-11/p11-s02-phase-pipeline-runner-and-artifact-approval-gates/feature-spec.md`:
+  records the shipped pipeline runner, approval-gate semantics, and code-level
+  evidence for explicit `pipeline ...` execution.
+- `shipyard/docs/specs/phase-11/p11-s03-runtime-skill-registry-agent-profiles-and-role-loading/feature-spec.md`:
+  records the shipped runtime skill manifests, agent profiles, phase-default
+  skill loading, and browser/trace-visible runtime-assist state.
+- `shipyard/docs/specs/phase-11/p11-s04-discovery-pm-pipeline-and-research-aware-planning/feature-spec.md`:
+  records the shipped discovery -> research -> PM runtime lane, official-doc
+  preference, deterministic backlog output, and trace-backed verification.
+- `shipyard/src/artifacts/types.ts`, `shipyard/src/artifacts/registry/index.ts`,
+  and `shipyard/src/engine/state.ts`: implement the shared artifact registry
+  contract, target-local registry layout, versioned save/load/query helpers,
+  and lazy projection of legacy plans and handoffs.
+- `shipyard/src/pipeline/contracts.ts`, `shipyard/src/pipeline/store.ts`,
+  `shipyard/src/pipeline/defaults.ts`, and `shipyard/src/pipeline/turn.ts`:
+  implement durable pipeline runs, approval decisions, default phase presets,
+  and the explicit pipeline command executor.
+- `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/ui/server.ts`, and `shipyard/src/engine/loop.ts`: route
+  `pipeline ...` commands through the CLI/browser runtimes and publish compact
+  approval-wait state through the persisted workbench snapshot.
+- `shipyard/src/skills/contracts.ts`, `shipyard/src/skills/registry.ts`,
+  `shipyard/src/agents/profiles.ts`, `shipyard/src/context/envelope.ts`,
+  `shipyard/src/engine/turn.ts`, and `shipyard/src/pipeline/turn.ts`:
+  implement runtime-native skill discovery/loadouts, typed profile routing, and
+  prompt/session/trace propagation of the active runtime assist state.
+- `shipyard/src/research/lookup.ts`,
+  `shipyard/src/tools/lookup-official-docs.ts`,
+  `shipyard/src/phases/discovery/index.ts`,
+  `shipyard/src/phases/pm/index.ts`,
+  `shipyard/src/pipeline/planning-artifacts.ts`,
+  `shipyard/src/pipeline/defaults.ts`, and `shipyard/src/pipeline/turn.ts`:
+  implement the discovery/research/PM phase factories, official-doc-first
+  research with repo-local fallback, artifact normalization, deterministic
+  backlog generation, and optional or alternate consumed-artifact resolution.
+- `shipyard/src/tdd/contracts.ts`, `shipyard/src/tdd/store.ts`,
+  `shipyard/src/tdd/turn.ts`, `shipyard/src/engine/turn.ts`,
+  `shipyard/src/engine/state.ts`, `shipyard/src/engine/loop.ts`,
+  `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/ui/server.ts`, and `shipyard/src/agents/profiles.ts`:
+  implement the runtime-native three-role TDD lane, `tdd start|continue|status`
+  routing, durable lane persistence, workbench-visible stage summaries, the
+  `test-author` profile, RED/GREEN guards, immutable test enforcement, and
+  structured handoff/escalation/quality artifacts.
+- `shipyard/skills/**`: provides the first built-in runtime skill manifests and
+  prompt fragments used by code, target-manager, discovery, feature-spec, and
+  technical-plan phases.
+- `shipyard/tests/artifact-registry.test.ts`: validates versioning, compact
+  summary behavior, malformed metadata isolation, and legacy artifact
+  projection without breaking the current runtime.
+- `shipyard/tests/pipeline-runtime.test.ts` and `shipyard/tests/ui-runtime.test.ts`:
+  validate required/advisory gates, edited approvals, reject/rerun behavior,
+  restart-safe resume, and browser-visible approval-wait session snapshots.
+- `shipyard/tests/runtime-skills.test.ts` and `shipyard/tests/turn-runtime.test.ts`:
+  validate runtime skill discovery, duplicate/invalid manifest handling,
+  reversible tool loading, ordered prompt assembly, and profile-aware turn
+  prompts with persisted runtime-assist metadata.
+- `shipyard/tests/discovery-pm-pipeline.test.ts` and
+  `shipyard/tests/research-lane.test.ts`: validate the default
+  discovery/research/PM pipeline, approval-gated resume behavior, deterministic
+  backlog ordering, official-doc ranking, and explicit repo-local fallback when
+  external research is unavailable.
+- `shipyard/tests/tdd-runtime.test.ts` and `shipyard/tests/loop-runtime.test.ts`:
+  validate RED-before-implementer guards, already-green escalations,
+  restart-safe lane persistence, immutable test protection, reviewer quality
+  reports, optional-check downgrade behavior, and `tdd` command routing through
+  the main loop and browser runtimes.
+- `shipyard/src/source-control/contracts.ts`,
+  `shipyard/src/source-control/store.ts`,
+  `shipyard/src/source-control/runtime.ts`,
+  `shipyard/src/tools/source-control.ts`,
+  `shipyard/src/tools/index.ts`,
+  `shipyard/src/phases/code/index.ts`,
+  `shipyard/src/tools/target-manager/create-target.ts`,
+  `shipyard/src/engine/state.ts`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: implement the GitHub-first source-control
+  contract, hosted-safe auth precedence, explicit degraded-local fallback,
+  target-local persistence, branch-per-story provisioning, dedicated `pr-ops`
+  ownership, first-merge-wins stale-merge recovery, and workbench-visible
+  source-control summaries for downstream hosted and coordinator stories.
+- `shipyard/tests/source-control-runtime.test.ts`,
+  `shipyard/tests/ui-view-models.test.ts`, and
+  `shipyard/tests/loop-runtime.test.ts`: validate source-control capability
+  resolution, durable repository binding, stale/conflict ticket creation,
+  workbench projection, and the narrow test baseline fix needed to keep the
+  repo green while landing P11-S06.
+- `shipyard/src/hosting/contracts.ts`,
+  `shipyard/src/hosting/store.ts`,
+  `shipyard/src/hosting/runtime.ts`,
+  `shipyard/src/engine/state.ts`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/ui/health.ts`,
+  `shipyard/src/ui/server.ts`,
+  `.github/workflows/railway-main-deploy.yml`, and
+  `shipyard/docs/architecture/hosted-railway.md`: implement the Railway-hosted
+  runtime contract, durable `.shipyard/hosting/runtime.json` persistence,
+  hosted-safe GitHub adapter resolution, persistent workspace restore,
+  degraded hosted fallback, and clear separation between Shipyard service,
+  private preview, and public deployment surfaces.
+- `shipyard/tests/hosting-runtime.test.ts`,
+  `shipyard/tests/ui-runtime.test.ts`, and
+  `shipyard/tests/railway-config.test.ts`: validate hosted profile resolution,
+  durable workspace restore, degraded hosted fallback, workbench/health
+  projection, hosted availability metadata, and the Railway workflow env +
+  secret contract needed to run the same factory runtime remotely.
+- `shipyard/src/tasks/contracts.ts`,
+  `shipyard/src/tasks/store.ts`,
+  `shipyard/src/tasks/runtime.ts`,
+  `shipyard/src/coordination/contracts.ts`,
+  `shipyard/src/coordination/store.ts`,
+  `shipyard/src/coordination/runtime.ts`,
+  `shipyard/src/engine/state.ts`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: implement the persisted task graph,
+  coordination-bus contracts, advisory leases, threaded acknowledgements,
+  source-control and hosted-runtime refs on nodes, additive `taskBoard`
+  workbench snapshots, and explicit `tasks:state` websocket publication for
+  future kanban and coordinator consumers.
+- `shipyard/tests/task-graph-runtime.test.ts`,
+  `shipyard/tests/coordination-runtime.test.ts`, and
+  `shipyard/tests/task-graph-ui-runtime.test.ts`: validate backlog-to-graph
+  projection, dependency blocking, deterministic board columns, restart-safe
+  persistence, advisory lease lifecycle, threaded acknowledgements, runtime
+  refs on nodes, and browser-visible task-board snapshots without shipping the
+  visual board itself.
+- `shipyard/src/orchestration/contracts.ts`,
+  `shipyard/src/orchestration/store.ts`,
+  `shipyard/src/orchestration/runtime.ts`,
+  `shipyard/src/engine/ultimate-mode.ts`,
+  `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: implement the master coordinator runtime,
+  durable `.shipyard/orchestration/runtime.json` state, task-graph-aware
+  scheduling, source-control and hosted-capacity gating, human reroutes and
+  reprioritization, first-merge-wins recovery dispatch, and additive
+  `orchestration:state` workbench projection for future kanban consumers.
+- `shipyard/tests/orchestration-runtime.test.ts`,
+  `shipyard/tests/ultimate-mode.test.ts`, and
+  `shipyard/tests/ui-view-models.test.ts`: validate dependency-aware worker
+  scheduling, approval waits, durable restart-safe coordinator recovery,
+  recovery-queue routing, coordinator-first ultimate-mode dispatch, failed
+  worker isolation, and reducer support for orchestration snapshots.

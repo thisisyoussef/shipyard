@@ -1,19 +1,34 @@
 import type { PreviewState } from "../artifacts/types.js";
 import { formatTurnExecutionFingerprint } from "../engine/turn-fingerprint.js";
+import type { HostingWorkbenchState } from "../hosting/contracts.js";
+import { createDefaultHostingWorkbenchState } from "../hosting/contracts.js";
+import type { OrchestrationWorkbenchState } from "../orchestration/contracts.js";
+import { createIdleOrchestrationWorkbenchState } from "../orchestration/contracts.js";
+import type { PipelineWorkbenchState } from "../pipeline/contracts.js";
 import {
   createInitialPreviewState,
   createIdlePreviewState,
 } from "../preview/contracts.js";
+import type { SourceControlWorkbenchState } from "../source-control/contracts.js";
+import {
+  createDefaultSourceControlWorkbenchState,
+} from "../source-control/contracts.js";
+import type { RuntimeAssistSummary } from "../skills/contracts.js";
+import type { TddWorkbenchState } from "../tdd/contracts.js";
+import { createIdleTddWorkbenchState } from "../tdd/contracts.js";
+import { createIdleUltimateUiState } from "./contracts.js";
 import type {
   BackendToFrontendMessage,
   DeploySummary,
   ProjectBoardState,
   UploadReceipt,
   SessionRunSummary,
+  TaskBoardState,
   TargetEnrichmentState,
   TargetManagerState,
   TargetSummary,
   UiLangSmithTraceReference,
+  UltimateUiState,
 } from "./contracts.js";
 
 export type WorkbenchConnectionState =
@@ -120,7 +135,22 @@ export type ProjectBoardProjectViewModel =
 
 export type ProjectBoardViewModel = ProjectBoardState;
 
+export type TaskBoardViewModel = TaskBoardState;
+
 export interface SessionRunSummaryViewModel extends SessionRunSummary {}
+
+export interface PipelineWorkbenchStateViewModel extends PipelineWorkbenchState {}
+
+export interface TddWorkbenchStateViewModel extends TddWorkbenchState {}
+
+export interface RuntimeAssistViewModel extends RuntimeAssistSummary {}
+
+export interface OrchestrationViewModel extends OrchestrationWorkbenchState {}
+
+export interface SourceControlViewModel extends SourceControlWorkbenchState {}
+
+export interface HostingViewModel extends HostingWorkbenchState {}
+export interface UltimateUiStateViewModel extends UltimateUiState {}
 
 export interface WorkbenchViewState {
   connectionState: WorkbenchConnectionState;
@@ -141,6 +171,14 @@ export interface WorkbenchViewState {
   previewState: PreviewStateViewModel;
   targetManager: TargetManagerViewModel | null;
   projectBoard: ProjectBoardViewModel | null;
+  taskBoard: TaskBoardViewModel | null;
+  pipelineState: PipelineWorkbenchStateViewModel | null;
+  tddState: TddWorkbenchStateViewModel;
+  orchestration: OrchestrationViewModel;
+  sourceControl: SourceControlViewModel;
+  hosting: HostingViewModel;
+  ultimateState: UltimateUiStateViewModel;
+  runtimeAssist: RuntimeAssistViewModel;
 }
 
 export interface RotateInstructionTurnOptions {
@@ -172,6 +210,18 @@ export function createInitialDeploySummary(
     command: null,
     requestedAt: null,
     completedAt: null,
+    ...overrides,
+  };
+}
+
+export function createInitialRuntimeAssistState(
+  overrides: Partial<RuntimeAssistViewModel> = {},
+): RuntimeAssistViewModel {
+  return {
+    activeProfileId: null,
+    activeProfileName: null,
+    activeProfileRoute: null,
+    loadedSkills: [],
     ...overrides,
   };
 }
@@ -288,6 +338,62 @@ function createTargetManagerAgentStatus(
   return `Active target: ${currentTarget.name}`;
 }
 
+function createPipelineAgentStatus(
+  pipelineState: PipelineWorkbenchStateViewModel | null,
+): string | null {
+  if (!pipelineState || pipelineState.status === "idle") {
+    return null;
+  }
+
+  if (pipelineState.waitingForApproval) {
+    return pipelineState.summary || "Pipeline is waiting for approval.";
+  }
+
+  return pipelineState.summary || null;
+}
+
+function createSourceControlAgentStatus(
+  sourceControl: SourceControlViewModel | null,
+): string | null {
+  if (!sourceControl || !sourceControl.updatedAt) {
+    return null;
+  }
+
+  if (sourceControl.degraded || sourceControl.pendingConflictTicket) {
+    return sourceControl.summary;
+  }
+
+  return null;
+}
+
+function createOrchestrationAgentStatus(
+  orchestration: OrchestrationViewModel | null,
+): string | null {
+  if (!orchestration || orchestration.mode === "idle") {
+    return null;
+  }
+
+  if (
+    orchestration.status === "waiting" ||
+    orchestration.status === "blocked" ||
+    orchestration.activeWorkerCount > 0
+  ) {
+    return orchestration.summary;
+  }
+
+  return null;
+}
+
+function createTddAgentStatus(
+  tddState: TddWorkbenchStateViewModel | null,
+): string | null {
+  if (!tddState || tddState.status === "idle") {
+    return null;
+  }
+
+  return tddState.summary || null;
+}
+
 function ensureActiveTurn(
   state: WorkbenchViewState,
 ): WorkbenchViewState {
@@ -393,7 +499,12 @@ function hasRecoveredHistory(state: WorkbenchViewState): boolean {
     state.turns.length > 0 ||
     state.fileEvents.length > 0 ||
     state.contextHistory.length > 0 ||
-    state.pendingUploads.length > 0
+    state.pendingUploads.length > 0 ||
+    state.tddState.status !== "idle" ||
+    (
+      state.pipelineState !== null &&
+      state.pipelineState.status !== "idle"
+    )
   );
 }
 
@@ -455,6 +566,175 @@ function createTurnStatusFromDone(
   }
 }
 
+const MAX_PERSISTED_SESSION_HISTORY = 20;
+const MAX_PERSISTED_TURNS = 8;
+const MAX_PERSISTED_COMPLETED_ACTIVITY_ITEMS = 20;
+const MAX_PERSISTED_ACTIVE_ACTIVITY_ITEMS = 40;
+const MAX_PERSISTED_FILE_EVENTS = 40;
+const MAX_PERSISTED_CONTEXT_HISTORY = 30;
+const MAX_PERSISTED_AGENT_MESSAGES = 6;
+const MAX_PERSISTED_DIFF_LINES = 12;
+const MAX_PERSISTED_TEXT_CHARS = 1_200;
+const MAX_PERSISTED_PREVIEW_CHARS = 600;
+const MAX_PERSISTED_DETAIL_BODY_CHARS = 800;
+const MAX_PERSISTED_DIFF_CHARS = 240;
+
+function truncateWorkbenchText(
+  value: string | undefined,
+  limit: number,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value.length <= limit) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(limit - 1, 0))}…`;
+}
+
+function truncateWorkbenchPreview(
+  value: string | null | undefined,
+  limit: number,
+): string | null | undefined {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  return truncateWorkbenchText(value, limit);
+}
+
+function compactActivityItem(
+  item: ActivityItemViewModel,
+  preserveRichFields: boolean,
+): ActivityItemViewModel {
+  return {
+    ...item,
+    title: truncateWorkbenchText(item.title, 160) ?? item.title,
+    detail: truncateWorkbenchText(item.detail, MAX_PERSISTED_TEXT_CHARS) ?? item.detail,
+    detailBody: preserveRichFields
+      ? truncateWorkbenchText(item.detailBody, MAX_PERSISTED_DETAIL_BODY_CHARS)
+      : undefined,
+    diff: preserveRichFields
+      ? truncateWorkbenchText(item.diff, MAX_PERSISTED_DETAIL_BODY_CHARS)
+      : undefined,
+    beforePreview: preserveRichFields
+      ? truncateWorkbenchPreview(item.beforePreview, MAX_PERSISTED_PREVIEW_CHARS)
+      : undefined,
+    afterPreview: preserveRichFields
+      ? truncateWorkbenchPreview(item.afterPreview, MAX_PERSISTED_PREVIEW_CHARS)
+      : undefined,
+    command: truncateWorkbenchText(item.command, 240),
+    path: truncateWorkbenchText(item.path, 240),
+  };
+}
+
+function compactDiffLines(
+  diffLines: DiffLineViewModel[],
+): DiffLineViewModel[] {
+  return diffLines.slice(0, MAX_PERSISTED_DIFF_LINES).map((line) => ({
+    ...line,
+    text: truncateWorkbenchText(line.text, MAX_PERSISTED_DIFF_CHARS) ?? line.text,
+  }));
+}
+
+function selectRetainedTurnIds(state: WorkbenchViewState): Set<string> {
+  const mustKeepIds = new Set(
+    state.turns
+      .filter((turn) => turn.id === state.activeTurnId || turn.status === "working")
+      .map((turn) => turn.id),
+  );
+  const remainingSlots = Math.max(MAX_PERSISTED_TURNS - mustKeepIds.size, 0);
+  const supplementalTurns = state.turns
+    .filter((turn) => !mustKeepIds.has(turn.id))
+    .slice(0, remainingSlots);
+
+  return new Set([
+    ...mustKeepIds,
+    ...supplementalTurns.map((turn) => turn.id),
+  ]);
+}
+
+export function compactWorkbenchStateForPersistence(
+  state: WorkbenchViewState,
+): WorkbenchViewState {
+  const retainedTurnIds = selectRetainedTurnIds(state);
+  const retainedTurns = state.turns
+    .filter((turn) => retainedTurnIds.has(turn.id))
+    .map((turn) => {
+      const preserveRichFields =
+        turn.id === state.activeTurnId || turn.status === "working";
+      const retainedActivityCount = preserveRichFields
+        ? MAX_PERSISTED_ACTIVE_ACTIVITY_ITEMS
+        : MAX_PERSISTED_COMPLETED_ACTIVITY_ITEMS;
+
+      return {
+        ...turn,
+        instruction: truncateWorkbenchText(turn.instruction, MAX_PERSISTED_TEXT_CHARS) ?? turn.instruction,
+        summary: truncateWorkbenchText(turn.summary, 600) ?? turn.summary,
+        contextPreview: turn.contextPreview.map((item) =>
+          truncateWorkbenchText(item, 400) ?? item
+        ),
+        agentMessages: turn.agentMessages
+          .slice(-MAX_PERSISTED_AGENT_MESSAGES)
+          .map((message) =>
+            truncateWorkbenchText(message, 600) ?? message
+          ),
+        activity: turn.activity
+          .slice(-retainedActivityCount)
+          .map((item) => compactActivityItem(item, preserveRichFields)),
+      };
+    });
+
+  const retainedFileEvents = [
+    ...state.fileEvents.filter((event) => retainedTurnIds.has(event.turnId)),
+    ...state.fileEvents.filter((event) => !retainedTurnIds.has(event.turnId)),
+  ]
+    .slice(0, MAX_PERSISTED_FILE_EVENTS)
+    .map((event) => ({
+      ...event,
+      summary: truncateWorkbenchText(event.summary, 600) ?? event.summary,
+      diffLines: compactDiffLines(event.diffLines),
+      beforePreview: truncateWorkbenchPreview(
+        event.beforePreview,
+        MAX_PERSISTED_PREVIEW_CHARS,
+      ),
+      afterPreview: truncateWorkbenchPreview(
+        event.afterPreview,
+        MAX_PERSISTED_PREVIEW_CHARS,
+      ),
+    }));
+
+  const retainedPendingToolCalls = Object.fromEntries(
+    Object.entries(state.pendingToolCalls).filter(([, call]) =>
+      retainedTurnIds.has(call.turnId)
+    ),
+  );
+
+  return {
+    ...state,
+    agentStatus: truncateWorkbenchText(state.agentStatus, 400) ?? state.agentStatus,
+    sessionHistory: state.sessionHistory.slice(0, MAX_PERSISTED_SESSION_HISTORY),
+    turns: retainedTurns,
+    fileEvents: retainedFileEvents,
+    activeTurnId:
+      state.activeTurnId !== null && retainedTurnIds.has(state.activeTurnId)
+        ? state.activeTurnId
+        : null,
+    pendingToolCalls: retainedPendingToolCalls,
+    latestError: truncateWorkbenchText(state.latestError ?? undefined, 600) ?? null,
+    contextHistory: state.contextHistory.slice(-MAX_PERSISTED_CONTEXT_HISTORY),
+    ultimateState: {
+      ...state.ultimateState,
+      currentBrief:
+        truncateWorkbenchText(state.ultimateState.currentBrief ?? undefined, 600) ?? null,
+      lastCycleSummary:
+        truncateWorkbenchText(state.ultimateState.lastCycleSummary ?? undefined, 600) ?? null,
+    },
+  };
+}
+
 export function ensureWorkbenchStateDefaults(
   state: Partial<WorkbenchViewState> | WorkbenchViewState,
 ): WorkbenchViewState {
@@ -475,6 +755,14 @@ export function ensureWorkbenchStateDefaults(
     previewState: state.previewState ?? initialState.previewState,
     targetManager: state.targetManager ?? initialState.targetManager,
     projectBoard: state.projectBoard ?? initialState.projectBoard,
+    taskBoard: state.taskBoard ?? initialState.taskBoard,
+    pipelineState: state.pipelineState ?? initialState.pipelineState,
+    tddState: state.tddState ?? initialState.tddState,
+    orchestration: state.orchestration ?? initialState.orchestration,
+    sourceControl: state.sourceControl ?? initialState.sourceControl,
+    hosting: state.hosting ?? initialState.hosting,
+    ultimateState: state.ultimateState ?? initialState.ultimateState,
+    runtimeAssist: state.runtimeAssist ?? initialState.runtimeAssist,
   };
 }
 
@@ -500,6 +788,14 @@ export function createInitialWorkbenchState(): WorkbenchViewState {
     ),
     targetManager: null,
     projectBoard: null,
+    taskBoard: null,
+    pipelineState: null,
+    tddState: createIdleTddWorkbenchState(),
+    orchestration: createIdleOrchestrationWorkbenchState(),
+    sourceControl: createDefaultSourceControlWorkbenchState(),
+    hosting: createDefaultHostingWorkbenchState(),
+    ultimateState: createIdleUltimateUiState(),
+    runtimeAssist: createInitialRuntimeAssistState(),
   };
 }
 
@@ -657,13 +953,43 @@ export function applySessionSnapshot(
     sessionHistory: message.sessionHistory,
     connectionState: nextConnectionState,
     agentStatus:
-      createTargetManagerAgentStatus(
+      createTddAgentStatus(
+        recoveredState.tddState ?? state.tddState ?? null,
+      )
+      ?? createPipelineAgentStatus(
+        recoveredState.pipelineState ?? state.pipelineState ?? null,
+      )
+      ?? createOrchestrationAgentStatus(
+        recoveredState.orchestration ?? state.orchestration ?? null,
+      )
+      ?? createSourceControlAgentStatus(
+        recoveredState.sourceControl ?? state.sourceControl ?? null,
+      )
+      ?? createTargetManagerAgentStatus(
         recoveredState.targetManager ?? state.targetManager,
       ) ?? nextAgentStatus,
     latestDeploy: recoveredState.latestDeploy,
     previewState,
     targetManager: recoveredState.targetManager ?? state.targetManager ?? null,
     projectBoard: recoveredState.projectBoard ?? state.projectBoard ?? null,
+    taskBoard: recoveredState.taskBoard ?? state.taskBoard ?? null,
+    pipelineState: recoveredState.pipelineState ?? state.pipelineState ?? null,
+    tddState:
+      recoveredState.tddState
+      ?? state.tddState
+      ?? createIdleTddWorkbenchState(),
+    orchestration:
+      recoveredState.orchestration
+      ?? state.orchestration
+      ?? createIdleOrchestrationWorkbenchState(),
+    sourceControl:
+      recoveredState.sourceControl
+      ?? state.sourceControl
+      ?? createDefaultSourceControlWorkbenchState(),
+    hosting:
+      recoveredState.hosting
+      ?? state.hosting
+      ?? createDefaultHostingWorkbenchState(),
   };
 }
 
@@ -983,6 +1309,12 @@ export function applyBackendMessage(
             : message.deploy.summary,
       };
 
+    case "ultimate:state":
+      return {
+        ...state,
+        ultimateState: message.state,
+      };
+
     case "target:state":
       return {
         ...state,
@@ -1029,6 +1361,18 @@ export function applyBackendMessage(
       return {
         ...state,
         projectBoard: message.state,
+      };
+
+    case "tasks:state":
+      return {
+        ...state,
+        taskBoard: message.state,
+      };
+
+    case "orchestration:state":
+      return {
+        ...state,
+        orchestration: message.state,
       };
   }
 }

@@ -45,3 +45,40 @@
   design: target-manager turns, plan/task routing, continuation handoffs,
   provider-neutral model routing, browser workbench state, and extension
   rules.
+- 2026-03-28: Prevented `ultimate` from stopping when the human simulator
+  exhausts its bounded read-only review budget by falling back to the latest
+  scoped instruction plus queued human feedback, and added traced regression
+  coverage for that continuation path.
+- 2026-03-28: Added a dedicated Paper + Codex setup helper plus workflow references so visible UI stories can use the selected Paper frame as live design context while the Claude UI bridge flag stays off by default.
+- 2026-03-28: Dashboard hero launches now use a backend-backed `initialInstruction` handoff on `target:create_request`, so target creation, automatic enrichment, and the first queued turn stay correlated instead of relying on frontend draft injection after route navigation.
+- 2026-03-29: Added a checked-in Ship rebuild submission pack under
+  `shipyard/docs/submissions/ship-rebuild/` with the comparative analysis, AI
+  development log, AI cost analysis, and rebuild intervention log grounded in
+  the actual session/trace/archive evidence from the long-running remake.
+- 2026-03-29: Expanded `shipyard/CODEAGENT.md` to document the long-run
+  operations layer, release archiving, mission control, and the broader
+  multi-actor design beyond read-only helper subagents, then linked that
+  appendix from `.claude/CLAUDE.md` and `shipyard/docs/README.md`.
+- 2026-03-29: Added a server-first Linux hosting pack under
+  `shipyard/docs/ops/remote-linux-mission.md` with checked-in templates for
+  Ubuntu bootstrap, mission config, `systemd`, Caddy, and a two-hour Vercel
+  sync timer so long-running `ultimate` missions can move off a laptop without
+  inventing a second runtime model.
+- 2026-03-29: Re-pinned the Railway production deploy workflow to OpenAI
+  `gpt-5.4` while leaving the checked-in local Shipyard default on Anthropic,
+  and updated the hosted docs plus regression coverage so that split contract
+  is explicit.
+- 2026-03-29: Restored the Railway deploy workflow's control-token preference
+  to `RAILWAY_TOKEN` first with `RAILWAY_API_TOKEN` as fallback, because the
+  broader token path was unauthorized for the production project and blocked
+  the OpenAI pin from reaching Railway.
+- 2026-03-29: Reset hosted production onto a fresh Railway project
+  (`56dd4ac3-b6b0-4ce1-a5a3-f881edccb2db`), service
+  (`ef598033-aca2-450f-8bae-5cec3de9247d`), and public domain
+  (`shipyard-production-7d07.up.railway.app`), then repointed the repo-owned
+  deploy workflow and hosted-access helper to that clean surface.
+- 2026-03-29: Pinned Railway production to boot directly into
+  `/app/workspace/ship-promptpack-live` via
+  `SHIPYARD_HOSTED_DEFAULT_TARGET_PATH`, added a repo-owned
+  `scripts/verify-hosted-deploy.mjs` health check after each `main` deploy, and
+  updated the hosted-access helper to open the editor directly on that target.

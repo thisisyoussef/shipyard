@@ -1,8 +1,8 @@
 # Shipyard Workspace - Single Source of Truth
 
-**Last Updated**: 2026-03-27
+**Last Updated**: 2026-03-29
 **Current Phase**: Day 1 foundation
-**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, richer runtime artifacts, and the now-hardened continuation-aware operator workflow
+**Active Focus**: keep the helper harness generic while growing the nested Shipyard CLI, richer runtime artifacts, the now-hardened continuation-aware operator workflow, the evidence-backed Ship rebuild submission pack, and the server-first Linux mission hosting path
 **Project Status**: Active
 **Canonical App Directory**: `shipyard/`
 **Canonical Harness Directory**: `.ai/`
@@ -13,17 +13,18 @@
 
 ### Active Task
 
-- **Title**: Use the shipped runtime-hardening follow-up pack as the baseline for the next runtime stories
-- **Status**: Implemented and validated
+- **Title**: Publish the Linux remote-mission hosting pack and align the durable docs with the current long-run runtime architecture
+- **Status**: Implemented and pending merge
 - **Owner**: Codex
 
 ### Next Immediate Actions
 
 1. Keep the harness aligned with the actual repo shape: `.ai/` beside `shipyard/`.
 2. Continue building the persistent CLI loop, typed tools, and tracing inside `shipyard/`.
-3. Advance the drafted Phase 7 and Phase 8 packs incrementally on the shipped planner, handoff, and spec-loading foundations while keeping tests, docs, and runtime artifacts in sync.
-4. Build future runtime work on the shipped follow-up baseline: history-safe tool turns, write-aware compaction, bootstrap-ready discovery, concise handoffs, continuation-first loop thresholds, and task-aware loop budgets are now the expected default.
-5. Use the drafted Phase 10 architecture pack to sequence the next larger runtime upgrades: durable threads, policy controls, layered memory, repo indexing, explicit routing/evals, background tasks, and readiness surfaces.
+3. Treat `shipyard/docs/submissions/ship-rebuild/**` plus the appendix in `shipyard/CODEAGENT.md` as the canonical Ship rebuild deliverable set until a newer submission supersedes it.
+4. Treat `shipyard/docs/ops/remote-linux-mission.md` plus `docs/ops/templates/linux-mission/**` as the canonical server-first operations pack for long-running remote missions.
+5. Build future runtime work on the shipped follow-up baseline: history-safe tool turns, write-aware compaction, bootstrap-ready discovery, concise handoffs, continuation-first loop thresholds, task-aware loop budgets, mission control, and release archiving are now the expected default.
+6. Use the drafted Phase 10 architecture pack to sequence the next larger runtime upgrades: durable threads, policy controls, layered memory, repo indexing, explicit routing/evals, background tasks, and readiness surfaces.
 
 ---
 
@@ -51,13 +52,24 @@
   shared turn engine, target-manager flow, continuation/handoff model,
   provider routing, and the current browser workbench instead of treating it as
   a one-off submission appendix.
+- **Submission baseline**: the Ship rebuild write-up now lives under
+  `shipyard/docs/submissions/ship-rebuild/` and is linked from
+  `.claude/CLAUDE.md`, `shipyard/docs/README.md`, and the appendix section of
+  `shipyard/CODEAGENT.md`. Update those entry points together when the
+  submission pack changes.
+- **Remote mission baseline**: the server-first remote hosting pack now lives
+  under `shipyard/docs/ops/remote-linux-mission.md` with companion templates in
+  `shipyard/docs/ops/templates/linux-mission/`. Keep that pack aligned with
+  `docs/architecture/mission-control.md`, the hosted runtime contract, and the
+  current mission-config shape when long-run deployment or recovery changes.
 - **Execution fingerprint baseline**: standard instruction turns now emit a
   shared per-turn execution fingerprint in CLI output, browser completion
   state, local JSONL traces, and LangSmith metadata so local vs hosted/runtime
   routing differences are visible without code spelunking.
-- **Model-route baseline**: the shipped default provider is now Anthropic with
-  `claude-opus-4-6`; operator docs, local examples, and the Railway production
-  workflow must keep that default and its secret sync in lockstep.
+- **Model-route baseline**: the checked-in local default provider remains
+  Anthropic with `claude-opus-4-6`, while the Railway production workflow is
+  pinned to OpenAI with `gpt-5.4`; operator docs and deploy secret sync must
+  keep that split explicit.
 - **Deploy-link baseline**: `deploy_target` should not trust raw Vercel CLI
   `stdout` as the public app link. Resolve a shareable alias/domain from
   labeled CLI output or Vercel deployment metadata first, because generated

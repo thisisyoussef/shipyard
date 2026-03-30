@@ -143,6 +143,64 @@ describe("instruction runtime handoff", () => {
     expect(sessionState.rollingSummary).toContain("completed via graph");
   });
 
+  it("loads the phase profile and default skills into the composed system prompt and persisted runtime state", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-turn-skill-loadout-");
+    await writeFile(
+      path.join(targetDirectory, "package.json"),
+      JSON.stringify({ name: "shipyard-turn-skill-loadout" }, null, 2),
+      "utf8",
+    );
+    const sessionState = createSessionState({
+      sessionId: "turn-skill-loadout-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {
+          test: "vitest run",
+        },
+        hasReadme: true,
+        hasAgentsMd: false,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: ["src"],
+        projectName: "shipyard-turn-skill-loadout",
+      },
+    });
+    const modelAdapter = createFakeModelAdapter([
+      createFakeTextTurnResult("Applied the loadout."),
+    ]);
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      runtimeDependencies: {
+        createRawLoopOptions: () => ({
+          modelAdapter,
+          logger: {
+            log() {},
+          },
+        }),
+      },
+    });
+
+    const result = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: "inspect the runtime loadout",
+    });
+
+    expect(result.status).toBe("success");
+    expect(modelAdapter.calls).toHaveLength(1);
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("Active Runtime Profile");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("implementer");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("Loaded Runtime Skills");
+    expect(modelAdapter.calls[0]?.systemPrompt).toContain("runtime-safety");
+    expect(sessionState.workbenchState.runtimeAssist).toMatchObject({
+      activeProfileId: "implementer",
+      loadedSkills: ["runtime-safety"],
+    });
+  });
+
   it("can invoke the fallback runtime without changing instruction handling", async () => {
     const targetDirectory = await createTempDirectory("shipyard-turn-fallback-");
     const sessionState = createSessionState({
@@ -179,15 +237,58 @@ describe("instruction runtime handoff", () => {
     const result = await executeInstructionTurn({
       sessionState,
       runtimeState,
-      instruction: "create a README",
+      instruction: "inspect the repo",
     });
 
     expect(result.runtimeMode).toBe("fallback");
     expect(result.status).toBe("success");
     expect(result.finalText).toBe("Fallback runtime complete.");
     expect(runActingLoop).toHaveBeenCalledTimes(1);
-    expect(sessionState.rollingSummary).toContain("create a README");
+    expect(sessionState.rollingSummary).toContain("inspect the repo");
     expect(sessionState.rollingSummary).toContain("completed via fallback");
+  });
+
+  it("fails targeted change turns that end without any file writes", async () => {
+    const targetDirectory = await createTempDirectory("shipyard-turn-no-write-");
+    const sessionState = createSessionState({
+      sessionId: "turn-no-write-session",
+      targetDirectory,
+      discovery: {
+        isGreenfield: false,
+        language: "typescript",
+        framework: "React",
+        packageManager: "pnpm",
+        scripts: {},
+        hasReadme: true,
+        hasAgentsMd: false,
+        topLevelFiles: ["package.json"],
+        topLevelDirectories: ["src"],
+        projectName: "shipyard-turn-target",
+      },
+    });
+    const runtimeState = createInstructionRuntimeState({
+      projectRules: "",
+      runtimeDependencies: {
+        runActingLoop: async () => ({
+          finalText: 'Changed "Ship" to "Ship Clone".',
+          messageHistory: [],
+          iterations: 1,
+          didEdit: false,
+          lastEditedFile: null,
+          touchedFiles: [],
+        }),
+      },
+    });
+
+    const result = await executeInstructionTurn({
+      sessionState,
+      runtimeState,
+      instruction: 'Change "Ship" to "Ship Clone"',
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.summary).toContain("without writing any files");
+    expect(result.finalText).toContain("Turn 1 stopped:");
   });
 
   it("surfaces explorer and planner tool activity through the outer reporter", async () => {

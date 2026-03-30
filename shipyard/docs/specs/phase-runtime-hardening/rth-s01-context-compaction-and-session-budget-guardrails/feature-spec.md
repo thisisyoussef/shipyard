@@ -57,13 +57,29 @@ Shipyard's long-running tool loops currently replay full prior `tool_use` and `t
   raises the compaction budgets and summarizes older `write_file`,
   `edit_block`, and `bootstrap_target` turns with path, line-count, and preview
   metadata instead of replaying large payloads forever.
+- [`../../../../src/ui/workbench-state.ts`](../../../../src/ui/workbench-state.ts):
+  now compacts persisted browser workbench snapshots by bounding saved turns,
+  file events, activity payloads, agent messages, and preview blobs before a
+  long-running UI session is written back to disk.
+- [`../../../../src/engine/state.ts`](../../../../src/engine/state.ts):
+  applies the persisted-workbench compactor on save/load and clears stale
+  runtime-only error, preview, and pending-tool state so restarted runtimes do
+  not resurrect a dead browser session verbatim.
+- [`../../../../src/mission-control/recovery.ts`](../../../../src/mission-control/recovery.ts)
+  and [`../../../../scripts/ultimate-mission-control.ts`](../../../../scripts/ultimate-mission-control.ts):
+  restore the newest backed-up session JSON and matching handoff before a fresh
+  runtime launch, so long-run missions recover onto a compacted, resumable
+  session artifact instead of recreating the dead state or starting blank.
 - [`../../../../src/engine/raw-loop.ts`](../../../../src/engine/raw-loop.ts):
   preserves structured tool execution data so history compaction can emit
   useful compact summaries without depending on raw historical file bodies.
 - [`../../../../tests/history-compaction.test.ts`](../../../../tests/history-compaction.test.ts)
-  and [`../../../../tests/raw-loop.test.ts`](../../../../tests/raw-loop.test.ts):
+  , [`../../../../tests/raw-loop.test.ts`](../../../../tests/raw-loop.test.ts),
+  [`../../../../tests/session-state-compaction.test.ts`](../../../../tests/session-state-compaction.test.ts),
+  and [`../../../../tests/mission-control-recovery.test.ts`](../../../../tests/mission-control-recovery.test.ts):
   cover bounded compaction behavior for large write-heavy turns and keep the
-  raw-loop contract aligned with the compacted history format.
+  raw-loop and persisted-session contracts aligned with the compacted history
+  format.
 
 ### Representative Snippets
 
@@ -79,5 +95,19 @@ if (toolName === "write_file") {
     lineCount,
     preview,
   };
+}
+```
+
+```ts
+state.workbenchState = compactWorkbenchStateForPersistence(
+  state.workbenchState,
+);
+```
+
+```ts
+if (recovery.restoredSession && recovery.sessionBackupFile) {
+  logger.log(
+    `Restored mission session from backup ${recovery.sessionBackupFile} before runtime launch.`,
+  );
 }
 ```

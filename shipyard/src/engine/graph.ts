@@ -17,6 +17,7 @@ import type {
   ActingLoopBudgetReason,
   BrowserEvaluationReport,
   ContextReport,
+  DiscoveryReport,
   EvaluationPlan,
   ExecutionSpec,
   HarnessActingMode,
@@ -24,6 +25,8 @@ import type {
   LoadedExecutionHandoff,
   PlanningMode,
   PreviewState,
+  ResearchLookupRequest,
+  ResearchLookupResult,
   TaskPlan,
   TargetProfile,
   VerificationReport,
@@ -37,6 +40,7 @@ import {
   extractInstructionTargetFilePaths,
   isClearlyLightweightInstruction,
   isSingleTurnUiBuildInstruction,
+  looksLikeDirectEditInstruction,
   looksLikeUiRelevantFilePath,
   looksLikeUiRelevantInstruction,
   createVerificationPlan,
@@ -257,6 +261,14 @@ export interface AgentRuntimeDependencies {
       routeId?: ModelRouteId;
     },
   ) => RawToolLoopOptions | Promise<RawToolLoopOptions>;
+  runResearchLookup?: (
+    request: ResearchLookupRequest,
+    targetDirectory: string,
+    options?: {
+      discovery?: DiscoveryReport;
+      signal?: AbortSignal;
+    },
+  ) => ResearchLookupResult | Promise<ResearchLookupResult>;
 }
 
 export interface AgentRuntimeOptions {
@@ -989,6 +1001,7 @@ async function getScannedDirectEditCandidatePaths(
     !looksLikeUiRelevantInstruction(state.currentInstruction)
     && !DIRECT_EDIT_STYLE_SCOPE_PATTERN.test(state.currentInstruction)
     && !DIRECT_EDIT_COPY_SCOPE_PATTERN.test(state.currentInstruction)
+    && !looksLikeDirectEditInstruction(state.currentInstruction)
   ) {
     return [];
   }
@@ -1356,6 +1369,10 @@ async function maybeRunDirectEditFastPath(
         },
       });
     } catch {
+      return null;
+    }
+
+    if (!editResult.changed) {
       return null;
     }
 

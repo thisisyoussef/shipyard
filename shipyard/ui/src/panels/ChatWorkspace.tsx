@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Badge, StatusDot } from "../primitives.js";
 import type { BadgeTone } from "../primitives.js";
 import type { TurnViewModel } from "../view-models.js";
+import { FormattedMessage } from "./FormattedMessage.js";
 
 export interface ChatWorkspaceProps {
   turns: TurnViewModel[];
@@ -35,6 +36,10 @@ function formatTime(isoString: string): string {
 
 function formatStepCount(count: number): string {
   return `${String(count)} step${count === 1 ? "" : "s"} recorded`;
+}
+
+function formatTurnCount(count: number): string {
+  return `${String(count)} turn${count === 1 ? "" : "s"}`;
 }
 
 export function ChatWorkspace({
@@ -72,7 +77,7 @@ export function ChatWorkspace({
             Latest conversation
           </h2>
         </div>
-        <Badge tone="neutral">{orderedTurns.length} turns</Badge>
+        <Badge tone="neutral">{formatTurnCount(orderedTurns.length)}</Badge>
       </div>
 
       <div className="chat-thread" role="log" aria-label="Conversation history">
@@ -89,7 +94,9 @@ export function ChatWorkspace({
                   <time dateTime={turn.startedAt}>{formatTime(turn.startedAt)}</time>
                 </div>
                 <div className="chat-bubble chat-bubble-user">
-                  <p>{turn.instruction}</p>
+                  <div className="chat-bubble-body">
+                    <p>{turn.instruction}</p>
+                  </div>
                   {turn.contextPreview.length > 0 ? (
                     <div className="chat-context-list">
                       {turn.contextPreview.map((context) => (
@@ -111,7 +118,9 @@ export function ChatWorkspace({
                   </Badge>
                 </div>
                 <div className="chat-bubble chat-bubble-agent">
-                  <p>{latestReply}</p>
+                  <div className="chat-bubble-body">
+                    <FormattedMessage text={latestReply} />
+                  </div>
                   <div className="chat-turn-footer">
                     <span>{formatStepCount(turn.activity.length)}</span>
                     {turn.langSmithTrace?.traceUrl ? (

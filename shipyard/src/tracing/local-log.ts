@@ -14,6 +14,16 @@ export interface LocalTraceLogger {
   filePath: string;
 }
 
+function isMissingPathError(
+  error: unknown,
+): error is NodeJS.ErrnoException {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
+}
+
 export async function createLocalTraceLogger(
   targetDirectory: string,
   sessionId: string,
@@ -32,7 +42,14 @@ export async function createLocalTraceLogger(
         payload,
       };
 
-      await appendFile(filePath, `${JSON.stringify(traceEvent)}\n`, "utf8");
+      try {
+        await mkdir(traceDirectory, { recursive: true });
+        await appendFile(filePath, `${JSON.stringify(traceEvent)}\n`, "utf8");
+      } catch (error) {
+        if (!isMissingPathError(error)) {
+          throw error;
+        }
+      }
     },
   };
 }

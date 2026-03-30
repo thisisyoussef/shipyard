@@ -1,0 +1,11 @@
+{
+  "name": "runtime-safety",
+  "version": "1.0.0",
+  "description": "Conventions for narrow, verified code-phase changes.",
+  "tags": ["runtime", "code", "safety"],
+  "compatiblePhases": ["code"],
+  "promptFile": "SKILL.md",
+  "tools": [],
+  "references": [],
+  "validators": []
+}

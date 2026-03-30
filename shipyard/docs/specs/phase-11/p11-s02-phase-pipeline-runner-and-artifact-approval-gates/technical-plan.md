@@ -94,6 +94,24 @@
 - Observability checks: log phase transitions, wait states, approvals, edits,
   rejections, and resumes.
 
+## Implementation Evidence
+
+- `shipyard/src/pipeline/turn.ts`: the shipped implementation keeps pipeline
+  execution behind the explicit `pipeline ...` prefix and reuses the existing
+  turn reporter/session-save contract instead of overloading normal turns.
+- `shipyard/src/pipeline/defaults.ts`: the first runtime-native preset is a
+  three-phase discovery/spec/technical-plan pipeline that exercises required
+  and advisory gates for later stories.
+- `shipyard/src/pipeline/store.ts`: durable run files are written atomically
+  under `.shipyard/pipelines/`, which satisfies the restart/resume requirement
+  without adding another persistence backend.
+- `shipyard/src/ui/server.ts` and `shipyard/src/engine/loop.ts`: both runtime
+  entry points now route pipeline commands before standard turn execution so
+  non-pipeline instructions remain unchanged.
+- `shipyard/src/ui/workbench-state.ts`: the workbench reducer now preserves a
+  compact `pipelineState` slice so approval waits survive reloads and later UI
+  work has a stable projection contract.
+
 ## Validation Commands
 ```bash
 pnpm --dir shipyard test

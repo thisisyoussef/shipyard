@@ -20,6 +20,9 @@ Shipyard also supports three instruction paths over that shared runtime:
 The hosted Railway baseline for the browser runtime is documented in
 [`hosted-railway.md`](./hosted-railway.md).
 
+The server-first Linux VM deployment pack for long-running missions is
+documented in [`../ops/remote-linux-mission.md`](../ops/remote-linux-mission.md).
+
 ## System Map
 
 ```mermaid
@@ -205,8 +208,9 @@ flowchart TD
   loop, cancellation, history compaction, runtime-context injection, handoff
   emission/loading, and session persistence.
 - `src/engine/model-routing.ts`: owns provider/model selection. The current
-  shipped default route is Anthropic (`claude-opus-4-6`), while OpenAI remains
-  available through routing overrides.
+  checked-in local default route is Anthropic (`claude-opus-4-6`), while
+  hosted Railway production is pinned to OpenAI (`gpt-5.4`) through env-backed
+  routing overrides.
 - `src/engine/model-adapter.ts`: owns the internal provider-neutral turn and
   tool contract. Provider modules such as `src/engine/anthropic.ts` should
   project generic tool definitions into provider wire formats instead of
@@ -223,6 +227,8 @@ flowchart TD
   can revert failed attempts.
 - `src/tracing/`: writes local JSONL traces, records handoff and harness-route
   metadata, and attaches LangSmith metadata when configured.
+- `src/mission-control/`: holds long-run supervision policy shared by the
+  mission-control scripts.
 - `src/ui/`: is the backend half of browser mode. It manages WebSocket
   streaming, hosted access, uploads, target-manager state, preview-state
   publishing, and deploy summaries.
@@ -248,5 +254,8 @@ flowchart TD
   handoff artifacts, with only lightweight pointers persisted in session state.
 - Keep browser evaluation loopback-only; production deployment URLs belong to
   `deploy_target`, not the preview supervisor.
+- Keep long-run supervision outside the core runtime loop: policy belongs in
+  `src/mission-control/`, while operators launch it via the mission-control
+  scripts and target-local mission bundles.
 - When documenting new features, prefer durable notes here and link out to the
   relevant story pack under `docs/specs/`.

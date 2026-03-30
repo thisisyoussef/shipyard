@@ -4,7 +4,7 @@
 - Estimate: 16-24 hours
 - Date: 2026-03-26
 - Status: Complete (`P10-S01` through `P10-S05` implemented, plus the
-  OpenAI-first operational default follow-up shipped)
+  hosted OpenAI production-pin follow-up shipped)
 
 ## Pack Objectives
 
@@ -64,9 +64,11 @@
 - The shared runtime loop can execute turns against an internal `ModelAdapter`
   contract instead of directly against Anthropic SDK message types.
 - The tool registry exposes only provider-neutral tool definitions.
-- OpenAI is now the shipped default route, while Anthropic remains a supported
-  alternate path and provider/model choice can be configured per runtime
-  surface or helper role without branching the loop.
+- Provider/model choice can be configured per runtime surface or helper role
+  without branching the loop.
+- Anthropic remains the checked-in local default route, while hosted Railway
+  production is pinned to OpenAI `gpt-5.4` through env-backed routing
+  overrides.
 - OpenAI can run through the same orchestration path using a Responses API
   adapter instead of a one-off alternate loop.
 
@@ -246,7 +248,10 @@ export function resolveAutomaticTargetEnrichmentCapability(
 ```
 
 - Operational follow-up: [`../../src/engine/model-routing.ts`](../../src/engine/model-routing.ts),
+  [`../../src/bin/shipyard.ts`](../../src/bin/shipyard.ts),
   [`../../../.github/workflows/railway-main-deploy.yml`](../../../.github/workflows/railway-main-deploy.yml),
+  [`../../../scripts/verify-hosted-deploy.mjs`](../../../scripts/verify-hosted-deploy.mjs),
+  [`../../../scripts/print-hosted-access-url.mjs`](../../../scripts/print-hosted-access-url.mjs),
   [`../../README.md`](../../README.md),
   [`../../docs/architecture/README.md`](../../docs/architecture/README.md),
   [`../../docs/architecture/hosted-railway.md`](../../docs/architecture/hosted-railway.md),
@@ -256,10 +261,12 @@ export function resolveAutomaticTargetEnrichmentCapability(
   [`../../tests/cli-loop.test.ts`](../../tests/cli-loop.test.ts),
   [`../../tests/ui-runtime.test.ts`](../../tests/ui-runtime.test.ts), and
   [`../../tests/railway-config.test.ts`](../../tests/railway-config.test.ts)
-  flip the shipped default provider to Anthropic, update the operator-facing
-  runtime contract, and make the GitHub Actions Railway deploy sync the
-  production Anthropic credentials plus `claude-opus-4-6` routing before each
-  release.
+  preserve Anthropic as the checked-in local default provider, update the
+  operator-facing runtime contract, and make the GitHub Actions Railway deploy
+  sync the production OpenAI credentials plus `gpt-5.4` routing before each
+  release, boot hosted production directly into the canonical
+  `ship-promptpack-live` target, and fail `main` deploys when the hosted
+  runtime does not report that target cleanly after rollout.
 
 - `P10-S04`: [`../../src/engine/openai.ts`](../../src/engine/openai.ts),
   [`../../src/engine/model-routing.ts`](../../src/engine/model-routing.ts),

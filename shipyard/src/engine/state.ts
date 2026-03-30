@@ -12,6 +12,7 @@ import { discoverTarget, normalizeDiscoveryReport } from "../context/discovery.j
 import { createInitialPreviewState } from "../preview/contracts.js";
 import { loadTargetProfile } from "../tools/target-manager/profile-io.js";
 import {
+  compactWorkbenchStateForPersistence,
   createInitialDeploySummary,
   createInitialWorkbenchState,
   ensureWorkbenchStateDefaults,
@@ -34,6 +35,7 @@ export interface SessionState {
   activePhase: SessionPhase;
   targetProfile?: TargetProfile;
   activePlanId: string | null;
+  activeTddLaneId: string | null;
   activeTask: ActiveTaskContext | null;
   recentTouchedFiles: string[];
   workbenchState: WorkbenchViewState;
@@ -81,6 +83,7 @@ export interface SessionSnapshot {
   activePhase: SessionPhase;
   targetProfile?: TargetProfile;
   activePlanId: string | null;
+  activeTddLaneId: string | null;
   activeTask: ActiveTaskContext | null;
   recentTouchedFiles: string[];
   workbenchState: WorkbenchViewState;
@@ -135,6 +138,7 @@ export function createSessionState(
     activePhase,
     targetProfile: options.targetProfile,
     activePlanId: null,
+    activeTddLaneId: null,
     activeTask: null,
     recentTouchedFiles: [],
     workbenchState,
@@ -155,9 +159,10 @@ export function createSessionSnapshot(state: SessionState): SessionSnapshot {
     activePhase: state.activePhase,
     targetProfile: state.targetProfile,
     activePlanId: state.activePlanId,
+    activeTddLaneId: state.activeTddLaneId,
     activeTask: state.activeTask,
     recentTouchedFiles: [...state.recentTouchedFiles],
-    workbenchState: state.workbenchState,
+    workbenchState: compactWorkbenchStateForPersistence(state.workbenchState),
   };
 }
 
@@ -181,8 +186,40 @@ export function getArtifactDirectory(targetDirectory: string): string {
   return path.join(getShipyardDirectory(targetDirectory), "artifacts");
 }
 
+export function getArtifactRegistryDirectory(targetDirectory: string): string {
+  return path.join(getArtifactDirectory(targetDirectory), "registry");
+}
+
 export function getPlanDirectory(targetDirectory: string): string {
   return path.join(getShipyardDirectory(targetDirectory), "plans");
+}
+
+export function getPipelineDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "pipelines");
+}
+
+export function getTddDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "tdd");
+}
+
+export function getSourceControlDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "source-control");
+}
+
+export function getHostingDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "hosting");
+}
+
+export function getTaskGraphDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "tasks");
+}
+
+export function getCoordinationDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "coordination");
+}
+
+export function getOrchestrationDirectory(targetDirectory: string): string {
+  return path.join(getShipyardDirectory(targetDirectory), "orchestration");
 }
 
 export function getUploadDirectory(
@@ -237,11 +274,20 @@ export async function ensureShipyardDirectories(
   await mkdir(getCheckpointDirectory(targetDirectory), { recursive: true });
   await mkdir(getTraceDirectory(targetDirectory), { recursive: true });
   await mkdir(getPlanDirectory(targetDirectory), { recursive: true });
+  await mkdir(getPipelineDirectory(targetDirectory), { recursive: true });
+  await mkdir(getTddDirectory(targetDirectory), { recursive: true });
+  await mkdir(getSourceControlDirectory(targetDirectory), { recursive: true });
+  await mkdir(getHostingDirectory(targetDirectory), { recursive: true });
+  await mkdir(getTaskGraphDirectory(targetDirectory), { recursive: true });
+  await mkdir(getCoordinationDirectory(targetDirectory), { recursive: true });
+  await mkdir(getOrchestrationDirectory(targetDirectory), { recursive: true });
   await mkdir(getArtifactDirectory(targetDirectory), { recursive: true });
+  await mkdir(getArtifactRegistryDirectory(targetDirectory), { recursive: true });
 }
 
 export async function saveSessionState(state: SessionState): Promise<string> {
   await ensureShipyardDirectories(state.targetDirectory);
+  state.workbenchState = compactWorkbenchStateForPersistence(state.workbenchState);
 
   const sessionFilePath = getSessionFilePath(
     state.targetDirectory,
@@ -250,6 +296,28 @@ export async function saveSessionState(state: SessionState): Promise<string> {
   await writeFile(sessionFilePath, JSON.stringify(state, null, 2), "utf8");
 
   return sessionFilePath;
+}
+
+function prepareWorkbenchStateForResume(options: {
+  workbenchState: WorkbenchViewState;
+  activePhase: SessionPhase;
+  discovery: DiscoveryReport;
+}): WorkbenchViewState {
+  const activeWorkingTurn = options.workbenchState.turns.find((turn) =>
+    turn.status === "working"
+  );
+
+  return {
+    ...options.workbenchState,
+    connectionState: "ready",
+    latestError: null,
+    activeTurnId: activeWorkingTurn?.id ?? null,
+    pendingToolCalls: {},
+    previewState: createInitialPreviewState({
+      activePhase: options.activePhase,
+      discovery: options.discovery,
+    }),
+  };
 }
 
 export async function loadSessionState(
@@ -268,17 +336,16 @@ export async function loadSessionState(
   const parsed = JSON.parse(contents) as Partial<SessionState> &
     Omit<SessionState, "workbenchState">;
   const discovery = normalizeDiscoveryReport(parsed.discovery);
-  const workbenchState = ensureWorkbenchStateDefaults(
-    parsed.workbenchState ?? createInitialWorkbenchState(),
-  );
   const activePhase = parsed.activePhase ?? "code";
-
-  if (!workbenchState.previewState) {
-    workbenchState.previewState = createInitialPreviewState({
-      activePhase,
-      discovery,
-    });
-  }
+  const workbenchState = prepareWorkbenchStateForResume({
+    workbenchState: compactWorkbenchStateForPersistence(
+      ensureWorkbenchStateDefaults(
+        parsed.workbenchState ?? createInitialWorkbenchState(),
+      ),
+    ),
+    activePhase,
+    discovery,
+  });
 
   if (!Array.isArray(workbenchState.pendingUploads)) {
     workbenchState.pendingUploads = [];
@@ -297,6 +364,7 @@ export async function loadSessionState(
     activePhase,
     targetProfile: parsed.targetProfile,
     activePlanId: parsed.activePlanId ?? null,
+    activeTddLaneId: parsed.activeTddLaneId ?? null,
     activeTask: parsed.activeTask ?? null,
     recentTouchedFiles: Array.isArray(parsed.recentTouchedFiles)
       ? parsed.recentTouchedFiles.filter((filePath): filePath is string =>

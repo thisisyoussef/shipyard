@@ -6,8 +6,17 @@ Shipyard browser workbench.
 ## Files
 
 - `main.tsx`: bootstraps React into the Vite root element
-- `App.tsx`: manages hosted-access bootstrap, upload flows, WebSocket lifecycle,
-  transport state, and workbench-state updates
+- `App.tsx`: thin route shell that composes dashboard/editor/board surfaces,
+  dashboard launch intent handling, and hosted-access gating on top of the
+  shared controller
+- `dashboard-catalog.ts`, `dashboard-preferences.ts`, and
+  `dashboard-launch.ts`: dashboard projection, local browser preferences, and
+  request-correlated launch helpers
+- `board-view-model.ts`, `board-preferences.ts`, and
+  `dashboard-system-notice.ts`: board projection, board filter persistence, and
+  route-level reconnect/error notices
+- `target-selection.ts`: shared selected-target helpers used by dashboard,
+  editor-route, and board-route selectors
 - `ShipyardWorkbench.tsx`: composes the current split-pane shell, drawer, and
   target-manager chrome
 - `socket-manager.ts`: reconnecting WebSocket wrapper used by `App.tsx`
@@ -31,22 +40,41 @@ Shipyard browser workbench.
 - `App.tsx` sanitizes bootstrap `access_token` query params, negotiates
   `/api/access`, and shows `HostedAccessGate` when the hosted runtime requires
   it.
-- `App.tsx` also branches between the full workbench shell and the dedicated
-  `/human-feedback` route while keeping the same hosted-access gate, socket
-  lifecycle, and instruction submission path.
+- The dashboard route now renders the live product catalog, persists recent and
+  starred preferences in browser storage, and stages hero-prompt launches into
+  the editor with request correlation instead of timing-based follow behavior.
+- `App.tsx` also branches between the live dashboard, full workbench shell,
+  live board route, and dedicated `/human-feedback` surface while keeping the
+  same hosted-access gate, socket lifecycle, and instruction submission path.
+- The editor route now stretches its chat/workspace panes through the full
+  available shell height instead of letting the route content collapse to the
+  height of its current tab contents.
+- The board route is project-scoped at `#/board/<productId>`, consumes the
+  runtime `taskBoard` snapshot only after that product is resolved against live
+  session state, preserves the selected story filter per product in browser
+  storage, and renders explicit missing-target, loading, stale, and empty
+  states instead of mock fallbacks.
 - `App.tsx` sends `session:resume_request` messages so the browser can reopen a
   saved run without restarting the Shipyard process.
 - `socket-manager.ts` retries disconnected sessions and blocks sends while the
   transport is unavailable.
 - `ShipyardWorkbench.tsx` renders target/deploy status at the top, the
   transcript plus composer on the left, and file/output evidence on the right.
+- `ChatWorkspace.tsx` formats assistant replies into safe, dependency-free
+  rich text so headings, lists, emphasis, inline code, and fenced code blocks
+  remain readable without pulling a markdown runtime into the browser bundle.
 - `HumanFeedbackPage.tsx` exposes a focused textarea-only surface for feeding
   the running ultimate loop from the human side while reusing the same
-  websocket `instruction` transport.
+  websocket `instruction` transport and surfacing explicit no-session and
+  reconnect guidance when feedback cannot be sent yet.
 - File attachments go through `/api/uploads`, then appear as bounded receipts in
   workbench state and the next-turn context preview.
 - `TargetSwitcher.tsx` and `TargetCreationDialog.tsx` drive target selection and
-  scaffold creation without leaving the active session.
+  scaffold creation without leaving the active session, and the dashboard now
+  reuses the creation dialog for its new-product card.
+- `HostedAccessGate.tsx` now exposes explicit checking and unlocking states
+  instead of relying on button copy alone, while still keeping the shared token
+  out of stored artifacts.
 
 ## Diagram
 
@@ -54,6 +82,7 @@ Shipyard browser workbench.
 flowchart LR
   Main["main.tsx"]
   App["App.tsx"]
+  Dashboard["dashboard-*"]
   Socket["socket-manager.ts"]
   Vm["view-models.ts"]
   Workbench["ShipyardWorkbench.tsx"]
@@ -64,9 +93,11 @@ flowchart LR
   Backend["../../src/ui/*"]
 
   Main --> App
+  App --> Dashboard
   App --> Socket
   Socket <--> Backend
   App --> Vm
+  Dashboard --> App
   Vm --> Workbench
   Workbench --> Shell
   Workbench --> Panels

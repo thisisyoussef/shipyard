@@ -1,624 +1,492 @@
-/**
- * EditorView — Main editing view with chat + workspace tabs.
- *
- * UIR-T05 — Editor View, Workspace Tabs, Code Tab
- *
- * Resizable split pane: left = mock chat, right = workspace tabs
- * (Preview, Code, Files). All data is mock — no backend wiring.
- */
-
 import {
-  useState,
-  useRef,
   useCallback,
   useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
+
 import type { Route } from "../router.js";
-import { Badge } from "../primitives.js";
-import { KanbanView } from "./KanbanView.js";
+import {
+  createDefaultEditorLayoutPreference,
+  getEditorPreference,
+  MAX_EDITOR_SPLIT_RATIO,
+  MIN_EDITOR_SPLIT_RATIO,
+  readEditorPreferences,
+  setEditorActiveTab,
+  setEditorSplitRatio,
+  writeEditorPreferences,
+  type EditorLayoutPreference,
+  type EditorWorkspaceTab,
+} from "../editor-preferences.js";
+import { resolvePreviewSurface } from "../preview-surface.js";
+import {
+  CodeExplorerPanel,
+  FilePanel,
+  PreviewPanel,
+} from "../panels/index.js";
+import { TargetCreationDialog } from "../TargetCreationDialog.js";
+import { TargetSwitcher } from "../TargetSwitcher.js";
+import { HeaderStrip, ShellFooter } from "../shell/index.js";
+import {
+  WorkbenchConversationSurface,
+  WorkbenchDrawerContent,
+  type WorkbenchRuntimeProps,
+} from "../workbench-surfaces.js";
+import type { CodeBrowserClient } from "../code-browser-client.js";
+import type { HostingViewModel } from "../view-models.js";
 
-// ── Types ──────────────────────────────────────
-
-interface EditorViewProps {
+export interface EditorViewProps extends WorkbenchRuntimeProps {
   productId: string;
   productName: string;
   scaffoldType: string;
+  hostedEditorUrl: string;
+  hosting: HostingViewModel;
+  initialLayout?: EditorLayoutPreference;
+  codeBrowserClient?: CodeBrowserClient;
   onNavigate: (route: Route) => void;
 }
 
-type WorkspaceTab = "preview" | "code" | "files" | "board";
+const TAB_ORDER: EditorWorkspaceTab[] = ["preview", "code", "files"];
 
-interface FileTreeNode {
-  name: string;
-  type: "file" | "directory";
-  path: string;
-  children?: FileTreeNode[];
-}
-
-interface DiffHunkLine {
-  type: "context" | "add" | "remove";
-  content: string;
-}
-
-interface DiffHunk {
-  lines: DiffHunkLine[];
-}
-
-interface DiffFile {
-  path: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  hunks: DiffHunk[];
-}
-
-// ── Mock Data ──────────────────────────────────
-
-const MOCK_FILE_TREE: FileTreeNode[] = [
-  {
-    name: "src",
-    type: "directory",
-    path: "/src",
-    children: [
-      { name: "App.tsx", type: "file", path: "/src/App.tsx" },
-      { name: "main.tsx", type: "file", path: "/src/main.tsx" },
-      { name: "styles.css", type: "file", path: "/src/styles.css" },
-    ],
-  },
-  { name: "package.json", type: "file", path: "/package.json" },
-  { name: "tsconfig.json", type: "file", path: "/tsconfig.json" },
-];
-
-const MOCK_FILE_CONTENTS: Record<string, string> = {
-  "/src/App.tsx": `import React from 'react';
-import './styles.css';
-
-function App(): JSX.Element {
-  return (
-    <div className="app">
-      <h1>Hello Shipyard</h1>
-      <p>Your product is running.</p>
-    </div>
+function clampSplitRatio(splitRatio: number): number {
+  return Math.min(
+    Math.max(Math.round(splitRatio), MIN_EDITOR_SPLIT_RATIO),
+    MAX_EDITOR_SPLIT_RATIO,
   );
 }
 
-export default App;`,
-  "/src/main.tsx": `import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-
-ReactDOM.createRoot(
-  document.getElementById('root')!
-).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);`,
-  "/src/styles.css": `.app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}`,
-  "/package.json": `{
-  "name": "my-product",
-  "private": true,
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.7.0",
-    "vite": "^6.0.0"
+function resolveInitialLayout(
+  scopeKey: string,
+  initialLayout?: EditorLayoutPreference,
+): EditorLayoutPreference {
+  if (initialLayout) {
+    return {
+      activeTab: initialLayout.activeTab,
+      splitRatio: clampSplitRatio(initialLayout.splitRatio),
+    };
   }
-}`,
-  "/tsconfig.json": `{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "strict": true,
-    "jsx": "react-jsx",
-    "moduleResolution": "bundler"
-  },
-  "include": ["src"]
-}`,
-};
 
-const MOCK_DIFFS: DiffFile[] = [
-  {
-    path: "src/App.tsx",
-    status: "modified",
-    additions: 12,
-    deletions: 3,
-    hunks: [
-      {
-        lines: [
-          { type: "context", content: "import React from 'react';" },
-          { type: "remove", content: "- function App() {" },
-          { type: "add", content: "+ function App(): JSX.Element {" },
-          { type: "context", content: "  return (" },
-          { type: "add", content: '+   <div className="app">' },
-        ],
-      },
-    ],
-  },
-  {
-    path: "src/styles.css",
-    status: "added",
-    additions: 8,
-    deletions: 0,
-    hunks: [
-      {
-        lines: [
-          { type: "add", content: "+ .app {" },
-          { type: "add", content: "+   max-width: 1280px;" },
-          { type: "add", content: "+   margin: 0 auto;" },
-          { type: "add", content: "+   padding: 2rem;" },
-          { type: "add", content: "+ }" },
-        ],
-      },
-    ],
-  },
-  {
-    path: "package.json",
-    status: "modified",
-    additions: 2,
-    deletions: 1,
-    hunks: [
-      {
-        lines: [
-          { type: "context", content: '  "scripts": {' },
-          { type: "remove", content: '-   "start": "node index.js",' },
-          { type: "add", content: '+   "dev": "vite",' },
-          { type: "add", content: '+   "build": "tsc && vite build",' },
-          { type: "context", content: "  }," },
-        ],
-      },
-    ],
-  },
-];
+  if (!scopeKey) {
+    return createDefaultEditorLayoutPreference();
+  }
 
-interface MockChatTurn {
-  role: "user" | "agent";
-  text: string;
+  return getEditorPreference(readEditorPreferences(), scopeKey);
 }
 
-const MOCK_CHAT: MockChatTurn[] = [
-  {
-    role: "user",
-    text: "Create a React app with TypeScript and Vite. Add a landing page with a hero section.",
-  },
-  {
-    role: "agent",
-    text: "I'll scaffold a React + TypeScript project using Vite. Let me set up the project structure with `App.tsx`, entry point, and base styles.\n\nCreating files:\n- `src/App.tsx` — main component with hero section\n- `src/main.tsx` — entry point\n- `src/styles.css` — base styles\n- `package.json` — dependencies\n- `tsconfig.json` — TypeScript config",
-  },
-  {
-    role: "user",
-    text: "Looks good. Can you also add a dark mode toggle?",
-  },
-  {
-    role: "agent",
-    text: "Sure! I'll add a dark mode toggle to the `App` component using a `useState` hook and CSS custom properties. The toggle will switch between light and dark themes by setting a `data-theme` attribute on the root element.",
-  },
-];
+function createTabLabel(tab: EditorWorkspaceTab): string {
+  switch (tab) {
+    case "preview":
+      return "Preview";
+    case "code":
+      return "Code";
+    case "files":
+      return "Files";
+  }
+}
 
-// ── Icons ──────────────────────────────────────
+function createEmptyConversationContent(
+  connectionState: EditorViewProps["connectionState"],
+): ReactNode {
+  switch (connectionState) {
+    case "connecting":
+      return (
+        <p className="activity-empty-text">
+          Connecting to the live Shipyard runtime…
+        </p>
+      );
+    case "disconnected":
+      return (
+        <p className="activity-empty-text">
+          The browser runtime is offline. Refresh the session to reconnect.
+        </p>
+      );
+    case "error":
+      return (
+        <p className="activity-empty-text">
+          The runtime needs attention before the next turn can begin.
+        </p>
+      );
+    default:
+      return (
+        <p className="activity-empty-text">
+          Submit an instruction to start a conversation with Shipyard.
+        </p>
+      );
+  }
+}
 
-function ArrowLeftIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <polyline points="15,18 9,12 15,6" />
-    </svg>
+export function EditorView(props: EditorViewProps) {
+  const activePhase = props.sessionState?.activePhase ?? "target-manager";
+  const workspaceName = props.sessionState?.workspaceDirectory?.split("/").pop();
+  const targetName =
+    props.targetManager?.currentTarget.name ?? props.productName ?? props.sessionState?.targetLabel;
+  const targetPath =
+    props.targetManager?.currentTarget.path ?? props.sessionState?.targetDirectory ?? props.productId;
+  const editorScopeKey = (
+    props.sessionState?.targetDirectory ??
+    props.productId
+  ).trim();
+  const shouldPersistLayout = props.initialLayout === undefined && Boolean(editorScopeKey);
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  const [targetSwitcherOpen, setTargetSwitcherOpen] = useState(false);
+  const [targetCreationOpen, setTargetCreationOpen] = useState(false);
+  const [dividerDragging, setDividerDragging] = useState(false);
+  const [layout, setLayout] = useState(() =>
+    resolveInitialLayout(editorScopeKey, props.initialLayout),
   );
-}
+  const activeTab = layout.activeTab;
+  const workspacePreviewSurface = resolvePreviewSurface({
+    privatePreviewUrl: props.previewState.url,
+    publicDeploymentUrl: props.hosting.publicDeploymentUrl,
+    hosting: props.hosting,
+  });
+  const workspaceExternalLabel = workspacePreviewSurface.source === "public-deploy"
+    ? "Open app"
+    : workspacePreviewSurface.source === "private-preview"
+      ? "Open preview"
+      : null;
+  const workspaceExternalAriaLabel = workspacePreviewSurface.source === "public-deploy"
+    ? `Open live app at ${workspacePreviewSurface.previewUrl}`
+    : workspacePreviewSurface.source === "private-preview"
+      ? `Open preview at ${workspacePreviewSurface.previewUrl}`
+      : null;
 
-function SendIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <line x1="22" y1="2" x2="11" y2="13" />
-      <polygon points="22,2 15,22 11,13 2,9" />
-    </svg>
-  );
-}
+  useEffect(() => {
+    setLayout(resolveInitialLayout(editorScopeKey, props.initialLayout));
+  }, [
+    editorScopeKey,
+    props.initialLayout?.activeTab,
+    props.initialLayout?.splitRatio,
+  ]);
 
-function FolderIcon() {
-  return (
-    <svg
-      className="code-tree-icon"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-function FileIcon() {
-  return (
-    <svg
-      className="code-tree-icon"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14,2 14,8 20,8" />
-    </svg>
-  );
-}
-
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      className="code-tree-icon"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      style={{
-        transform: open ? "rotate(90deg)" : "rotate(0deg)",
-        transition: "transform 0.15s ease",
-      }}
-    >
-      <polyline points="9,6 15,12 9,18" />
-    </svg>
-  );
-}
-
-// ── File Tree Component ────────────────────────
-
-function FileTreeItem({
-  node,
-  depth,
-  selectedPath,
-  expandedDirs,
-  onSelectFile,
-  onToggleDir,
-}: {
-  node: FileTreeNode;
-  depth: number;
-  selectedPath: string | null;
-  expandedDirs: Set<string>;
-  onSelectFile: (path: string) => void;
-  onToggleDir: (path: string) => void;
-}) {
-  const isDir = node.type === "directory";
-  const isExpanded = expandedDirs.has(node.path);
-  const isSelected = selectedPath === node.path;
-
-  const handleClick = () => {
-    if (isDir) {
-      onToggleDir(node.path);
-    } else {
-      onSelectFile(node.path);
+  useEffect(() => {
+    if (!shouldPersistLayout) {
+      return;
     }
-  };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      handleClick();
+    let nextPreferences = readEditorPreferences();
+    nextPreferences = setEditorActiveTab(
+      nextPreferences,
+      editorScopeKey,
+      layout.activeTab,
+    );
+    nextPreferences = setEditorSplitRatio(
+      nextPreferences,
+      editorScopeKey,
+      layout.splitRatio,
+    );
+    writeEditorPreferences(nextPreferences);
+  }, [
+    editorScopeKey,
+    layout.activeTab,
+    layout.splitRatio,
+    shouldPersistLayout,
+  ]);
+
+  const setActiveTab = useCallback((tab: EditorWorkspaceTab) => {
+    setLayout((currentLayout) =>
+      currentLayout.activeTab === tab
+        ? currentLayout
+        : {
+            ...currentLayout,
+            activeTab: tab,
+          }
+    );
+  }, []);
+
+  const setSplitRatio = useCallback((splitRatio: number) => {
+    const nextSplitRatio = clampSplitRatio(splitRatio);
+
+    setLayout((currentLayout) =>
+      currentLayout.splitRatio === nextSplitRatio
+        ? currentLayout
+        : {
+            ...currentLayout,
+            splitRatio: nextSplitRatio,
+          }
+    );
+  }, []);
+
+  const updateSplitRatioFromClientX = useCallback((clientX: number) => {
+    const container = splitContainerRef.current;
+
+    if (!container) {
+      return;
     }
-  };
+
+    const bounds = container.getBoundingClientRect();
+
+    if (bounds.width <= 0) {
+      return;
+    }
+
+    setSplitRatio(((clientX - bounds.left) / bounds.width) * 100);
+  }, [setSplitRatio]);
+
+  useEffect(() => {
+    if (!dividerDragging) {
+      return;
+    }
+
+    const handleMouseMove = (event: MouseEvent) => {
+      updateSplitRatioFromClientX(event.clientX);
+    };
+    const handleMouseUp = () => {
+      setDividerDragging(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dividerDragging, updateSplitRatioFromClientX]);
+
+  const handleDividerMouseDown = useCallback((
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+    setDividerDragging(true);
+    updateSplitRatioFromClientX(event.clientX);
+  }, [updateSplitRatioFromClientX]);
+
+  const handleDividerKeyDown = useCallback((
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setSplitRatio(layout.splitRatio - 5);
+      return;
+    }
+
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setSplitRatio(layout.splitRatio + 5);
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setSplitRatio(MIN_EDITOR_SPLIT_RATIO);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setSplitRatio(MAX_EDITOR_SPLIT_RATIO);
+    }
+  }, [layout.splitRatio, setSplitRatio]);
+
+  function renderWorkspace(): ReactNode {
+    if (activeTab === "preview") {
+      return (
+        <PreviewPanel
+          preview={props.previewState}
+          hosting={props.hosting}
+          hostedEditorUrl={props.hostedEditorUrl}
+        />
+      );
+    }
+
+    if (activeTab === "code") {
+      return (
+        <CodeExplorerPanel
+          projectId={editorScopeKey || null}
+          codeBrowserClient={props.codeBrowserClient}
+        />
+      );
+    }
+
+    return <FilePanel fileEvents={props.fileEvents} />;
+  }
 
   return (
     <>
-      <div
-        className="code-tree-item"
-        data-type={node.type}
-        data-selected={isSelected}
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
-        role="treeitem"
-        aria-expanded={isDir ? isExpanded : undefined}
-        style={{ paddingLeft: `${12 + depth * 16}px` }}
-      >
-        {isDir ? <ChevronIcon open={isExpanded} /> : <span className="code-tree-indent" />}
-        {isDir ? <FolderIcon /> : <FileIcon />}
-        <span>{node.name}</span>
-      </div>
-      {isDir && isExpanded && node.children
-        ? node.children.map((child) => (
-            <FileTreeItem
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              selectedPath={selectedPath}
-              expandedDirs={expandedDirs}
-              onSelectFile={onSelectFile}
-              onToggleDir={onToggleDir}
-            />
-          ))
-        : null}
-    </>
-  );
-}
-
-// ── Tab Content Components ─────────────────────
-
-function PreviewTab() {
-  return (
-    <div className="preview-placeholder">
-      Preview will appear here when a dev server is running
-    </div>
-  );
-}
-
-function CodeTab() {
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(
-    () => new Set(["/src"]),
-  );
-
-  const handleToggleDir = useCallback((path: string) => {
-    setExpandedDirs((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
-
-  const fileContent = selectedFile ? MOCK_FILE_CONTENTS[selectedFile] : null;
-  const lines = fileContent ? fileContent.split("\n") : [];
-
-  return (
-    <div className="code-tab-split">
-      <div className="code-tree" role="tree" aria-label="File tree">
-        {MOCK_FILE_TREE.map((node) => (
-          <FileTreeItem
-            key={node.path}
-            node={node}
-            depth={0}
-            selectedPath={selectedFile}
-            expandedDirs={expandedDirs}
-            onSelectFile={setSelectedFile}
-            onToggleDir={handleToggleDir}
-          />
-        ))}
-      </div>
-      <div className="code-viewer">
-        {selectedFile && fileContent != null ? (
-          <>
-            <div className="code-viewer-header">{selectedFile}</div>
-            <div className="code-viewer-content">
-              <pre>
-                {lines.map((line, i) => (
-                  <div key={i} className="code-viewer-line">
-                    <span className="code-viewer-line-number">{i + 1}</span>
-                    <span className="code-viewer-line-text">{line}</span>
-                  </div>
-                ))}
-              </pre>
-            </div>
-          </>
-        ) : (
-          <div className="code-viewer-empty">
-            Select a file to view its contents
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function FilesTab() {
-  return (
-    <div className="files-tab-scroll">
-      {MOCK_DIFFS.map((file) => (
-        <div key={file.path} className="diff-file">
-          <div className="diff-file-header">
-            <span className="diff-file-path">{file.path}</span>
-            <div className="diff-file-stats">
-              <span className="diff-stat-add">+{file.additions}</span>
-              <span className="diff-stat-del">-{file.deletions}</span>
-            </div>
-            <Badge
-              tone={file.status === "added" ? "success" : "accent"}
-            >
-              {file.status.toUpperCase()}
-            </Badge>
-          </div>
-          {file.hunks.map((hunk, hi) => (
-            <div key={hi} className="diff-hunk">
-              {hunk.lines.map((line, li) => (
-                <div
-                  key={li}
-                  className={`diff-line diff-line--${line.type}`}
-                >
-                  <span className="diff-line-content">{line.content}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── Main Component ─────────────────────────────
-
-export function EditorView({
-  productName,
-  scaffoldType,
-  onNavigate,
-}: EditorViewProps) {
-  const [splitRatio, setSplitRatio] = useState(40);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("code");
-  const [isDragging, setIsDragging] = useState(false);
-  const splitRef = useRef<HTMLDivElement>(null);
-
-  // ── Resizable split pane ──────────────────────
-
-  const handleDividerMouseDown = useCallback(
-    (e: ReactMouseEvent) => {
-      e.preventDefault();
-      setIsDragging(true);
-
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        if (!splitRef.current) return;
-        const rect = splitRef.current.getBoundingClientRect();
-        const x = moveEvent.clientX - rect.left;
-        const ratio = Math.min(Math.max((x / rect.width) * 100, 20), 80);
-        setSplitRatio(ratio);
-      };
-
-      const handleMouseUp = () => {
-        setIsDragging(false);
-        document.removeEventListener("mousemove", handleMouseMove);
-        document.removeEventListener("mouseup", handleMouseUp);
-      };
-
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-    },
-    [],
-  );
-
-  // Prevent text selection while dragging
-  useEffect(() => {
-    if (isDragging) {
-      document.body.style.userSelect = "none";
-      document.body.style.cursor = "col-resize";
-    } else {
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    }
-    return () => {
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, [isDragging]);
-
-  // ── Tab rendering ──────────────────────────────
-
-  const tabs: { id: WorkspaceTab; label: string }[] = [
-    { id: "preview", label: "Preview" },
-    { id: "code", label: "Code" },
-    { id: "files", label: "Files" },
-    { id: "board", label: "Board" },
-  ];
-
-  let tabContent: React.ReactNode;
-  switch (activeTab) {
-    case "preview":
-      tabContent = <PreviewTab />;
-      break;
-    case "code":
-      tabContent = <CodeTab />;
-      break;
-    case "files":
-      tabContent = <FilesTab />;
-      break;
-    case "board":
-      tabContent = <KanbanView />;
-      break;
-  }
-
-  return (
-    <div className="editor-view">
-      {/* Sub-header */}
-      <div className="editor-subheader">
-        <button
-          className="editor-back-btn"
-          onClick={() => onNavigate({ view: "dashboard" })}
-          aria-label="Back to dashboard"
-        >
-          <ArrowLeftIcon />
-        </button>
-        <span className="editor-product-name">{productName}</span>
-        <Badge tone="accent">{scaffoldType}</Badge>
-      </div>
-
-      {/* Split pane */}
-      <div className="editor-split" ref={splitRef}>
-        {/* Left pane — chat */}
-        <div className="editor-left" style={{ flex: `0 0 ${splitRatio}%` }}>
-          <div className="editor-chat-scroll">
-            {MOCK_CHAT.map((turn, i) => (
-              <div key={i} className={`chat-bubble chat-bubble--${turn.role}`}>
-                <div className="chat-bubble-role">
-                  {turn.role === "user" ? "You" : "Shipyard"}
-                </div>
-                <div className="chat-bubble-text">{turn.text}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="editor-composer">
-            <div className="editor-composer-inner">
-              <textarea
-                className="editor-composer-textarea"
-                placeholder="Ask Shipyard to build something..."
-                rows={1}
-              />
-              <button
-                className="editor-composer-send"
-                aria-label="Send message"
-              >
-                <SendIcon />
-              </button>
-            </div>
-            <div className="editor-composer-meta">
-              <span className="editor-composer-meta-label">
-                Ultimate mode: off
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div
-          className="editor-divider"
-          data-dragging={isDragging}
-          onMouseDown={handleDividerMouseDown}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize panels"
+      <div className="editor-view">
+        <HeaderStrip
+          workspaceName={workspaceName}
+          workspacePath={props.sessionState?.workspaceDirectory}
+          targetName={targetName}
+          targetPath={targetPath}
+          connectionState={props.connectionState}
+          leftSidebarOpen={props.leftSidebarOpen}
+          rightSidebarOpen={false}
+          showRightToggle={false}
+          onCopyTracePath={props.onCopyTracePath}
+          onRefresh={props.onRefreshStatus}
+          onToggleLeftSidebar={props.onToggleLeftSidebar}
+          onToggleRightSidebar={props.onToggleRightSidebar}
+          traceButtonLabel={props.traceButtonLabel}
         />
 
-        {/* Right pane — workspace */}
-        <div className="editor-right" style={{ flex: 1 }}>
-          <div className="editor-workspace-tabs" role="tablist">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                className="editor-workspace-tab"
-                data-active={activeTab === tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                role="tab"
-                aria-selected={activeTab === tab.id}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <div className="editor-workspace-content" role="tabpanel">
-            {tabContent}
-          </div>
+        <div ref={splitContainerRef} className="editor-split">
+          <section
+            className="editor-left"
+            style={{ flex: `0 0 ${String(layout.splitRatio)}%` }}
+            aria-label="Conversation"
+          >
+            <WorkbenchConversationSurface
+              chrome="chat-only"
+              sessionState={props.sessionState}
+              targetManager={props.targetManager}
+              projectBoard={props.projectBoard}
+              turns={props.turns}
+              latestDeploy={props.latestDeploy}
+              connectionState={props.connectionState}
+              ultimateState={props.ultimateState}
+              instruction={props.instruction}
+              composerBehavior={props.composerBehavior}
+              composerNotice={props.composerNotice}
+              composerAttachments={props.composerAttachments}
+              instructionInputRef={props.instructionInputRef}
+              onInstructionChange={props.onInstructionChange}
+              onInstructionKeyDown={props.onInstructionKeyDown}
+              onAttachFiles={props.onAttachFiles}
+              onToggleUltimateArmed={props.onToggleUltimateArmed}
+              onSubmitInstruction={props.onSubmitInstruction}
+              onCancelInstruction={props.onCancelInstruction}
+              onRemoveAttachment={props.onRemoveAttachment}
+              onActivateProject={props.onActivateProject}
+              onOpenTargets={() => setTargetSwitcherOpen(true)}
+              emptyConversationContent={createEmptyConversationContent(
+                props.connectionState,
+              )}
+            />
+          </section>
+
+          <div
+            className="editor-divider"
+            data-dragging={dividerDragging}
+            role="separator"
+            tabIndex={0}
+            aria-label="Resize conversation and workspace"
+            aria-orientation="vertical"
+            aria-valuemin={MIN_EDITOR_SPLIT_RATIO}
+            aria-valuemax={MAX_EDITOR_SPLIT_RATIO}
+            aria-valuenow={layout.splitRatio}
+            onMouseDown={handleDividerMouseDown}
+            onKeyDown={handleDividerKeyDown}
+          />
+
+          <section className="editor-right" aria-label="Workspace">
+            <div className="editor-workspace-toolbar">
+              <div className="editor-workspace-tabs" role="tablist" aria-label="Workspace tabs">
+                {TAB_ORDER.map((tab) => {
+                  const tabId = `editor-tab-${tab}`;
+                  const panelId = `editor-panel-${tab}`;
+                  const selected = activeTab === tab;
+
+                  return (
+                    <button
+                      key={tab}
+                      id={tabId}
+                      type="button"
+                      className="editor-workspace-tab"
+                      data-active={selected}
+                      role="tab"
+                      aria-selected={selected}
+                      aria-controls={panelId}
+                      onClick={() => setActiveTab(tab)}
+                    >
+                      {createTabLabel(tab)}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {workspacePreviewSurface.previewUrl &&
+              workspaceExternalLabel &&
+              workspaceExternalAriaLabel ? (
+                <div className="editor-workspace-actions">
+                  <a
+                    className="target-inline-action editor-workspace-link"
+                    href={workspacePreviewSurface.previewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={workspaceExternalAriaLabel}
+                  >
+                    {workspaceExternalLabel}
+                  </a>
+                </div>
+              ) : null}
+            </div>
+
+            <div
+              id={`editor-panel-${activeTab}`}
+              className="editor-workspace-content"
+              role="tabpanel"
+              aria-labelledby={`editor-tab-${activeTab}`}
+            >
+              {renderWorkspace()}
+            </div>
+          </section>
         </div>
+
+        <div
+          className="drawer-backdrop"
+          data-visible={props.leftSidebarOpen}
+          onClick={props.leftSidebarOpen ? props.onToggleLeftSidebar : undefined}
+          aria-hidden="true"
+        />
+        <aside
+          className="shell-drawer"
+          data-open={props.leftSidebarOpen}
+          role="complementary"
+          aria-label="Session details"
+        >
+          <WorkbenchDrawerContent
+            sessionState={props.sessionState}
+            sessionHistory={props.sessionHistory}
+            contextHistory={props.contextHistory}
+            contextDraft={props.contextDraft}
+            contextInputRef={props.contextInputRef}
+            onContextChange={props.onContextChange}
+            onContextKeyDown={props.onContextKeyDown}
+            onClearContext={props.onClearContext}
+            onRequestSessionResume={props.onRequestSessionResume}
+          />
+        </aside>
+
+        <footer className="shell-footer" role="contentinfo">
+          <ShellFooter
+            connectionState={props.connectionState}
+            sessionId={props.sessionState?.sessionId}
+            workspacePath={props.sessionState?.workspaceDirectory}
+            agentStatus={props.agentStatus}
+          />
+        </footer>
       </div>
-    </div>
+
+      {props.targetManager ? (
+        <TargetSwitcher
+          activePhase={activePhase}
+          open={targetSwitcherOpen}
+          targetManager={props.targetManager}
+          onClose={() => setTargetSwitcherOpen(false)}
+          onCreateNew={() => {
+            setTargetSwitcherOpen(false);
+            setTargetCreationOpen(true);
+          }}
+          onSwitchTarget={(nextTargetPath) => {
+            setTargetSwitcherOpen(false);
+            props.onRequestTargetSwitch(nextTargetPath);
+          }}
+        />
+      ) : null}
+
+      <TargetCreationDialog
+        open={targetCreationOpen}
+        onClose={() => setTargetCreationOpen(false)}
+        onCreateTarget={(input) => {
+          setTargetCreationOpen(false);
+          props.onRequestTargetCreate(input);
+        }}
+      />
+    </>
   );
 }

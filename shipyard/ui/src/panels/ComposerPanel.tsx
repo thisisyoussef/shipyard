@@ -11,6 +11,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { BadgeTone } from "../primitives.js";
 import { Badge } from "../primitives.js";
+import { UltimateToggle } from "../shell/UltimateToggle.js";
+import type { WorkbenchComposerBehavior } from "../ultimate-composer.js";
 
 /* ── Types ──────────────────────────────────────── */
 
@@ -55,7 +57,24 @@ export interface ComposerPanelProps {
   onAttachFiles?: (files: File[]) => void;
   /** Callback to remove a pending or rejected attachment */
   onRemoveAttachment?: (attachmentId: string) => void;
+  /** Derived composer behavior for standard and ultimate flows */
+  composerBehavior?: WorkbenchComposerBehavior;
+  /** Toggle ultimate-mode arming for the next send */
+  onUltimateToggle?: () => void;
 }
+
+const DEFAULT_BEHAVIOR: WorkbenchComposerBehavior = {
+  mode: "instruction",
+  submitLabel: "Run instruction",
+  placeholder:
+    "Ask Shipyard to inspect a file, explain the current diff, or map the next change.",
+  keyboardHint: "Cmd+Enter to send",
+  modeSummary: "Next send runs a normal Shipyard instruction.",
+  showCancelAction: false,
+  submitDisabled: false,
+  togglePressed: false,
+  toggleDisabled: false,
+};
 
 /* ── Auto-resize hook ───────────────────────────── */
 
@@ -92,6 +111,8 @@ export function ComposerPanel({
   attachments = [],
   onAttachFiles,
   onRemoveAttachment,
+  composerBehavior = DEFAULT_BEHAVIOR,
+  onUltimateToggle,
 }: ComposerPanelProps) {
   const [isFocused, setIsFocused] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -109,7 +130,17 @@ export function ComposerPanel({
         : "idle";
 
   // Submit button label
-  const submitLabel = state === "submitting" ? "Sending..." : "Run instruction";
+  const submitLabel =
+    state === "submitting" ? "Sending..." : composerBehavior.submitLabel;
+  const wantsUltimateStop =
+    (composerBehavior.mode === "ultimate-feedback" && instruction.trim().length === 0) ||
+    composerBehavior.mode === "ultimate-stopping";
+  const interruptActionLabel =
+    composerBehavior.mode === "cancel"
+      ? "Cancel turn"
+      : composerBehavior.mode === "ultimate-stopping"
+        ? "Stopping..."
+        : "Stop ultimate";
 
   const handleFocus = useCallback(() => setIsFocused(true), []);
   const handleBlur = useCallback(() => setIsFocused(false), []);
@@ -158,6 +189,30 @@ export function ComposerPanel({
           tabIndex={-1}
           aria-hidden="true"
         />
+
+        <div className="composer-mode-row">
+          <UltimateToggle
+            enabled={composerBehavior.togglePressed}
+            disabled={composerBehavior.toggleDisabled}
+            onToggle={() => onUltimateToggle?.()}
+          />
+          <div className="composer-mode-copy">
+            <span className="composer-mode-label">
+              {composerBehavior.mode === "ultimate-feedback"
+                ? "Loop feedback"
+                : composerBehavior.mode === "ultimate-start"
+                  ? "Loop brief"
+                  : composerBehavior.mode === "ultimate-paused"
+                    ? "Loop paused"
+                  : composerBehavior.mode === "ultimate-stopping"
+                    ? "Loop stopping"
+                    : "Standard turn"}
+            </span>
+            <p id="composer-mode-summary" className="composer-mode-summary">
+              {composerBehavior.modeSummary}
+            </p>
+          </div>
+        </div>
 
         {attachments.length > 0 && (
           <div
@@ -224,30 +279,31 @@ export function ComposerPanel({
             onKeyDown={onKeyDown}
             onFocus={handleFocus}
             onBlur={handleBlur}
-            placeholder="Ask Shipyard to inspect a file, explain the current diff, or map the next change."
+            placeholder={composerBehavior.placeholder}
             aria-label="Instruction input"
             aria-multiline="true"
             aria-keyshortcuts="Control+Enter Meta+Enter"
+            aria-describedby="composer-mode-summary"
             data-state={state}
           />
 
           {/* Submit button attached to textarea */}
-          {agentBusy ? (
+          {composerBehavior.showCancelAction || wantsUltimateStop ? (
             <button
               type="button"
               className="composer-submit"
               onClick={onCancel}
-              disabled={!onCancel}
-              aria-disabled={!onCancel}
+              disabled={!onCancel || composerBehavior.mode === "ultimate-stopping"}
+              aria-disabled={!onCancel || composerBehavior.mode === "ultimate-stopping"}
             >
-              Cancel turn
+              {interruptActionLabel}
             </button>
           ) : (
             <button
               type="submit"
               className="composer-submit"
-              disabled={submitting}
-              aria-disabled={submitting}
+              disabled={submitting || composerBehavior.submitDisabled}
+              aria-disabled={submitting || composerBehavior.submitDisabled}
             >
               {submitLabel}
             </button>
@@ -257,7 +313,7 @@ export function ComposerPanel({
 
       {/* Keyboard hint below */}
       <span className="composer-keyboard-hint">
-        Cmd+Enter to send · Up/Down for history
+        {composerBehavior.keyboardHint} · Up/Down for history
       </span>
     </div>
   );

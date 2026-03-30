@@ -1,6 +1,24 @@
 import { z } from "zod";
 
+import {
+  createDefaultHostingWorkbenchState,
+  hostingWorkbenchStateSchema,
+} from "../hosting/contracts.js";
+import {
+  createIdleOrchestrationWorkbenchState,
+  orchestrationWorkbenchStateSchema,
+} from "../orchestration/contracts.js";
 import { SCAFFOLD_TYPES } from "../tools/target-manager/scaffolds.js";
+import { pipelineWorkbenchStateSchema } from "../pipeline/contracts.js";
+import {
+  createDefaultSourceControlWorkbenchState,
+  sourceControlWorkbenchStateSchema,
+} from "../source-control/contracts.js";
+import { boardProjectionSchema } from "../tasks/contracts.js";
+import {
+  createIdleTddWorkbenchState,
+  tddWorkbenchStateSchema,
+} from "../tdd/contracts.js";
 
 export const runtimeModeSchema = z.enum(["repl", "ui"]);
 export const uiConnectionStateSchema = z.enum([
@@ -62,6 +80,13 @@ const enrichmentStatusSchema = z.enum([
   "error",
 ]);
 const deployStatusSchema = z.enum(["idle", "deploying", "success", "error"]);
+const ultimateUiPhaseSchema = z.enum([
+  "idle",
+  "paused",
+  "running",
+  "stopping",
+  "error",
+]);
 
 const nonEmptyTextSchema = z.string().trim().min(1);
 const discoverySchema = z.object({
@@ -220,6 +245,46 @@ export const deploySummarySchema = z.object({
   requestedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
 });
+export type CodeBrowserTreeNode = {
+  name: string;
+  type: "file" | "directory";
+  path: string;
+  children?: CodeBrowserTreeNode[];
+};
+export const codeBrowserTreeNodeSchema: z.ZodType<CodeBrowserTreeNode> = z.lazy(() =>
+  z.object({
+    name: z.string(),
+    type: z.enum(["file", "directory"]),
+    path: z.string(),
+    children: z.array(codeBrowserTreeNodeSchema).optional(),
+  })
+);
+export const codeBrowserTreeResponseSchema = z.object({
+  projectId: z.string(),
+  root: z.object({
+    path: z.string(),
+    name: z.string(),
+  }),
+  nodes: z.array(codeBrowserTreeNodeSchema),
+});
+export const codeBrowserReadResponseSchema = z.object({
+  projectId: z.string(),
+  path: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  contents: z.string().nullable(),
+  truncated: z.boolean(),
+  binary: z.boolean(),
+});
+export const codeBrowserErrorResponseSchema = z.object({
+  error: z.string(),
+  code: z.enum([
+    "access_denied",
+    "not_found",
+    "not_directory",
+    "not_file",
+    "read_failed",
+  ]).optional(),
+});
 const pendingToolCallSchema = z.object({
   turnId: z.string(),
   fileEventId: z.string().optional(),
@@ -253,11 +318,42 @@ export const projectBoardProjectSchema = z.object({
   hasProfile: z.boolean(),
   lastActiveAt: z.string(),
   turnCount: z.number().int().nonnegative(),
+  privatePreviewUrl: z.string().nullable().optional(),
+  publicDeploymentUrl: z.string().nullable().optional(),
 });
 export const projectBoardStateSchema = z.object({
   activeProjectId: z.string().nullable(),
   openProjects: z.array(projectBoardProjectSchema),
 });
+export const runtimeAssistStateSchema = z.object({
+  activeProfileId: z.string().nullable(),
+  activeProfileName: z.string().nullable(),
+  activeProfileRoute: z.string().nullable(),
+  loadedSkills: z.array(z.string()),
+});
+export const ultimateUiStateSchema = z.object({
+  active: z.boolean(),
+  phase: ultimateUiPhaseSchema,
+  currentBrief: z.string().nullable(),
+  turnCount: z.number().int().nonnegative(),
+  pendingFeedbackCount: z.number().int().nonnegative(),
+  startedAt: z.string().nullable(),
+  lastCycleSummary: z.string().nullable(),
+});
+export type UltimateUiState = z.infer<typeof ultimateUiStateSchema>;
+
+export function createIdleUltimateUiState(): UltimateUiState {
+  return {
+    active: false,
+    phase: "idle",
+    currentBrief: null,
+    turnCount: 0,
+    pendingFeedbackCount: 0,
+    startedAt: null,
+    lastCycleSummary: null,
+  };
+}
+
 export const workbenchStateSchema = z.object({
   connectionState: uiConnectionStateSchema,
   agentStatus: z.string(),
@@ -277,6 +373,20 @@ export const workbenchStateSchema = z.object({
   previewState: previewStateSchema,
   targetManager: targetManagerStateSchema.nullable(),
   projectBoard: projectBoardStateSchema.nullable().default(null),
+  pipelineState: pipelineWorkbenchStateSchema.nullable().default(null),
+  tddState: tddWorkbenchStateSchema.default(createIdleTddWorkbenchState()),
+  orchestration: orchestrationWorkbenchStateSchema.default(
+    createIdleOrchestrationWorkbenchState(),
+  ),
+  sourceControl: sourceControlWorkbenchStateSchema.default(
+    createDefaultSourceControlWorkbenchState(),
+  ),
+  hosting: hostingWorkbenchStateSchema.default(
+    createDefaultHostingWorkbenchState(),
+  ),
+  taskBoard: boardProjectionSchema.nullable().default(null),
+  ultimateState: ultimateUiStateSchema.default(createIdleUltimateUiState()),
+  runtimeAssist: runtimeAssistStateSchema,
 });
 
 export const uploadReceiptsResponseSchema = z.object({
@@ -309,13 +419,16 @@ export const statusMessageSchema = z.object({
 export const targetSwitchRequestMessageSchema = z.object({
   type: z.literal("target:switch_request"),
   targetPath: nonEmptyTextSchema,
+  requestId: z.string().trim().min(1).optional(),
 });
 
 export const targetCreateRequestMessageSchema = z.object({
   type: z.literal("target:create_request"),
   name: nonEmptyTextSchema,
   description: nonEmptyTextSchema,
+  initialInstruction: nonEmptyTextSchema.optional(),
   scaffoldType: scaffoldTypeSchema.optional(),
+  requestId: z.string().trim().min(1).optional(),
 });
 
 export const projectActivateRequestMessageSchema = z.object({
@@ -333,6 +446,36 @@ export const deployRequestMessageSchema = z.object({
   platform: z.enum(["vercel"]).default("vercel"),
 });
 
+export const ultimateToggleMessageSchema = z.object({
+  type: z.literal("ultimate:toggle"),
+  enabled: z.boolean(),
+  brief: z.string().trim().optional(),
+  injectedContext: z.array(nonEmptyTextSchema).optional(),
+}).superRefine((value, context) => {
+  if (value.enabled && !value.brief) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["brief"],
+      message: "A brief is required when starting ultimate mode.",
+    });
+  }
+});
+
+export const ultimateFeedbackMessageSchema = z.object({
+  type: z.literal("ultimate:feedback"),
+  text: nonEmptyTextSchema,
+  injectedContext: z.array(nonEmptyTextSchema).optional(),
+});
+
+export const ultimatePauseMessageSchema = z.object({
+  type: z.literal("ultimate:pause"),
+});
+
+export const ultimateResumeMessageSchema = z.object({
+  type: z.literal("ultimate:resume"),
+  injectedContext: z.array(nonEmptyTextSchema).optional(),
+});
+
 export const sessionResumeRequestMessageSchema = z.object({
   type: z.literal("session:resume_request"),
   sessionId: nonEmptyTextSchema,
@@ -342,6 +485,10 @@ export const frontendToBackendMessageSchema = z.discriminatedUnion("type", [
   instructionMessageSchema,
   cancelMessageSchema,
   statusMessageSchema,
+  ultimateToggleMessageSchema,
+  ultimateFeedbackMessageSchema,
+  ultimatePauseMessageSchema,
+  ultimateResumeMessageSchema,
   sessionResumeRequestMessageSchema,
   targetSwitchRequestMessageSchema,
   targetCreateRequestMessageSchema,
@@ -439,12 +586,23 @@ export const projectsStateMessageSchema = z.object({
   state: projectBoardStateSchema,
 });
 
+export const tasksStateMessageSchema = z.object({
+  type: z.literal("tasks:state"),
+  state: boardProjectionSchema,
+});
+
+export const orchestrationStateMessageSchema = z.object({
+  type: z.literal("orchestration:state"),
+  state: orchestrationWorkbenchStateSchema,
+});
+
 export const targetSwitchCompleteMessageSchema = z.object({
   type: z.literal("target:switch_complete"),
   success: z.boolean(),
   message: z.string().nullable(),
   state: targetManagerStateSchema,
   projectId: z.string().nullable().optional(),
+  requestId: z.string().trim().min(1).optional(),
 });
 
 export const targetEnrichmentProgressMessageSchema = z.object({
@@ -456,6 +614,11 @@ export const targetEnrichmentProgressMessageSchema = z.object({
 export const deployStateMessageSchema = z.object({
   type: z.literal("deploy:state"),
   deploy: deploySummarySchema,
+});
+
+export const ultimateStateMessageSchema = z.object({
+  type: z.literal("ultimate:state"),
+  state: ultimateUiStateSchema,
 });
 
 export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
@@ -470,9 +633,12 @@ export const backendToFrontendMessageSchema = z.discriminatedUnion("type", [
   previewStateMessageSchema,
   targetStateMessageSchema,
   projectsStateMessageSchema,
+  tasksStateMessageSchema,
+  orchestrationStateMessageSchema,
   targetSwitchCompleteMessageSchema,
   targetEnrichmentProgressMessageSchema,
   deployStateMessageSchema,
+  ultimateStateMessageSchema,
 ]);
 
 export type BackendToFrontendMessage = z.infer<
@@ -491,11 +657,25 @@ export type TargetEnrichmentState = z.infer<
   typeof targetEnrichmentStateSchema
 >;
 export type ProjectBoardState = z.infer<typeof projectBoardStateSchema>;
+export type TaskBoardState = z.infer<typeof boardProjectionSchema>;
+export type OrchestrationState = z.infer<typeof orchestrationWorkbenchStateSchema>;
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
 export type DeploySummary = z.infer<typeof deploySummarySchema>;
+export type CodeBrowserTreeResponse = z.infer<
+  typeof codeBrowserTreeResponseSchema
+>;
+export type CodeBrowserReadResponse = z.infer<
+  typeof codeBrowserReadResponseSchema
+>;
+export type CodeBrowserErrorResponse = z.infer<
+  typeof codeBrowserErrorResponseSchema
+>;
 export type UploadReceiptsResponse = z.infer<typeof uploadReceiptsResponseSchema>;
 export type UploadDeleteResponse = z.infer<typeof uploadDeleteResponseSchema>;
 export type UploadErrorResponse = z.infer<typeof uploadErrorResponseSchema>;
+export type UiSourceControlWorkbenchState = z.infer<
+  typeof sourceControlWorkbenchStateSchema
+>;
 
 function hasMessageType(value: unknown): value is { type: string } {
   return (
@@ -527,6 +707,10 @@ export function parseFrontendMessage(
     "instruction",
     "cancel",
     "status",
+    "ultimate:toggle",
+    "ultimate:feedback",
+    "ultimate:pause",
+    "ultimate:resume",
     "session:resume_request",
     "target:switch_request",
     "target:create_request",
@@ -543,12 +727,12 @@ export function parseFrontendMessage(
     }
 
     throw new Error(
-      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.`,
+      `Invalid client message type: ${parsed.type}. Expected instruction, cancel, status, ultimate:toggle, ultimate:feedback, ultimate:pause, ultimate:resume, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.`,
     );
   }
 
   throw new Error(
-    "Invalid client message: expected instruction, cancel, status, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.",
+    "Invalid client message: expected instruction, cancel, status, ultimate:toggle, ultimate:feedback, ultimate:pause, ultimate:resume, session:resume_request, target:switch_request, target:create_request, project:activate_request, target:enrich_request, or deploy:request.",
   );
 }
 

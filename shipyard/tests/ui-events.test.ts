@@ -205,11 +205,13 @@ describe("ui event helpers", () => {
         JSON.stringify({
           type: "target:switch_request",
           targetPath: "/tmp/demo-target",
+          requestId: "request-switch-1",
         }),
       ),
     ).toEqual({
       type: "target:switch_request",
       targetPath: "/tmp/demo-target",
+      requestId: "request-switch-1",
     });
 
     expect(
@@ -218,14 +220,18 @@ describe("ui event helpers", () => {
           type: "target:create_request",
           name: "alpha app",
           description: "Create a demo target.",
+          initialInstruction: "Build the first release checklist.",
           scaffoldType: "react-ts",
+          requestId: "request-create-1",
         }),
       ),
     ).toEqual({
       type: "target:create_request",
       name: "alpha app",
       description: "Create a demo target.",
+      initialInstruction: "Build the first release checklist.",
       scaffoldType: "react-ts",
+      requestId: "request-create-1",
     });
 
     expect(
@@ -278,6 +284,105 @@ describe("ui event helpers", () => {
         enrichmentStatus: {
           status: "complete",
         },
+      },
+    });
+
+    expect(
+      JSON.parse(
+        serializeBackendMessage({
+          type: "target:switch_complete",
+          success: true,
+          message: "Created and selected demo-target.",
+          requestId: "request-create-1",
+          projectId: "project-demo",
+          state: {
+            currentTarget: {
+              path: "/tmp/demo-target",
+              name: "demo-target",
+              description: "Demo target summary.",
+              language: "typescript",
+              framework: "React",
+              hasProfile: true,
+            },
+            availableTargets: [],
+            enrichmentStatus: {
+              status: "complete",
+              message: "Target profile saved.",
+            },
+          },
+        }),
+      ),
+    ).toMatchObject({
+      type: "target:switch_complete",
+      requestId: "request-create-1",
+      projectId: "project-demo",
+      success: true,
+    });
+  });
+
+  it("validates the additive ultimate control-plane websocket contracts", () => {
+    expect(
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "ultimate:toggle",
+          enabled: true,
+          brief: "Keep improving the dashboard forever.",
+          injectedContext: ["Use the uploaded mock as the visual anchor."],
+        }),
+      ),
+    ).toEqual({
+      type: "ultimate:toggle",
+      enabled: true,
+      brief: "Keep improving the dashboard forever.",
+      injectedContext: ["Use the uploaded mock as the visual anchor."],
+    });
+
+    expect(
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "ultimate:feedback",
+          text: "Tighten the hero spacing and raise CTA contrast.",
+          injectedContext: ["Prioritize the dashboard first."],
+        }),
+      ),
+    ).toEqual({
+      type: "ultimate:feedback",
+      text: "Tighten the hero spacing and raise CTA contrast.",
+      injectedContext: ["Prioritize the dashboard first."],
+    });
+
+    expect(() =>
+      parseFrontendMessage(
+        JSON.stringify({
+          type: "ultimate:feedback",
+          text: "   ",
+        }),
+      ),
+    ).toThrow('Invalid client message payload for "ultimate:feedback".');
+
+    expect(
+      JSON.parse(
+        serializeBackendMessage({
+          type: "ultimate:state",
+          state: {
+            active: true,
+            phase: "running",
+            currentBrief: "Keep improving the dashboard forever.",
+            turnCount: 3,
+            pendingFeedbackCount: 2,
+            startedAt: "2026-03-29T00:00:00.000Z",
+            lastCycleSummary: "Cycle 3 tightened the hero spacing.",
+          },
+        }),
+      ),
+    ).toMatchObject({
+      type: "ultimate:state",
+      state: {
+        active: true,
+        phase: "running",
+        currentBrief: "Keep improving the dashboard forever.",
+        turnCount: 3,
+        pendingFeedbackCount: 2,
       },
     });
   });

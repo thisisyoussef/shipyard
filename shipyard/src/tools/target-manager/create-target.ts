@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import type { DiscoveryReport } from "../../artifacts/types.js";
 import { discoverTarget } from "../../context/discovery.js";
 import { ensureShipyardDirectories } from "../../engine/state.js";
+import { syncSourceControlState } from "../../source-control/runtime.js";
 import {
   createToolErrorResult,
   createToolSuccessResult,
@@ -89,6 +90,7 @@ export async function createTargetTool(
   await ensureShipyardDirectories(targetPath);
 
   const discovery = await discoverTarget(targetPath);
+  await syncSourceControlState(targetPath);
 
   return {
     path: targetPath,

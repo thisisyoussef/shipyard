@@ -15,6 +15,7 @@ export const CODE_PHASE_TOOL_NAMES = [
   "bootstrap_target",
   "edit_block",
   "list_files",
+  "manage_source_control",
   "search_files",
   "run_command",
   "git_diff",
@@ -27,9 +28,14 @@ export const codePhase: Phase = {
   systemPrompt: CODE_PHASE_SYSTEM_PROMPT,
   tools: CODE_PHASE_TOOL_NAMES,
   modelRoute: CODE_PHASE_MODEL_ROUTE,
+  agentProfileId: "implementer",
+  defaultSkills: ["runtime-safety"],
   approvalRequired: false,
+  approvalGate: "disabled",
   inputArtifact: "instruction",
   outputArtifact: "task_plan",
+  consumesArtifacts: ["instruction"],
+  producesArtifacts: ["task_plan"],
 };
 
 export function createCodePhase(): Phase {

@@ -1,1135 +1,734 @@
-import {
-  startTransition,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import type {
-  BackendToFrontendMessage,
-  FrontendToBackendMessage,
-} from "../../src/ui/contracts.js";
 import {
-  backendToFrontendMessageSchema,
-  uploadDeleteResponseSchema,
-  uploadErrorResponseSchema,
-  uploadReceiptsResponseSchema,
-} from "../../src/ui/contracts.js";
-import { validateContextDraft } from "./context-ui.js";
+  createBoardViewModel,
+} from "./board-view-model.js";
+import {
+  getBoardSelectedStory,
+  readBoardPreferences,
+  setBoardSelectedStory,
+  writeBoardPreferences,
+} from "./board-preferences.js";
 import { HostedAccessGate } from "./HostedAccessGate.js";
 import { HumanFeedbackPage } from "./HumanFeedbackPage.js";
-import type { BadgeTone } from "./primitives.js";
-import { ShipyardWorkbench } from "./ShipyardWorkbench.js";
-import type { ComposerAttachment } from "./panels/ComposerPanel.js";
-import { createSocketManager, type SocketManager } from "./socket-manager.js";
 import {
-  applyBackendMessage,
-  appendPendingUploadReceipts,
-  createInitialWorkbenchState,
-  prepareInstructionSubmission,
-  queueInstructionTurn,
-  removePendingUploadReceipt,
-  setTransportState,
-  type WorkbenchConnectionState,
-  type UploadReceiptViewModel,
-} from "./view-models.js";
+  buildDashboardCatalog,
+} from "./dashboard-catalog.js";
+import { resolveDashboardSystemNotice } from "./dashboard-system-notice.js";
+import {
+  createDashboardHeroLaunch,
+  createDashboardManualLaunch,
+  matchesDashboardLaunchCompletion,
+  type DashboardLaunchIntent,
+} from "./dashboard-launch.js";
+import {
+  markDashboardProductOpened,
+  readDashboardPreferences,
+  setDashboardActiveTab,
+  toggleDashboardProductStar,
+  writeDashboardPreferences,
+} from "./dashboard-preferences.js";
+import {
+  getPreferredBoardRoute,
+  getPreferredEditorRoute,
+  resolveAppRoute,
+  selectBoardRouteState,
+  selectEditorRouteState,
+  type BoardRouteState,
+  type EditorRouteState,
+} from "./app-route.js";
+import type { Route } from "./router.js";
+import { NavBar } from "./shell/NavBar.js";
+import { TargetCreationDialog } from "./TargetCreationDialog.js";
+import {
+  extractBootstrapAccessToken,
+  resolveUiPage,
+  selectSessionScopedValue,
+  shouldCancelBusyInstructionOnSubmit,
+  useWorkbenchController,
+} from "./use-workbench-controller.js";
+import { useRouter } from "./use-router.js";
+import type { DashboardViewNotice } from "./views/DashboardView.js";
+import {
+  BoardView,
+  DashboardView,
+  EditorView,
+} from "./views/index.js";
+import { RoutePlaceholderView } from "./views/RoutePlaceholderView.js";
 
-interface ComposerNotice {
-  tone: BadgeTone;
-  title: string;
-  detail: string;
-}
+export {
+  extractBootstrapAccessToken,
+  resolveUiPage,
+  selectSessionScopedValue,
+  shouldCancelBusyInstructionOnSubmit,
+} from "./use-workbench-controller.js";
 
-interface HostedAccessResponse {
-  required: boolean;
-  authenticated: boolean;
-  message?: string | null;
-}
-
-interface HostedAccessState {
-  checked: boolean;
-  required: boolean;
-  authenticated: boolean;
-  message: string | null;
-}
-
-function createAttachmentDetail(receipt: UploadReceiptViewModel): string {
-  return `${receipt.storedRelativePath} · ${receipt.previewSummary}`;
-}
-
-function createUploadErrorMessage(
-  payload: unknown,
-  fallback: string,
-): string {
-  const parsed = uploadErrorResponseSchema.safeParse(payload);
-
-  return parsed.success ? parsed.data.error : fallback;
-}
-
-function createSocketUrl(): string {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws`;
-}
-
-function isHostedAccessResponse(value: unknown): value is HostedAccessResponse {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "required" in value &&
-    typeof value.required === "boolean" &&
-    "authenticated" in value &&
-    typeof value.authenticated === "boolean" &&
-    (!("message" in value) ||
-      value.message === null ||
-      typeof value.message === "string")
-  );
-}
-
-function extractApiMessage(payload: unknown): string | null {
-  if (
-    typeof payload === "object" &&
-    payload !== null &&
-    "message" in payload &&
-    typeof payload.message === "string"
-  ) {
-    return payload.message;
+function getEditorIntentKey(
+  routeState: EditorRouteState | BoardRouteState | null,
+): string | null {
+  if (!routeState || routeState.status !== "opening") {
+    return null;
   }
 
-  if (
-    typeof payload === "object" &&
-    payload !== null &&
-    "error" in payload &&
-    typeof payload.error === "string"
-  ) {
-    return payload.error;
-  }
-
-  return null;
-}
-
-async function parseHostedAccessResponse(
-  response: Response,
-): Promise<HostedAccessResponse> {
-  const payload = await response.json().catch(() => null);
-
-  if (!isHostedAccessResponse(payload)) {
-    throw new Error("Shipyard returned an invalid hosted-access response.");
-  }
-
-  return payload;
-}
-
-export function extractBootstrapAccessToken(locationUrl: URL): {
-  token: string | null;
-  sanitizedRelativeUrl: string;
-} {
-  const searchParams = new URLSearchParams(locationUrl.search);
-  const rawToken = searchParams.get("access_token")?.trim() ?? "";
-
-  if (rawToken) {
-    searchParams.delete("access_token");
-  }
-
-  const nextSearch = searchParams.toString();
-
-  return {
-    token: rawToken || null,
-    sanitizedRelativeUrl:
-      `${locationUrl.pathname}${nextSearch ? `?${nextSearch}` : ""}${locationUrl.hash}` ||
-      "/",
-  };
-}
-
-function readSidebarState(key: string, fallback: boolean): boolean {
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored === "false") return false;
-    if (stored === "true") return true;
-  } catch {
-    /* localStorage unavailable */
-  }
-  return fallback;
-}
-
-function writeSidebarState(key: string, open: boolean): void {
-  try {
-    localStorage.setItem(key, String(open));
-  } catch {
-    /* localStorage unavailable */
+  switch (routeState.intent.kind) {
+    case "activate-project":
+      return `activate:${routeState.intent.projectId}`;
+    case "switch-target":
+      return `switch:${routeState.intent.targetPath}`;
+    case "none":
+      return null;
   }
 }
 
-export type UiPage = "workbench" | "human-feedback";
-
-export function resolveUiPage(pathname: string): UiPage {
-  const normalizedPath = pathname.trim().replace(/\/+$/, "") || "/";
-
-  if (normalizedPath === "/human-feedback") {
-    return "human-feedback";
-  }
-
-  return "workbench";
-}
-
-export function shouldCancelBusyInstructionOnSubmit(
-  page: UiPage,
-  connectionState: WorkbenchConnectionState,
+function isProductRouteLoading(
+  route: Route,
+  view: Extract<Route["view"], "editor" | "board">,
+  routeState: EditorRouteState | BoardRouteState | null,
+  hasLoadedWorkbenchState: boolean,
 ): boolean {
-  return page !== "human-feedback" && connectionState === "agent-busy";
+  return (
+    route.view === view &&
+    routeState?.status === "missing" &&
+    !hasLoadedWorkbenchState
+  );
 }
 
 export function App() {
-  const [viewState, setViewState] = useState(createInitialWorkbenchState);
-  const [accessState, setAccessState] = useState<HostedAccessState>({
-    checked: false,
-    required: false,
-    authenticated: false,
-    message: null,
-  });
-  const [accessToken, setAccessToken] = useState("");
-  const [accessSubmitting, setAccessSubmitting] = useState(false);
-  const [instruction, setInstruction] = useState("");
-  const [humanFeedbackInstruction, setHumanFeedbackInstruction] = useState("");
-  const [contextDraft, setContextDraft] = useState("");
-  const [localUploads, setLocalUploads] = useState<ComposerAttachment[]>([]);
-  const [composerNotice, setComposerNotice] = useState<ComposerNotice | null>(
-    null,
+  const controller = useWorkbenchController();
+  const { navigate } = useRouter();
+  const requestedEditorIntentRef = useRef<string | null>(null);
+  const shouldFollowCreatedTargetRef = useRef(false);
+  const lastOpenedEditorProductRef = useRef<string | null>(null);
+  const handledTargetSwitchCompletionRef = useRef<number | null>(null);
+  const [boardPreferences, setBoardPreferences] = useState(() =>
+    readBoardPreferences(),
   );
-  const [traceButtonLabel, setTraceButtonLabel] = useState("Copy trace path");
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(() =>
-    readSidebarState("shipyard:sidebar-left", true),
+  const [dashboardPreferences, setDashboardPreferences] = useState(() =>
+    readDashboardPreferences(),
   );
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(() =>
-    readSidebarState("shipyard:sidebar-right", true),
-  );
-  const socketManagerRef = useRef<SocketManager | null>(null);
-  const hasSessionRef = useRef(false);
-  const lastSessionIdRef = useRef<string | null>(null);
-  const instructionInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const humanFeedbackInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const contextInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const deferredTurns = useDeferredValue(viewState.turns);
-  const deferredFileEvents = useDeferredValue(viewState.fileEvents);
-  const deferredContextHistory = useDeferredValue(viewState.contextHistory);
-  const activePage = resolveUiPage(
+  const [dashboardHeroPrompt, setDashboardHeroPrompt] = useState("");
+  const [dashboardNotice, setDashboardNotice] =
+    useState<DashboardViewNotice | null>(null);
+  const [dashboardCreateDialogOpen, setDashboardCreateDialogOpen] =
+    useState(false);
+  const [pendingDashboardLaunch, setPendingDashboardLaunch] =
+    useState<DashboardLaunchIntent | null>(null);
+  const appRoute = resolveAppRoute(
     typeof window === "undefined" ? "/" : window.location.pathname,
+    typeof window === "undefined" ? "" : window.location.hash,
   );
-  const activeInstructionInputRef =
-    activePage === "human-feedback"
-      ? humanFeedbackInputRef
-      : instructionInputRef;
-  const hasUnlockedAccess =
-    accessState.checked &&
-    (!accessState.required || accessState.authenticated);
-
-  /* ── Sidebar toggles ──────────────────────── */
-
-  const toggleLeftSidebar = useCallback(() => {
-    setLeftSidebarOpen((prev) => {
-      const next = !prev;
-      writeSidebarState("shipyard:sidebar-left", next);
-      return next;
-    });
-  }, []);
-
-  const toggleRightSidebar = useCallback(() => {
-    setRightSidebarOpen((prev) => {
-      const next = !prev;
-      writeSidebarState("shipyard:sidebar-right", next);
-      return next;
-    });
-  }, []);
-
-  /* ── Global keyboard shortcuts ────────────── */
-
-  useEffect(() => {
-    function handleGlobalKeyDown(event: globalThis.KeyboardEvent): void {
-      const target = event.target as HTMLElement;
-      const isInput =
-        target.tagName === "TEXTAREA" ||
-        target.tagName === "INPUT" ||
-        target.isContentEditable;
-
-      // Cmd/Ctrl+K — focus composer (works even in inputs)
-      if (event.key === "k" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
-        event.preventDefault();
-        activeInstructionInputRef.current?.focus();
-        return;
-      }
-
-      // Don't fire sidebar shortcuts when typing
-      if (isInput) return;
-
-      // Cmd/Ctrl+B — toggle left sidebar
-      if (event.key === "b" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
-        event.preventDefault();
-        toggleLeftSidebar();
-        return;
-      }
-
-      // Cmd/Ctrl+Shift+B — toggle right sidebar
-      if (event.key === "b" && (event.metaKey || event.ctrlKey) && event.shiftKey) {
-        event.preventDefault();
-        toggleRightSidebar();
-      }
-    }
-
-    document.addEventListener("keydown", handleGlobalKeyDown);
-    return () => document.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [activeInstructionInputRef, toggleLeftSidebar, toggleRightSidebar]);
-
-  /* ── WebSocket ────────────────────────────── */
-
-  const applyMessage = useEffectEvent((message: BackendToFrontendMessage) => {
-    if (message.type === "session:state") {
-      hasSessionRef.current = true;
-    }
-
-    startTransition(() => {
-      setViewState((currentState) => applyBackendMessage(currentState, message));
-    });
-  });
-
-  const applyTransportState = useEffectEvent(
-    (connectionState: Parameters<typeof setTransportState>[1], status: string) => {
-      startTransition(() => {
-        setViewState((currentState) =>
-          setTransportState(currentState, connectionState, status),
-        );
-      });
-    },
+  const preferredEditorRoute = getPreferredEditorRoute(
+    controller.viewState.projectBoard,
+    controller.viewState.targetManager,
   );
-
-  const applyHostedAccessState = useEffectEvent(
-    (nextState: HostedAccessResponse) => {
-      setAccessState({
-        checked: true,
-        required: nextState.required,
-        authenticated: nextState.authenticated,
-        message: nextState.message ?? null,
-      });
-    },
+  const preferredBoardRoute = getPreferredBoardRoute(
+    controller.viewState.projectBoard,
+    controller.viewState.targetManager,
   );
-
-  const fetchHostedAccessState = useEffectEvent(async () => {
-    const response = await fetch("/api/access", {
-      headers: {
-        accept: "application/json",
-      },
-    });
-
-    return await parseHostedAccessResponse(response);
+  const navEditorRoute =
+    appRoute.view === "editor" ? appRoute : preferredEditorRoute;
+  const navBoardRoute =
+    appRoute.view === "board" ? appRoute : preferredBoardRoute;
+  const editorRouteState = appRoute.view === "editor"
+    ? selectEditorRouteState({
+        productId: appRoute.productId,
+        projectBoard: controller.viewState.projectBoard,
+        targetManager: controller.viewState.targetManager,
+        sessionState: controller.viewState.sessionState,
+      })
+    : null;
+  const boardRouteState = appRoute.view === "board"
+    ? selectBoardRouteState({
+        productId: appRoute.productId,
+        projectBoard: controller.viewState.projectBoard,
+        targetManager: controller.viewState.targetManager,
+        sessionState: controller.viewState.sessionState,
+      })
+    : null;
+  const hasLoadedWorkbenchState =
+    controller.viewState.targetManager !== null ||
+    controller.viewState.projectBoard !== null;
+  const loadingEditorRoute = isProductRouteLoading(
+    appRoute,
+    "editor",
+    editorRouteState,
+    hasLoadedWorkbenchState,
+  );
+  const loadingBoardRoute = isProductRouteLoading(
+    appRoute,
+    "board",
+    boardRouteState,
+    hasLoadedWorkbenchState,
+  );
+  const boardScopeKey =
+    appRoute.view === "board" && boardRouteState?.status === "active"
+      ? boardRouteState.productId
+      : null;
+  const boardViewModel = createBoardViewModel({
+    taskBoard: controller.viewState.taskBoard,
+    connectionState: controller.viewState.connectionState,
+    scopeKey: boardScopeKey,
+    selectedStoryId: boardScopeKey
+      ? getBoardSelectedStory(boardPreferences, boardScopeKey)
+      : "all",
   });
-
-  const submitHostedAccessToken = useEffectEvent(async (token: string) => {
-    const response = await fetch("/api/access", {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ token }),
-    });
-
-    return await parseHostedAccessResponse(response);
+  const dashboardCatalog = buildDashboardCatalog({
+    targetManager: controller.viewState.targetManager,
+    projectBoard: controller.viewState.projectBoard,
+    sessionState: controller.viewState.sessionState,
+    preferences: dashboardPreferences,
+    hosting: controller.viewState.hosting,
   });
+  const effectiveDashboardNotice =
+    dashboardNotice ??
+    (pendingDashboardLaunch === null
+      ? resolveDashboardSystemNotice({
+        connectionState: controller.viewState.connectionState,
+        hasLoadedCatalog: hasLoadedWorkbenchState,
+      })
+      : null);
+  const productRouteState = appRoute.view === "editor"
+    ? editorRouteState
+    : appRoute.view === "board"
+      ? boardRouteState
+      : null;
+  const loadingProductRoute = appRoute.view === "editor"
+    ? loadingEditorRoute
+    : appRoute.view === "board"
+      ? loadingBoardRoute
+      : false;
 
   useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      const bootstrapAccess = extractBootstrapAccessToken(
-        new URL(window.location.href),
-      );
-
-      if (bootstrapAccess.token) {
-        window.history.replaceState({}, document.title, bootstrapAccess.sanitizedRelativeUrl);
-      }
-
-      try {
-        const nextAccessState = bootstrapAccess.token
-          ? await submitHostedAccessToken(bootstrapAccess.token)
-          : await fetchHostedAccessState();
-
-        if (cancelled) {
-          return;
-        }
-
-        applyHostedAccessState(nextAccessState);
-      } catch {
-        if (cancelled) {
-          return;
-        }
-
-        setAccessState({
-          checked: true,
-          required: true,
-          authenticated: false,
-          message:
-            "Unable to verify hosted access right now. Refresh the page and try again.",
-        });
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!hasUnlockedAccess) {
-      return;
-    }
-
-    const socketManager = createSocketManager({
-      url: createSocketUrl(),
-      hasSessionState: () => hasSessionRef.current,
-      onOpen(socket) {
-        const statusMessage: FrontendToBackendMessage = { type: "status" };
-        socket.send(JSON.stringify(statusMessage));
-      },
-      onMessage(rawData) {
-        let rawMessage: unknown;
-
-        try {
-          rawMessage = JSON.parse(rawData);
-        } catch {
-          applyTransportState("error", "Shipyard sent malformed JSON.");
-          return;
-        }
-
-        const parsed = backendToFrontendMessageSchema.safeParse(rawMessage);
-
-        if (!parsed.success) {
-          applyTransportState("error", "Shipyard sent an unrecognized event.");
-          return;
-        }
-
-        applyMessage(parsed.data);
-      },
-      onTransportState: applyTransportState,
-    });
-    socketManagerRef.current = socketManager;
-    socketManager.start();
-
-    return () => {
-      socketManager.stop();
-
-      if (socketManagerRef.current === socketManager) {
-        socketManagerRef.current = null;
-      }
-    };
-  }, [hasUnlockedAccess]);
-
-  useEffect(() => {
-    const nextSessionId = viewState.sessionState?.sessionId ?? null;
-
-    if (nextSessionId === lastSessionIdRef.current) {
-      return;
-    }
-
-    lastSessionIdRef.current = nextSessionId;
-    setLocalUploads([]);
-  }, [viewState.sessionState?.sessionId]);
-
-  /* ── Messaging ────────────────────────────── */
-
-  function sendMessage(message: FrontendToBackendMessage): boolean {
-    return socketManagerRef.current?.send(JSON.stringify(message)) ?? false;
-  }
-
-  function queueComposerNotice(notice: ComposerNotice): void {
-    setComposerNotice(notice);
-  }
-
-  function focusInstructionInput(): void {
-    window.requestAnimationFrame(() => {
-      instructionInputRef.current?.focus();
-    });
-  }
-
-  function focusHumanFeedbackInput(): void {
-    window.requestAnimationFrame(() => {
-      humanFeedbackInputRef.current?.focus();
-    });
-  }
-
-  async function handleAttachFiles(files: File[]): Promise<void> {
-    const sessionId = viewState.sessionState?.sessionId;
-
-    if (!sessionId) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Uploads unavailable",
-        detail:
-          "Wait for the browser runtime to finish connecting before attaching files.",
-      });
-      return;
-    }
-
-    const uniqueFiles: File[] = [];
-    const duplicateNames: string[] = [];
-    const seenNames = new Set(
-      [
-        ...viewState.pendingUploads.map((receipt) => receipt.originalName),
-        ...localUploads
-          .filter((upload) => upload.status !== "rejected")
-          .map((upload) => upload.label),
-      ].map((name) => name.trim().toLowerCase()),
-    );
-
-    for (const file of files) {
-      const normalizedName = file.name.trim().toLowerCase();
-
-      if (seenNames.has(normalizedName)) {
-        duplicateNames.push(file.name);
-        continue;
-      }
-
-      seenNames.add(normalizedName);
-      uniqueFiles.push(file);
-    }
-
-    if (duplicateNames.length > 0) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Duplicate attachment",
-        detail: `${duplicateNames.join(", ")} is already attached for this session.`,
-      });
-    }
-
-    if (uniqueFiles.length === 0) {
-      return;
-    }
-
-    const uploadingBadges: ComposerAttachment[] = uniqueFiles.map((file) => ({
-      id: `upload-local-${globalThis.crypto.randomUUID()}`,
-      label: file.name,
-      detail: "Uploading to Shipyard...",
-      status: "uploading",
-    }));
-    const uploadingIds = new Set(uploadingBadges.map((badge) => badge.id));
-
-    setLocalUploads((currentUploads) => [
-      ...uploadingBadges,
-      ...currentUploads,
-    ]);
-
-    try {
-      const uploadForm = new FormData();
-      uploadForm.set("sessionId", sessionId);
-      uniqueFiles.forEach((file) => {
-        uploadForm.append("files", file);
-      });
-
-      const uploadResponse = await fetch("/api/uploads", {
-        method: "POST",
-        body: uploadForm,
-        credentials: "same-origin",
-      });
-      const responseBody = await uploadResponse.json().catch(() => null);
-
-      if (!uploadResponse.ok) {
-        const errorMessage = createUploadErrorMessage(
-          responseBody,
-          "Upload failed before Shipyard accepted the files.",
-        );
-
-        setLocalUploads((currentUploads) =>
-          currentUploads.map((upload) =>
-            uploadingIds.has(upload.id)
-              ? {
-                  ...upload,
-                  detail: `Upload failed: ${errorMessage}`,
-                  status: "rejected",
-                  error: errorMessage,
-                }
-              : upload
-          ),
-        );
-        queueComposerNotice({
-          tone: "danger",
-          title: "Upload rejected",
-          detail: errorMessage,
-        });
-        return;
-      }
-
-      const parsed = uploadReceiptsResponseSchema.safeParse(responseBody);
-
-      if (!parsed.success) {
-        throw new Error("Shipyard returned an invalid upload receipt payload.");
-      }
-
-      startTransition(() => {
-        setViewState((currentState) =>
-          appendPendingUploadReceipts(currentState, parsed.data.receipts),
-        );
-      });
-      setLocalUploads((currentUploads) =>
-        currentUploads.filter((upload) => !uploadingIds.has(upload.id))
-      );
-      queueComposerNotice({
-        tone: "success",
-        title: "Files attached",
-        detail: `Attached ${String(parsed.data.receipts.length)} file${parsed.data.receipts.length === 1 ? "" : "s"} to the next turn.`,
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error
-        ? error.message
-        : "Upload failed before Shipyard accepted the files.";
-
-      setLocalUploads((currentUploads) =>
-        currentUploads.map((upload) =>
-          uploadingIds.has(upload.id)
-            ? {
-                ...upload,
-                detail: `Upload failed: ${errorMessage}`,
-                status: "rejected",
-                error: errorMessage,
-              }
-            : upload
-        ),
-      );
-      queueComposerNotice({
-        tone: "danger",
-        title: "Upload failed",
-        detail: errorMessage,
-      });
-    }
-  }
-
-  async function handleRemoveAttachment(attachmentId: string): Promise<void> {
-    const localAttachment = localUploads.find((upload) => upload.id === attachmentId);
-
-    if (localAttachment) {
-      setLocalUploads((currentUploads) =>
-        currentUploads.filter((upload) => upload.id !== attachmentId)
-      );
-      return;
-    }
-
-    const sessionId = viewState.sessionState?.sessionId;
-
-    if (!sessionId) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Remove unavailable",
-        detail:
-          "Wait for the browser runtime to reconnect before removing an attached file.",
-      });
-      return;
-    }
-
-    try {
-      const deleteResponse = await fetch(
-        `/api/uploads/${encodeURIComponent(attachmentId)}?sessionId=${encodeURIComponent(sessionId)}`,
-        {
-          method: "DELETE",
-          credentials: "same-origin",
-        },
-      );
-      const responseBody = await deleteResponse.json().catch(() => null);
-
-      if (!deleteResponse.ok) {
-        queueComposerNotice({
-          tone: "danger",
-          title: "Remove failed",
-          detail: createUploadErrorMessage(
-            responseBody,
-            "Shipyard could not remove the pending upload.",
-          ),
-        });
-        return;
-      }
-
-      const parsed = uploadDeleteResponseSchema.safeParse(responseBody);
-
-      if (!parsed.success) {
-        throw new Error("Shipyard returned an invalid upload removal payload.");
-      }
-
-      startTransition(() => {
-        setViewState((currentState) =>
-          removePendingUploadReceipt(currentState, parsed.data.removedId),
-        );
-      });
-      queueComposerNotice({
-        tone: "neutral",
-        title: "Attachment removed",
-        detail:
-          "Shipyard removed the pending upload from this session before the next turn.",
-      });
-    } catch (error) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Remove failed",
-        detail: error instanceof Error
-          ? error.message
-          : "Shipyard could not remove the pending upload.",
-      });
-    }
-  }
-
-  function handleCancelInstruction(): void {
-    const sent = sendMessage({
-      type: "cancel",
-    });
-
-    if (!sent) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Cancel unavailable",
-        detail:
-          "The browser runtime is disconnected. Reconnect before interrupting the current turn.",
-      });
-      return;
-    }
-
-    queueComposerNotice({
-      tone: "neutral",
-      title: "Stopping current turn",
-      detail:
-        "Shipyard is interrupting the active turn. Your draft stays in place so you can send it as soon as the session is ready.",
-    });
-    focusInstructionInput();
-  }
-
-  function submitInstruction(): void {
-    if (shouldCancelBusyInstructionOnSubmit(activePage, viewState.connectionState)) {
-      handleCancelInstruction();
-      return;
-    }
-
-    const contextValidationError = validateContextDraft(contextDraft);
-
-    if (contextValidationError) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Context needs attention",
-        detail: contextValidationError,
-      });
-      contextInputRef.current?.focus();
-      return;
-    }
-
-    const submission = prepareInstructionSubmission(
-      instruction,
-      contextDraft,
-      viewState.pendingUploads,
-    );
-
-    if (submission === null) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Instruction required",
-        detail: "Enter an instruction before running Shipyard.",
-      });
-      instructionInputRef.current?.focus();
-      return;
-    }
-
-    const sent = sendMessage({
-      type: "instruction",
-      text: submission.instruction,
-      injectedContext: submission.injectedContext,
-    });
-
-    if (!sent) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Browser runtime disconnected",
-        detail:
-          "Wait for reconnect or refresh the session before submitting another turn.",
-      });
-      return;
-    }
-
-    startTransition(() => {
-      setViewState((currentState) =>
-        queueInstructionTurn(
-          currentState,
-          submission.instruction,
-          submission.contextPreview,
-        ),
-      );
-    });
-    setInstruction("");
-    setContextDraft(submission.clearedContextDraft);
-    const attachedUploadCount = viewState.pendingUploads.length;
-    const explicitContextCount = submission.injectedContext?.length ?? 0;
-    queueComposerNotice(
-      attachedUploadCount > 0 || explicitContextCount > 0
-        ? {
-            tone: "success",
-            title: attachedUploadCount > 0 ? "Attachments queued" : "Context attached",
-            detail: `Attached ${String(attachedUploadCount + explicitContextCount)} context item${(attachedUploadCount + explicitContextCount) === 1 ? "" : "s"} to the next turn.`,
-          }
-        : {
-            tone: "accent",
-            title: "Instruction queued",
-            detail:
-              "Shipyard accepted the next turn and will keep streaming activity below.",
-          },
-    );
-    focusInstructionInput();
-  }
-
-  function submitHumanFeedback(): void {
-    const submission = prepareInstructionSubmission(
-      humanFeedbackInstruction,
-      "",
-      [],
-    );
-
-    if (submission === null) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Feedback required",
-        detail: "Enter feedback before queuing it for ultimate mode.",
-      });
-      focusHumanFeedbackInput();
-      return;
-    }
-
-    const sent = sendMessage({
-      type: "instruction",
-      text: submission.instruction,
-      injectedContext: submission.injectedContext,
-    });
-
-    if (!sent) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Browser runtime disconnected",
-        detail:
-          "Wait for reconnect or refresh the session before submitting another note.",
-      });
-      return;
-    }
-
-    setHumanFeedbackInstruction("");
-    queueComposerNotice({
-      tone: "success",
-      title: "Feedback queued",
-      detail:
-        "Shipyard accepted the note and will route it into ultimate mode when the loop is active.",
-    });
-    focusHumanFeedbackInput();
-  }
-
-  function handleInstructionSubmit(event: FormEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    submitInstruction();
-  }
-
-  function handleHumanFeedbackSubmit(event: FormEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    submitHumanFeedback();
-  }
-
-  function handleComposerKeyDown(
-    event: KeyboardEvent<HTMLTextAreaElement>,
-  ): void {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      submitInstruction();
-      return;
-    }
+    const intentKey = getEditorIntentKey(productRouteState);
+    const nextProductRouteState = productRouteState;
 
     if (
-      event.key === "Escape" &&
-      event.currentTarget.id === "context-draft" &&
-      contextDraft.trim().length > 0
+      !controller.hasUnlockedAccess ||
+      !nextProductRouteState ||
+      !intentKey ||
+      loadingProductRoute
     ) {
-      event.preventDefault();
-      setContextDraft("");
-      queueComposerNotice({
-        tone: "neutral",
-        title: "Context cleared",
-        detail:
-          "The next turn will run without extra injected context unless you add a new note.",
-      });
-      focusInstructionInput();
+      requestedEditorIntentRef.current = null;
+      return;
     }
+
+    if (requestedEditorIntentRef.current === intentKey) {
+      return;
+    }
+
+    requestedEditorIntentRef.current = intentKey;
+
+    switch (nextProductRouteState.intent.kind) {
+      case "activate-project":
+        controller.onActivateProject(nextProductRouteState.intent.projectId);
+        return;
+      case "switch-target":
+        controller.onRequestTargetSwitch(nextProductRouteState.intent.targetPath);
+        return;
+      case "none":
+        return;
+    }
+  }, [
+    appRoute,
+    controller,
+    loadingProductRoute,
+    productRouteState,
+  ]);
+
+  useEffect(() => {
+    const hash = typeof window === "undefined" ? "" : window.location.hash;
+
+    if (hash !== "#/board" && hash !== "#/board/") {
+      return;
+    }
+
+    if (!preferredBoardRoute) {
+      return;
+    }
+
+    navigate(preferredBoardRoute);
+  }, [navigate, preferredBoardRoute]);
+
+  useEffect(() => {
+    if (!shouldFollowCreatedTargetRef.current || appRoute.view !== "editor") {
+      return;
+    }
+
+    if (!preferredEditorRoute) {
+      return;
+    }
+
+    if (preferredEditorRoute.productId === appRoute.productId) {
+      shouldFollowCreatedTargetRef.current = false;
+      return;
+    }
+
+    shouldFollowCreatedTargetRef.current = false;
+    navigate(preferredEditorRoute);
+  }, [appRoute, navigate, preferredEditorRoute]);
+
+  useEffect(() => {
+    writeBoardPreferences(boardPreferences);
+  }, [boardPreferences]);
+
+  useEffect(() => {
+    writeDashboardPreferences(dashboardPreferences);
+  }, [dashboardPreferences]);
+
+  useEffect(() => {
+    if (appRoute.view !== "editor" || editorRouteState?.status !== "active") {
+      lastOpenedEditorProductRef.current = null;
+      return;
+    }
+
+    if (lastOpenedEditorProductRef.current === editorRouteState.productId) {
+      return;
+    }
+
+    lastOpenedEditorProductRef.current = editorRouteState.productId;
+    setDashboardPreferences((currentPreferences) =>
+      markDashboardProductOpened(
+        currentPreferences,
+        editorRouteState.productId,
+        new Date().toISOString(),
+      )
+    );
+  }, [appRoute.view, editorRouteState]);
+
+  useEffect(() => {
+    const completion = controller.lastTargetSwitchCompletion;
+
+    if (!completion) {
+      return;
+    }
+
+    if (handledTargetSwitchCompletionRef.current === completion.sequence) {
+      return;
+    }
+
+    handledTargetSwitchCompletionRef.current = completion.sequence;
+
+    if (
+      !pendingDashboardLaunch ||
+      !matchesDashboardLaunchCompletion(pendingDashboardLaunch, completion)
+    ) {
+      return;
+    }
+
+    if (!completion.success) {
+      setPendingDashboardLaunch(null);
+      setDashboardNotice({
+        tone: "danger",
+        title: "Could not open the new product",
+        detail:
+          completion.message ??
+          "Shipyard could not create the requested product right now.",
+      });
+      return;
+    }
+
+    setDashboardPreferences((currentPreferences) =>
+      markDashboardProductOpened(
+        currentPreferences,
+        completion.state.currentTarget.path,
+        completion.receivedAt,
+      )
+    );
+
+    setDashboardHeroPrompt("");
+    setDashboardNotice(null);
+    setDashboardCreateDialogOpen(false);
+    setPendingDashboardLaunch(null);
+    navigate({
+      view: "editor",
+      productId: completion.state.currentTarget.path,
+    });
+  }, [
+    controller.lastTargetSwitchCompletion,
+    navigate,
+    pendingDashboardLaunch,
+  ]);
+
+  function handleNavigateToEditor(targetPath: string): void {
+    navigate({
+      view: "editor",
+      productId: targetPath,
+    });
   }
 
-  function handleHumanFeedbackKeyDown(
-    event: KeyboardEvent<HTMLTextAreaElement>,
+  function handleActivateProject(projectId: string): void {
+    const project = controller.viewState.projectBoard?.openProjects.find(
+      (openProject) => openProject.projectId === projectId,
+    );
+
+    if (!project) {
+      controller.onActivateProject(projectId);
+      return;
+    }
+
+    handleNavigateToEditor(project.targetPath);
+  }
+
+  function handleTargetCreate(
+    input: Parameters<typeof controller.onRequestTargetCreate>[0],
   ): void {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      submitHumanFeedback();
-    }
+    shouldFollowCreatedTargetRef.current = true;
+    controller.onRequestTargetCreate(input);
   }
 
-  function handleInstructionChange(value: string): void {
-    setInstruction(value);
-    if (composerNotice) setComposerNotice(null);
-  }
-
-  function handleHumanFeedbackInstructionChange(value: string): void {
-    setHumanFeedbackInstruction(value);
-    if (composerNotice) setComposerNotice(null);
-  }
-
-  function handleAccessTokenChange(value: string): void {
-    setAccessToken(value);
-
-    if (accessState.message) {
-      setAccessState((currentState) => ({
-        ...currentState,
-        message: null,
-      }));
-    }
-  }
-
-  function handleContextChange(value: string): void {
-    setContextDraft(value);
-    if (composerNotice) setComposerNotice(null);
-  }
-
-  function handleClearContext(): void {
-    setContextDraft("");
-    queueComposerNotice({
-      tone: "neutral",
-      title: "Context cleared",
-      detail:
-        "The next turn will run without extra injected context unless you add a new note.",
-    });
-    focusInstructionInput();
-  }
-
-  function handleCopyTracePath(): void {
-    const tracePath = viewState.sessionState?.tracePath;
-
-    if (!tracePath) return;
-
-    if (!("clipboard" in navigator)) {
-      setTraceButtonLabel("Trace unavailable");
-      return;
-    }
-
-    void navigator.clipboard.writeText(tracePath).then(() => {
-      setTraceButtonLabel("Trace path copied");
-      window.setTimeout(() => {
-        setTraceButtonLabel("Copy trace path");
-      }, 1_200);
-    });
-  }
-
-  function handleTargetSwitch(targetPath: string): void {
-    const sent = sendMessage({
-      type: "target:switch_request",
-      targetPath,
+  function handleDashboardHeroSubmit(prompt: string): void {
+    const launchIntent = createDashboardHeroLaunch(prompt);
+    const sent = controller.onRequestTargetCreate(launchIntent.request, {
+      requestId: launchIntent.requestId,
     });
 
     if (!sent) {
-      queueComposerNotice({
+      setDashboardNotice({
         tone: "danger",
-        title: "Target switch unavailable",
+        title: "Launch unavailable",
         detail:
-          "The browser runtime is disconnected. Reconnect before switching targets.",
-      });
-    }
-  }
-
-  function handleSessionResume(sessionId: string): void {
-    const sent = sendMessage({
-      type: "session:resume_request",
-      sessionId,
-    });
-
-    if (!sent) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Saved run unavailable",
-        detail:
-          "The browser runtime is disconnected. Reconnect before opening a saved run.",
+          "The browser runtime is disconnected. Reconnect before creating a product from the dashboard.",
       });
       return;
     }
 
-    queueComposerNotice({
+    setPendingDashboardLaunch(launchIntent);
+    setDashboardNotice({
       tone: "neutral",
-      title: "Opening saved run",
+      title: `Creating ${launchIntent.createdName}`,
       detail:
-        "Shipyard is loading the selected session history and switching the browser to that run.",
+        "Shipyard is scaffolding the product, starting background enrichment, and queueing the first build turn.",
     });
   }
 
-  function handleTargetCreate(input: {
+  function handleDashboardManualCreate(input: {
     name: string;
     description: string;
     scaffoldType: "react-ts" | "express-ts" | "python" | "go" | "empty";
   }): void {
-    const sent = sendMessage({
-      type: "target:create_request",
-      name: input.name,
-      description: input.description,
-      scaffoldType: input.scaffoldType,
+    const launchIntent = createDashboardManualLaunch(input);
+    const sent = controller.onRequestTargetCreate(launchIntent.request, {
+      requestId: launchIntent.requestId,
     });
 
     if (!sent) {
-      queueComposerNotice({
+      setDashboardNotice({
         tone: "danger",
-        title: "Target creation unavailable",
+        title: "Creation unavailable",
         detail:
-          "The browser runtime is disconnected. Reconnect before creating a target.",
-      });
-    }
-  }
-
-  function handleProjectActivate(projectId: string): void {
-    const sent = sendMessage({
-      type: "project:activate_request",
-      projectId,
-    });
-
-    if (!sent) {
-      queueComposerNotice({
-        tone: "danger",
-        title: "Project switch unavailable",
-        detail:
-          "The browser runtime is disconnected. Reconnect before switching projects.",
+          "The browser runtime is disconnected. Reconnect before scaffolding a new product.",
       });
       return;
     }
 
-    queueComposerNotice({
+    setPendingDashboardLaunch(launchIntent);
+    setDashboardCreateDialogOpen(false);
+    setDashboardNotice({
       tone: "neutral",
-      title: "Opening project",
+      title: `Creating ${launchIntent.createdName}`,
       detail:
-        "Shipyard is moving the workbench to the selected project while any background work keeps running.",
+        "Shipyard will open the new product in the editor as soon as the scaffold is ready.",
     });
   }
 
-  async function handleHostedAccessSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ): Promise<void> {
-    event.preventDefault();
-    const normalizedToken = accessToken.trim();
-
-    if (!normalizedToken) {
-      setAccessState({
-        checked: true,
-        required: true,
-        authenticated: false,
-        message: "Enter the shared access token to continue.",
-      });
+  function handleBoardStoryChange(storyId: string): void {
+    if (!boardViewModel.scopeKey) {
       return;
     }
 
-    setAccessSubmitting(true);
-
-    try {
-      const nextAccessState = await submitHostedAccessToken(normalizedToken);
-      applyHostedAccessState(nextAccessState);
-
-      if (nextAccessState.authenticated) {
-        hasSessionRef.current = false;
-        setAccessToken("");
-      }
-    } catch {
-      setAccessState({
-        checked: true,
-        required: true,
-        authenticated: false,
-        message:
-          "Unable to verify hosted access right now. Refresh the page and try again.",
-      });
-    } finally {
-      setAccessSubmitting(false);
-    }
+    setBoardPreferences((currentPreferences) =>
+      setBoardSelectedStory(
+        currentPreferences,
+        boardViewModel.scopeKey!,
+        storyId,
+      )
+    );
   }
 
-  const composerAttachments: ComposerAttachment[] = [
-    ...localUploads,
-    ...viewState.pendingUploads.map((receipt) => ({
-      id: receipt.id,
-      label: receipt.originalName,
-      detail: createAttachmentDetail(receipt),
-      status: "attached" as const,
-    })),
-  ];
+  function renderEditorContent(): ReactNode {
+    if (loadingEditorRoute) {
+      return (
+        <RoutePlaceholderView
+          kicker="Editor"
+          title="Loading workspace"
+          description="Shipyard is resolving the editor route against the live target state."
+        />
+      );
+    }
 
-  if (!hasUnlockedAccess) {
+    if (!editorRouteState) {
+      return null;
+    }
+
+    if (editorRouteState.status === "opening") {
+      return (
+        <RoutePlaceholderView
+          kicker="Editor"
+          title={`Opening ${editorRouteState.productName ?? "workspace"}`}
+          description="Shipyard is synchronizing the requested project with the live browser session."
+          action={
+            preferredEditorRoute ? (
+              <button
+                type="button"
+                className="target-inline-action"
+                onClick={() => navigate(preferredEditorRoute)}
+              >
+                Open active editor instead
+              </button>
+            ) : undefined
+          }
+        />
+      );
+    }
+
+    if (editorRouteState.status === "missing") {
+      return (
+        <RoutePlaceholderView
+          kicker="Editor"
+          title="This product is not available"
+          description="The requested product route does not match any open project or known target in the current Shipyard session."
+          action={
+            <button
+              type="button"
+              className="target-inline-action"
+              onClick={() => navigate({ view: "dashboard" })}
+            >
+              Return to dashboard
+            </button>
+          }
+        />
+      );
+    }
+
     return (
-      <HostedAccessGate
-        accessToken={accessToken}
-        checking={!accessState.checked}
-        submitting={accessSubmitting}
-        message={accessState.message}
-        onAccessTokenChange={handleAccessTokenChange}
-        onSubmit={handleHostedAccessSubmit}
+      <EditorView
+        productId={editorRouteState.productId}
+        productName={editorRouteState.productName ?? "Untitled target"}
+        scaffoldType={
+          controller.viewState.targetManager?.currentTarget.framework ?? ""
+        }
+        hostedEditorUrl={
+          typeof window === "undefined" ? "" : window.location.origin
+        }
+        hosting={controller.viewState.hosting}
+        sessionState={controller.viewState.sessionState}
+        sessionHistory={controller.viewState.sessionHistory}
+        targetManager={controller.viewState.targetManager}
+        projectBoard={controller.viewState.projectBoard}
+        turns={controller.displayedTurns}
+        fileEvents={controller.displayedFileEvents}
+        previewState={controller.viewState.previewState}
+        latestDeploy={controller.viewState.latestDeploy}
+        contextHistory={controller.displayedContextHistory}
+        pendingUploads={controller.viewState.pendingUploads}
+        connectionState={controller.viewState.connectionState}
+        agentStatus={controller.viewState.agentStatus}
+        ultimateState={controller.viewState.ultimateState}
+        instruction={controller.instruction}
+        contextDraft={controller.contextDraft}
+        composerBehavior={controller.composerBehavior}
+        composerNotice={controller.composerNotice}
+        composerAttachments={controller.composerAttachments}
+        instructionInputRef={controller.instructionInputRef}
+        contextInputRef={controller.contextInputRef}
+        onInstructionChange={controller.onInstructionChange}
+        onContextChange={controller.onContextChange}
+        onInstructionKeyDown={controller.onInstructionKeyDown}
+        onContextKeyDown={controller.onContextKeyDown}
+        onClearContext={controller.onClearContext}
+        onAttachFiles={controller.onAttachFiles}
+        onToggleUltimateArmed={controller.onToggleUltimateArmed}
+        onSubmitInstruction={controller.onSubmitInstruction}
+        onCancelInstruction={controller.onCancelInstruction}
+        onRemoveAttachment={controller.onRemoveAttachment}
+        onRequestSessionResume={controller.onRequestSessionResume}
+        onRequestTargetSwitch={handleNavigateToEditor}
+        onRequestTargetCreate={handleTargetCreate}
+        onActivateProject={handleActivateProject}
+        onRefreshStatus={controller.onRefreshStatus}
+        onCopyTracePath={controller.onCopyTracePath}
+        traceButtonLabel={controller.traceButtonLabel}
+        leftSidebarOpen={controller.leftSidebarOpen}
+        rightSidebarOpen={controller.rightSidebarOpen}
+        onToggleLeftSidebar={controller.onToggleLeftSidebar}
+        onToggleRightSidebar={controller.onToggleRightSidebar}
+        onNavigate={navigate}
       />
     );
   }
 
-  if (activePage === "human-feedback") {
+  function renderBoardContent(): ReactNode {
+    if (loadingBoardRoute) {
+      return (
+        <RoutePlaceholderView
+          kicker="Board"
+          title="Loading board"
+          description="Shipyard is resolving the board route against the live target state."
+        />
+      );
+    }
+
+    if (!boardRouteState) {
+      return null;
+    }
+
+    if (boardRouteState.status === "opening") {
+      return (
+        <RoutePlaceholderView
+          kicker="Board"
+          title={`Opening ${boardRouteState.productName ?? "workspace"} board`}
+          description="Shipyard is synchronizing the requested project with the live browser session."
+          action={
+            preferredBoardRoute &&
+                preferredBoardRoute.productId !== boardRouteState.productId ? (
+              <button
+                type="button"
+                className="target-inline-action"
+                onClick={() => navigate(preferredBoardRoute)}
+              >
+                Open active board instead
+              </button>
+            ) : undefined
+          }
+        />
+      );
+    }
+
+    if (boardRouteState.status === "missing") {
+      return (
+        <RoutePlaceholderView
+          kicker="Board"
+          title="This product board is not available"
+          description="The requested board route does not match any open project or known target in the current Shipyard session."
+          action={
+            <button
+              type="button"
+              className="target-inline-action"
+              onClick={() => navigate({ view: "dashboard" })}
+            >
+              Return to dashboard
+            </button>
+          }
+        />
+      );
+    }
+
+    return (
+      <BoardView
+        board={boardViewModel}
+        preferredEditorRoute={preferredEditorRoute}
+        onNavigate={navigate}
+        onSelectStory={handleBoardStoryChange}
+      />
+    );
+  }
+
+  if (!controller.hasUnlockedAccess) {
+    return (
+      <HostedAccessGate
+        accessToken={controller.accessToken}
+        checking={!controller.accessState.checked}
+        submitting={controller.accessSubmitting}
+        message={controller.accessState.message}
+        onAccessTokenChange={controller.onAccessTokenChange}
+        onSubmit={controller.onAccessSubmit}
+      />
+    );
+  }
+
+  if (appRoute.view === "human-feedback") {
     return (
       <HumanFeedbackPage
-        sessionState={viewState.sessionState}
-        previewState={viewState.previewState}
-        turns={deferredTurns}
-        connectionState={viewState.connectionState}
-        agentStatus={viewState.agentStatus}
-        instruction={humanFeedbackInstruction}
-        textareaRef={humanFeedbackInputRef}
-        notice={composerNotice}
-        onInstructionChange={handleHumanFeedbackInstructionChange}
-        onInstructionKeyDown={handleHumanFeedbackKeyDown}
-        onSubmit={handleHumanFeedbackSubmit}
-        onRefreshStatus={() => sendMessage({ type: "status" })}
+        sessionState={controller.viewState.sessionState}
+        previewState={controller.viewState.previewState}
+        turns={controller.displayedTurns}
+        connectionState={controller.viewState.connectionState}
+        agentStatus={controller.viewState.agentStatus}
+        ultimateState={controller.viewState.ultimateState}
+        instruction={controller.humanFeedbackInstruction}
+        submitLabel={controller.humanFeedbackBehavior.submitLabel}
+        submitDisabled={controller.humanFeedbackBehavior.submitDisabled}
+        helpText={controller.humanFeedbackBehavior.helpText}
+        textareaRef={controller.humanFeedbackInputRef}
+        notice={controller.composerNotice}
+        onInstructionChange={controller.onHumanFeedbackInstructionChange}
+        onInstructionKeyDown={controller.onHumanFeedbackKeyDown}
+        onSubmit={controller.onSubmitHumanFeedback}
+        onRefreshStatus={controller.onRefreshStatus}
       />
     );
   }
 
   return (
-    <ShipyardWorkbench
-      sessionState={viewState.sessionState}
-      sessionHistory={viewState.sessionHistory}
-      targetManager={viewState.targetManager}
-      projectBoard={viewState.projectBoard}
-      turns={deferredTurns}
-      fileEvents={deferredFileEvents}
-      previewState={viewState.previewState}
-      latestDeploy={viewState.latestDeploy}
-      contextHistory={deferredContextHistory}
-      pendingUploads={viewState.pendingUploads}
-      connectionState={viewState.connectionState}
-      agentStatus={viewState.agentStatus}
-      instruction={instruction}
-      contextDraft={contextDraft}
-      composerNotice={composerNotice}
-      composerAttachments={composerAttachments}
-      instructionInputRef={instructionInputRef}
-      contextInputRef={contextInputRef}
-      onInstructionChange={handleInstructionChange}
-      onContextChange={handleContextChange}
-      onInstructionKeyDown={handleComposerKeyDown}
-      onContextKeyDown={handleComposerKeyDown}
-      onClearContext={handleClearContext}
-      onAttachFiles={handleAttachFiles}
-      onSubmitInstruction={handleInstructionSubmit}
-      onCancelInstruction={handleCancelInstruction}
-      onRemoveAttachment={handleRemoveAttachment}
-      onRequestSessionResume={handleSessionResume}
-      onRequestTargetSwitch={handleTargetSwitch}
-      onRequestTargetCreate={handleTargetCreate}
-      onActivateProject={handleProjectActivate}
-      onRefreshStatus={() => sendMessage({ type: "status" })}
-      onCopyTracePath={handleCopyTracePath}
-      traceButtonLabel={traceButtonLabel}
-      leftSidebarOpen={leftSidebarOpen}
-      rightSidebarOpen={rightSidebarOpen}
-      onToggleLeftSidebar={toggleLeftSidebar}
-      onToggleRightSidebar={toggleRightSidebar}
-    />
+    <div className="app-route-shell">
+      <NavBar
+        currentView={appRoute.view}
+        editorRoute={navEditorRoute}
+        boardRoute={navBoardRoute}
+        onNavigate={navigate}
+        ultimateState={controller.viewState.ultimateState}
+        ultimateDisabled={
+          controller.viewState.ultimateState.phase === "idle" &&
+          navEditorRoute === null
+        }
+        onUltimateClick={() => {
+          if (navEditorRoute) {
+            navigate(navEditorRoute);
+          }
+          controller.onActivateUltimate();
+        }}
+        onSendUltimateFeedback={controller.onSendUltimateFeedback}
+        onPauseUltimate={controller.onPauseUltimateMode}
+        onResumeUltimate={controller.onResumeUltimateMode}
+        onStopUltimate={controller.onStopUltimateMode}
+      />
+
+      <main className="app-route-content">
+        {appRoute.view === "dashboard" ? (
+          <>
+            <DashboardView
+              heroPrompt={dashboardHeroPrompt}
+              heroBusy={pendingDashboardLaunch !== null}
+              activeTab={dashboardCatalog.activeTab}
+              cards={dashboardCatalog.visibleCards}
+              emptyState={dashboardCatalog.emptyState}
+              notice={effectiveDashboardNotice}
+              onHeroPromptChange={(value) => {
+                setDashboardHeroPrompt(value);
+                if (pendingDashboardLaunch === null && dashboardNotice) {
+                  setDashboardNotice(null);
+                }
+              }}
+              onSubmitHeroPrompt={handleDashboardHeroSubmit}
+              onSelectTab={(tab) =>
+                setDashboardPreferences((currentPreferences) =>
+                  setDashboardActiveTab(currentPreferences, tab)
+                )}
+              onOpenProduct={(productId) => {
+                setDashboardNotice(null);
+                handleNavigateToEditor(productId);
+              }}
+              onToggleStar={(productId) =>
+                setDashboardPreferences((currentPreferences) =>
+                  toggleDashboardProductStar(currentPreferences, productId)
+                )}
+              onCreateProduct={() => {
+                setDashboardNotice(null);
+                setDashboardCreateDialogOpen(true);
+              }}
+            />
+            <TargetCreationDialog
+              open={dashboardCreateDialogOpen}
+              onClose={() => setDashboardCreateDialogOpen(false)}
+              onCreateTarget={handleDashboardManualCreate}
+            />
+          </>
+        ) : null}
+
+        {appRoute.view === "editor" ? renderEditorContent() : null}
+
+        {appRoute.view === "board" ? renderBoardContent() : null}
+      </main>
+    </div>
   );
 }

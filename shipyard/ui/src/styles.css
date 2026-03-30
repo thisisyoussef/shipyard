@@ -24,6 +24,24 @@ body {
   background: var(--surface-canvas);
 }
 
+.app-route-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-route-content {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-route-content > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 /* ── Monospace elements ──────────────────────── */
 
 code,
@@ -546,6 +564,11 @@ pre,
   background: var(--accent-soft);
 }
 
+.human-feedback-notice[data-tone="warning"] {
+  border-color: var(--border-warning);
+  background: var(--warning-soft);
+}
+
 .human-feedback-form {
   display: grid;
   gap: var(--space-4);
@@ -747,6 +770,10 @@ pre,
   color: var(--danger-strong);
 }
 
+.hosted-access-message[data-tone="accent"] {
+  color: var(--accent-strong);
+}
+
 .signal-list {
   display: grid;
   gap: var(--space-2);
@@ -902,6 +929,7 @@ pre,
   gap: var(--space-2);
   flex: 1;
   min-height: 0;
+  width: 100%;
 }
 
 .preview-summary,
@@ -1004,6 +1032,7 @@ pre,
 .preview-frame-shell {
   flex: 1;
   min-height: 0;
+  width: 100%;
   overflow: hidden;
   background: #ffffff;
   border: none;

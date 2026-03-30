@@ -46,19 +46,48 @@
 ## TDD Mapping
 
 - T001 tests:
-  - [ ] `boots a railway-hosted profile without assuming local gh auth`
-  - [ ] `falls back to explicit degraded hosted mode when github auth is missing`
-  - [ ] `separates shipyard service preview and public deployment urls`
+  - [x] `boots a railway-hosted profile without assuming local gh auth`
+  - [x] `falls back to explicit degraded hosted mode when github auth is missing`
+  - [x] `publishes hosted runtime availability alongside health diagnostics`
 - T002 tests:
-  - [ ] `persists hosted runtime profile and workspace binding across restart`
+  - [x] `persists hosted runtime profile and workspace binding across restart`
 - T003 tests:
-  - [ ] `restores a github-bound project inside the persistent railway workspace`
-  - [ ] `keeps non-merge phases usable in degraded hosted mode`
+  - [x] `restores a github-bound project inside the persistent railway workspace`
+  - [x] `keeps non-merge phases usable in degraded hosted mode`
 - T004 tests:
-  - [ ] `publishes hosted availability metadata for downstream board or coordinator consumers`
+  - [x] `publishes hosted availability metadata for downstream board or coordinator consumers`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Implementation Evidence
+
+| Task ID | Implementation Evidence |
+|---|---|
+| T001 | `shipyard/tests/hosting-runtime.test.ts`, `shipyard/tests/ui-runtime.test.ts`, and `shipyard/tests/railway-config.test.ts` add failing-first coverage for Railway-hosted profile resolution, degraded hosted fallback, restart-safe restore, hosted availability projection, and the Railway env/secret contract. |
+| T002 | `shipyard/src/hosting/contracts.ts`, `shipyard/src/hosting/store.ts`, and `shipyard/src/hosting/runtime.ts` introduce the durable hosted runtime vocabulary, target-local persistence, workspace binding, degraded hosted state, and restart-safe sync helpers. |
+| T003 | `shipyard/src/hosting/runtime.ts` consumes `P11-S06` source-control state to restore GitHub-bound projects inside the persistent Railway workspace and explicitly keeps planning, TDD, and standard code turns available when merge automation is blocked. |
+| T004 | `shipyard/src/engine/state.ts`, `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`, `shipyard/src/ui/health.ts`, `shipyard/src/ui/server.ts`, `.github/workflows/railway-main-deploy.yml`, and `shipyard/docs/architecture/hosted-railway.md` publish hosted availability state and operationalize the Railway-hosted contract for downstream consumers. |
+
+## Deferred / Follow-On Work
+
+- No story-local deferrals remain. Task-graph projection and master-coordinator
+  consumption of the hosted runtime metadata are intentionally deferred to
+  `P11-S08` and `P11-S09`.
+
+## Validation Summary
+
+- `pnpm --dir shipyard typecheck`
+- `pnpm --dir shipyard build`
+- `git diff --check`
+- Focused suites:
+  - `pnpm --dir shipyard exec vitest run tests/hosting-runtime.test.ts --reporter=verbose`
+  - `pnpm --dir shipyard exec vitest run tests/hosting-runtime.test.ts tests/ui-runtime.test.ts tests/ui-view-models.test.ts tests/railway-config.test.ts tests/source-control-runtime.test.ts --reporter=verbose`
+  - `pnpm --dir shipyard exec vitest run tests/hosting-runtime.test.ts tests/mission-control-policy.test.ts --reporter=verbose`
+  - `pnpm --dir shipyard exec vitest run tests/browser-evaluator.test.ts --reporter=verbose`
+- Full-suite proof:
+  - `CI=1 pnpm --dir shipyard exec vitest run --pool forks --no-file-parallelism --maxWorkers 1 --reporter=verbose`
+  - Result: `Test Files 65 passed (65)`, `Tests 449 passed | 2 skipped (451)`

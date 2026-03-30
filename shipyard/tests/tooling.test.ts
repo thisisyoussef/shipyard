@@ -103,6 +103,46 @@ async function initializeGitRepository(cwd: string): Promise<void> {
   await expectRawCommandSuccess(cwd, "git config user.name 'Shipyard Tests'");
 }
 
+function createJsonResponse(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+}
+
+function createProjectSetupFetchImpl(options: {
+  accountId?: string;
+  projectId?: string;
+} = {}): (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response> {
+  const accountId = options.accountId ?? "acct_shipyard";
+  const projectId = options.projectId ?? "prj_setup";
+
+  return async (input, init) => {
+    const url = typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+
+    if (url === "https://api.vercel.com/v11/projects" &&
+        (init?.method ?? "GET") === "POST") {
+      return createJsonResponse({
+        id: projectId,
+        name: "shipyard-demo",
+        accountId,
+        ssoProtection: null,
+      });
+    }
+
+    throw new Error(`Unexpected Vercel API call: ${init?.method ?? "GET"} ${url}`);
+  };
+}
+
 function buildSizedFile(lineCount: number, anchorLabel: string): string {
   const lines: string[] = [];
 
@@ -140,7 +180,7 @@ describe("file tools", () => {
     expect(result.path).toBe("notes.txt");
     expect(result.contents).toBe("hello shipyard\n");
     expect(result.hash).toMatch(/^[a-f0-9]{64}$/);
-    expect(getTrackedReadHash("notes.txt")).toBe(result.hash);
+    expect(getTrackedReadHash(directory, "notes.txt")).toBe(result.hash);
   });
 
   it("writes a new file and rejects overwriting by default", async () => {
@@ -252,6 +292,51 @@ describe("file tools", () => {
         new_string: 'const value = "after";',
       }),
     ).rejects.toThrowError(/File changed since the last read: stale\.ts/);
+  });
+
+  it("isolates tracked read hashes by target directory", async () => {
+    const firstDirectory = await createTempProject();
+    const secondDirectory = await createTempProject();
+    const relativePath = "src/App.tsx";
+
+    await mkdir(path.join(firstDirectory, "src"), { recursive: true });
+    await mkdir(path.join(secondDirectory, "src"), { recursive: true });
+    await writeFile(
+      path.join(firstDirectory, relativePath),
+      'export const app = "first";\n',
+      "utf8",
+    );
+    await writeFile(
+      path.join(secondDirectory, relativePath),
+      'export const app = "second";\n',
+      "utf8",
+    );
+
+    await readTargetFile({
+      targetDirectory: firstDirectory,
+      path: relativePath,
+    });
+    await readTargetFile({
+      targetDirectory: secondDirectory,
+      path: relativePath,
+    });
+
+    await expect(
+      editBlock({
+        targetDirectory: firstDirectory,
+        path: relativePath,
+        old_string: 'export const app = "first";',
+        new_string: 'export const app = "updated";',
+      }),
+    ).resolves.toMatchObject({
+      changed: true,
+    });
+
+    expect(getTrackedReadHash(firstDirectory, relativePath)).toMatch(/^[a-f0-9]{64}$/);
+    expect(getTrackedReadHash(secondDirectory, relativePath)).toMatch(/^[a-f0-9]{64}$/);
+    expect(getTrackedReadHash(firstDirectory, relativePath)).not.toBe(
+      getTrackedReadHash(secondDirectory, relativePath),
+    );
   });
 
   it("tells the caller to use write_file when edit_block targets a missing file", async () => {
@@ -693,6 +778,10 @@ describe("search and command tools", () => {
           ...process.env,
           VERCEL_TOKEN: "phase-nine-secret",
         },
+        fetchImpl: createProjectSetupFetchImpl(),
+        async fetchDeploymentMetadata() {
+          return null;
+        },
         vercelBinaryPath: "vercel",
         async executeProcess() {
           return {
@@ -828,6 +917,10 @@ describe("search and command tools", () => {
           ...process.env,
           VERCEL_TOKEN: "phase-nine-secret",
         },
+        fetchImpl: createProjectSetupFetchImpl(),
+        async fetchDeploymentMetadata() {
+          return null;
+        },
         vercelBinaryPath: "vercel",
         async executeProcess() {
           return {
@@ -877,6 +970,7 @@ describe("search and command tools", () => {
           ...process.env,
           VERCEL_TOKEN: "phase-nine-secret",
         },
+        fetchImpl: createProjectSetupFetchImpl(),
         vercelBinaryPath: "vercel",
         async executeProcess() {
           return {
@@ -919,6 +1013,403 @@ describe("search and command tools", () => {
         productionUrl: "https://shipyard-demo.vercel.app",
       },
     });
+  });
+
+  it("deploy_target creates and links a public Vercel project before the first deploy", async () => {
+    const directory = await createTempProject();
+    await initializeGitRepository(directory);
+    const apiCalls: Array<{
+      method: string;
+      url: string;
+      body: string | null;
+    }> = [];
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+          VERCEL_TEAM_ID: "team_shipyard",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess() {
+          return {
+            command: "vercel deploy --prod --yes --token [redacted]",
+            cwd: directory,
+            stdout: "https://shipyard-demo-4k2m1n9.vercel.app\n",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false,
+            signal: null,
+            timeoutMs: 600_000,
+            combinedOutput: "https://shipyard-demo-4k2m1n9.vercel.app\n",
+            truncated: false,
+          };
+        },
+        async fetchDeploymentMetadata() {
+          return {
+            aliasFinal: "shipyard-demo.vercel.app",
+            alias: ["shipyard-demo.vercel.app"],
+          };
+        },
+        async fetchImpl(input, init) {
+          const url = typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+          apiCalls.push({
+            method: init?.method ?? "GET",
+            url,
+            body: typeof init?.body === "string" ? init.body : null,
+          });
+
+          if (url === "https://api.vercel.com/v11/projects?teamId=team_shipyard") {
+            return createJsonResponse({
+              id: "prj_new",
+              name: "shipyard-demo",
+              accountId: "team_shipyard",
+              ssoProtection: {
+                deploymentType: "all",
+              },
+            });
+          }
+
+          if (url === "https://api.vercel.com/v9/projects/prj_new?teamId=team_shipyard") {
+            return createJsonResponse({
+              id: "prj_new",
+              name: "shipyard-demo",
+              accountId: "team_shipyard",
+              ssoProtection: null,
+            });
+          }
+
+          throw new Error(`Unexpected Vercel API call: ${init?.method ?? "GET"} ${url}`);
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        platform: "vercel",
+        productionUrl: "https://shipyard-demo.vercel.app",
+      },
+    });
+    const createdProjectRequest = apiCalls[0];
+    const updatedProjectRequest = apiCalls[1];
+
+    expect(createdProjectRequest).toMatchObject({
+      method: "POST",
+      url: "https://api.vercel.com/v11/projects?teamId=team_shipyard",
+    });
+    expect(JSON.parse(createdProjectRequest?.body ?? "{}")).toMatchObject({
+      name: expect.stringMatching(/^shipyard-tools-[a-z0-9-]+-[a-f0-9]{8}$/),
+      ssoProtection: null,
+    });
+    expect(updatedProjectRequest).toMatchObject({
+      method: "PATCH",
+      url: "https://api.vercel.com/v9/projects/prj_new?teamId=team_shipyard",
+      body: JSON.stringify({
+        ssoProtection: null,
+      }),
+    });
+    await expect(
+      readFile(path.join(directory, ".vercel", "project.json"), "utf8"),
+    ).resolves.toBe(
+      `${JSON.stringify(
+        {
+          orgId: "team_shipyard",
+          projectId: "prj_new",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await expect(
+      readFile(path.join(directory, ".git", "info", "exclude"), "utf8"),
+    ).resolves.toContain(".vercel");
+  });
+
+  it("deploy_target disables Vercel Authentication for linked projects by default", async () => {
+    const directory = await createTempProject();
+    await initializeGitRepository(directory);
+    await mkdir(path.join(directory, ".vercel"), { recursive: true });
+    await writeFile(
+      path.join(directory, ".vercel", "project.json"),
+      `${JSON.stringify(
+        {
+          orgId: "team_shipyard",
+          projectId: "prj_existing",
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    const apiCalls: Array<{
+      method: string;
+      url: string;
+      body: string | null;
+    }> = [];
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+          VERCEL_TEAM_ID: "team_shipyard",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess() {
+          return {
+            command: "vercel deploy --prod --yes --token [redacted]",
+            cwd: directory,
+            stdout: "https://shipyard-demo-4k2m1n9.vercel.app\n",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false,
+            signal: null,
+            timeoutMs: 600_000,
+            combinedOutput: "https://shipyard-demo-4k2m1n9.vercel.app\n",
+            truncated: false,
+          };
+        },
+        async fetchDeploymentMetadata() {
+          return {
+            aliasFinal: "shipyard-demo.vercel.app",
+            alias: ["shipyard-demo.vercel.app"],
+          };
+        },
+        async fetchImpl(input, init) {
+          const url = typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+          apiCalls.push({
+            method: init?.method ?? "GET",
+            url,
+            body: typeof init?.body === "string" ? init.body : null,
+          });
+
+          if (url === "https://api.vercel.com/v9/projects/prj_existing?teamId=team_shipyard" &&
+              (init?.method ?? "GET") === "GET") {
+            return createJsonResponse({
+              id: "prj_existing",
+              name: "shipyard-demo",
+              accountId: "team_shipyard",
+              ssoProtection: {
+                deploymentType: "prod_deployment_urls_and_all_previews",
+              },
+            });
+          }
+
+          if (url === "https://api.vercel.com/v9/projects/prj_existing?teamId=team_shipyard" &&
+              init?.method === "PATCH") {
+            return createJsonResponse({
+              id: "prj_existing",
+              name: "shipyard-demo",
+              accountId: "team_shipyard",
+              ssoProtection: null,
+            });
+          }
+
+          throw new Error(`Unexpected Vercel API call: ${init?.method ?? "GET"} ${url}`);
+        },
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(apiCalls).toEqual([
+      {
+        method: "GET",
+        url: "https://api.vercel.com/v9/projects/prj_existing?teamId=team_shipyard",
+        body: null,
+      },
+      {
+        method: "PATCH",
+        url: "https://api.vercel.com/v9/projects/prj_existing?teamId=team_shipyard",
+        body: JSON.stringify({
+          ssoProtection: null,
+        }),
+      },
+    ]);
+  });
+
+  it("deploy_target can preserve protected projects when public deploy enforcement is disabled", async () => {
+    const directory = await createTempProject();
+    await initializeGitRepository(directory);
+    await mkdir(path.join(directory, ".vercel"), { recursive: true });
+    await writeFile(
+      path.join(directory, ".vercel", "project.json"),
+      `${JSON.stringify(
+        {
+          orgId: "team_shipyard",
+          projectId: "prj_existing",
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    const apiCalls: Array<{
+      method: string;
+      url: string;
+      body: string | null;
+    }> = [];
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+          VERCEL_TEAM_ID: "team_shipyard",
+          SHIPYARD_VERCEL_PUBLIC_DEPLOYS: "0",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess() {
+          return {
+            command: "vercel deploy --prod --yes --token [redacted]",
+            cwd: directory,
+            stdout: "https://shipyard-demo-4k2m1n9.vercel.app\n",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false,
+            signal: null,
+            timeoutMs: 600_000,
+            combinedOutput: "https://shipyard-demo-4k2m1n9.vercel.app\n",
+            truncated: false,
+          };
+        },
+        async fetchDeploymentMetadata() {
+          return {
+            aliasFinal: "shipyard-demo.vercel.app",
+            alias: ["shipyard-demo.vercel.app"],
+          };
+        },
+        async fetchImpl(input, init) {
+          const url = typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+          apiCalls.push({
+            method: init?.method ?? "GET",
+            url,
+            body: typeof init?.body === "string" ? init.body : null,
+          });
+
+          if (url === "https://api.vercel.com/v9/projects/prj_existing?teamId=team_shipyard") {
+            return createJsonResponse({
+              id: "prj_existing",
+              name: "shipyard-demo",
+              accountId: "team_shipyard",
+              ssoProtection: {
+                deploymentType: "all",
+              },
+            });
+          }
+
+          throw new Error(`Unexpected Vercel API call: ${init?.method ?? "GET"} ${url}`);
+        },
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(apiCalls).toEqual([
+      {
+        method: "GET",
+        url: "https://api.vercel.com/v9/projects/prj_existing?teamId=team_shipyard",
+        body: null,
+      },
+    ]);
+  });
+
+  it("deploy_target fails clearly when Shipyard cannot disable Vercel Authentication", async () => {
+    const directory = await createTempProject();
+    await initializeGitRepository(directory);
+    await mkdir(path.join(directory, ".vercel"), { recursive: true });
+    await writeFile(
+      path.join(directory, ".vercel", "project.json"),
+      `${JSON.stringify(
+        {
+          orgId: "team_shipyard",
+          projectId: "prj_existing",
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    const result = await deployTargetTool(
+      {
+        platform: "vercel",
+      },
+      directory,
+      undefined,
+      {
+        env: {
+          ...process.env,
+          VERCEL_TOKEN: "phase-nine-secret",
+          VERCEL_TEAM_ID: "team_shipyard",
+        },
+        vercelBinaryPath: "vercel",
+        async executeProcess() {
+          throw new Error("executeProcess should not run when project protection cannot be updated");
+        },
+        async fetchImpl(input, init) {
+          const url = typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+          if (url === "https://api.vercel.com/v9/projects/prj_existing?teamId=team_shipyard" &&
+              (init?.method ?? "GET") === "GET") {
+            return createJsonResponse({
+              id: "prj_existing",
+              name: "shipyard-demo",
+              accountId: "team_shipyard",
+              ssoProtection: {
+                deploymentType: "all",
+              },
+            });
+          }
+
+          if (url === "https://api.vercel.com/v9/projects/prj_existing?teamId=team_shipyard" &&
+              init?.method === "PATCH") {
+            return createJsonResponse({
+              error: {
+                message: "missing permission to update deployment protection",
+              },
+            }, 403);
+          }
+
+          throw new Error(`Unexpected Vercel API call: ${init?.method ?? "GET"} ${url}`);
+        },
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("could not disable Vercel Authentication");
+    expect(result.error).toContain("missing permission to update deployment protection");
+    expect(result.error).toContain("SHIPYARD_VERCEL_PUBLIC_DEPLOYS=0");
   });
 
   it("deploy_target returns an actionable error when VERCEL_TOKEN is missing", async () => {
@@ -972,6 +1463,7 @@ describe("search and command tools", () => {
           ...process.env,
           VERCEL_TOKEN: "phase-nine-secret",
         },
+        fetchImpl: createProjectSetupFetchImpl(),
         vercelBinaryPath: "vercel",
         async executeProcess() {
           return {
@@ -1008,6 +1500,7 @@ describe("search and command tools", () => {
           ...process.env,
           VERCEL_TOKEN: "phase-nine-secret",
         },
+        fetchImpl: createProjectSetupFetchImpl(),
         vercelBinaryPath: "vercel",
         async executeProcess() {
           return {
@@ -1050,6 +1543,7 @@ describe("search and command tools", () => {
           ...process.env,
           VERCEL_TOKEN: "phase-nine-secret",
         },
+        fetchImpl: createProjectSetupFetchImpl(),
         vercelBinaryPath: "vercel",
         async executeProcess() {
           throw missingCliError;
@@ -1281,13 +1775,13 @@ describe("tool registry", () => {
 
     const firstRead = await tool.execute({ path: "notes.txt" }, directory);
     expect(firstRead.success).toBe(true);
-    const firstHash = getTrackedReadHash("notes.txt");
+    const firstHash = getTrackedReadHash(directory, "notes.txt");
     expect(firstHash).toMatch(/^[a-f0-9]{64}$/);
 
     await writeFile(path.join(directory, "notes.txt"), "after\n", "utf8");
     const secondRead = await tool.execute({ path: "notes.txt" }, directory);
     expect(secondRead.success).toBe(true);
-    expect(getTrackedReadHash("notes.txt")).not.toBe(firstHash);
+    expect(getTrackedReadHash(directory, "notes.txt")).not.toBe(firstHash);
   });
 
   it("creates missing parent directories and reports line counts through write_file", async () => {
@@ -1398,7 +1892,7 @@ async function expectSingleEditPass(
   expect(next.changed).toBe(true);
   expect(next.contents).toContain(`const ${anchorLabel} = "updated";`);
   expect(next.hash).not.toBe(current.hash);
-  expect(getTrackedReadHash(relativePath)).toBe(next.hash);
+  expect(getTrackedReadHash(directory, relativePath)).toBe(next.hash);
 
   const fileOnDisk = await readFile(path.join(directory, relativePath), "utf8");
   expect(fileOnDisk).toContain(`const ${anchorLabel} = "updated";`);

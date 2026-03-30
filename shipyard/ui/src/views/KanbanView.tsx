@@ -1,17 +1,16 @@
 /**
- * KanbanView — Data-driven Kanban board with mock data.
+ * KanbanView — Data-driven Kanban board.
  *
- * UIR — Kanban Board View
- *
- * Columns are driven by TaskStateDefinition[], not hardcoded.
- * Includes story filtering, hover state, and responsive layout.
+ * The production app passes real board state through props. When no props are
+ * provided, the preview harness still renders the original mock board.
  */
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
+
+import type { BadgeTone } from "../primitives.js";
+import { Badge } from "../primitives.js";
 import { KanbanColumn } from "./KanbanColumn.js";
 import type { TaskStateDefinition, TaskCardData } from "./KanbanColumn.js";
-
-// ── Mock Data ────────────────────────────────────
 
 const MOCK_STATES: TaskStateDefinition[] = [
   { id: "backlog", label: "Backlog", order: 0 },
@@ -145,52 +144,145 @@ const MOCK_STORIES: MockStory[] = [
   { id: "story-2", title: "DevOps setup", taskIds: ["task-7"] },
 ];
 
-// ── Component ────────────────────────────────────
+export interface KanbanStoryOption {
+  id: string;
+  label: string;
+  taskCount: number;
+}
 
-export function KanbanView() {
+export interface KanbanNotice {
+  tone: BadgeTone;
+  title: string;
+  detail: string;
+}
+
+export interface KanbanEmptyState {
+  title: string;
+  detail: string;
+}
+
+export interface KanbanViewProps {
+  title?: string;
+  summary?: string | null;
+  states?: TaskStateDefinition[];
+  tasks?: TaskCardData[];
+  selectedStoryId?: string;
+  storyOptions?: KanbanStoryOption[];
+  notice?: KanbanNotice | null;
+  emptyState?: KanbanEmptyState | null;
+  onSelectedStoryChange?: (storyId: string) => void;
+}
+
+const DEFAULT_STORY_OPTIONS: KanbanStoryOption[] = [
+  { id: "all", label: "All stories", taskCount: MOCK_TASKS.length },
+  ...MOCK_STORIES.map((story) => ({
+    id: story.id,
+    label: story.title,
+    taskCount: story.taskIds.length,
+  })),
+];
+
+export function KanbanView(props: KanbanViewProps = {}) {
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
-  const [selectedStory, setSelectedStory] = useState<string>("all");
-
-  const sortedStates = useMemo(
-    () => [...MOCK_STATES].sort((a, b) => a.order - b.order),
-    [],
+  const [internalSelectedStoryId, setInternalSelectedStoryId] = useState("all");
+  const controlledSelection = typeof props.selectedStoryId === "string";
+  const selectedStoryId = controlledSelection
+    ? props.selectedStoryId!
+    : internalSelectedStoryId;
+  const stateDefinitions = useMemo(
+    () =>
+      [...(props.states ?? MOCK_STATES)].sort((left, right) => left.order - right.order),
+    [props.states],
   );
+  const storyOptions = props.storyOptions ?? DEFAULT_STORY_OPTIONS;
+  const usesMockTasks = props.tasks === undefined;
+  const tasks = useMemo(() => {
+    if (!usesMockTasks) {
+      return props.tasks ?? [];
+    }
 
-  const filteredTasks = useMemo(() => {
-    if (selectedStory === "all") return MOCK_TASKS;
-    const story = MOCK_STORIES.find((s) => s.id === selectedStory);
-    if (!story) return MOCK_TASKS;
-    const taskIdSet = new Set(story.taskIds);
-    return MOCK_TASKS.filter((t) => taskIdSet.has(t.id));
-  }, [selectedStory]);
+    if (selectedStoryId === "all") {
+      return MOCK_TASKS;
+    }
 
-  const hasVisibleTasks = filteredTasks.length > 0;
+    const story = MOCK_STORIES.find((candidate) => candidate.id === selectedStoryId);
+
+    if (!story) {
+      return MOCK_TASKS;
+    }
+
+    const taskIds = new Set(story.taskIds);
+    return MOCK_TASKS.filter((task) => taskIds.has(task.id));
+  }, [props.tasks, selectedStoryId, usesMockTasks]);
+  const selectedStoryLabel =
+    storyOptions.find((option) => option.id === selectedStoryId)?.label ?? "All stories";
+
+  function handleSelectedStoryChange(nextStoryId: string): void {
+    if (!controlledSelection) {
+      setInternalSelectedStoryId(nextStoryId);
+    }
+
+    props.onSelectedStoryChange?.(nextStoryId);
+  }
 
   return (
     <div className="kanban-view">
+      <div className="kanban-header">
+        <div className="kanban-header-copy">
+          <p className="kanban-kicker">Board</p>
+          <h1 className="kanban-title">{props.title ?? "Task board"}</h1>
+          {props.summary ? (
+            <p className="kanban-summary">{props.summary}</p>
+          ) : null}
+        </div>
+
+        <div className="kanban-header-meta">
+          <Badge tone="neutral">{tasks.length} visible</Badge>
+          <Badge tone={selectedStoryId === "all" ? "accent" : "warning"}>
+            {selectedStoryLabel}
+          </Badge>
+        </div>
+      </div>
+
+      {props.notice ? (
+        <div
+          className="surface-card kanban-notice"
+          data-tone={props.notice.tone}
+          role={props.notice.tone === "danger" ? "alert" : "status"}
+          aria-live={props.notice.tone === "danger" ? "assertive" : "polite"}
+          aria-atomic="true"
+        >
+          <strong>{props.notice.title}</strong>
+          <p>{props.notice.detail}</p>
+        </div>
+      ) : null}
+
       <div className="kanban-toolbar">
+        <label className="kanban-toolbar-label" htmlFor="kanban-story-filter">
+          Story filter
+        </label>
         <select
+          id="kanban-story-filter"
           className="kanban-story-select"
-          value={selectedStory}
-          onChange={(e) => setSelectedStory(e.target.value)}
+          value={selectedStoryId}
+          onChange={(event) => handleSelectedStoryChange(event.target.value)}
           aria-label="Filter by story"
         >
-          <option value="all">All stories</option>
-          {MOCK_STORIES.map((story) => (
+          {storyOptions.map((story) => (
             <option key={story.id} value={story.id}>
-              {story.title}
+              {story.label} ({story.taskCount})
             </option>
           ))}
         </select>
       </div>
 
-      {hasVisibleTasks ? (
+      {tasks.length > 0 ? (
         <div className="kanban-board">
-          {sortedStates.map((state) => (
+          {stateDefinitions.map((stateDefinition) => (
             <KanbanColumn
-              key={state.id}
-              stateDefinition={state}
-              tasks={filteredTasks}
+              key={stateDefinition.id}
+              stateDefinition={stateDefinition}
+              tasks={tasks}
               hoveredTaskId={hoveredTaskId}
               onHoverTask={setHoveredTaskId}
             />
@@ -198,7 +290,13 @@ export function KanbanView() {
         </div>
       ) : (
         <div className="kanban-empty">
-          <p>No tasks to display.</p>
+          <div className="surface-card kanban-empty-card">
+            <h2>{props.emptyState?.title ?? "No tasks to display"}</h2>
+            <p>
+              {props.emptyState?.detail ??
+                "Shipyard will populate the board once work has been planned for this product."}
+            </p>
+          </div>
         </div>
       )}
     </div>

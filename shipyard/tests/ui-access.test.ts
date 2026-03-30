@@ -51,4 +51,23 @@ describe("HostedAccessGate", () => {
     expect(markup).toContain("Invalid access token. Enter the shared token to continue.");
     expect(markup).toContain("Unlock Shipyard");
   });
+
+  it("renders an explicit busy state while checking hosted access", () => {
+    const markup = renderToStaticMarkup(
+      createElement(HostedAccessGate, {
+        accessToken: "demo-token",
+        checking: true,
+        submitting: false,
+        message: null,
+        onAccessTokenChange: () => undefined,
+        onSubmit: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).toContain("Checking access...");
+    expect(markup).toContain(
+      "Checking the hosted access token and restoring the shared Shipyard session.",
+    );
+  });
 });

@@ -144,6 +144,12 @@ function createInstructionTurnResult(
       actingLoopBudgetReason: "narrow-default",
       firstHardFailure: null,
     },
+    runtimeAssist: {
+      activeProfileId: null,
+      activeProfileName: null,
+      activeProfileRoute: null,
+      loadedSkills: [],
+    },
     handoff: {
       loaded: null,
       loadError: null,

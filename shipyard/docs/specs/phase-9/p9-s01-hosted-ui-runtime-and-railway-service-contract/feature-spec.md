@@ -90,31 +90,87 @@ generated project files under a predictable server-side workspace path.
 ## Implementation Evidence
 
 ### Code References
+- `shipyard/Dockerfile`
 - `shipyard/railway.json`
 - `shipyard/README.md`
 - `shipyard/docs/architecture/hosted-railway.md`
 - `.github/workflows/railway-main-deploy.yml`
+- `.github/scripts/railway-ci-deploy.sh`
 
 ### Representative Snippets
 
 - Native Railway GitHub sync now has one explicit monorepo contract: point the
-  service at the nested app root and let the checked-in config run from there.
+  service at the nested app root, force the Dockerfile builder for that deploy,
+  and boot the compiled UI runtime instead of TypeScript source.
 
 ```json
-"buildCommand": "pnpm install --frozen-lockfile && pnpm build",
-"startCommand": "pnpm start -- --ui"
+"builder": "DOCKERFILE",
+"buildCommand": null,
+"startCommand": "node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui"
 ```
 
-- Repo-controlled deploys keep the same contract by uploading the nested app as
-  the deployment root:
+- Repo-controlled deploys now build the checked-in Dockerfile on GitHub, push
+  that image to GHCR, and switch the existing Railway service to the image
+  source in place so the hosted domain stays stable:
 
 ```yaml
-working-directory: shipyard
 run: |
-  railway up . \
-    --path-as-root \
-    --ci \
-    --project "${RAILWAY_PROJECT_ID}" \
-    --environment "${RAILWAY_ENVIRONMENT_ID}" \
-    --service "${RAILWAY_SERVICE_ID}"
+  bash .github/scripts/railway-ci-deploy.sh
+```
+
+```bash
+railway environment config --json | python -c '...' | railway environment edit --json
+```
+
+- The GitHub Actions deploy path now prefers `RAILWAY_API_TOKEN` for the
+  non-interactive Railway control steps and only falls back to
+  `RAILWAY_TOKEN` when a project-scoped token has been validated for the same
+  workflow:
+
+```bash
+if [ -n "${RAILWAY_API_TOKEN}" ]; then
+  echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}" >> "${GITHUB_ENV}"
+else
+  echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}" >> "${GITHUB_ENV}"
+fi
+```
+
+- Each later Railway CLI step also unsets the unused token env var before it
+  exports the selected control token, so a blank `RAILWAY_TOKEN` does not
+  override a valid API token on GitHub Actions:
+
+```bash
+if [ "${RAILWAY_CONTROL_TOKEN_KIND}" = "api" ]; then
+  unset RAILWAY_TOKEN
+  export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+else
+  unset RAILWAY_API_TOKEN
+  export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+fi
+```
+
+- The image-backed deploy wrapper now retries Railway's known transient GHCR
+  pull/unpack handoff failures before surfacing the rollout as a hard failure:
+
+```bash
+transient_failure_pattern='DEADLINE_EXCEEDED|failed to pull/unpack image|failed to resolve reference|i/o timeout|dial tcp'
+```
+
+- The hosted Railway workflow now keeps Playwright browser downloads out of the
+  default production image and relies on the already-shipped degraded
+  verification path unless operators explicitly provision those browsers:
+
+```yaml
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+RAILWAY_VOLUME_MOUNT_PATH=/app/workspace
+SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1
+```
+
+- The hosted runtime now also keeps Playwright in dev dependency scope and
+  lazy-loads browser evaluation so the production image can exclude that
+  dependency entirely while still degrading verification cleanly:
+
+```ts
+const playwright = await import("playwright");
+return playwright.chromium;
 ```

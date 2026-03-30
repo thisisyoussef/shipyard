@@ -115,8 +115,14 @@ keep the visible result fresh after edits land.
   healthy target-native preview is available.
 - [`../../../../src/ui/server.ts`](../../../../src/ui/server.ts): creates the
   session-scoped preview supervisor, persists `preview:state`, re-runs
-  discovery after edit events, and promotes the session from starter canvas to
-  a real preview when the target becomes previewable.
+  discovery after edit events, promotes the session from starter canvas to a
+  real preview when the target becomes previewable, and now queues
+  refresh-complete archive snapshots into sidecar git repos without blocking
+  the active turn.
+- [`../../../../src/tools/target-manager/release-archive.ts`](../../../../src/tools/target-manager/release-archive.ts):
+  mirrors refreshed targets into dedicated git repos under
+  `.shipyard-target-releases`, writes release metadata and a shared target
+  index, and keeps preview-driven recovery points outside the live target repo.
 - [`../../../../ui/src/ShipyardWorkbench.tsx`](../../../../ui/src/ShipyardWorkbench.tsx):
   mounts the preview surface in the UIV3 main stack so it stays visible beside
   composer and activity.
@@ -129,8 +135,8 @@ keep the visible result fresh after edits land.
 - [`../../../../tests/preview-supervisor.test.ts`](../../../../tests/preview-supervisor.test.ts)
   and [`../../../../tests/ui-runtime.test.ts`](../../../../tests/ui-runtime.test.ts):
   cover starter-canvas fallback, first-boot preview failures, scratch-target
-  promotion into a real preview, and the existing running/unavailable UI
-  states.
+  promotion into a real preview, the existing running/unavailable UI states,
+  and preview-refresh archive snapshots.
 
 ## Representative Snippets
 
@@ -174,5 +180,26 @@ if (
 ) {
   await restartPreviewSupervisor({ silent: true });
   return;
+}
+```
+
+```ts
+if (
+  previousPreviewState.status !== "running" &&
+  previewState.status === "running" &&
+  previewState.lastRestartReason?.includes("Refresh requested")
+) {
+  const task = project.releaseArchiveTail.then(() =>
+    captureTargetReleaseArchive({
+      archiveRoot: project.targetReleaseArchiveRoot,
+      targetDirectory: project.sessionState.targetDirectory,
+      targetsDirectory: project.sessionState.targetsDirectory,
+      sessionId: project.sessionState.sessionId,
+      turnCount: project.sessionState.turnCount,
+      previewState,
+      discovery: project.sessionState.discovery,
+      targetProfile: project.sessionState.targetProfile,
+    })
+  );
 }
 ```

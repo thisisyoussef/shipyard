@@ -128,3 +128,55 @@ pnpm --dir shipyard typecheck
 pnpm --dir shipyard build
 git diff --check
 ```
+
+## Implemented Shape
+
+- `shipyard/src/hosting/contracts.ts`: adds the `HostedFactoryRuntimeProfile`,
+  `RemoteWorkspaceBinding`, `HostedSourceControlAdapter`,
+  `HostedAvailabilityState`, and workbench projection schemas for Railway and
+  local runtime consumers.
+- `shipyard/src/hosting/store.ts`: persists hosted runtime state to
+  `.shipyard/hosting/runtime.json` using restart-safe atomic writes.
+- `shipyard/src/hosting/runtime.ts`: resolves Railway-hosted mode, prepares the
+  mounted workspace, consumes the normalized `P11-S06` source-control runtime,
+  synthesizes hosted-safe adapter availability, restores the latest session
+  binding, and publishes degraded hosted mode with explicit blocked actions
+  when GitHub auth or binding is unavailable.
+- `shipyard/src/engine/state.ts`: creates the target-local `.shipyard/hosting`
+  directory so hosted runtime state lives beside artifacts, pipeline, TDD, and
+  source-control state under the same persistent workspace root.
+- `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`,
+  `shipyard/src/ui/health.ts`, and
+  `shipyard/src/ui/server.ts`: expose hosted state to the browser runtime and
+  diagnostics, and keep Shipyard service, private preview, and public
+  deployment URLs separated in the published workbench snapshot.
+- `.github/workflows/railway-main-deploy.yml`: extends the Railway deploy flow
+  so hosted-safe GitHub tokens, Vercel tokens, persistent workspace env vars,
+  and the hosted UI binding contract are pushed with the application.
+- `shipyard/tests/hosting-runtime.test.ts`,
+  `shipyard/tests/ui-runtime.test.ts`, and
+  `shipyard/tests/railway-config.test.ts`: cover the Railway-hosted happy path,
+  degraded hosted fallback, persistent workspace restore, hosted availability
+  metadata, and workflow/env expectations.
+
+## Validation Notes
+
+- Focused hosted-runtime validation passed:
+  - `pnpm --dir shipyard exec vitest run tests/hosting-runtime.test.ts --reporter=verbose`
+  - `pnpm --dir shipyard exec vitest run tests/hosting-runtime.test.ts tests/ui-runtime.test.ts tests/ui-view-models.test.ts tests/railway-config.test.ts tests/source-control-runtime.test.ts --reporter=verbose`
+  - `pnpm --dir shipyard exec vitest run tests/hosting-runtime.test.ts tests/mission-control-policy.test.ts --reporter=verbose`
+  - `pnpm --dir shipyard exec vitest run tests/browser-evaluator.test.ts --reporter=verbose`
+- Required repo-level validation passed:
+  - `pnpm --dir shipyard typecheck`
+  - `pnpm --dir shipyard build`
+  - `git diff --check`
+- The plain `pnpm --dir shipyard test` command was attempted first and hit the
+  repo's known idle Vitest worker hang after launching `vitest run`. The
+  authoritative full-suite proof for this story is the deterministic CI-style
+  command:
+  - `CI=1 pnpm --dir shipyard exec vitest run --pool forks --no-file-parallelism --maxWorkers 1 --reporter=verbose`
+  - Result: `Test Files 65 passed (65)`, `Tests 449 passed | 2 skipped (451)`
+- LangSmith finish-check evidence was captured in the isolated project
+  `shipyard-p11-s07-finishcheck`, including one hosted happy-path trace and one
+  degraded hosted trace with no unexpected error runs.

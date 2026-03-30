@@ -45,26 +45,26 @@ progressing without collapsing back into one giant turn transcript.
   later work must reconcile.
 
 ## Acceptance Criteria
-- [ ] AC-1: Shipyard has a master coordinator runtime that can supervise
+- [x] AC-1: Shipyard has a master coordinator runtime that can supervise
   multiple story or task runs at once rather than only one active loop.
-- [ ] AC-2: The coordinator respects dependency edges, approval wait states,
+- [x] AC-2: The coordinator respects dependency edges, approval wait states,
   advisory leases, source-control binding or degraded-source state, hosted
   workspace capacity, and isolated worker boundaries when scheduling work.
-- [ ] AC-3: The coordinator can choose specialized profiles or phase lanes such
+- [x] AC-3: The coordinator can choose specialized profiles or phase lanes such
   as discovery, PM, TDD, QA, deploy, or GitHub-ops/merge based on the active
   task.
-- [ ] AC-4: Human interrupts, edits, approvals, and reprioritization requests
+- [x] AC-4: Human interrupts, edits, approvals, and reprioritization requests
   can preempt or reroute the coordinator safely.
-- [ ] AC-5: Coordinator state stays durable enough to recover after restart
+- [x] AC-5: Coordinator state stays durable enough to recover after restart
   without losing task ownership or active next steps.
-- [ ] AC-6: When one branch or PR merges first, the coordinator marks later
+- [x] AC-6: When one branch or PR merges first, the coordinator marks later
   stale conflicting work explicitly, syncs it against the latest default branch,
   and routes it through a visible conflict-resolution workflow instead of
   silently force-merging.
-- [ ] AC-7: If GitHub auth or binding is unavailable, the coordinator can still
+- [x] AC-7: If GitHub auth or binding is unavailable, the coordinator can still
   continue planning or explicitly-degraded local implementation work while
   blocking merge or deploy steps with clear reasons.
-- [ ] AC-8: The orchestration contract is usable by a future kanban UI pack but
+- [x] AC-8: The orchestration contract is usable by a future kanban UI pack but
   does not require that UI to exist first.
 
 ## Edge Cases
@@ -99,3 +99,122 @@ progressing without collapsing back into one giant turn transcript.
 - Shipyard can supervise multiple specialized work streams through one durable
   coordinator instead of treating `ultimate mode` as a single forever-loop,
   including first-merge-wins recovery and hosted-runtime awareness.
+
+## Implementation Evidence
+
+- `shipyard/src/orchestration/contracts.ts`: introduces the durable
+  `CoordinatorRun`, `CoordinatorWorkerAssignment`, `ConflictRecoveryItem`,
+  `HumanIntervention`, and `OrchestrationWorkbenchState` schemas that future UI
+  board work can consume directly.
+
+  ```ts
+  export const orchestrationWorkbenchStateSchema = z.object({
+    active: z.boolean(),
+    runId: z.string().trim().min(1).nullable(),
+    mode: coordinatorModeSchema,
+    status: coordinatorRunStatusSchema,
+    summary: nonEmptyTextSchema,
+    maxWorkers: z.number().int().positive(),
+    availableWorkers: z.number().int().nonnegative(),
+    activeWorkerCount: z.number().int().nonnegative(),
+  });
+  ```
+
+- `shipyard/src/orchestration/store.ts` and `shipyard/src/engine/state.ts`:
+  persist coordinator state under `.shipyard/orchestration/runtime.json` and
+  add the target-local orchestration directory beside artifacts, pipeline, TDD,
+  source control, hosting, tasks, and coordination state.
+
+- `shipyard/src/orchestration/runtime.ts`: implements the master scheduler,
+  dependency and approval-aware dispatch, human reprioritization and reroutes,
+  degraded-source and hosted-capacity gating, first-merge-wins recovery queue
+  handling, and restart-safe worker completion updates.
+
+  ```ts
+  if (options.brief) {
+    const advanced = await advanceCoordinatorRun(sessionState, {
+      ...options,
+      brief: options.brief,
+      pendingHumanFeedback: [],
+    });
+    nextState = advanced.state;
+  } else {
+    nextState = {
+      ...loadedState,
+      updatedAt: now,
+      projection: createProjection({
+        run: loadedState.activeRun,
+        taskGraphState: runtimeInputs.taskGraphState,
+        capacity,
+        waitingForApproval,
+        sourceControlState: runtimeInputs.sourceControlState,
+        updatedAt: now,
+      }),
+    };
+  }
+  ```
+
+- `shipyard/src/engine/ultimate-mode.ts`: upgrades `ultimate mode` to consult
+  the coordinator first, dispatch role-aware work through the existing turn
+  executor, record per-worker results, and only fall back to the human
+  simulator when no task-graph-backed orchestration is available.
+
+  Post-ship follow-up: coordinator-dispatched cycles now trigger the same
+  `onCycleComplete` callback path as simulator fallback cycles, so browser UI
+  projections and downstream automation hooks observe every completed ultimate
+  cycle instead of only the fallback path.
+
+  ```ts
+  await notifyUltimateModeCycleComplete({
+    iteration,
+    reporter,
+    onCycleComplete: options.onCycleComplete,
+    simulatorDecision: {
+      summary: coordinatorCycle.decision.summary,
+      instruction: coordinatorCycle.decision.instruction,
+      focusAreas: [],
+    },
+    turnResult,
+    pendingFeedbackCount: controller.getPendingHumanFeedback().length,
+  });
+  ```
+
+- `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: add additive `orchestration` snapshot state and
+  websocket publication via `orchestration:state`, keeping the current browser
+  contract forward-compatible with the later task-board UI pack.
+
+- `shipyard/tests/orchestration-runtime.test.ts`,
+  `shipyard/tests/ultimate-mode.test.ts`, and
+  `shipyard/tests/ui-view-models.test.ts`: validate dependency-aware scheduling,
+  approval wait handling, hosted-capacity limits, first-merge-wins recovery,
+  durable restart behavior, coordinator-first `ultimate mode` dispatch, failed
+  worker isolation, coordinator-path cycle completion callbacks, and workbench
+  reducer support for orchestration state.
+
+## LangSmith / Monitoring
+
+- Fresh deterministic finish-check traces on project
+  `shipyard-p11-s09-finishcheck`:
+  - coordinator happy path:
+    `019d374e-628d-7000-8000-0159de48bd33`
+  - first-merge-wins recovery path:
+    `019d374e-7ae8-7000-8000-04e17a46c51c`
+- Commands reviewed:
+  - traced finish-check script with
+    `LANGSMITH_PROJECT=shipyard-p11-s09-finishcheck LANGSMITH_TRACING=true LANGCHAIN_TRACING_V2=true pnpm --dir shipyard exec node --import tsx ../.p11-s09-finishcheck.mts`
+  - `LANGSMITH_PROJECT=shipyard-p11-s09-finishcheck LANGSMITH_TRACING=true LANGCHAIN_TRACING_V2=true pnpm --dir shipyard exec langsmith trace list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --limit 5 --full`
+  - `LANGSMITH_PROJECT=shipyard-p11-s09-finishcheck LANGSMITH_TRACING=true LANGCHAIN_TRACING_V2=true pnpm --dir shipyard exec langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
+  - `LANGSMITH_PROJECT=shipyard-p11-s09-finishcheck LANGSMITH_TRACING=true LANGCHAIN_TRACING_V2=true pnpm --dir shipyard exec langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3`
+- The reviewed traces confirmed that Shipyard:
+  - dispatched an `implementer` lane from the approved task graph while keeping
+    one dependent story blocked and advertising the persistent hosted
+    two-worker-capacity summary
+  - dispatched `pr-ops` for the first-merge-wins recovery path with one open
+    recovery item and a healthy GitHub automation summary instead of falling
+    back to ad hoc merge behavior
+- `langsmith run list --project "$LANGSMITH_PROJECT" --last-n-minutes 30 --error --limit 10 --full`
+  returned `[]` for the isolated finish-check project.
+- `langsmith insights list --project "$LANGSMITH_PROJECT" --limit 3` returned
+  `null` for the isolated finish-check project.

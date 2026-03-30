@@ -1,0 +1,11 @@
+{
+  "name": "target-manager-ops",
+  "version": "1.0.0",
+  "description": "Guidance for target selection, creation, and enrichment turns.",
+  "tags": ["runtime", "target-manager"],
+  "compatiblePhases": ["target-manager"],
+  "promptFile": "SKILL.md",
+  "tools": [],
+  "references": [],
+  "validators": []
+}

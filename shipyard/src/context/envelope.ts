@@ -11,7 +11,11 @@ import {
   type RuntimeFeatureFlags,
 } from "../engine/runtime-flags.js";
 import type { ContextEnvelope } from "../engine/state.js";
+import type { AgentProfile } from "../agents/profiles.js";
 import { truncateText } from "../engine/turn-summary.js";
+import {
+  composeRuntimeLoadoutPrompt,
+} from "../skills/registry.js";
 
 export const SERIALIZED_SESSION_HISTORY_CHAR_BUDGET = 1_800;
 const SERIALIZED_PROJECT_RULES_CHAR_BUDGET = 1_800;
@@ -352,12 +356,22 @@ export function serializeContextEnvelope(
 export function composeSystemPrompt(
   baseSystemPrompt: string,
   envelope: ContextEnvelope,
+  options: {
+    activeProfile?: AgentProfile | null;
+    skillPromptBlock?: string | null;
+  } = {},
 ): string {
   const serializedEnvelope = serializeContextEnvelope(envelope).trim();
+  const runtimeLoadoutPrompt = composeRuntimeLoadoutPrompt({
+    activeProfile: options.activeProfile ?? null,
+    skillPromptBlock: options.skillPromptBlock ?? "",
+  });
+  const sections = [
+    baseSystemPrompt.trim(),
+    runtimeLoadoutPrompt,
+    serializedEnvelope,
+  ]
+    .filter((section) => section.trim().length > 0);
 
-  if (!serializedEnvelope) {
-    return baseSystemPrompt.trim();
-  }
-
-  return `${baseSystemPrompt.trim()}\n\n${serializedEnvelope}`;
+  return sections.join("\n\n");
 }

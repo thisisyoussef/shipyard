@@ -135,3 +135,49 @@ pnpm --dir shipyard typecheck
 pnpm --dir shipyard build
 git diff --check
 ```
+
+## Implemented Shape
+
+- `shipyard/src/orchestration/contracts.ts`: defines the coordinator state
+  vocabulary, worker lanes and statuses, recovery queue, human interventions,
+  audit entries, capacity summaries, and the compact workbench projection.
+- `shipyard/src/orchestration/store.ts`: persists orchestration state to
+  `.shipyard/orchestration/runtime.json` with the same restart-safe local-state
+  discipline used by the other Phase 11 runtimes.
+- `shipyard/src/orchestration/runtime.ts`: materializes the scheduler over the
+  approved task graph, coordination leases, source-control runtime, hosted
+  runtime, and pipeline approval state; it also selects role-aware workers,
+  tracks recovery tickets, and updates projections without bloating ordinary UI
+  snapshot refreshes.
+- `shipyard/src/engine/ultimate-mode.ts`: routes each ultimate-mode cycle
+  through the coordinator, dispatches phase-aware work through
+  `executeInstructionTurn(...)`, records coordinator worker completions, and
+  keeps the legacy simulator path as a narrow fallback.
+- `shipyard/src/ui/contracts.ts`,
+  `shipyard/src/ui/workbench-state.ts`, and
+  `shipyard/src/ui/server.ts`: expose additive `orchestration` session state to
+  the browser runtime and publish `orchestration:state` updates alongside the
+  existing workbench snapshot.
+- `shipyard/tests/orchestration-runtime.test.ts`,
+  `shipyard/tests/ultimate-mode.test.ts`, and
+  `shipyard/tests/ui-view-models.test.ts`: cover the scheduler, worker result
+  persistence, coordinator-first ultimate-mode execution, failed-worker
+  isolation, and browser-visible orchestration projection.
+
+## Validation Notes
+
+- Focused orchestration validation passed:
+  - `pnpm --dir shipyard exec vitest run tests/orchestration-runtime.test.ts tests/ultimate-mode.test.ts tests/ui-view-models.test.ts --reporter=verbose`
+  - `pnpm --dir shipyard exec vitest run tests/ui-runtime.test.ts tests/loop-runtime.test.ts --reporter=verbose`
+- Required repo-level validation passed:
+  - `pnpm --dir shipyard typecheck`
+  - `pnpm --dir shipyard build`
+  - `git diff --check`
+- The plain `pnpm --dir shipyard test` command was attempted first and
+  reproduced the repo's known idle Vitest worker hang after launching
+  `vitest run`. The authoritative full-suite proof for this story is the
+  deterministic CI-style fallback:
+  - `CI=1 pnpm --dir shipyard exec vitest run --pool forks --no-file-parallelism --maxWorkers 1 --reporter=verbose`
+  - `CI=1 pnpm --dir shipyard exec vitest run --pool forks --no-file-parallelism --maxWorkers 1 --reporter=json --outputFile /tmp/p11-s09-vitest.json`
+  - Result: `159` passed suites, `0` failed suites, `478` total tests,
+    `476` passed, `0` failed, `2` pending, `success: true`

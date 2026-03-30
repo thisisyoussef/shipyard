@@ -1,5 +1,15 @@
+import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { access, cp, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  cp,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -20,9 +30,17 @@ import {
   type RunCommandResult,
 } from "./run-command.js";
 import { ToolError } from "./read-file.js";
+import { deriveTargetNameFromPath } from "./target-manager/scaffold-materializer.js";
 
 const DEPLOY_TIMEOUT_MS = 10 * 60 * 1_000;
 const TOOL_NAME = "deploy_target";
+const VERCEL_API_TIMEOUT_MS = 10_000;
+const VERCEL_PROJECT_LINK_DIRECTORY = ".vercel";
+const VERCEL_PROJECT_LINK_FILENAME = "project.json";
+const VERCEL_PROJECT_LINK_IGNORE_PATTERN = ".vercel";
+const DEFAULT_PUBLIC_DEPLOYS_ENABLED = true;
+const PUBLIC_DEPLOY_OVERRIDE_HINT =
+  "Set SHIPYARD_VERCEL_PUBLIC_DEPLOYS=0 to preserve the existing Vercel Authentication settings.";
 const MAX_PACKAGE_JSON_SCAN_DEPTH = 3;
 const DEPLOY_COPY_EXCLUSIONS = new Set([
   ".git",
@@ -53,10 +71,12 @@ interface DeployDependencies {
   executeProcess?: (
     input: ExecuteProcessInput,
   ) => Promise<RunCommandResult>;
+  fetchImpl?: FetchLike;
   fetchDeploymentMetadata?: (
     deploymentUrl: string,
     token: string,
     signal?: AbortSignal,
+    fetchImpl?: FetchLike,
   ) => Promise<VercelDeploymentMetadata | null>;
   vercelBinaryPath?: string;
 }
@@ -69,6 +89,32 @@ interface VercelDeploymentMetadata {
   customEnvironment?: {
     currentDeploymentAliases?: string[];
   } | null;
+}
+
+interface FetchLike {
+  (input: string | URL | Request, init?: RequestInit): Promise<Response>;
+}
+
+interface VercelApiScope {
+  teamId: string | null;
+  slug: string | null;
+}
+
+interface VercelProjectLink {
+  orgId: string;
+  projectId: string;
+}
+
+interface VercelSsoProtection {
+  deploymentType: string;
+  cve55182MigrationAppliedFrom?: string;
+}
+
+interface VercelProjectRecord {
+  id: string;
+  name: string;
+  accountId: string | null;
+  ssoProtection: VercelSsoProtection | null;
 }
 
 const deployInputSchema = {
@@ -89,6 +135,45 @@ function readVercelToken(
 ): string | null {
   const token = env.VERCEL_TOKEN?.trim();
   return token ? token : null;
+}
+
+function trimToNull(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function readBooleanEnv(
+  value: string | null | undefined,
+  defaultValue: boolean,
+): boolean {
+  const normalized = trimToNull(value)?.toLowerCase();
+
+  if (!normalized) {
+    return defaultValue;
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  return defaultValue;
+}
+
+function shouldPreferPublicVercelDeploys(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return readBooleanEnv(
+    env.SHIPYARD_VERCEL_PUBLIC_DEPLOYS,
+    DEFAULT_PUBLIC_DEPLOYS_ENABLED,
+  );
 }
 
 function redactDeploySecrets(value: string, token: string | null): string {
@@ -178,14 +263,18 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function parseVercelDeploymentMetadata(
   value: unknown,
 ): VercelDeploymentMetadata | null {
-  if (typeof value !== "object" || value === null) {
+  if (!isRecord(value)) {
     return null;
   }
 
-  const record = value as Record<string, unknown>;
+  const record = value;
   const customEnvironment =
     typeof record.customEnvironment === "object" &&
       record.customEnvironment !== null
@@ -212,6 +301,228 @@ function parseVercelDeploymentMetadata(
         }
       : undefined,
   };
+}
+
+function parseVercelProjectLink(value: unknown): VercelProjectLink | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const orgId = trimToNull(
+    typeof value.orgId === "string" ? value.orgId : null,
+  );
+  const projectId = trimToNull(
+    typeof value.projectId === "string" ? value.projectId : null,
+  );
+
+  if (!orgId || !projectId) {
+    return null;
+  }
+
+  return {
+    orgId,
+    projectId,
+  };
+}
+
+function parseVercelProjectRecord(value: unknown): VercelProjectRecord | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = trimToNull(typeof value.id === "string" ? value.id : null);
+  const name = trimToNull(typeof value.name === "string" ? value.name : null);
+  const accountId = trimToNull(
+    typeof value.accountId === "string" ? value.accountId : null,
+  );
+  const ssoProtection = isRecord(value.ssoProtection) &&
+      typeof value.ssoProtection.deploymentType === "string"
+    ? {
+        deploymentType: value.ssoProtection.deploymentType,
+        cve55182MigrationAppliedFrom:
+          typeof value.ssoProtection.cve55182MigrationAppliedFrom === "string"
+            ? value.ssoProtection.cve55182MigrationAppliedFrom
+            : undefined,
+      }
+    : null;
+
+  if (!id || !name) {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    accountId,
+    ssoProtection,
+  };
+}
+
+function createManagedVercelProjectName(targetDirectory: string): string {
+  const normalizedTargetName = deriveTargetNameFromPath(targetDirectory)
+    .replace(/[^a-z0-9-]/gu, "-")
+    .replace(/-{2,}/gu, "-")
+    .replace(/^-+/u, "")
+    .replace(/-+$/u, "");
+  const baseName = normalizedTargetName || "shipyard-target";
+  const stableHash = createHash("sha256")
+    .update(path.resolve(targetDirectory))
+    .digest("hex")
+    .slice(0, 8);
+  const truncatedBase = baseName.slice(0, 40).replace(/-+$/u, "") || "shipyard";
+
+  return `${truncatedBase}-${stableHash}`;
+}
+
+function resolveTeamIdFromOrgId(orgId: string | null | undefined): string | null {
+  const trimmedOrgId = trimToNull(orgId);
+
+  if (!trimmedOrgId || !trimmedOrgId.startsWith("team_")) {
+    return null;
+  }
+
+  return trimmedOrgId;
+}
+
+function resolveVercelApiScope(
+  env: NodeJS.ProcessEnv,
+  options: {
+    preferredOrgId?: string | null;
+  } = {},
+): VercelApiScope {
+  if (options.preferredOrgId !== undefined) {
+    return {
+      teamId: resolveTeamIdFromOrgId(options.preferredOrgId),
+      slug: null,
+    };
+  }
+
+  const configuredOrgId = trimToNull(env.VERCEL_ORG_ID);
+
+  return {
+    teamId:
+      trimToNull(env.VERCEL_TEAM_ID) ?? resolveTeamIdFromOrgId(configuredOrgId),
+    slug: trimToNull(env.VERCEL_TEAM_SLUG) ?? trimToNull(env.VERCEL_SCOPE),
+  };
+}
+
+function buildVercelApiUrl(pathname: string, scope: VercelApiScope): URL {
+  const url = new URL(pathname, "https://api.vercel.com");
+
+  if (scope.teamId) {
+    url.searchParams.set("teamId", scope.teamId);
+  }
+
+  if (scope.slug) {
+    url.searchParams.set("slug", scope.slug);
+  }
+
+  return url;
+}
+
+function extractVercelApiErrorMessage(
+  payload: unknown,
+  fallback: string,
+): string {
+  if (typeof payload === "string") {
+    return trimToNull(payload) ?? fallback;
+  }
+
+  if (isRecord(payload)) {
+    const directMessage = trimToNull(
+      typeof payload.message === "string" ? payload.message : null,
+    );
+
+    if (directMessage) {
+      return directMessage;
+    }
+
+    if (isRecord(payload.error)) {
+      const nestedMessage = trimToNull(
+        typeof payload.error.message === "string"
+          ? payload.error.message
+          : null,
+      );
+
+      if (nestedMessage) {
+        return nestedMessage;
+      }
+
+      const nestedCode = trimToNull(
+        typeof payload.error.code === "string" ? payload.error.code : null,
+      );
+
+      if (nestedCode) {
+        return nestedCode;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+async function callVercelApi(
+  pathname: string,
+  token: string,
+  options: {
+    scope: VercelApiScope;
+    fetchImpl?: FetchLike;
+    signal?: AbortSignal;
+    method?: string;
+    body?: unknown;
+  },
+): Promise<{
+  ok: boolean;
+  status: number;
+  payload: unknown;
+}> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const response = await fetchImpl(
+    buildVercelApiUrl(pathname, options.scope),
+    {
+      method: options.method ?? (options.body === undefined ? "GET" : "POST"),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(options.body === undefined
+          ? {}
+          : {
+              "Content-Type": "application/json",
+            }),
+      },
+      body:
+        options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: options.signal ?? AbortSignal.timeout(VERCEL_API_TIMEOUT_MS),
+    },
+  );
+  const text = await response.text();
+  let payload: unknown = null;
+
+  if (text.trim()) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = text;
+    }
+  }
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    payload,
+  };
+}
+
+function isProjectAlreadyExistsFailure(
+  status: number,
+  payload: unknown,
+): boolean {
+  if (status === 409) {
+    return true;
+  }
+
+  return /already exists|taken/i.test(
+    extractVercelApiErrorMessage(payload, ""),
+  );
 }
 
 function dedupeUrls(candidates: Array<string | null | undefined>): string[] {
@@ -290,10 +601,303 @@ function collectShareableAliasUrls(
   ]);
 }
 
+async function readVercelProjectLink(
+  targetDirectory: string,
+): Promise<VercelProjectLink | null> {
+  const projectLinkPath = path.join(
+    targetDirectory,
+    VERCEL_PROJECT_LINK_DIRECTORY,
+    VERCEL_PROJECT_LINK_FILENAME,
+  );
+
+  if (!(await fileExists(projectLinkPath))) {
+    return null;
+  }
+
+  try {
+    return parseVercelProjectLink(
+      JSON.parse(await readFile(projectLinkPath, "utf8")),
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function writeVercelProjectLink(
+  targetDirectory: string,
+  link: VercelProjectLink,
+): Promise<void> {
+  const vercelDirectory = path.join(targetDirectory, VERCEL_PROJECT_LINK_DIRECTORY);
+  await mkdir(vercelDirectory, { recursive: true });
+  await writeFile(
+    path.join(vercelDirectory, VERCEL_PROJECT_LINK_FILENAME),
+    `${JSON.stringify(link, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+async function ensureVercelProjectLinkIgnored(
+  targetDirectory: string,
+): Promise<void> {
+  const gitExcludePath = path.join(targetDirectory, ".git", "info", "exclude");
+
+  if (!(await fileExists(gitExcludePath))) {
+    return;
+  }
+
+  const existingContents = await readFile(gitExcludePath, "utf8");
+  const existingPatterns = existingContents
+    .split(/\r?\n/gu)
+    .map((line) => line.trim());
+
+  if (
+    existingPatterns.includes(VERCEL_PROJECT_LINK_IGNORE_PATTERN) ||
+    existingPatterns.includes(`/${VERCEL_PROJECT_LINK_IGNORE_PATTERN}`)
+  ) {
+    return;
+  }
+
+  const prefix = existingContents.endsWith("\n") || existingContents.length === 0
+    ? ""
+    : "\n";
+  const nextContents = [
+    `${existingContents}${prefix}# Shipyard managed Vercel link state`,
+    VERCEL_PROJECT_LINK_IGNORE_PATTERN,
+    "",
+  ].join("\n");
+
+  await writeFile(gitExcludePath, nextContents, "utf8");
+}
+
+async function getVercelProject(
+  idOrName: string,
+  token: string,
+  env: NodeJS.ProcessEnv,
+  dependencies: DeployDependencies,
+  options: {
+    signal?: AbortSignal;
+    preferredOrgId?: string | null;
+  } = {},
+): Promise<VercelProjectRecord | null> {
+  const response = await callVercelApi(
+    `/v9/projects/${encodeURIComponent(idOrName)}`,
+    token,
+    {
+      scope: resolveVercelApiScope(env, {
+        preferredOrgId: options.preferredOrgId,
+      }),
+      fetchImpl: dependencies.fetchImpl,
+      signal: options.signal,
+    },
+  );
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new ToolError(
+      `Vercel project lookup failed: ${extractVercelApiErrorMessage(response.payload, "Unexpected Vercel API error.")}`,
+    );
+  }
+
+  const project = parseVercelProjectRecord(response.payload);
+
+  if (!project) {
+    throw new ToolError(
+      "Vercel project lookup returned an unexpected response shape.",
+    );
+  }
+
+  return project;
+}
+
+async function createVercelProject(
+  projectName: string,
+  token: string,
+  env: NodeJS.ProcessEnv,
+  dependencies: DeployDependencies,
+  options: {
+    signal?: AbortSignal;
+  } = {},
+): Promise<VercelProjectRecord | null> {
+  const response = await callVercelApi("/v11/projects", token, {
+    scope: resolveVercelApiScope(env),
+    fetchImpl: dependencies.fetchImpl,
+    signal: options.signal,
+    method: "POST",
+    body: {
+      name: projectName,
+      ssoProtection: null,
+    },
+  });
+
+  if (!response.ok) {
+    if (isProjectAlreadyExistsFailure(response.status, response.payload)) {
+      return null;
+    }
+
+    throw new ToolError(
+      `Shipyard could not create the Vercel project ${projectName}: ${extractVercelApiErrorMessage(response.payload, "Unexpected Vercel API error.")}`,
+    );
+  }
+
+  const project = parseVercelProjectRecord(response.payload);
+
+  if (!project) {
+    throw new ToolError(
+      "Vercel project creation returned an unexpected response shape.",
+    );
+  }
+
+  return project;
+}
+
+async function updateVercelProject(
+  projectId: string,
+  token: string,
+  env: NodeJS.ProcessEnv,
+  dependencies: DeployDependencies,
+  options: {
+    signal?: AbortSignal;
+    preferredOrgId?: string | null;
+    body: unknown;
+  },
+): Promise<VercelProjectRecord> {
+  const response = await callVercelApi(
+    `/v9/projects/${encodeURIComponent(projectId)}`,
+    token,
+    {
+      scope: resolveVercelApiScope(env, {
+        preferredOrgId: options.preferredOrgId,
+      }),
+      fetchImpl: dependencies.fetchImpl,
+      signal: options.signal,
+      method: "PATCH",
+      body: options.body,
+    },
+  );
+
+  if (!response.ok) {
+    throw new ToolError(
+      extractVercelApiErrorMessage(
+        response.payload,
+        "Unexpected Vercel API error while updating the project.",
+      ),
+    );
+  }
+
+  const project = parseVercelProjectRecord(response.payload);
+
+  if (!project) {
+    throw new ToolError(
+      "Vercel project update returned an unexpected response shape.",
+    );
+  }
+
+  return project;
+}
+
+async function ensureVercelProjectForDeploy(
+  targetDirectory: string,
+  token: string,
+  env: NodeJS.ProcessEnv,
+  dependencies: DeployDependencies,
+  signal?: AbortSignal,
+): Promise<VercelProjectRecord> {
+  const existingLink = await readVercelProjectLink(targetDirectory);
+  let project = existingLink
+    ? await getVercelProject(existingLink.projectId, token, env, dependencies, {
+        signal,
+        preferredOrgId: existingLink.orgId,
+      })
+    : null;
+
+  if (!project) {
+    const managedProjectName = createManagedVercelProjectName(targetDirectory);
+    project =
+      await createVercelProject(
+        managedProjectName,
+        token,
+        env,
+        dependencies,
+        { signal },
+      ) ??
+      await getVercelProject(
+        managedProjectName,
+        token,
+        env,
+        dependencies,
+        { signal },
+      );
+
+    if (!project) {
+      throw new ToolError(
+        `Shipyard could not create or recover the Vercel project ${managedProjectName}.`,
+      );
+    }
+  }
+
+  if (shouldPreferPublicVercelDeploys(env) && project.ssoProtection) {
+    try {
+      project = await updateVercelProject(
+        project.id,
+        token,
+        env,
+        dependencies,
+        {
+          signal,
+          preferredOrgId: project.accountId,
+          body: {
+            ssoProtection: null,
+          },
+        },
+      );
+    } catch (error) {
+      const detail = error instanceof Error
+        ? error.message
+        : "Unexpected Vercel API error while disabling Vercel Authentication.";
+
+      throw new ToolError(
+        [
+          `Shipyard could not disable Vercel Authentication for ${project.name}.`,
+          detail,
+          PUBLIC_DEPLOY_OVERRIDE_HINT,
+        ].join(" "),
+      );
+    }
+  }
+
+  const orgId =
+    trimToNull(project.accountId) ??
+    existingLink?.orgId ??
+    trimToNull(env.VERCEL_ORG_ID);
+
+  if (!orgId) {
+    throw new ToolError(
+      "Vercel project setup succeeded, but Shipyard could not determine the Vercel account ID needed to write .vercel/project.json.",
+    );
+  }
+
+  if (
+    existingLink?.orgId !== orgId ||
+    existingLink?.projectId !== project.id
+  ) {
+    await writeVercelProjectLink(targetDirectory, {
+      orgId,
+      projectId: project.id,
+    });
+  }
+
+  await ensureVercelProjectLinkIgnored(targetDirectory);
+  return project;
+}
+
 async function fetchVercelDeploymentMetadata(
   deploymentUrl: string,
   token: string,
   signal?: AbortSignal,
+  fetchImpl?: FetchLike,
 ): Promise<VercelDeploymentMetadata | null> {
   let hostname: string;
 
@@ -304,7 +908,7 @@ async function fetchVercelDeploymentMetadata(
   }
 
   try {
-    const response = await fetch(
+    const response = await (fetchImpl ?? fetch)(
       `https://api.vercel.com/v13/deployments/${encodeURIComponent(hostname)}`,
       {
         headers: {
@@ -337,7 +941,12 @@ async function resolveShareableVercelUrl(
   let metadataCandidates: string[] = [];
 
   try {
-    const metadata = await fetchMetadata(deploymentUrl, token, signal);
+    const metadata = await fetchMetadata(
+      deploymentUrl,
+      token,
+      signal,
+      dependencies.fetchImpl,
+    );
     if (metadata) {
       metadataCandidates = collectShareableAliasUrls(metadata);
     }
@@ -640,6 +1249,14 @@ export async function deployTargetTool(
   const resolvedDeployDirectory = await resolveDeployDirectory(targetDirectory);
 
   try {
+    await ensureVercelProjectForDeploy(
+      targetDirectory,
+      token,
+      env,
+      dependencies,
+      context?.signal,
+    );
+
     const result = await runProcess({
       cwd: resolvedDeployDirectory.deployDirectory,
       command: binaryPath,

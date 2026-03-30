@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Shipyard backup Vercel deploy sync every two hours
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=2h
+Persistent=true
+Unit=shipyard-vercel-sync.service
+
+[Install]
+WantedBy=timers.target

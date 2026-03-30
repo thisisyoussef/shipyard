@@ -1,0 +1,21 @@
+[Unit]
+Description=Shipyard mission watchdog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shipyard
+Group=shipyard
+WorkingDirectory=/srv/shipyard/shipyard
+EnvironmentFile=/etc/shipyard/shipyard.env
+ExecStart=/usr/bin/env bash -lc 'node --env-file-if-exists=.env --import tsx ./scripts/ultimate-mission-watchdog.ts -- --config "${MISSION_CONFIG_PATH}"'
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

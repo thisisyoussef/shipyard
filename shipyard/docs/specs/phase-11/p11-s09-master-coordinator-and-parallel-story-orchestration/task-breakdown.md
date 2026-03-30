@@ -62,7 +62,35 @@
   - [ ] `includes source-control blockers and hosted-capacity state`
 
 ## Completion Criteria
-- [ ] All must-have tasks complete
-- [ ] Acceptance criteria mapped to completed tasks
-- [ ] Tests added and passing for each implemented task
-- [ ] Deferred tasks documented with rationale
+- [x] All must-have tasks complete
+- [x] Acceptance criteria mapped to completed tasks
+- [x] Tests added and passing for each implemented task
+- [x] Deferred tasks documented with rationale
+
+## Implementation Evidence
+
+| Task ID | Implementation Evidence |
+|---|---|
+| T001 | `shipyard/tests/orchestration-runtime.test.ts`, `shipyard/tests/ultimate-mode.test.ts`, `shipyard/tests/ui-view-models.test.ts`, `shipyard/tests/ui-runtime.test.ts`, and `shipyard/tests/loop-runtime.test.ts` add failing-first coverage for dependency-aware scheduling, approval waits, hosted-capacity gating, first-merge-wins recovery routing, restart-safe worker persistence, coordinator-first ultimate-mode dispatch, coordinator-path `onCycleComplete` callbacks, failed-worker isolation, and additive browser projection. |
+| T002 | `shipyard/src/orchestration/contracts.ts`, `shipyard/src/orchestration/store.ts`, and `shipyard/src/engine/state.ts` introduce the durable coordinator run, worker, intervention, capacity, audit, and recovery contracts plus target-local persistence under `.shipyard/orchestration/runtime.json`. |
+| T003 | `shipyard/src/orchestration/runtime.ts` and `shipyard/src/engine/ultimate-mode.ts` evolve ultimate mode into a scheduler-backed supervisor that selects role-aware workers, respects dependencies, approvals, leases, degraded source control, and hosted capacity, then dispatches that work through the existing turn engine, records worker results, and emits cycle-complete callbacks for both coordinator and fallback paths. |
+| T004 | `shipyard/src/ui/contracts.ts`, `shipyard/src/ui/workbench-state.ts`, and `shipyard/src/ui/server.ts` publish the compact `orchestration` workbench projection and `orchestration:state` websocket event so later kanban UI work can consume real coordinator state without redefining the contract. |
+
+## Deferred / Follow-On Work
+
+- The rendered kanban board, animations, and richer operator interaction model
+  remain intentionally deferred to the later UI-focused story pack. This story
+  only ships the runtime and projection contract.
+
+## Validation Summary
+
+- `pnpm --dir shipyard typecheck`
+- `pnpm --dir shipyard build`
+- `git diff --check`
+- Focused suites:
+  - `pnpm --dir shipyard exec vitest run tests/orchestration-runtime.test.ts tests/ultimate-mode.test.ts tests/ui-view-models.test.ts --reporter=verbose`
+  - `pnpm --dir shipyard exec vitest run tests/ui-runtime.test.ts tests/loop-runtime.test.ts --reporter=verbose`
+- Full-suite proof:
+  - `CI=1 pnpm --dir shipyard exec vitest run --pool forks --no-file-parallelism --maxWorkers 1 --reporter=json --outputFile /tmp/p11-s09-vitest.json`
+  - Result: `159` passed suites, `0` failed suites, `478` total tests,
+    `476` passed, `0` failed, `2` pending, `success: true`

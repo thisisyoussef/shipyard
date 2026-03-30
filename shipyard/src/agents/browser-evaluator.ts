@@ -1,8 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-import type { ConsoleMessage, Page } from "playwright";
-import { chromium } from "playwright";
+import type { Browser, BrowserType, ConsoleMessage, Page } from "playwright";
 import { z } from "zod";
 
 import type {
@@ -144,6 +143,7 @@ const browserEvaluationPlanSchema = z.object({
 
 export interface BrowserEvaluatorRunOptions {
   artifactsDirectory?: string;
+  browserLauncher?: Pick<BrowserType, "launch">;
 }
 
 class BrowserEvaluationStepFailure extends Error {
@@ -215,10 +215,21 @@ export async function runBrowserEvaluator(
     return createTargetOnlyReport(plan, "failed");
   }
 
-  let browser;
+  let browserLauncher: Pick<BrowserType, "launch">;
 
   try {
-    browser = await chromium.launch();
+    browserLauncher = await resolveBrowserLauncher(options.browserLauncher);
+  } catch (error) {
+    return createInfrastructureFailureReport(
+      plan,
+      `Browser runtime unavailable: ${toErrorMessage(error)}`,
+    );
+  }
+
+  let browser: Browser;
+
+  try {
+    browser = await browserLauncher.launch();
   } catch (error) {
     return createInfrastructureFailureReport(
       plan,
@@ -615,3 +626,14 @@ export const browserEvaluatorAgent = {
   ],
   tools: [],
 };
+
+async function resolveBrowserLauncher(
+  override?: Pick<BrowserType, "launch">,
+): Promise<Pick<BrowserType, "launch">> {
+  if (override) {
+    return override;
+  }
+
+  const playwright = await import("playwright");
+  return playwright.chromium;
+}

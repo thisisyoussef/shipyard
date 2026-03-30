@@ -38,6 +38,7 @@ export interface CliOptions {
 }
 
 const DEFAULT_TARGETS_DIRECTORY = "./test-targets";
+const HOSTED_DEFAULT_TARGET_PATH_ENV = "SHIPYARD_HOSTED_DEFAULT_TARGET_PATH";
 
 function normalizeArgv(argv: string[]): string[] {
   return argv[0] === "--" ? argv.slice(1) : argv;
@@ -123,6 +124,23 @@ function resolveTargetsDirectoryFromEnv(): string | null {
   return path.resolve(process.cwd(), configuredTargetsDirectory);
 }
 
+export function resolveHostedDefaultTargetPath(
+  targetsDirectory: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const configuredTargetPath = env[HOSTED_DEFAULT_TARGET_PATH_ENV]?.trim();
+
+  if (!configuredTargetPath) {
+    return null;
+  }
+
+  if (path.isAbsolute(configuredTargetPath)) {
+    return path.resolve(configuredTargetPath);
+  }
+
+  return path.resolve(targetsDirectory, configuredTargetPath);
+}
+
 export function resolveTargetsDirectory(
   argv: string[],
   options: CliOptions,
@@ -194,8 +212,13 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     await prepareHostedWorkspace(resolvedTargetsDirectory);
   }
 
-  if (options.targetPath) {
-    const resolvedTargetPath = path.resolve(process.cwd(), options.targetPath);
+  const resolvedTargetPath = options.targetPath
+    ? path.resolve(process.cwd(), options.targetPath)
+    : hasHostedWorkspaceContract()
+      ? resolveHostedDefaultTargetPath(resolvedTargetsDirectory)
+      : null;
+
+  if (resolvedTargetPath) {
     await mkdir(resolvedTargetPath, { recursive: true });
     await ensureShipyardDirectories(resolvedTargetPath);
 

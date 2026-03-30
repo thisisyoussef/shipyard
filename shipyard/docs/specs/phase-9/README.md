@@ -127,6 +127,7 @@
 
 - Hosted runtime + Railway contract:
   - `.github/workflows/railway-main-deploy.yml`
+  - `.github/scripts/railway-ci-deploy.sh`
   - `shipyard/src/bin/shipyard.ts`
   - `shipyard/src/ui/server.ts`
   - `shipyard/package.json`
@@ -186,25 +187,27 @@ if (envTargetsDirectory) {
 }
 ```
 
-- Railway now runs the nested app from its own root instead of hopping one
-  directory too deep:
+- Railway now pins hosted deploys to the checked-in Dockerfile so the final
+  runtime image only carries compiled output, built-in skills, and production
+  dependencies:
 
 ```json
-"buildCommand": "pnpm install --frozen-lockfile && pnpm build",
-"startCommand": "pnpm start -- --ui"
+"builder": "DOCKERFILE",
+"buildCommand": null,
+"startCommand": "node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui"
 ```
 
 - Repo-driven pushes to `main` can now redeploy the same hosted service without
-  a manual Railway upload:
+  a manual Railway upload by publishing the Dockerfile to GHCR and switching
+  the live service to that image source in place:
 
 ```yaml
-working-directory: shipyard
 run: |
-  railway up . \
-    --path-as-root \
-    --project "${RAILWAY_PROJECT_ID}" \
-    --environment "${RAILWAY_ENVIRONMENT_ID}" \
-    --service "${RAILWAY_SERVICE_ID}"
+  bash .github/scripts/railway-ci-deploy.sh
+```
+
+```bash
+railway environment config --json | python -c '...' | railway environment edit --json
 ```
 
 - Hosted access-token rotations now ride the same deploy workflow and local
@@ -213,6 +216,61 @@ run: |
 ```yaml
 SHIPYARD_ACCESS_TOKEN: ${{ secrets.SHIPYARD_ACCESS_TOKEN }}
 printf '%s' "${SHIPYARD_ACCESS_TOKEN}" | railway variable set SHIPYARD_ACCESS_TOKEN --stdin
+```
+
+- Hosted Railway deploys now keep Playwright browser downloads out of the
+  default production image and rely on the existing degraded-verification path
+  unless an operator intentionally provisions those browsers:
+
+```yaml
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+RAILWAY_VOLUME_MOUNT_PATH=/app/workspace
+SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1
+SHIPYARD_MODEL_PROVIDER=openai
+SHIPYARD_OPENAI_MODEL=gpt-5.4
+```
+
+- Repo-controlled Railway deploys now prefer the broader API token for the
+  non-interactive link/config/deploy path and only fall back to
+  `RAILWAY_TOKEN` when a project-scoped token has been validated against the
+  same workflow:
+
+```bash
+if [ -n "${RAILWAY_API_TOKEN}" ]; then
+  echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_API_TOKEN}" >> "${GITHUB_ENV}"
+else
+  echo "RAILWAY_CONTROL_TOKEN=${RAILWAY_TOKEN}" >> "${GITHUB_ENV}"
+fi
+```
+
+- Each later Railway CLI step must also unset the unused token env var before
+  exporting the selected control token, because a blank `RAILWAY_TOKEN`
+  overrides a valid `RAILWAY_API_TOKEN` in non-interactive runs:
+
+```bash
+if [ "${RAILWAY_CONTROL_TOKEN_KIND}" = "api" ]; then
+  unset RAILWAY_TOKEN
+  export RAILWAY_API_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+else
+  unset RAILWAY_API_TOKEN
+  export RAILWAY_TOKEN="${RAILWAY_CONTROL_TOKEN}"
+fi
+```
+
+- The image-backed deploy wrapper also retries the known transient GHCR
+  pull/unpack handoff failures before failing the workflow:
+
+```bash
+transient_failure_pattern='DEADLINE_EXCEEDED|failed to pull/unpack image|failed to resolve reference|i/o timeout|dial tcp'
+```
+
+- The hosted runtime now also keeps the Playwright packages in dev dependency
+  scope and lazy-loads browser evaluation, so the final production image can
+  drop that dependency entirely during `pnpm prune --prod`:
+
+```ts
+const playwright = await import("playwright");
+return playwright.chromium;
 ```
 
 - Upload receipts become next-turn context instead of raw websocket blobs:

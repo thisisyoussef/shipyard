@@ -173,9 +173,30 @@
     and `shipyard/ui/src/App.tsx`: add the open-project board, wire activation
     requests, and keep the target switcher/create flow as the entry point for
     opening more workspaces.
+  - `shipyard/ui/src/use-workbench-controller.ts`: scopes deferred turns, file
+    activity, and context history to the active session id and clears stale
+    "Opening project"/"Opening saved run" notices once the next session becomes
+    active, preventing previous-project flashes during project switches.
+  - `shipyard/ui/src/app-route.ts` (`selectProductRouteState`) and
+    `shipyard/ui/src/App.tsx` (`selectEditorRouteState` /
+    `selectBoardRouteState` call sites): keep editor and board product routes
+    in an `opening` state until the detailed `sessionState.targetDirectory`
+    matches the requested project, so the shell does not flash the new project
+    name while the prior session snapshot is still mounted.
+  - `shipyard/ui/src/workbench-surfaces.tsx` and
+    `shipyard/ui/src/ShipyardWorkbench.tsx`: key the chat, files, and output
+    panes by `sessionId` so switching projects remounts session-local editor
+    state instead of leaking the prior project's panel state into the next one.
   - `shipyard/tests/ui-runtime.test.ts`, `shipyard/tests/ui-view-models.test.ts`,
     and `shipyard/tests/ui-workbench.test.ts`: cover concurrent open/create
     behavior, reducer isolation, and rendered project-board summaries.
+  - `shipyard/tests/ui-human-feedback-page.test.ts`: adds a regression around
+    `selectSessionScopedValue` so the workbench keeps live session artifacts
+    until deferred values catch up to the newly active project.
+  - `shipyard/tests/ui-route-state.test.ts` (`waits for the detailed session
+    snapshot...` and `keeps the board route opening...`): adds editor and board
+    regressions asserting that route selectors stay `opening` while the active
+    session still points at the previous target.
 - Representative snippets:
 
 ```ts
@@ -198,12 +219,47 @@ await emitProjectMessage(project, {
 await saveSessionState(project.sessionState);
 ```
 
+```ts
+if (expectedActiveTargetPath) {
+  if (activeSessionTargetPath === expectedActiveTargetPath) {
+    return {
+      status: "active",
+      productId: options.productId,
+      productName: requestedProductName,
+      intent: { kind: "none" },
+    };
+  }
+
+  return {
+    status: "opening",
+    productId: options.productId,
+    productName: requestedProductName,
+    intent: { kind: "none" },
+  };
+}
+```
+
 ```tsx
 <ProjectBoard
   projectBoard={props.projectBoard}
   onActivateProject={props.onActivateProject}
   onOpenTargets={() => setTargetSwitcherOpen(true)}
 />
+```
+
+```ts
+const displayedTurns = selectSessionScopedValue({
+  currentSessionId,
+  deferredSessionId,
+  liveValue: viewState.turns,
+  deferredValue: deferredTurns,
+});
+```
+
+```tsx
+<ChatWorkspace key={`chat-${sessionViewKey}`} turns={props.turns} />
+<FilePanel key={`files-${sessionViewKey}`} fileEvents={props.fileEvents} />
+<OutputPanel key={`output-${sessionViewKey}`} turns={props.turns} />
 ```
 
 ## Validation Commands

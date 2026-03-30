@@ -21,10 +21,16 @@ Within those surfaces, Shipyard routes work through three turn types:
 - [`docs/README.md`](./docs/README.md): durable docs hub
 - [`docs/demo/mvp-demo-script.md`](./docs/demo/mvp-demo-script.md): short demo
   walkthrough for target-manager, chat, and file/output evidence flow
+- [`docs/demo/final-demo-script-ship-clone.md`](./docs/demo/final-demo-script-ship-clone.md):
+  first-take final demo walkthrough for the local Ship-clone rebuild target,
+  including the surgical-edit, diff, and trace flow
 - [`docs/architecture/README.md`](./docs/architecture/README.md): runtime,
   graph, and session-artifact diagrams
 - [`docs/architecture/hosted-railway.md`](./docs/architecture/hosted-railway.md):
   hosted Railway contract and deploy flow
+- [`docs/ops/remote-linux-mission.md`](./docs/ops/remote-linux-mission.md):
+  Linux VM deployment pack for long-running missions, remote workbench access,
+  and scheduled Vercel publishing
 - [`src/README.md`](./src/README.md): source tree guide
 - [`src/plans/README.md`](./src/plans/README.md): persisted planning/task-runner
   guide
@@ -146,11 +152,41 @@ bootstrap empty-target guard.
   instruction as soon as the session returns to ready.
 - In browser mode, `ultimate start <brief>` launches the always-on handoff loop
   and any follow-up human message while that run is active is queued as
-  feedback for the next simulator cycle. Use `ultimate stop` or the normal
-  cancel control to interrupt it.
+  feedback for the next simulator cycle. The header badge can now pause the
+  loop for quick manual edits, return the composer to normal instructions while
+  preserving the standing brief, and resume or clear that paused loop later.
+  Use `ultimate stop` or the normal cancel control to interrupt it completely.
 - In browser mode, `/human-feedback` serves a stripped-down operator page that
   sends notes through the same websocket instruction path so you can feed the
   running ultimate loop without opening the full workbench shell.
+
+## Long-Run Mission Control
+
+- `pnpm mission:watchdog -- --config /abs/path/to/mission.config.json` launches
+  a two-layer supervisor for long-running `ultimate` sessions.
+- `pnpm mission:launch-agent -- --config /abs/path/to/mission.config.json`
+  writes a locked bootstrap env file, installs a per-mission macOS LaunchAgent,
+  and keeps the watchdog restartable even after the launching terminal or app
+  goes away.
+- The inner mission controller (`scripts/ultimate-mission-control.ts`) keeps a
+  passive websocket attached so local preview supervision stays alive, polls
+  authenticated `/api/health` runtime telemetry, captures session + handoff
+  backups, restarts the UI runtime on crashes/stalls/memory pressure, and
+  replays the saved `ultimate start` brief plus sticky human feedback after
+  recovery. Before each fresh runtime launch it also repairs the saved session
+  JSON and active handoff from the latest mission backups when those artifacts
+  are missing or corrupt.
+- The outer watchdog (`scripts/ultimate-mission-watchdog.ts`) supervises the
+  controller itself by watching the heartbeat in `mission-state.json` and
+  respawning mission control if the inner loop exits or stops updating.
+- Mission bundles live outside source control alongside the target (for
+  example `target/.shipyard/ops/<sessionId>/`) and typically contain
+  `mission.config.json`, a durable `brief.md`, and a `sticky-feedback.json`
+  array. Long-run bundles can also declare `environment.envFiles` so cold-start
+  relaunches have a durable secret source instead of depending on the shell
+  environment that originally launched Shipyard.
+- See [`docs/architecture/mission-control.md`](./docs/architecture/mission-control.md)
+  for the config contract, state files, and failure-recovery flow.
 
 ## Repo Map
 
@@ -229,27 +265,53 @@ target-manager flow:
 - if Railway is connected to the full repo, set the service `Root Directory`
   to `/shipyard`
 - point Railway config-as-code at `/shipyard/railway.json`
-- let Railway run the checked-in build command from that app root:
-  `pnpm install --frozen-lockfile && pnpm build`
-- run Shipyard in browser mode from that same app root:
-  `pnpm start -- --ui`
+- let Railway build from the checked-in `/shipyard/Dockerfile`, which installs
+  dependencies, compiles `dist/`, prunes to production dependencies, and keeps
+  the final image limited to runtime assets
+- run Shipyard in browser mode from that same app root with the compiled
+  entrypoint: `node --env-file-if-exists=.env ./dist/bin/shipyard.js --ui`
+- keep `playwright` and `@playwright/browser-chromium` in dev-only install
+  scope so the hosted production image can drop them during `pnpm prune --prod`;
+  browser evaluation now lazy-loads that runtime and degrades cleanly when it
+  is absent
 - set `SHIPYARD_TARGETS_DIR=/app/workspace`
-- set `SHIPYARD_UI_HOST=0.0.0.0`
+- prefer `SHIPYARD_UI_HOST=0.0.0.0`; when Railway-hosted env signals are
+  present, Shipyard now also falls back to `0.0.0.0` automatically if that
+  override is missing
 - let Railway provide `PORT`; Shipyard falls back to it when
   `SHIPYARD_UI_PORT` is unset
 - attach a persistent volume at `/app/workspace` and enable
   `SHIPYARD_REQUIRE_PERSISTENT_WORKSPACE=1` once the mount exists
 - set `SHIPYARD_ACCESS_TOKEN` if the public workbench should require a shared
   unlock token
-- set `ANTHROPIC_API_KEY`, `SHIPYARD_MODEL_PROVIDER=anthropic`, and
-  `SHIPYARD_ANTHROPIC_MODEL=claude-opus-4-6` to keep production on the
-  default Claude route
+- set `OPENAI_API_KEY`, `SHIPYARD_MODEL_PROVIDER=openai`, and
+  `SHIPYARD_OPENAI_MODEL=gpt-5.4` to pin hosted Railway production to
+  OpenAI even though local Shipyard defaults remain Anthropic
 - keep the current hosted token in the ignored `shipyard/.env` file for local
   operator convenience; `node scripts/print-hosted-access-url.mjs` prints a
   bootstrap link from that file
+- prefer hosted-safe GitHub auth in Railway by setting one of:
+  `GITHUB_TOKEN`, `GITHUB_OAUTH_TOKEN`, or the GitHub App tuple
+  `GITHUB_APP_ID` / `GITHUB_APP_INSTALLATION_ID` /
+  `GITHUB_APP_PRIVATE_KEY`; local `gh` CLI auth is not treated as the hosted
+  source-of-truth path
 - set `VERCEL_TOKEN` to enable `deploy_target` and automatic public publishing
-  after successful edited turns
+  after successful edited turns, including successful edited `ultimate`
+  cycles; Shipyard now creates or recovers a
+  deterministic `.vercel/project.json` link for each target on first deploy
+  and disables Vercel Authentication by default so the resulting production
+  URL stays shareable
+- set `SHIPYARD_VERCEL_PUBLIC_DEPLOYS=0` only when you intentionally want to
+  preserve an existing protected Vercel project instead of Shipyard's
+  public-by-default deploy behavior
 - use `/api/health` for the service health check
+- hosted runtime metadata persists under `.shipyard/hosting/runtime.json`
+  inside the persistent workspace so Railway restarts can restore hosted mode,
+  workspace binding, degraded-source state, and the last resumed session id
+- keep the three hosted surfaces distinct:
+  - the Shipyard service URL is the Railway-hosted operator runtime
+  - the private preview URL is the internal target-app preview, when present
+  - the public deployment URL is the external app URL produced by deploy flows
 
 If you use the repo-owned GitHub Actions deploy instead of Railway's native
 GitHub sync, the workflow already uploads `shipyard/` with `--path-as-root`

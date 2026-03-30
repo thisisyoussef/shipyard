@@ -17,8 +17,29 @@ describe("parseHash", () => {
     });
   });
 
-  it("parses #/board as board", () => {
-    expect(parseHash("#/board")).toEqual({ view: "board" });
+  it("decodes editor routes that carry full target paths", () => {
+    expect(parseHash("#/editor/%2Ftmp%2Falpha-app")).toEqual({
+      view: "editor",
+      productId: "/tmp/alpha-app",
+    });
+  });
+
+  it("parses #/board/:productId", () => {
+    expect(parseHash("#/board/my-app")).toEqual({
+      view: "board",
+      productId: "my-app",
+    });
+  });
+
+  it("decodes board routes that carry full target paths", () => {
+    expect(parseHash("#/board/%2Ftmp%2Falpha-app")).toEqual({
+      view: "board",
+      productId: "/tmp/alpha-app",
+    });
+  });
+
+  it("falls back to dashboard for a legacy board route without a product id", () => {
+    expect(parseHash("#/board")).toEqual({ view: "dashboard" });
   });
 
   it("parses #/human-feedback as human-feedback", () => {
@@ -39,7 +60,19 @@ describe("buildHash", () => {
     expect(buildHash({ view: "editor", productId: "my-app" })).toBe("#/editor/my-app");
   });
 
-  it("builds board hash", () => {
-    expect(buildHash({ view: "board" })).toBe("#/board");
+  it("encodes editor hashes for filesystem-like target paths", () => {
+    expect(buildHash({ view: "editor", productId: "/tmp/alpha-app" })).toBe(
+      "#/editor/%2Ftmp%2Falpha-app",
+    );
+  });
+
+  it("builds board hash with productId", () => {
+    expect(buildHash({ view: "board", productId: "my-app" })).toBe("#/board/my-app");
+  });
+
+  it("encodes board hashes for filesystem-like target paths", () => {
+    expect(buildHash({ view: "board", productId: "/tmp/alpha-app" })).toBe(
+      "#/board/%2Ftmp%2Falpha-app",
+    );
   });
 });

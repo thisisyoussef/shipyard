@@ -5,7 +5,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-const DEFAULT_HOSTED_URL = "https://shipyard-production-f2e5.up.railway.app";
+const DEFAULT_HOSTED_URL = "https://shipyard-production-7d07.up.railway.app";
+const DEFAULT_HOSTED_TARGET_PATH = "/app/workspace/ship-promptpack-live";
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDirectory, "..");
 const defaultEnvPath = path.join(repoRoot, "shipyard", ".env");
@@ -51,6 +52,10 @@ const accessToken =
   process.env.SHIPYARD_ACCESS_TOKEN?.trim() ||
   fileEnv.SHIPYARD_ACCESS_TOKEN?.trim() ||
   "";
+const hostedTargetPath =
+  process.env.SHIPYARD_HOSTED_DEFAULT_TARGET_PATH?.trim() ||
+  fileEnv.SHIPYARD_HOSTED_DEFAULT_TARGET_PATH?.trim() ||
+  DEFAULT_HOSTED_TARGET_PATH;
 
 if (!accessToken) {
   console.error(
@@ -60,5 +65,8 @@ if (!accessToken) {
 } else {
   const url = new URL(hostedUrl);
   url.searchParams.set("access_token", accessToken);
+  if (hostedTargetPath) {
+    url.hash = `#/editor/${encodeURIComponent(hostedTargetPath)}`;
+  }
   console.log(url.toString());
 }

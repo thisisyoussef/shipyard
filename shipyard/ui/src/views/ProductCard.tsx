@@ -4,25 +4,17 @@
  * UIR-T04 — Dashboard & Product Cards
  */
 
+import type { DashboardCardStatus, DashboardCardViewModel } from "../dashboard-catalog.js";
 import { Badge, StatusDot } from "../primitives.js";
 import type { BadgeTone } from "../primitives.js";
 
 // ── Types ──────────────────────────────────────
 
-export interface ProductCardData {
-  id: string;
-  name: string;
-  path: string;
-  scaffoldType: string;
-  status: "ready" | "agent-busy" | "error" | "connecting";
-  lastActivity: string;
-  starred: boolean;
-  previewThumbnail?: string;
-}
+export type ProductCardData = DashboardCardViewModel;
 
 // ── Helpers ────────────────────────────────────
 
-function statusTone(status: ProductCardData["status"]): BadgeTone {
+function statusTone(status: DashboardCardStatus): BadgeTone {
   switch (status) {
     case "ready":
       return "success";
@@ -32,14 +24,20 @@ function statusTone(status: ProductCardData["status"]): BadgeTone {
       return "danger";
     case "connecting":
       return "warning";
+    case "available":
+      return "neutral";
   }
 }
 
-function statusPulse(status: ProductCardData["status"]): boolean {
+function statusPulse(status: DashboardCardStatus): boolean {
   return status === "agent-busy" || status === "connecting";
 }
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string | null): string {
+  if (!iso) {
+    return "Never opened";
+  }
+
   const diff = Date.now() - new Date(iso).getTime();
   const seconds = Math.floor(diff / 1000);
 
@@ -60,52 +58,105 @@ function relativeTime(iso: string): string {
 interface ProductCardProps {
   product: ProductCardData;
   onOpen: (productId: string) => void;
+  onToggleStar: (productId: string) => void;
 }
 
-export function ProductCard({ product, onOpen }: ProductCardProps) {
+export function ProductCard({
+  product,
+  onOpen,
+  onToggleStar,
+}: ProductCardProps) {
   const initial = product.name.charAt(0).toUpperCase();
+  const stackTone = product.stackLabel === "Unknown stack" ? "warning" : "neutral";
 
   return (
-    <button
-      type="button"
+    <article
       className="product-card"
-      onClick={() => onOpen(product.id)}
-      aria-label={`Open ${product.name}`}
+      data-active={product.active}
+      data-open={product.open}
     >
-      <div className="product-card-preview">
-        {product.previewThumbnail ? (
-          <img
-            src={product.previewThumbnail}
-            alt={`${product.name} preview`}
-            className="product-card-thumbnail"
-          />
-        ) : (
-          <span className="product-card-initial" aria-hidden="true">
-            {initial}
-          </span>
-        )}
-      </div>
-
-      <div className="product-card-info">
-        <div className="product-card-title-row">
+      <div className="product-card-toolbar">
+        <Badge tone={statusTone(product.status)} className="product-card-status">
           <StatusDot
             tone={statusTone(product.status)}
             pulse={statusPulse(product.status)}
           />
-          <span className="product-card-name">{product.name}</span>
-          {product.starred ? (
-            <span className="product-card-star" aria-label="Starred">
-              *
-            </span>
-          ) : null}
+          {product.statusLabel}
+        </Badge>
+        <button
+          type="button"
+          className="product-card-star-toggle"
+          aria-label={`${product.starred ? "Remove star from" : "Star"} ${product.name}`}
+          aria-pressed={product.starred}
+          onClick={() => onToggleStar(product.id)}
+        >
+          {product.starred ? "Starred" : "Star"}
+        </button>
+      </div>
+
+      <div className="product-card-open">
+        <button
+          type="button"
+          className="product-card-open-hitarea"
+          onClick={() => onOpen(product.id)}
+          aria-label={`Open ${product.name}`}
+        />
+        <div className="product-card-preview">
+          {product.previewThumbnail ? (
+            <img
+              src={product.previewThumbnail}
+              alt={`${product.name} preview`}
+              className="product-card-thumbnail"
+            />
+          ) : product.previewUrl ? (
+            <div className="product-card-live-preview">
+              <iframe
+                src={product.previewUrl}
+                title={`${product.name} live preview`}
+                className="product-card-live-preview-frame"
+                loading="lazy"
+                tabIndex={-1}
+              />
+              <div className="product-card-live-preview-scrim" aria-hidden="true" />
+              <span className="product-card-live-preview-badge">
+                {product.previewLabel}
+              </span>
+            </div>
+          ) : (
+            <div className="product-card-preview-copy">
+              <span className="product-card-initial" aria-hidden="true">
+                {initial}
+              </span>
+              <div className="product-card-preview-text">
+                <span className="product-card-preview-label">
+                  {product.previewLabel}
+                </span>
+                <span className="product-card-preview-detail">
+                  {product.previewDetail}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="product-card-meta">
-          <Badge tone="neutral">{product.scaffoldType}</Badge>
-          <span className="product-card-time">{relativeTime(product.lastActivity)}</span>
+        <div className="product-card-info">
+          <div className="product-card-title-row">
+            <span className="product-card-name">{product.name}</span>
+          </div>
+
+          <p className="product-card-description">
+            {product.description ?? product.previewDetail}
+          </p>
+
+          <div className="product-card-meta">
+            <Badge tone={stackTone}>{product.stackLabel}</Badge>
+            <span className="product-card-time">
+              {relativeTime(product.lastActivity)}
+            </span>
+          </div>
         </div>
       </div>
-    </button>
+    </article>
   );
 }
 
