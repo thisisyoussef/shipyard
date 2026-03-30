@@ -9,6 +9,7 @@ import {
 } from "../ui/src/app-route.js";
 import type {
   ProjectBoardViewModel,
+  SessionStateViewModel,
   TargetManagerViewModel,
 } from "../ui/src/view-models.js";
 
@@ -75,6 +76,44 @@ const projectBoard: ProjectBoardViewModel = {
   ],
 };
 
+const alphaSessionState: SessionStateViewModel = {
+  sessionId: "session-alpha",
+  targetLabel: "alpha-app",
+  targetDirectory: "/tmp/alpha-app",
+  activePhase: "code",
+  workspaceDirectory: "/tmp/workspace",
+  turnCount: 2,
+  startedAt: "2026-03-28T12:00:00.000Z",
+  lastActiveAt: "2026-03-28T12:05:00.000Z",
+  discoverySummary: "typescript (React) via pnpm",
+  discovery: {
+    isGreenfield: false,
+    language: "typescript",
+    framework: "React",
+    packageManager: "pnpm",
+    scripts: {
+      test: "vitest run",
+      build: "vite build",
+    },
+    hasReadme: true,
+    hasAgentsMd: true,
+    topLevelFiles: ["package.json"],
+    topLevelDirectories: ["src"],
+    projectName: "alpha-app",
+    previewCapability: {
+      status: "unavailable",
+      kind: null,
+      runner: null,
+      scriptName: null,
+      command: null,
+      reason: "No preview signal.",
+      autoRefresh: "none",
+    },
+  },
+  projectRulesLoaded: true,
+  tracePath: "/tmp/alpha-app/.shipyard/traces/session-alpha.jsonl",
+};
+
 describe("resolveAppRoute", () => {
   it("uses pathname routing for the human-feedback surface", () => {
     expect(resolveAppRoute("/human-feedback", "#/board")).toEqual({
@@ -104,6 +143,7 @@ describe("selectEditorRouteState", () => {
         productId: "/tmp/alpha-app",
         projectBoard,
         targetManager,
+        sessionState: alphaSessionState,
       }),
     ).toEqual({
       status: "active",
@@ -119,6 +159,7 @@ describe("selectEditorRouteState", () => {
         productId: "/tmp/beta-app",
         projectBoard,
         targetManager,
+        sessionState: alphaSessionState,
       }),
     ).toEqual({
       status: "opening",
@@ -142,6 +183,7 @@ describe("selectEditorRouteState", () => {
         productId: "/tmp/beta-app",
         projectBoard: closedProjectBoard,
         targetManager,
+        sessionState: alphaSessionState,
       }),
     ).toEqual({
       status: "opening",
@@ -160,11 +202,34 @@ describe("selectEditorRouteState", () => {
         productId: "/tmp/ghost-app",
         projectBoard,
         targetManager,
+        sessionState: alphaSessionState,
       }),
     ).toEqual({
       status: "missing",
       productId: "/tmp/ghost-app",
       productName: null,
+      intent: { kind: "none" },
+    });
+  });
+
+  it("waits for the detailed session snapshot before treating the requested project as active", () => {
+    expect(
+      selectEditorRouteState({
+        productId: "/tmp/beta-app",
+        projectBoard: {
+          ...projectBoard,
+          activeProjectId: "project-beta",
+        },
+        targetManager: {
+          ...targetManager,
+          currentTarget: targetManager.availableTargets[1]!,
+        },
+        sessionState: alphaSessionState,
+      }),
+    ).toEqual({
+      status: "opening",
+      productId: "/tmp/beta-app",
+      productName: "beta-app",
       intent: { kind: "none" },
     });
   });
@@ -177,6 +242,7 @@ describe("selectBoardRouteState", () => {
         productId: "/tmp/alpha-app",
         projectBoard,
         targetManager,
+        sessionState: alphaSessionState,
       }),
     ).toEqual({
       status: "active",
@@ -192,6 +258,7 @@ describe("selectBoardRouteState", () => {
         productId: "/tmp/beta-app",
         projectBoard,
         targetManager,
+        sessionState: alphaSessionState,
       }),
     ).toEqual({
       status: "opening",
@@ -201,6 +268,28 @@ describe("selectBoardRouteState", () => {
         kind: "activate-project",
         projectId: "project-beta",
       },
+    });
+  });
+
+  it("keeps the board route opening while the active session still belongs to the previous target", () => {
+    expect(
+      selectBoardRouteState({
+        productId: "/tmp/beta-app",
+        projectBoard: {
+          ...projectBoard,
+          activeProjectId: "project-beta",
+        },
+        targetManager: {
+          ...targetManager,
+          currentTarget: targetManager.availableTargets[1]!,
+        },
+        sessionState: alphaSessionState,
+      }),
+    ).toEqual({
+      status: "opening",
+      productId: "/tmp/beta-app",
+      productName: "beta-app",
+      intent: { kind: "none" },
     });
   });
 });

@@ -1,4 +1,8 @@
-import type { ProjectBoardViewModel, TargetManagerViewModel } from "./view-models.js";
+import type {
+  ProjectBoardViewModel,
+  SessionStateViewModel,
+  TargetManagerViewModel,
+} from "./view-models.js";
 import { parseHash, type Route } from "./router.js";
 import {
   getActiveProject,
@@ -38,6 +42,7 @@ interface SelectProductRouteStateOptions {
   productId: string;
   projectBoard: ProjectBoardViewModel | null;
   targetManager: TargetManagerViewModel | null;
+  sessionState: SessionStateViewModel | null;
 }
 
 function findOpenProject(
@@ -57,16 +62,44 @@ function selectProductRouteState(
   const activeTargetPath = activeProject?.targetPath
     ?? selectedTarget?.path
     ?? null;
+  const activeSessionTargetPath = options.sessionState?.targetDirectory ?? null;
+  const routeMatchesActiveProject = activeProject?.projectId === options.productId;
+  const routeMatchesActiveTarget = activeTargetPath === options.productId;
+  const expectedActiveTargetPath = routeMatchesActiveProject
+    ? activeProject?.targetPath ?? null
+    : routeMatchesActiveTarget
+      ? activeTargetPath
+      : null;
+  const requestedProductName =
+    activeProject?.targetName ??
+    selectedTarget?.name ??
+    (activeSessionTargetPath === options.productId
+      ? options.sessionState?.targetLabel ?? null
+      : null);
 
-  if (
-    activeTargetPath === options.productId ||
-    activeProject?.projectId === options.productId
-  ) {
+  if (expectedActiveTargetPath) {
+    if (activeSessionTargetPath === expectedActiveTargetPath) {
+      return {
+        status: "active",
+        productId: options.productId,
+        productName: requestedProductName,
+        intent: { kind: "none" },
+      };
+    }
+
     return {
-      status: "active",
+      status: "opening",
       productId: options.productId,
-      productName:
-        activeProject?.targetName ?? selectedTarget?.name ?? null,
+      productName: requestedProductName,
+      intent: { kind: "none" },
+    };
+  }
+
+  if (activeSessionTargetPath === options.productId) {
+    return {
+      status: "opening",
+      productId: options.productId,
+      productName: requestedProductName,
       intent: { kind: "none" },
     };
   }
